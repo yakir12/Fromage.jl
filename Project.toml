@@ -27,8 +27,8 @@ SimpTrack = {url = "https://github.com/yakir12/SimpTrack"}
 
 [compat]
 CSV = "0.10.15"
-CameraCalibrationFit = "^0"
-CameraCalibrationMeta = "^0"
+CameraCalibrationFit = "0.2.0"
+CameraCalibrationMeta = "0.2.0"
 Colors = "0.13.0"
 DataFrames = "1.7.0"
 Dates = "1.11.0"
