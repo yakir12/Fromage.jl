@@ -38,7 +38,6 @@ Preferences = "1.4.3"
 ProgressMeter = "1.10.2"
 UUIDs = "1.11.0"
 VideoIO = "1.1.0"
-julia = "1.9"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
