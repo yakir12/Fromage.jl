@@ -1,0 +1,13 @@
+name = "Fromage"
+uuid = "f7d2997e-1be8-4771-a487-05d70e6e0672"
+authors = ["Yakir Gagnon <12.yakir@gmail.com> and contributors"]
+version = "1.0.0-DEV"
+
+[compat]
+julia = "1.9"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
