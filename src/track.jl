@@ -3,10 +3,8 @@ function get_runs_df(data_path)
     tbl = CSV.File(files; source = :csv_source, stripwhitespace = true)
     df = DataFrame(tbl)
     fix_issue_1146!(df, files)
+    coalesce_df!(df, ("start_location", "object_width"))
     runs_quality(df, data_path)
-
-    df.start_location .= coalesce.(df.start_location, @load_preference("start_location"))
-    df.object_width .= coalesce.(df.object_width, @load_preference("object_width"))
 
     df.uuid .= [uuid4() for _ in 1:nrow(df)]
     df.start_location = Union{Tuple{Int, Int}, Missing, Int, UUID}[to_tuple(x) for x in df.start_location]

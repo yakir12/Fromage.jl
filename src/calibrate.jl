@@ -36,11 +36,11 @@ function get_calib_df(data_path)
     tbl = CSV.File(files; source = :csv_source, stripwhitespace = true)
     df = DataFrame(tbl)
     fix_issue_1146!(df, files)
+    coalesce_df!(df, ("checker_size", "n_corners", "temporal_step", "center", "north"))
     calib_quality(df, data_path)
-    # select!(df, Not(:csv_source))
-    df.checker_size .= coalesce.(df.checker_size, @load_preference("checker_size"))
-    df.n_corners .= coalesce.(df.n_corners, @load_preference("n_corners"))
-    df.temporal_step .= coalesce.(df.temporal_step, @load_preference("temporal_step"))
+    # df.checker_size .= coalesce.(df.checker_size, @load_preference("checker_size"))
+    # df.n_corners .= coalesce.(df.n_corners, @load_preference("n_corners"))
+    # df.temporal_step .= coalesce.(df.temporal_step, @load_preference("temporal_step"))
     return df
 end
 

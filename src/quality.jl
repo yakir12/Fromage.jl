@@ -1,8 +1,5 @@
 function calib_quality(df, data_path)
-    nonmissing_columns = ["calibration_id", "path", "file", "start", "stop", "extrinsic"]
-    optional_columns = ["checker_size", "n_corners", "temporal_step"]
-    optional_column_types = [Float64, String, Float64]
-    # columns = [nonmissing_columns; optional_columns]
+    nonmissing_columns = ("calibration_id", "path", "file", "start", "stop", "extrinsic")
     if isempty(df)
         @error "the table shouldn't be empty"
     end
@@ -20,11 +17,6 @@ function calib_quality(df, data_path)
             end
         end
     end
-    for (column, type) in zip(optional_columns, optional_column_types)
-        if column ∉ names(df)
-            df[column] .= missings(type, nrow(df))
-        end
-    end
     if !allunique(df.calibration_id)
         res = combine(groupby(select(subset(transform(groupby(df, :calibration_id), nrow), :nrow => ByRow(>(1))), :csv_source, :calibration_id), :calibration_id), :csv_source => Ref => :csv_source)
         io = IOBuffer()
@@ -38,7 +30,7 @@ function calib_quality(df, data_path)
         msg = String(take!(io))
         @error msg
     end
-    @showprogress "checking the quality of the calibration csv data" for row in eachrow(df)
+    @showprogress "Checking the quality of the calibration csv data:" for row in eachrow(df)
         if row.start > row.stop 
             @error "stop shouldn't come before start in row $row"
         end
@@ -72,11 +64,18 @@ function calib_quality(df, data_path)
     return nothing
 end
 
+function coalesce_df!(df, columns)
+    for column in columns
+        if column ∉ names(df)
+            df[!, column] .= @load_preference(column, missing)
+        else
+            df[!, column] .= coalesce.(df[!, column], @load_preference(column, missing))
+        end
+    end
+end
+
 function runs_quality(df, data_path)
-    nonmissing_columns = ["path", "file", "start", "stop", "calibration_id"]
-    optional_columns = ["start_location", "object_width"]
-    optional_column_types = [String, Float64]
-    # columns = [nonmissing_columns; "start_location"]
+    nonmissing_columns = ("path", "file", "start", "stop", "calibration_id")
     if isempty(df)
         @error "the table shouldn't be empty"
     end
@@ -94,11 +93,6 @@ function runs_quality(df, data_path)
             end
         end
     end
-    for (column, type) in zip(optional_columns, optional_column_types)
-        if column ∉ names(df)
-            df[column] .= missings(type, nrow(df))
-        end
-    end
     if any(x -> isa(x, Int), df.start_location)
         for g in groupby(df, :csv_source), row in eachrow(g)
             if row.start_location isa Int && row.start_location > nrow(g)
@@ -107,7 +101,7 @@ function runs_quality(df, data_path)
             end
         end
     end
-    @showprogress "checking the quality of the run csv data" for row in eachrow(df)
+    @showprogress "Checking the quality of the run csv data:" for row in eachrow(df)
         if row.start > row.stop 
             @error "stop shouldn't come before start in row $row"
         end
@@ -117,10 +111,13 @@ function runs_quality(df, data_path)
         end
         t = VideoIO.get_duration(file)
         if tosecond(row.start) > t 
-            @error "start shouldn't occur after the video ends"
+            @error "start shouldn't occur after the video ends in row $row"
         end
         if tosecond(row.stop) > t 
-            @error "stop shouldn't occur after the video ends"
+            @error "stop shouldn't occur after the video ends in row $row"
+        end
+        if row.object_width ≤ 0
+            @error "object width shouldn't be equal to or smaller than zero in row $row"
         end
     end
     return nothing

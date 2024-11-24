@@ -20,11 +20,6 @@ SimpTrack = "cbfce16d-aa61-4ea5-b8a8-99ca74cb25a4"
 UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 VideoIO = "d6d074c3-1acf-5d4c-9a43-ef38773959a2"
 
-[sources]
-CameraCalibrationFit = {url = "https://github.com/yakir12/CameraCalibrationFit"}
-CameraCalibrationMeta = {url = "https://github.com/yakir12/CameraCalibrationMeta"}
-SimpTrack = {url = "https://github.com/yakir12/SimpTrack"}
-
 [compat]
 CSV = "0.10.15"
 Colors = "0.13.0"

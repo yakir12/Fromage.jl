@@ -12,12 +12,16 @@ using OhMyThreads, ProgressMeter
 
 using CameraCalibrationMeta, CameraCalibrationFit, SimpTrack
 
-@set_preferences!("checker_size" => 3.9,
+set_preferences!(Fromage, "checker_size" => 3.9,
                   "n_corners" => "(5, 8)",
                   "temporal_step" => 2.0,
-                  # "start_location" => nothing,
                   "object_width" => 60,
-                  "results_dir" => "tracks and calibrations")
+                  "results_dir" => "tracks and calibrations";
+                 export_prefs = false)
+
+function fun()
+    @load_preference("start_location")
+end
 
 include("quality.jl")
 include("functions.jl")
