@@ -12,6 +12,7 @@ DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
 ImageDraw = "4381153b-2b60-58ae-a1ba-fd683676385f"
+ImageIO = "82e4d734-157c-48bb-816b-45c225c6df19"
 ImageTransformations = "02fcd773-0e25-5acc-982a-7f6622650795"
 OhMyThreads = "67456a42-1dca-4109-a031-0a68de7e3ad5"
 Preferences = "21216c6a-2e73-6563-6e65-726566657250"
@@ -22,20 +23,31 @@ VideoIO = "d6d074c3-1acf-5d4c-9a43-ef38773959a2"
 
 [compat]
 CSV = "0.10.15"
+CameraCalibrationFit = "0.2.0"
+CameraCalibrationMeta = "0.2.0"
 Colors = "0.13.0"
 DataFrames = "1.7.0"
 Dates = "1.11.0"
 FileIO = "1.16.6"
 ImageDraw = "0.2.6"
+ImageIO = "0.6.9"
 ImageTransformations = "0.10.1"
 OhMyThreads = "0.7.0"
 Preferences = "1.4.3"
 ProgressMeter = "1.10.2"
+SimpTrack = "0.3.2"
 UUIDs = "1.11.0"
 VideoIO = "1.1.0"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[preferences.Fromage]
+checker_size = 3.9
+n_corners = "(5, 8)"
+object_width = 60
+results_dir = "tracks and calibrations"
+temporal_step = 2.0
 
 [targets]
 test = ["Test"]
