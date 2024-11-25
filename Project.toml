@@ -1,7 +1,7 @@
 name = "Fromage"
 uuid = "f7d2997e-1be8-4771-a487-05d70e6e0672"
 authors = ["Yakir Gagnon <12.yakir@gmail.com> and contributors"]
-version = "0.0.1"
+version = "0.0.2"
 
 [deps]
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"

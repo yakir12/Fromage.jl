@@ -17,11 +17,9 @@ set_preferences!(Fromage, "checker_size" => 3.9,
                   "temporal_step" => 2.0,
                   "object_width" => 60,
                   "results_dir" => "tracks and calibrations";
-                 export_prefs = false)
+                  export_prefs = true)
 
-function fun()
-    @load_preference("start_location")
-end
+fun() = (@load_preference("checker_size"), @load_preference("n_corners"), @load_preference("temporal_step"), @load_preference("object_width"))
 
 include("quality.jl")
 include("functions.jl")
@@ -34,7 +32,7 @@ function main(data_path::String)
     results_dir = @load_preference("results_dir")
     mkpath(results_dir)
     calibs = get_calib_df(data_path)
-    runs = get_runs_df(data_path)
+    runs = get_runs_df(data_path, calibs)
     # TODO: test for cross quality
 
     calibrate_all(calibs, results_dir, data_path)

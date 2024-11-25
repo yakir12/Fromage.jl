@@ -1,4 +1,8 @@
-function get_runs_df(data_path)
+# currently, start_location can be: 
+# missing => center of the frame
+# Tuple(Int, Int) => coordinate of where in th frame
+# Int => row number of where 
+function get_runs_df(data_path, calibs)
     files = get_all_csv(data_path, "run")
     tbl = CSV.File(files; source = :csv_source, stripwhitespace = true)
     df = DataFrame(tbl)
@@ -13,6 +17,8 @@ function get_runs_df(data_path)
             row.start_location = g.uuid[row.start_location]
         end
     end
+    leftjoin!(df, select(calibs, Cols(:calibration_id, :center)), on = :calibration_id)
+    transform!(df, :center => ByRow(to_tuple) => :start_location)
     # select!(df, Not(:index))
     df.run_number .= 1:nrow(df)
     return df
