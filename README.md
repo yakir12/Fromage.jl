@@ -15,9 +15,9 @@ You have runs as well as calibrations recorded in video files and you want to ex
 You'll need a `runs.csv` file and a `calibs.csv` file (both can actually be multiple files spread across multiple directories, following your prefered organisational needs). Each row in the `runs.csv` file represents a single run, while each row in the `calibs.csv` file represents a single calibration. Both can have as many rows as needed.
 
 ### Runs
-In the `runs.csv` file you have to include all of the following columns, and no entry may be missing:
+In the `runs.csv` file you have to include both of the following columns, and no entry may be missing:
 
-1. `file`: the video file name (including its file extension, e.g. `path/video.mp4`).
+1. `file`: the video file name (including its file extension, e.g. `video.mp4`).
 2. `calibration_id`: the unique ID for the calibration that should be used to calibrate this specific run (specified in the `calibs.csv` file).
 
 The following additional settings have default values:
@@ -32,11 +32,10 @@ The default value of `start_xy` is explained [below](#how-setting-the-start_xy-w
 5. `target_width`: the full pixel-width of the target (diameter, not radius). The default value is 25 pixels.
 6. `window_size`: A string `"(w,h)"` where `w` and `h` are the width and height of the window (i.e. region of interest) in which the tracker will detect the target. This should be larger than the `target_width` and relate to how fast the target moves between subsequent frames. Defaults to 1.5 times the target width.
 
-
 ### Calibrations
-In the `calibs.csv` file you have to include all of the following columns, and no entry may be missing:
+In the `calibs.csv` file you have to include both of the following columns, and no entry may be missing:
 1. `file`: the video file name (including its file extension, e.g. `video.mp4`).
-2. `extrinsic`: when the checkerboard is flat on the arena's surface (same format as for `start`)
+2. `extrinsic`: when the checkerboard is flat on the arena's surface (same format as for `runs_start` or `calibs_start`)
 
 The following additional settings have default values:
 1. `calibs_path`: the path to the video file, relative to the location of the bespoked csv file. Defaults to the same path of the bespoked `runs.csv` file.
