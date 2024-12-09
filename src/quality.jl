@@ -93,10 +93,10 @@ function runs_quality(df, data_path)
             end
         end
     end
-    if any(x -> isa(x, Int), df.start_location)
+    if any(x -> isa(x, Int), df.start_xy)
         for g in groupby(df, :csv_source), row in eachrow(g)
-            if row.start_location isa Int && row.start_location > nrow(g)
-                @error """Hmm... there is a start_location that refers to a non existant run in $(row.csv_source). See row:
+            if row.start_xy isa Int && row.start_xy > nrow(g)
+                @error """Hmm... there is a start_xy that refers to a non existant run in $(row.csv_source). See row:
                 $row"""
             end
         end
@@ -116,7 +116,7 @@ function runs_quality(df, data_path)
         if tosecond(row.stop) > t 
             @error "stop shouldn't occur after the video ends in row $row"
         end
-        if row.object_width ≤ 0
+        if row.target_width ≤ 0
             @error "object width shouldn't be equal to or smaller than zero in row $row"
         end
     end

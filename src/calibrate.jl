@@ -57,13 +57,16 @@ function calibrate_all(df, results_dir, data_path)
     df.distance .= 0.0 
     df.inverse .= 0.0
 
-    @showprogress "Calculating all calibrations:" foreach(eachrow(df)) do row
+    p = Progress(nrow(df), "Calculating all calibrations:")
+    tforeach(eachrow(df)) do row
         c, ϵ = calib(joinpath(data_path, row.path, row.file), tosecond(row.start), tosecond(row.stop), tosecond(row.extrinsic), row.checker_size, to_tuple(row.n_corners), row.temporal_step)
         for k in (:n, :reprojection, :projection, :distance, :inverse)
             row[k] = getfield(ϵ,k)
         end
         CameraCalibrations.save(joinpath(results_dir, row.calibration_id), c)
+        next!(p)
     end
+    finish!(p)
     CSV.write(joinpath(results_dir, "calib.csv"), select(df, Not(:path, :file, :start, :stop, :extrinsic, :checker_size, :n_corners, :temporal_step, :csv_source)))
 
 end

@@ -43,7 +43,7 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 [preferences.Fromage]
 checker_size = 3.9
 n_corners = "(5, 8)"
-object_width = 60
+target_width = 60
 results_dir = "tracks and calibrations"
 temporal_step = 2.0
 

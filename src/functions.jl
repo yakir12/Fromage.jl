@@ -18,9 +18,9 @@ function get_all_csv(dir, type)
 end
 
 # function replace_with_uuid!(tbl)
-#     if "start_location" ∈ names(tbl)
-#         todo = subset(tbl, :start_location => ByRow(x -> isa(x, Int)); skipmissing = true, view = true)
-#         transform!(todo, :start_location => ByRow(i -> tbl.id[i]), renamecols = false)
+#     if "start_xy" ∈ names(tbl)
+#         todo = subset(tbl, :start_xy => ByRow(x -> isa(x, Int)); skipmissing = true, view = true)
+#         transform!(todo, :start_xy => ByRow(i -> tbl.id[i]), renamecols = false)
 #     end
 #     select!(tbl, Not(:index))
 # end
