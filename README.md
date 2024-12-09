@@ -28,7 +28,7 @@ The following additional settings have default values:
     - A string, `"(x,y)"` (including the quotation makrs, `"`) where `x` and `y` are the horizontal and vertical pixel-distances between the left-top corner of the video-frame and the center of the target at `start`. 
     - An integer, `i`: the last position (i.e. the xy coordinate at `stop`) in the `i`th run in the bespoked`runs.csv` file is the starting position for this run.
     - If `start_xy` is missing, the target will be detected in a large (half as large as the frame) window centered at the frame. 
-The default value of `start_xy` is explained [below](####how-setting-the-start_xy-works).
+The default value of `start_xy` is explained [below](#how-setting-the-start_xy-works).
 5. `target_width`: the full pixel-width of the target (diameter, not radius). The default value is 25 pixels.
 6. `window_size`: A string `"(w,h)"` where `w` and `h` are the width and height of the window (i.e. region of interest) in which the tracker will detect the target. This should be larger than the `target_width` and relate to how fast the target moves between subsequent frames. Defaults to 1.5 times the target width.
 
@@ -63,7 +63,7 @@ temporal_step = 0.33
 ```
 
 #### How setting the start_xy works
-Apart from setting the `start_xy` to a coordinate, an integer, or omitting it altogether (see the description for `start_xy` [above](###runs)), the `center` (from the `calibs.csv` file) of the arena -- if not missing -- sets the `start_xy` as well. The hiearchy of which value trumps which is:
+Apart from setting the `start_xy` to a coordinate, an integer, or omitting it altogether (see the description for `start_xy` [above](#runs)), the `center` (from the `calibs.csv` file) of the arena -- if not missing -- sets the `start_xy` as well. The hiearchy of which value trumps which is:
 If `start_xy` is not missing (i.e. its a coordinate or an integer) from the `runs.csv` file, use it, otherwise look at the `center` column in the `calibs.csv` file.
 If `center` is not missing from the `calibs.csv` file, use it, otherwise look at the `start_xy` entry in the `LocalPreferences.toml` file.
 If `start_xy` is not missing from the `LocalPreferences.toml` file, use it, otherwise the target will be detected in a large (half as large as the frame) window centered at the frame. 
