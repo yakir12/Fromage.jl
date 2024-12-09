@@ -17,11 +17,13 @@ set_preferences!(Fromage, "checker_size" => 3.9,
                   "n_corners" => "(5, 8)",
                   "temporal_step" => 2.0,
                   "target_width" => 60,
-                  "results_dir" => "tracks and calibrations";
+                  "results_dir" => "tracks and calibrations",
+                  "calibs_path" => ".",
+                  "calibs_start" => 0,
+                  "runs_start" => 0,
                   export_prefs = true)
 
 fun() = (@load_preference("checker_size"), @load_preference("n_corners"), @load_preference("temporal_step"), @load_preference("target_width"), @load_preference("start_xy"))
-fun1() = (@load_preference("checker_size", missing), @load_preference("n_corners", missing), @load_preference("temporal_step", missing), @load_preference("target_width", missing), @load_preference("start_xy", missing))
 
 include("quality.jl")
 include("functions.jl")

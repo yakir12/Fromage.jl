@@ -40,7 +40,7 @@ In the `calibs.csv` file you have to include all of the following columns, and n
 
 The following additional settings have default values:
 1. `calibs_path`: the path to the video file, relative to the location of the bespoked csv file. Defaults to the same path of the bespoked `runs.csv` file.
-2. `calibration_id`: some unique ID for this specific calibration. One common choice is the name of the video file containing the calibration, however this quickly breaks down if you have more than one calibration in one video file. Defaults to the name of the calibration video file name.
+2. `calibration_id`: some unique ID for this specific calibration. One common choice is the name of the video file containing the calibration, however this quickly breaks down if you have more than one calibration in one video file. Defaults to the full name of the calibration video file name (i.e. `calibs_path` + `file`).
 3. `calibs_start`: the time-stamp of when the intrinsic calibration started, in the following format HH:MM:SS.mmm, for example, 2 minutes and 9 seconds and 123 milliseconds looks like `00:02:09.123`. If you don't need millisecond accuracy just ommit them (i.e. `00:02:09`). Defaults to 0 (i.e. the begining of the video).
 4. `calibs_stop`: when the intrinsic calibration ends (same format as for `start`). Defaults to the full duration of the video.
 5. `checker_size`: the width of the checkers in the checkerboard in real-world units (e.g. cm). The default value is 3.9.
@@ -61,6 +61,8 @@ n_corners = "(7, 9)"
 target_width = 18
 temporal_step = 0.33
 ```
+
+You can thus change the defaults of all the "additional settings" (e.g. `runs_path`, `runs_start`, `center`, etc.).
 
 #### How setting the start_xy works
 Apart from setting the `start_xy` to a coordinate, an integer, or omitting it altogether (see the description for `start_xy` [above](#runs)), the `center` (from the `calibs.csv` file) of the arena -- if not missing -- sets the `start_xy` as well. The hiearchy of which value trumps which is:

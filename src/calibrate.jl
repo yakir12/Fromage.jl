@@ -32,7 +32,7 @@ function calib(file, start, stop, extrinsic, checker_size, n_corners, temporal_s
 end
 
 function get_calib_df(data_path)
-    files = get_all_csv(data_path, "calib")
+    files = get_all_csv(data_path, "calibs")
     tbl = CSV.File(files; source = :csv_source, stripwhitespace = true)
     df = DataFrame(tbl)
     fix_issue_1146!(df, files)
@@ -59,7 +59,7 @@ function calibrate_all(df, results_dir, data_path)
 
     p = Progress(nrow(df), "Calculating all calibrations:")
     tforeach(eachrow(df)) do row
-        c, ϵ = calib(joinpath(data_path, row.path, row.file), tosecond(row.start), tosecond(row.stop), tosecond(row.extrinsic), row.checker_size, to_tuple(row.n_corners), row.temporal_step)
+        c, ϵ = calib(joinpath(data_path, row.calibs_path, row.file), row.calibs_start, row.calibs_stop, row.extrinsic, row.checker_size, row.n_corners, row.temporal_step)
         for k in (:n, :reprojection, :projection, :distance, :inverse)
             row[k] = getfield(ϵ,k)
         end
@@ -67,6 +67,6 @@ function calibrate_all(df, results_dir, data_path)
         next!(p)
     end
     finish!(p)
-    CSV.write(joinpath(results_dir, "calib.csv"), select(df, Not(:path, :file, :start, :stop, :extrinsic, :checker_size, :n_corners, :temporal_step, :csv_source)))
+    CSV.write(joinpath(results_dir, "calib.csv"), select(df, Not(:calibs_path, :file, :calibs_start, :calibs_stop, :extrinsic, :checker_size, :n_corners, :temporal_step, :csv_source)))
 
 end

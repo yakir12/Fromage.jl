@@ -7,21 +7,18 @@ function get_runs_df(data_path, calibs)
     tbl = CSV.File(files; source = :csv_source, stripwhitespace = true)
     df = DataFrame(tbl)
     fix_issue_1146!(df, files)
-    coalesce_df!(df, ("start_xy", "target_width"))
     runs_quality(df, data_path)
 
-    @show df
-
     df.uuid .= [uuid4() for _ in 1:nrow(df)]
-    df.start_xy = Union{Tuple{Int, Int}, Missing, Int, UUID}[to_tuple(x) for x in df.start_xy]
+
+    df.start_xy = convert(Vector{Union{Tuple{Int, Int}, Missing, Int, UUID}}, df.start_xy)
     for g in groupby(df, :csv_source), row in eachrow(g)
         if row.start_xy isa Int
             row.start_xy = g.uuid[row.start_xy]
         end
     end
     leftjoin!(df, select(calibs, Cols(:calibration_id, :center)), on = :calibration_id)
-    transform!(df, :center => ByRow(to_tuple) => :start_xy)
-    # select!(df, Not(:index))
+    df.start_xy .= coalesce.(df.start_xy, df.center)
     df.run_number .= 1:nrow(df)
     return df
 end
@@ -40,7 +37,7 @@ function track_all(df, results_dir, data_path)
         # @info "doing row $(row.run_number)"
         # run_number, row = first(enumerate(eachrow(dofirst)))
         file = joinpath(data_path, row.path, row.file)
-        t, xy = track(file, tosecond(row.start), tosecond(row.stop); start_xy = row.start_xy, target_width = row.target_width)
+        t, xy = track(file, row.runs_start, row.runs_stop; start_xy = row.start_xy, target_width = row.target_width)
         save_vid(results_dir, row.run_number, file, t, xy)
         CSV.write(joinpath(results_dir, "$(row.run_number).csv"), DataFrame(t = t, x = first.(xy), y = last.(xy)))
         next!(p)
@@ -61,15 +58,15 @@ function track_all(df, results_dir, data_path)
     tforeach(eachrow(dosecond)) do row
     # for row in eachrow(dosecond)
         # @info "doing row $(row.run_number)"
-        file = joinpath(data_path, row.path, row.file)
-        t, xy = track(file; start = tosecond(row.start), stop = tosecond(row.stop), start_xy = row.start_xy, target_width = row.target_width)
+        file = joinpath(data_path, row.runs_path, row.file)
+        t, xy = track(file; start = row.runs_start, stop = row.runs_stop, start_xy = row.start_xy, target_width = row.target_width)
         save_vid(results_dir, row.run_number, file, t, xy)
         CSV.write(joinpath(results_dir, "$(row.run_number).csv"), DataFrame(t = t, x = first.(xy), y = last.(xy)))
         next!(p)
     end
     finish!(p)
 
-    CSV.write(joinpath(results_dir, "runs.csv"), select(df, Not(:path, :file, :start, :stop, :start_xy, :target_width, :uuid, :csv_source)))
+    CSV.write(joinpath(results_dir, "runs.csv"), select(df, Not(:runs_path, :file, :runs_start, :runs_stop, :start_xy, :target_width, :uuid, :csv_source)))
     # @info "done!"
 end
 

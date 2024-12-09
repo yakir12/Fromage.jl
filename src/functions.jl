@@ -102,14 +102,21 @@ end
 #     end
 # end
 
+# function get_duration(fullfile)
+#     s = VideoIO.get_duration(fullfile)
+#     Time(0) + Millisecond(1000floor(s, digits = 3))
+# end
+
 tosecond(t::T) where {T <: TimeType} = tosecond(t - Time(0))
 tosecond(t::T) where {T <: TimePeriod} = t / convert(T, Dates.Second(1))
+tosecond(s::T) where {T <: Real} = Float64(s)
 
 function to_tuple(x::AbstractString)
     m = match(r"^\((\d+),\s*(\d+)\)$", x)
-    Tuple(parse.(Int, m.captures))
+    Tuple{Int, Int}(parse.(Int, m.captures))
 end
-to_tuple(x) = x
+to_tuple(x::Tuple{Int, Int}) = x
+to_tuple(::Missing) = missing
 
 function save_vid(results_dir, name, file, t, xy)
     openvideo(file) do vid
@@ -123,7 +130,7 @@ function save_vid(results_dir, name, file, t, xy)
         seek(vid, t[1])
         open_video_out(joinpath(results_dir, "$name.mp4"), frame, framerate = 60, codec_name = "libx264", encoder_options = (color_range = 2, crf = 0, preset = "ultrafast")) do writer
             for (img, (x, y)) in zip(vid, xy)
-                draw!(img, CirclePointRadius(y, x, 5), colorant"red")
+                draw!(img, CirclePointRadius(x, y, 5), colorant"red")
                 imresize!(frame, img)
                 write(writer, frame)
             end
