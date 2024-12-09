@@ -19,7 +19,7 @@ function calib(file, start, stop, extrinsic, checker_size, n_corners, temporal_s
         files = readdir(path; join=true)
         aspect = VideoIO.aspect_ratio(vid)
         try
-            c, ϵ = CameraCalibrationFit.fit(files, n_corners, checker_size; aspect)
+            c, ϵ = fit(files, n_corners, checker_size; aspect)
             if isnothing(findfirst(contains(r"extrinsic"), c.files))
                 error("The extrinsic image in video $file at timestamp $(extrinsic - t₀), is unusable (see files in $fldr)! Please choose a different time point for the extrinsic image.")
             end
@@ -62,7 +62,7 @@ function calibrate_all(df, results_dir, data_path)
         for k in (:n, :reprojection, :projection, :distance, :inverse)
             row[k] = getfield(ϵ,k)
         end
-        CameraCalibrationMeta.save(joinpath(results_dir, row.calibration_id), c)
+        CameraCalibrations.save(joinpath(results_dir, row.calibration_id), c)
     end
     CSV.write(joinpath(results_dir, "calib.csv"), select(df, Not(:path, :file, :start, :stop, :extrinsic, :checker_size, :n_corners, :temporal_step, :csv_source)))
 

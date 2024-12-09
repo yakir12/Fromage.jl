@@ -10,7 +10,8 @@ using CSV, DataFrames
 using VideoIO, FileIO, Colors, ImageTransformations, ImageDraw
 using OhMyThreads, ProgressMeter
 
-using CameraCalibrationMeta, CameraCalibrationFit, SimpTrack
+using CameraCalibrations, PawsomeTracker
+# using CameraCalibrationMeta, CameraCalibrationFit, SimpTrack
 
 set_preferences!(Fromage, "checker_size" => 3.9,
                   "n_corners" => "(5, 8)",
