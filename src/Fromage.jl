@@ -31,9 +31,11 @@ set_preferences!(Fromage, "checker_size" => 3.9,
                   "calibs_stop" => 86399.999, # here, we assume that no video will be longer than 23:59:59.999... Hope this holds
                   "runs_start" => 0,
                   "runs_stop" => 86399.999, # same
+                  "runs_path" => ".",
+                  "calibs_path" => ".",
                   export_prefs = true)
 
-fun() = (@load_preference("checker_size"), @load_preference("n_corners"), @load_preference("temporal_step"), @load_preference("target_width"), @load_preference("start_xy"))
+fun() = (@load_preference("station"), @load_preference("checker_size"), @load_preference("n_corners"), @load_preference("temporal_step"), @load_preference("target_width"), @load_preference("start_xy"))
 
 include("quality.jl")
 include("functions.jl")

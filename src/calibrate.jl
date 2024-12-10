@@ -33,7 +33,7 @@ end
 
 function get_calib_df(data_path)
     files = get_all_csv(data_path, "calibs")
-    tbl = CSV.File(files; source = :csv_source, stripwhitespace = true, types = Dict(:calibs_start => String, :calibs_stop => String, :extrinsic => String))
+    tbl = CSV.File(files; source = :csv_source, stripwhitespace = true)#, types = Dict(:calibs_start => String, :calibs_stop => String, :extrinsic => String))
     df = DataFrame(tbl)
     fix_issue_1146!(df, files)
     calib_quality(df, data_path)
@@ -57,7 +57,7 @@ function calibrate_all(df, results_dir, data_path)
     df.inverse .= 0.0
 
     p = Progress(nrow(df), "Calculating all calibrations:")
-    tforeach(eachrow(df)) do row
+    foreach(eachrow(df)) do row
         c, ϵ = calib(joinpath(data_path, row.calibs_path, row.file), row.calibs_start, row.calibs_stop, row.extrinsic, row.checker_size, row.n_corners, row.temporal_step)
         for k in (:n, :reprojection, :projection, :distance, :inverse)
             row[k] = getfield(ϵ,k)

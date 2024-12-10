@@ -94,7 +94,7 @@ function runs_quality(df, data_path)
     nonmissing_columns = ("file", "calibration_id")
     mandatory_quality(df, nonmissing_columns)
 
-    columns = ("runs_start", "runs_stop", "runs_path", "start_xy", "target_width", "window_size")
+    columns = ("runs_start", "runs_stop", "runs_path", "start_xy", "target_width", "window_size", "station")
     coalesce_df!(df, columns)
 
     transform!(df, [:runs_start, :runs_stop] .=> ByRow(tosecond); renamecols = false)
@@ -121,6 +121,9 @@ function runs_quality(df, data_path)
         tuple_check(row, :window_size)
         if !ismissing(row.start_xy) && !isa(row.start_xy, Int)
             tuple_check(row, :start_xy)
+        end
+        if !ismissing(row.station) && !haskey(STATIONS, row.station)
+            @error "Station $(row.station) should be one of the registered stations"
         end
     end
 

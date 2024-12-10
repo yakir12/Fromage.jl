@@ -11,4 +11,5 @@ function get_sun_elevation_azimuth(dt, latitude, longitude, altitude, tz)
     return (elevation, azimuth)
 end
 
-get_sun_elevation_azimuth(dt, station) = get_sun_elevation_azimuth(dt, station["latitude"], station["longitude"], station["altitude"], TimeZone(station["timezone"]))
+get_sun_elevation_azimuth(dt::DateTime, station::AbstractString) = get_sun_elevation_azimuth(dt, STATIONS[station]["latitude"], STATIONS[station]["longitude"], STATIONS[station]["altitude"], TimeZone(STATIONS[station]["timezone"]))
+get_sun_elevation_azimuth(dt, station) = (missing, missing)

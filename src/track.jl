@@ -26,7 +26,7 @@ function get_runs_df(data_path, calibs)
 
     transform!(df, [:recording_datetime, :runs_start] => ByRow(Missings.passmissing((dt, s) -> dt + Second(round(Int, s)))) => :start_datetime)
 
-    transform!(df, :start_datetime => ByRow(dt -> Missings.passmissing(get_sun_elevation_azimuth)(dt, STATIONS[@load_preference("station", missing)])) => [:elevation, :azimuth])
+    transform!(df, [:start_datetime, :station] => ByRow(get_sun_elevation_azimuth) => [:elevation, :azimuth])
 
     return df
 end
@@ -40,7 +40,7 @@ function track_all(df, results_dir, data_path)
 
     p = Progress(nrow(df), "Tracking all the runs:")
     # @info "started dofirst"
-    tforeach(eachrow(dofirst)) do row
+    foreach(eachrow(dofirst)) do row
     # for row in eachrow(dofirst)
         # @info "doing row $(row.run_number)"
         # run_number, row = first(enumerate(eachrow(dofirst)))
