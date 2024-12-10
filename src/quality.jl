@@ -16,7 +16,7 @@ function mandatory_quality(df, nonmissing_columns)
             disallowmissing(df, Cols(nonmissing_columns...), error = true)
         catch ex
             if ex isa ArgumentError
-                @error "column $column should not contain any missing data"
+                @error "column $column should not contain any missing data" df
             else
                 throw(ex)
             end
