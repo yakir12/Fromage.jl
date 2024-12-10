@@ -83,3 +83,6 @@ If `center` is not missing from the `calibs.csv` file, use it, otherwise look at
 If `start_xy` is not missing from the `LocalPreferences.toml` file, use it, otherwise the target will be detected in a large (half as large as the frame) window centered at the frame. 
 
 In summary: `start_xy in runs.csv → center in calibs.csv → start_xy in LocalPreferences.toml → center of frame & large window_size`
+
+## Additional details
+`Fromage.jl` will attempt to retrieve EXIF metadata from the video files pertaining the date and time the video was recorded. This in turn is used to detemine the date and time of each run. If the station where the run occured is included either as an entry in the `LocalPreferences.toml` file or per row in the `runs.csv` file (in case the data comes from multiple stations), the elevation and azimuth of the sun at the time of the run are also calculated.

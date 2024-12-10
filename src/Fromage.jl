@@ -7,7 +7,7 @@ module Fromage
 using Preferences
 using Dates, UUIDs, TOML
 using AstroLib, TimeZones
-using CSV, DataFrames
+using CSV, DataFrames, Missings
 using VideoIO, FileIO, Colors, ImageTransformations, ImageDraw
 using OhMyThreads, ProgressMeter
 
@@ -39,6 +39,7 @@ include("quality.jl")
 include("functions.jl")
 include("calibrate.jl")
 include("track.jl")
+include("sun.jl")
 
 export main
 
@@ -56,7 +57,6 @@ end
 end # module Fromage
 
 # TODO:
-# Get the elevation for each roll thanks to the start time
 # Actual data I would like to retrieve from the tracking
 # For the second and third roll, the exit angle at 15cm, 30cm, 150cm
 # For the first angle, the exit angle depending on the condition:

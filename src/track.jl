@@ -24,8 +24,9 @@ function get_runs_df(data_path, calibs)
     transform!(df, [:runs_path, :file] => ByRow((p, f) -> joinpath(data_path, p, f)) => :fullfile)
     transform!(groupby(df, :fullfile), :fullfile => get_recording_datetime ∘ first => :recording_datetime)
 
-    transform!(df, [:recording_datetime, :runs_start] => ByRow((dt, s) -> dt + Second(round(Int, s))) => :start_datetime)
+    transform!(df, [:recording_datetime, :runs_start] => ByRow(Missings.passmissing((dt, s) -> dt + Second(round(Int, s)))) => :start_datetime)
 
+    transform!(df, :start_datetime => ByRow(dt -> Missings.passmissing(get_sun_elevation_azimuth)(dt, STATIONS[@load_preference("station", missing)])) => [:elevation, :azimuth])
 
     return df
 end
