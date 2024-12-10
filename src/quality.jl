@@ -31,30 +31,10 @@ function calib_quality(df, data_path)
 
     transform!(df, :extrinsic => ByRow(tosecond); renamecols = false)
 
-    columns = ("center", "north", "calibs_path", "checker_size", "n_corners", "temporal_step")
+    columns = ("calibs_start", "calibs_stop", "center", "north", "calibs_path", "checker_size", "n_corners", "temporal_step")
     coalesce_df!(df, columns)
 
-    transform!(df, [:calibs_path, :file] => ByRow((p, f) -> joinpath(data_path, p, f)) => :fullfile)
-
-    for file in df.fullfile
-        if !isfile(file)
-            @error "video file $file shouldn't be missing"
-        end
-    end
-
-    transform!(df, :fullfile => ByRow(VideoIO.get_duration) => :duration)
-
-    column = "calibs_start"
-    if column ∉ names(df)
-        df[!, column] .= missing
-    end
-    df[!, column] .= tosecond.(coalesce.(df[!, column], @load_preference(column, 0)))
-
-    column = "calibs_stop"
-    if column ∉ names(df)
-        df[!, column] .= missing
-    end
-    df[!, column] .= tosecond.(coalesce.(df[!, column], @load_preference(column, missing), df.duration))
+    transform!(df, [:calibs_start, :calibs_stop] .=> ByRow(tosecond); renamecols = false)
 
     column = "calibration_id"
     if column ∉ names(df)
@@ -77,17 +57,12 @@ function calib_quality(df, data_path)
     end
 
     @showprogress "Checking the quality of the calibration csv data:" for row in eachrow(df)
+        file = joinpath(data_path, row.calibs_path, row.file)
+        if !isfile(file)
+            @error "video file $file shouldn't be missing"
+        end
         if row.calibs_start > row.calibs_stop
             @error "stop shouldn't come before start in row $row"
-        end
-        if row.calibs_start > row.duration
-            @error "start shouldn't occur after the video ends"
-        end
-        if row.calibs_stop > row.duration
-            @error "stop shouldn't occur after the video ends"
-        end
-        if row.extrinsic > row.duration
-            @error "stop shouldn't occur after the video ends"
         end
         if !ismissing(row.checker_size) && row.checker_size ≤ 0
             @error "checker_size should be positive in row $row"
@@ -119,31 +94,10 @@ function runs_quality(df, data_path)
     nonmissing_columns = ("file", "calibration_id")
     mandatory_quality(df, nonmissing_columns)
 
-    columns = ("runs_path", "start_xy", "target_width", "window_size")
+    columns = ("runs_start", "runs_stop", "runs_path", "start_xy", "target_width", "window_size")
     coalesce_df!(df, columns)
 
-    transform!(df, [:runs_path, :file] => ByRow((p, f) -> joinpath(data_path, p, f)) => :fullfile)
-
-    for file in df.fullfile
-        if !isfile(file)
-            @error "video file $file shouldn't be missing"
-        end
-    end
-
-    transform!(df, :fullfile => ByRow(VideoIO.get_duration) => :duration)
-
-
-    column = "runs_start"
-    if column ∉ names(df)
-        df[!, column] .= missing
-    end
-    df[!, column] .= tosecond.(coalesce.(df[!, column], @load_preference(column, 0)))
-
-    column = "runs_stop"
-    if column ∉ names(df)
-        df[!, column] .= missing
-    end
-    df[!, column] .= tosecond.(coalesce.(df[!, column], @load_preference(column, missing), df.duration))
+    transform!(df, [:runs_start, :runs_stop] .=> ByRow(tosecond); renamecols = false)
 
     if any(x -> isa(x, Int), df.start_xy)
         for g in groupby(df, :csv_source), row in eachrow(g)
@@ -154,25 +108,23 @@ function runs_quality(df, data_path)
         end
     end
     @showprogress "Checking the quality of the run csv data:" for row in eachrow(df)
+        file = joinpath(data_path, row.runs_path, row.file)
+        if !isfile(file)
+            @error "video file $file shouldn't be missing"
+        end
         if row.runs_start > row.runs_stop 
             @error "stop shouldn't come before start in row $row"
-        end
-        if row.runs_start > row.duration
-            @error "start shouldn't occur after the video ends in row $row"
-        end
-        if row.runs_stop > row.duration
-            @error "stop shouldn't occur after the video ends in row $row"
         end
         if row.target_width ≤ 0
             @error "target width shouldn't be equal to or smaller than zero in row $row"
         end
         tuple_check(row, :window_size)
         if !ismissing(row.start_xy) && !isa(row.start_xy, Int)
-            tuple_check(row, :window_size)
+            tuple_check(row, :start_xy)
         end
     end
 
-    transform!(df, :start_xy => ByRow(to_tuple); renamecols = false)
+    transform!(df, [:start_xy, :window_size] .=> ByRow(to_tuple); renamecols = false)
 
     return nothing
 end

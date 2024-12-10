@@ -20,7 +20,9 @@ set_preferences!(Fromage, "checker_size" => 3.9,
                   "results_dir" => "tracks and calibrations",
                   "calibs_path" => ".",
                   "calibs_start" => 0,
+                  "calibs_stop" => 86399.999, # here, we assume that no video will be longer than 23:59:59.999... Hope this holds
                   "runs_start" => 0,
+                  "runs_stop" => 86399.999, # same
                   export_prefs = true)
 
 fun() = (@load_preference("checker_size"), @load_preference("n_corners"), @load_preference("temporal_step"), @load_preference("target_width"), @load_preference("start_xy"))

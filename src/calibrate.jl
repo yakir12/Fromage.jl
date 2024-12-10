@@ -33,10 +33,9 @@ end
 
 function get_calib_df(data_path)
     files = get_all_csv(data_path, "calibs")
-    tbl = CSV.File(files; source = :csv_source, stripwhitespace = true)
+    tbl = CSV.File(files; source = :csv_source, stripwhitespace = true, types = Dict(:calibs_start => String, :calibs_stop => String, :extrinsic => String))
     df = DataFrame(tbl)
     fix_issue_1146!(df, files)
-    coalesce_df!(df, ("checker_size", "n_corners", "temporal_step", "center", "north"))
     calib_quality(df, data_path)
     # df.checker_size .= coalesce.(df.checker_size, @load_preference("checker_size"))
     # df.n_corners .= coalesce.(df.n_corners, @load_preference("n_corners"))

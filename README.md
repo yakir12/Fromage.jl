@@ -11,8 +11,21 @@ This is the main package used to organise, calibrate, and track video files with
 ## When is this useful
 You have runs as well as calibrations recorded in video files and you want to extract the tracks as trajectories with real-world coordinates.
 
+## Install
+You'll need a new version of Julia installed (see [here](https://julialang.org/downloads/) for instructions on how to install Julia).
+
+Start a new Julia REPL (e.g. by double-clicking the Julia icon). In the new terminal, type a right-hand-square-bracket (`]`) and then `add https://github.com/yakir12/MAT2db.jl`, followed by pressing `Enter`:
+```julia
+] add https://github.com/yakir12/MAT2db.jl
+```
+
 ## How
 You'll need a `runs.csv` file and a `calibs.csv` file (both can actually be multiple files spread across multiple directories, following your prefered organisational needs). Each row in the `runs.csv` file represents a single run, while each row in the `calibs.csv` file represents a single calibration. Both can have as many rows as needed.
+
+To organise, calibrate, and track all your data run the `main` on the path to the folder that contains all the `run.csv`, `calibs.csv`, and video files:
+```julia
+main("the/path/to/all/the/files")
+```
 
 ### Runs
 In the `runs.csv` file you have to include both of the following columns, and no entry may be missing:
@@ -38,7 +51,7 @@ In the `calibs.csv` file you have to include both of the following columns, and 
 2. `extrinsic`: when the checkerboard is flat on the arena's surface (same format as for `runs_start` or `calibs_start`)
 
 The following additional settings have default values:
-1. `calibs_path`: the path to the video file, relative to the location of the bespoked csv file. Defaults to the same path of the bespoked `runs.csv` file.
+1. `calibs_path`: the path to the video file, relative to the location of the bespoked csv file. Defaults to the same path of the bespoked `calibs.csv` file.
 2. `calibration_id`: some unique ID for this specific calibration. One common choice is the name of the video file containing the calibration, however this quickly breaks down if you have more than one calibration in one video file. Defaults to the full name of the calibration video file name (i.e. `calibs_path` + `file`).
 3. `calibs_start`: the time-stamp of when the intrinsic calibration started, in the following format HH:MM:SS.mmm, for example, 2 minutes and 9 seconds and 123 milliseconds looks like `00:02:09.123`. If you don't need millisecond accuracy just ommit them (i.e. `00:02:09`). Defaults to 0 (i.e. the begining of the video).
 4. `calibs_stop`: when the intrinsic calibration ends (same format as for `start`). Defaults to the full duration of the video.

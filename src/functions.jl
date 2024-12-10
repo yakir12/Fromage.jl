@@ -107,9 +107,10 @@ end
 #     Time(0) + Millisecond(1000floor(s, digits = 3))
 # end
 
-tosecond(t::T) where {T <: TimeType} = tosecond(t - Time(0))
 tosecond(t::T) where {T <: TimePeriod} = t / convert(T, Dates.Second(1))
-tosecond(s::T) where {T <: Real} = Float64(s)
+tosecond(t::TimeType) = tosecond(t - Time(0))
+tosecond(sec::Real) = sec
+tosecond(str::AbstractString) = ':' ∈ str ? tosecond(Time(str)) : parse(Float64, str)
 
 function to_tuple(x::AbstractString)
     m = match(r"^\((\d+),\s*(\d+)\)$", x)
