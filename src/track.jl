@@ -20,6 +20,13 @@ function get_runs_df(data_path, calibs)
     leftjoin!(df, select(calibs, Cols(:calibration_id, :center)), on = :calibration_id)
     df.start_xy .= coalesce.(df.start_xy, df.center)
     df.run_number .= 1:nrow(df)
+
+    transform!(df, [:runs_path, :file] => ByRow((p, f) -> joinpath(data_path, p, f)) => :fullfile)
+    transform!(groupby(df, :fullfile), :fullfile => get_recording_datetime ∘ first => :recording_datetime)
+
+    transform!(df, [:recording_datetime, :runs_start] => ByRow((dt, s) -> dt + Second(round(Int, s))) => :start_datetime)
+
+
     return df
 end
 

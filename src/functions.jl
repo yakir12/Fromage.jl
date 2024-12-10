@@ -6,6 +6,19 @@
 #     CSV.read(take!(io), DataFrame)
 # end
 
+
+function get_recording_datetime(file)
+    txts = strip.(split(read(`$exiftool -T -AllDates -n $file`, String), '\t'))
+    dt = DateTime(now())
+    for txt in txts
+        if length(txt) > 18
+            _dt = DateTime(txt[1:19], DateFormat("yyyy:mm:dd HH:MM:SS"))
+            dt = min(_dt, dt)
+        end
+    end
+    return dt
+end
+
 function get_all_csv(dir, type)
     files = String[]
     r = Regex("^.*$type.*\\.csv\$")

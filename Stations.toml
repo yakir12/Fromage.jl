@@ -1,0 +1,42 @@
+[stations]
+[stations.stonehenge]
+name = "Stonehenge"
+latitude = -26.398839
+longitude = 24.32705
+altitude = 1227
+timezone = "Africa/Johannesburg"
+
+[stations.bela]
+name = "Bela-Bela" 
+latitude = -24.7219
+longitude = 27.9373
+altitude = 1229
+timezone = "Africa/Johannesburg"
+
+[stations.pullen]
+name = "Pullen Farm" 
+latitude = -25.5723
+longitude = 31.1811
+altitude = 905
+timezone = "Africa/Johannesburg"
+
+[stations.sardinia]
+name = "Sardinia (Scivu)" 
+latitude = 39.49333
+longitude = 8.41037
+altitude = 26 
+timezone = "Europe/Rome"
+
+[stations.joburg]
+name = "Johannesburg (Wits, APES)" 
+latitude = -26.191
+longitude = 28.0314
+altitude = 1740
+timezone = "Africa/Johannesburg"
+
+[stations.lund]
+name = "Lund (Biologihuset)" 
+latitude = 55.71331
+longitude = 13.20764
+altitude = 62
+timezone = "CET"

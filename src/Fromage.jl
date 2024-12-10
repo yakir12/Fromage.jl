@@ -5,13 +5,21 @@ module Fromage
 # Preferences, Dates, UUIDs, CSV, DataFrames, VideoIO, FileIO, Colors, ImageTransformations, ImageDraw, OhMyThreads, ProgressMeter
 
 using Preferences
-using Dates, UUIDs
+using Dates, UUIDs, TOML
+using AstroLib, TimeZones
 using CSV, DataFrames
 using VideoIO, FileIO, Colors, ImageTransformations, ImageDraw
 using OhMyThreads, ProgressMeter
 
 using CameraCalibrations, PawsomeTracker
 # using CameraCalibrationMeta, CameraCalibrationFit, SimpTrack
+
+exiftool_base = joinpath(@__DIR__(), "..", "deps", "src", "exiftool", "exiftool")
+const exiftool = exiftool_base*(Sys.iswindows() ? ".exe" : "")
+
+dict = TOML.parsefile(joinpath(@__DIR__(), "..", "Stations.toml"))["stations"]
+const STATIONS = Dict(v["name"] => v for v in values(dict))
+
 
 set_preferences!(Fromage, "checker_size" => 3.9,
                   "n_corners" => "(5, 8)",
@@ -48,8 +56,6 @@ end
 end # module Fromage
 
 # TODO:
-# General things I could do myself
-# Get the start time of each roll (recording time of the camera + timestamp of each roll)
 # Get the elevation for each roll thanks to the start time
 # Actual data I would like to retrieve from the tracking
 # For the second and third roll, the exit angle at 15cm, 30cm, 150cm

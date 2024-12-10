@@ -4,6 +4,7 @@ uuid = "f7d2997e-1be8-4771-a487-05d70e6e0672"
 version = "0.0.2"
 
 [compat]
+BinDeps = "1.0.2"
 CSV = "0.10.15"
 CameraCalibrations = "0.7"
 Colors = "0"
@@ -21,6 +22,7 @@ UUIDs = "1.11.0"
 VideoIO = "1.1.0"
 
 [deps]
+BinDeps = "9e28174c-4ba2-5203-b857-d8d62c4213ee"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 CameraCalibrations = "70c3cbac-2c23-4b2d-966c-5a25c0a540fb"
 Colors = "5ae59095-9a9b-59fe-a467-6f913c188581"
@@ -41,10 +43,15 @@ VideoIO = "d6d074c3-1acf-5d4c-9a43-ef38773959a2"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [preferences.Fromage]
+calibs_path = "."
+calibs_start = 0
+calibs_stop = 86399.999
 checker_size = 3.9
 n_corners = "(5, 8)"
-target_width = 60
 results_dir = "tracks and calibrations"
+runs_start = 0
+runs_stop = 86399.999
+target_width = 60
 temporal_step = 2.0
 
 [targets]
