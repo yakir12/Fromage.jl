@@ -4,5 +4,5 @@
 /Manifest.toml
 /docs/Manifest.toml
 /docs/build/
-/deps/*
-!build.jl
+/deps/downloads/
+/deps/src/
