@@ -14,9 +14,9 @@ You have runs as well as calibrations recorded in video files and you want to ex
 ## Install
 You'll need a new version of Julia installed (see [here](https://julialang.org/downloads/) for instructions on how to install Julia).
 
-Start a new Julia REPL (e.g. by double-clicking the Julia icon). In the new terminal, type a right-hand-square-bracket (`]`) and then `add https://github.com/yakir12/MAT2db.jl`, followed by pressing `Enter`:
+Start a new Julia REPL (e.g. by double-clicking the Julia icon). In the new terminal, type a right-hand-square-bracket (`]`) and then copy-paste `add https://github.com/yakir12/Fromage.jl`, followed by pressing `Enter`:
 ```julia
-] add https://github.com/yakir12/MAT2db.jl
+] add https://github.com/yakir12/Fromage.jl
 ```
 
 ## How

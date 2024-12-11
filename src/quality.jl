@@ -13,7 +13,7 @@ function mandatory_quality(df, nonmissing_columns)
             @error "column $column missing from all files"
         end
         try
-            disallowmissing(df, Cols(nonmissing_columns...), error = true)
+            disallowmissing(df, column, error = true)
         catch ex
             if ex isa ArgumentError
                 @error "column $column should not contain any missing data" df
@@ -29,18 +29,16 @@ function calib_quality(df, data_path)
     nonmissing_columns = ("file", "extrinsic")
     mandatory_quality(df, nonmissing_columns)
 
-    transform!(df, :extrinsic => ByRow(tosecond); renamecols = false)
-
-    columns = ("calibs_start", "calibs_stop", "center", "north", "calibs_path", "checker_size", "n_corners", "temporal_step")
-    coalesce_df!(df, columns)
-
-    transform!(df, [:calibs_start, :calibs_stop] .=> ByRow(tosecond); renamecols = false)
-
-    column = "calibration_id"
-    if column ∉ names(df)
-        df[!, column] .= missing
+    for column in keys(calibs_preferences)
+        coalesce_df!(df, String(column), missing)
     end
-    df[!, column] .= coalesce.(df[!, column], joinpath.(df.calibs_path, df.file))
+    coalesce_df!(df, "calibration_id", joinpath.(df.calibs_path, df.file))
+
+    transform!(df,
+               [:calibs_start, :calibs_stop, :extrinsic] .=> ByRow(tosecond), 
+               [:file, :calibs_path] .=> ByRow(String), 
+               [:center, :north, :n_corners] .=> ByRow(to_tuple),
+               :checker_size => ByRow(Float64); renamecols = false)
 
     if !allunique(df.calibration_id)
         res = combine(groupby(select(subset(transform(groupby(df, :calibration_id), nrow), :nrow => ByRow(>(1))), :csv_source, :calibration_id), :calibration_id), :csv_source => Ref => :csv_source)
@@ -80,14 +78,11 @@ function calib_quality(df, data_path)
     return nothing
 end
 
-function coalesce_df!(df, columns)
-    for column in columns
-        if column ∉ names(df)
-            df[!, column] .= @load_preference(column, missing)
-        else
-            df[!, column] .= coalesce.(df[!, column], @load_preference(column, missing))
-        end
+function coalesce_df!(df, column, default)
+    if column ∉ names(df)
+        df[!, column] .= missing
     end
+    df[!, column] .= coalesce.(df[!, column], @load_preference(column, missing), default)
 end
 
 function runs_quality(df, data_path)

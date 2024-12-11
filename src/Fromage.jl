@@ -3,6 +3,7 @@ module Fromage
 # CameraCalibrationFit, CameraCalibrationMeta, SimpTrack
 
 # Preferences, Dates, UUIDs, CSV, DataFrames, VideoIO, FileIO, Colors, ImageTransformations, ImageDraw, OhMyThreads, ProgressMeter
+#
 
 using Preferences
 using Dates, UUIDs, TOML
@@ -20,22 +21,27 @@ const exiftool = exiftool_base*(Sys.iswindows() ? ".exe" : "")
 dict = TOML.parsefile(joinpath(@__DIR__(), "..", "Stations.toml"))["stations"]
 const STATIONS = Dict(v["name"] => v for v in values(dict))
 
+const calibs_preferences = (checker_size = 4, 
+                            n_corners = "(5, 8)",
+                            temporal_step = 2.0,
+                            calibs_path = ".",
+                            calibs_start = 0,
+                            calibs_stop = 86399.999,
+                            north = missing,
+                            center = missing) # here, we assume that no video will be longer than 23:59:59.999... Hope this holds
 
-set_preferences!(Fromage, "checker_size" => 3.9,
-                  "n_corners" => "(5, 8)",
-                  "temporal_step" => 2.0,
-                  "target_width" => 60,
-                  "results_dir" => "tracks and calibrations",
-                  "calibs_path" => ".",
-                  "calibs_start" => 0,
-                  "calibs_stop" => 86399.999, # here, we assume that no video will be longer than 23:59:59.999... Hope this holds
-                  "runs_start" => 0,
-                  "runs_stop" => 86399.999, # same
-                  "runs_path" => ".",
-                  "calibs_path" => ".",
-                  export_prefs = true)
+const runs_preferences = (target_width = 60,
+                          runs_start = 0,
+                          runs_stop = 86399.999, # same
+                          runs_path = ".")
 
-fun() = (@load_preference("station"), @load_preference("checker_size"), @load_preference("n_corners"), @load_preference("temporal_step"), @load_preference("target_width"), @load_preference("start_xy"))
+preferences = filter(!ismissing, merge(calibs_preferences, runs_preferences, (;results_dir = "tracks and calibrations")))
+
+set_preferences!(Fromage, [String(k) => v for (k, v) in pairs(preferences)]...; export_prefs = true)
+# @set_preferences!((String(k) => v for (k, v) in pairs(preferences))...)
+
+fun1() = Base.get_preferences()
+fun() = (@load_preference("kaka"), @load_preference("checker_size"), @load_preference("n_corners"))
 
 include("quality.jl")
 include("functions.jl")
@@ -57,6 +63,7 @@ function main(data_path::String)
 end
 
 end # module Fromage
+
 
 # TODO:
 # Actual data I would like to retrieve from the tracking
