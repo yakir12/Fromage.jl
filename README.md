@@ -35,14 +35,14 @@ In the `runs.csv` file you have to include both of the following columns, and no
 
 The following additional settings have default values:
 1. `runs_path`: the path to the video file, relative to the location of the bespoked csv file. Defaults to the same path of the bespoked `runs.csv` file.
-2. `runs_start`: the time-stamp of when the run started in the video file. The format is HH:MM:SS.mmm, for example, 2 minutes and 9 seconds and 123 milliseconds looks like `00:02:09.123`. If you don't need millisecond accuracy just ommit them (i.e. `00:02:09`). Defaults to 0 (i.e. the begining of the video).
+2. `runs_start`: the time-stamp of when the run started in the video file. The format is either a number of seconds (e.g. `12.345`), or HH:MM:SS.mmm, for example, 2 minutes and 9 seconds and 123 milliseconds looks like `00:02:09.123`. If you don't need millisecond accuracy just ommit them (i.e. `00:02:09`). Defaults to `0` (i.e. the begining of the video).
 3. `runs_stop`: when the run ends (same format as for `start`). Defaults to the full duration of the video.
 4. `start_xy`: the pixel coordinate in the frame where the tracker will start its search for the target. One of the following options are available:
     - A string, `"(x,y)"` (including the quotation makrs, `"`) where `x` and `y` are the horizontal and vertical pixel-distances between the left-top corner of the video-frame and the center of the target at `start`. 
     - An integer, `i`: the last position (i.e. the xy coordinate at `stop`) in the `i`th run in the bespoked`runs.csv` file is the starting position for this run.
     - If `start_xy` is missing, the target will be detected in a large (half as large as the frame) window centered at the frame. 
 The default value of `start_xy` is explained [below](#how-setting-the-start_xy-works).
-5. `target_width`: the full pixel-width of the target (diameter, not radius). The default value is 25 pixels.
+5. `target_width`: the full pixel-width of the target (diameter, not radius). The default value is 60 pixels.
 6. `window_size`: A string `"(w,h)"` where `w` and `h` are the width and height of the window (i.e. region of interest) in which the tracker will detect the target. This should be larger than the `target_width` and relate to how fast the target moves between subsequent frames. Defaults to 1.5 times the target width.
 
 ### Calibrations
@@ -52,7 +52,7 @@ In the `calibs.csv` file you have to include both of the following columns, and 
 
 The following additional settings have default values:
 1. `calibs_path`: the path to the video file, relative to the location of the bespoked csv file. Defaults to the same path of the bespoked `calibs.csv` file.
-2. `calibration_id`: some unique ID for this specific calibration. One common choice is the name of the video file containing the calibration, however this quickly breaks down if you have more than one calibration in one video file. Defaults to the full name of the calibration video file name (i.e. `calibs_path` + `file`).
+2. `calibration_id`: some unique ID for this specific calibration. Defaults to `1`, `2`, `3`, ... `n`, where `n` is the number of rows in the `calibs.csv` file.
 3. `calibs_start`: the time-stamp of when the intrinsic calibration started, in the following format HH:MM:SS.mmm, for example, 2 minutes and 9 seconds and 123 milliseconds looks like `00:02:09.123`. If you don't need millisecond accuracy just ommit them (i.e. `00:02:09`). Defaults to 0 (i.e. the begining of the video).
 4. `calibs_stop`: when the intrinsic calibration ends (same format as for `start`). Defaults to the full duration of the video.
 5. `checker_size`: the width of the checkers in the checkerboard in real-world units (e.g. cm). The default value is 3.9.

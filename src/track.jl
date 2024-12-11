@@ -2,33 +2,35 @@
 # missing => center of the frame
 # Tuple(Int, Int) => coordinate of where in th frame
 # Int => row number of where 
-function get_runs_df(data_path, calibs)
+function get_runs_df(data_path)
     files = get_all_csv(data_path, "run")
     tbl = CSV.File(files; source = :csv_source, stripwhitespace = true)
     df = DataFrame(tbl)
     fix_issue_1146!(df, files)
-    runs_quality(df, data_path)
+    return df
+end
 
-    df.uuid .= [uuid4() for _ in 1:nrow(df)]
+function join_calibs_runs(data_path, calibs, runs)
+    runs.uuid .= [uuid4() for _ in 1:nrow(runs)]
 
-    df.start_xy = convert(Vector{Union{Tuple{Int, Int}, Missing, Int, UUID}}, df.start_xy)
-    for g in groupby(df, :csv_source), row in eachrow(g)
+    runs.start_xy = convert(Vector{Union{Tuple{Int, Int}, Missing, Int, UUID}}, runs.start_xy)
+    for g in groupby(runs, :csv_source), row in eachrow(g)
         if row.start_xy isa Int
             row.start_xy = g.uuid[row.start_xy]
         end
     end
-    leftjoin!(df, select(calibs, Cols(:calibration_id, :center)), on = :calibration_id)
-    df.start_xy .= coalesce.(df.start_xy, df.center)
-    df.run_number .= 1:nrow(df)
+    leftjoin!(runs, select(calibs, Cols(:calibration_id, :center, :north)), on = :calibration_id)
+    runs.start_xy .= coalesce.(runs.start_xy, runs.center)
+    runs.run_number .= 1:nrow(runs)
 
-    transform!(df, [:runs_path, :file] => ByRow((p, f) -> joinpath(data_path, p, f)) => :fullfile)
-    transform!(groupby(df, :fullfile), :fullfile => get_recording_datetime ∘ first => :recording_datetime)
+    transform!(runs, [:runs_path, :file] => ByRow((p, f) -> joinpath(data_path, p, f)) => :fullfile)
+    transform!(groupby(runs, :fullfile), :fullfile => get_recording_datetime ∘ first => :recording_datetime)
 
-    transform!(df, [:recording_datetime, :runs_start] => ByRow(Missings.passmissing((dt, s) -> dt + Second(round(Int, s)))) => :start_datetime)
+    transform!(runs, [:recording_datetime, :runs_start] => ByRow(Missings.passmissing((dt, s) -> dt + Second(round(Int, s)))) => :start_datetime)
 
-    transform!(df, [:start_datetime, :station] => ByRow(get_sun_elevation_azimuth) => [:elevation, :azimuth])
+    transform!(runs, [:start_datetime, :station] => ByRow(get_sun_elevation_azimuth) => [:elevation, :azimuth])
 
-    return df
+    return runs
 end
 
 function track_all(df, results_dir, data_path)

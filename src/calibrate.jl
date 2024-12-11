@@ -36,10 +36,6 @@ function get_calib_df(data_path)
     tbl = CSV.File(files; source = :csv_source, stripwhitespace = true)#, types = Dict(:calibs_start => String, :calibs_stop => String, :extrinsic => String))
     df = DataFrame(tbl)
     fix_issue_1146!(df, files)
-    calib_quality(df, data_path)
-    # df.checker_size .= coalesce.(df.checker_size, @load_preference("checker_size"))
-    # df.n_corners .= coalesce.(df.n_corners, @load_preference("n_corners"))
-    # df.temporal_step .= coalesce.(df.temporal_step, @load_preference("temporal_step"))
     return df
 end
 
@@ -50,22 +46,21 @@ end
 
 function calibrate_all(df, results_dir, data_path)
 
-    df.n .= 0
-    df.reprojection .= 0.0
-    df.projection .= 0.0 
-    df.distance .= 0.0 
-    df.inverse .= 0.0
+    stats = (:n, :reprojection, :projection, :distance, :inverse)
+    for k in stats
+        df[!, k] .= 0
+    end
 
     p = Progress(nrow(df), "Calculating all calibrations:")
-    foreach(eachrow(df)) do row
+    tforeach(eachrow(df)) do row
         c, ϵ = calib(joinpath(data_path, row.calibs_path, row.file), row.calibs_start, row.calibs_stop, row.extrinsic, row.checker_size, row.n_corners, row.temporal_step)
-        for k in (:n, :reprojection, :projection, :distance, :inverse)
-            row[k] = getfield(ϵ,k)
+        for k in stats
+            row[k] = getfield(ϵ, k)
         end
         CameraCalibrations.save(joinpath(results_dir, row.calibration_id), c)
         next!(p)
     end
     finish!(p)
-    CSV.write(joinpath(results_dir, "calib.csv"), select(df, Not(:calibs_path, :file, :calibs_start, :calibs_stop, :extrinsic, :checker_size, :n_corners, :temporal_step, :csv_source)))
+    CSV.write(joinpath(results_dir, "calib.csv"), select(df, Cols(:calibration_id, :center, :north, stats...)))
 
 end

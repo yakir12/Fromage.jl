@@ -33,7 +33,10 @@ const calibs_preferences = (checker_size = 4,
 const runs_preferences = (target_width = 60,
                           runs_start = 0,
                           runs_stop = 86399.999, # same
-                          runs_path = ".")
+                          runs_path = ".",
+                          start_xy = missing,
+                          window_size = missing,
+                          station = missing)
 
 preferences = filter(!ismissing, merge(calibs_preferences, runs_preferences, (;results_dir = "tracks and calibrations")))
 
@@ -54,11 +57,23 @@ export main
 function main(data_path::String)
     results_dir = @load_preference("results_dir")
     mkpath(results_dir)
+
     calibs = get_calib_df(data_path)
-    runs = get_runs_df(data_path, calibs)
-    # TODO: test for cross quality
+    runs = get_runs_df(data_path)
+
+    io = IOBuffer()
+
+    calib_quality!(calibs, io, data_path)
+    runs_quality!(runs, io, data_path)
+    both_quality!(calibs, io, runs)
+
+    bytes = take!(io)
+    if !isempty(bytes)
+        error(String(bytes))
+    end
 
     calibrate_all(calibs, results_dir, data_path)
+    join_calibs_runs(data_path, calibs, runs)#? TODO: why do I need to join them even??? separate this function
     track_all(runs, results_dir, data_path)
 end
 
