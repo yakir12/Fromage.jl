@@ -22,7 +22,7 @@ Preferences = "1.4.3"
 ProgressMeter = "1.10.2"
 TOML = "1.0.3"
 TimeZones = "1.19.0"
-UUIDs = "1.11.0"
+UUIDs = "1.10.0"
 VideoIO = "1.1.0"
 
 [deps]
