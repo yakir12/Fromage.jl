@@ -51,11 +51,11 @@ function calibrate_all(df, results_dir, data_path)
 
     stats = (:n, :reprojection, :projection, :distance, :inverse)
     for k in stats
-        df[!, k] .= 0
+        df[!, k] .= 0.0
     end
 
     p = Progress(nrow(df), "Calculating all calibrations:")
-    tforeach(eachrow(df)) do row
+    foreach(eachrow(df)) do row
         c, ϵ = calib(joinpath(data_path, row.calibs_path, row.file), row.calibs_start, row.calibs_stop, row.extrinsic, row.checker_size, row.n_corners, row.temporal_step)
         for k in stats
             row[k] = getfield(ϵ, k)
