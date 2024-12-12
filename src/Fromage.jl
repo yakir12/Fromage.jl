@@ -58,8 +58,8 @@ function main(data_path::String)
     results_dir = @load_preference("results_dir")
     mkpath(results_dir)
 
-    calibs = get_calib_df(data_path)
-    runs = get_runs_df(data_path)
+    calibs = get_df(data_path, "calibs")
+    runs = get_df(data_path, "runs")
 
     io = IOBuffer()
 
@@ -68,12 +68,12 @@ function main(data_path::String)
     both_quality!(calibs, io, runs)
 
     bytes = take!(io)
+    close(io)
     if !isempty(bytes)
         error(String(bytes))
     end
 
     calibrate_all(calibs, results_dir, data_path)
-    join_calibs_runs(data_path, calibs, runs)#? TODO: why do I need to join them even??? separate this function
     track_all(runs, results_dir, data_path)
 end
 
@@ -81,6 +81,9 @@ end # module Fromage
 
 
 # TODO:
+# I thnik tforeach on the same video file might be a problem?
+# avoid writing to disk for the calibration
+# move sun elevation etc to analysis
 # Actual data I would like to retrieve from the tracking
 # For the second and third roll, the exit angle at 15cm, 30cm, 150cm
 # For the first angle, the exit angle depending on the condition:

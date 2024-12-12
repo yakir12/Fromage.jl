@@ -16,7 +16,7 @@ function test_mandatory_quality(df, io, nonmissing_columns)
             disallowmissing(df, column, error = true)
         catch ex
             if ex isa ArgumentError
-                println(io, "column $column should not contain any missing data" df)
+                println(io, "column $column should not contain any missing data")
             else
                 throw(ex)
             end
@@ -35,10 +35,10 @@ function calib_quality!(df, io, data_path)
 
     # checks for minimal requirements
     nonmissing_columns = ("file", "extrinsic")
-    test_mandatory_quality(df, nonmissing_columns)
+    test_mandatory_quality(df, io, nonmissing_columns)
 
     # fill in missing values
-    for column in keys(runs_preferences)
+    for column in keys(calibs_preferences)
         coalesce_df!(df, String(column), missing)
     end
     coalesce_df!(df, "calibration_id", 1:nrow(df))
@@ -46,7 +46,7 @@ function calib_quality!(df, io, data_path)
     # parse values to correct format
     transform!(df,
                [:calibs_start, :calibs_stop, :extrinsic] .=> ByRow(tosecond), 
-               [:file, :calibs_path, :calibration_id] .=> ByRow(String), 
+               [:file, :calibs_path, :calibration_id] .=> ByRow(string), 
                [:center, :north, :n_corners] .=> ByRow(to_tuple),
                :checker_size => ByRow(Float64); renamecols = false)
 
@@ -78,17 +78,17 @@ function runs_quality!(df, io, data_path)
 
     # checks for minimal requirements
     nonmissing_columns = ("file", "calibration_id")
-    test_mandatory_quality(df, nonmissing_columns)
+    test_mandatory_quality(df, io, nonmissing_columns)
 
     # fill in missing values
-    for column in keys(calibs_preferences)
+    for column in keys(runs_preferences)
         coalesce_df!(df, String(column), missing)
     end
 
     # parse values to correct format
     transform!(df,
                [:runs_start, :runs_stop] .=> ByRow(tosecond), 
-               [:file, :runs_path, :calibration_id, :station] .=> ByRow(String), 
+               [:file, :runs_path, :calibration_id, :station] .=> ByRow(passmissing(string)), 
                [:window_size, :start_xy] .=> ByRow(to_tuple),
                :target_width => ByRow(Float64); renamecols = false)
 
@@ -134,7 +134,13 @@ function both_quality!(calibs, io, runs)
             println(io, "calibration ID, $id, is in the runs.csv file, but not in any of the calibs.csv file/s")
         end
     end
-     return nothing
+
+    # replace missing start_xy with center
+    leftjoin!(runs, select(calibs, Cols(:calibration_id, :center)), on = :calibration_id)
+    runs.start_xy .= coalesce.(runs.start_xy, runs.center)
+    select!(runs, Not(:center))
+
+    return nothing
 end
 
 

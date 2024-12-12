@@ -28,6 +28,14 @@ function get_all_csv(dir, type)
     return files
 end
 
+function get_df(data_path, type)
+    files = get_all_csv(data_path, type)
+    tbl = CSV.File(files; source = :csv_source, stripwhitespace = true, types = String)
+    df = DataFrame(tbl)
+    fix_issue_1146!(df, files)
+    return df
+end
+
 # function replace_with_uuid!(tbl)
 #     if "start_xy" ∈ names(tbl)
 #         todo = subset(tbl, :start_xy => ByRow(x -> isa(x, Int)); skipmissing = true, view = true)

@@ -21,11 +21,14 @@ function calib(file, start, stop, extrinsic, checker_size, n_corners, temporal_s
         try
             c, ϵ = fit(files, n_corners, checker_size; aspect)
             if isnothing(findfirst(contains(r"extrinsic"), c.files))
-                error("The extrinsic image in video $file at timestamp $(extrinsic - t₀), is unusable (see files in $fldr)! Please choose a different time point for the extrinsic image.")
+                error("The extrinsic image in video $file at timestamp $(extrinsic - t₀), is unusable (see files in $fldr)! Please choose a different time point for the extrinsic image. Or try perhaps different `n_corners`, right now it's $n_corners.")
             end
             return c, ϵ
         catch ex
             cp(path, fldr; force = true)
+            open(joinpath(fldr, "error.log"), "w") do io
+                print(io, ex)
+            end
             throw(ex)
         end
     end
@@ -61,6 +64,6 @@ function calibrate_all(df, results_dir, data_path)
         next!(p)
     end
     finish!(p)
-    CSV.write(joinpath(results_dir, "calib.csv"), select(df, Cols(:calibration_id, :center, :north, stats...)))
+    CSV.write(joinpath(results_dir, "calib.csv"), df)
 
 end
