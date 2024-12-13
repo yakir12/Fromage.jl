@@ -55,15 +55,28 @@ function calibrate_all(df, results_dir, data_path)
     end
 
     p = Progress(nrow(df), "Calculating all calibrations:")
-    foreach(eachrow(df)) do row
+    errors = tmap(eachrow(df)) do row
         c, ϵ = calib(joinpath(data_path, row.calibs_path, row.file), row.calibs_start, row.calibs_stop, row.extrinsic, row.checker_size, row.n_corners, row.temporal_step)
+        CameraCalibrations.save(joinpath(results_dir, row.calibration_id), c)
+        next!(p)
+        return ϵ
+    end
+    finish!(p)
+    for (row, ϵ) in zip(eachrow(df), errors)
         for k in stats
             row[k] = getfield(ϵ, k)
         end
-        CameraCalibrations.save(joinpath(results_dir, row.calibration_id), c)
-        next!(p)
     end
-    finish!(p)
+    # p = Progress(nrow(df), "Calculating all calibrations:")
+    # foreach(eachrow(df)) do row
+    #     c, ϵ = calib(joinpath(data_path, row.calibs_path, row.file), row.calibs_start, row.calibs_stop, row.extrinsic, row.checker_size, row.n_corners, row.temporal_step)
+    #     for k in stats
+    #         row[k] = getfield(ϵ, k)
+    #     end
+    #     CameraCalibrations.save(joinpath(results_dir, row.calibration_id), c)
+    #     next!(p)
+    # end
+    # finish!(p)
     CSV.write(joinpath(results_dir, "calib.csv"), df)
 
 end
