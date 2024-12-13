@@ -3,12 +3,16 @@
 using BinaryBuilder, Pkg
 
 name = "exiftool"
-version = v"13.7.0"
+version = v"0.0.1"
 
 # Collection of sources required to complete build
 sources = [
-    GitSource("https://github.com/exiftool/exiftool.git", "393512b71735e477cc20ab5efb494e31f0962db8")
-]
+           GitSource("https://github.com/exiftool/exiftool.git", "393512b71735e477cc20ab5efb494e31f0962db8")
+          ]
+
+# if [[ "${target}" == *-w64-mingw32 ]]; then
+#     srcext = ""
+# fi
 
 # Bash recipe for building across all platforms
 script = raw"""
@@ -17,23 +21,23 @@ cd exiftool
 perl Makefile.PL
 make -j${nproc}
 make install
-install -Dvm 755 "${WORKSPACE}/srcdir/exiftool/exiftool${exeext}" "${bindir}/exiftool${exeext}"
-cp -r lib ${bindir}
+install -Dvm 755 "${WORKSPACE}/srcdir/exiftool/exiftool" "${bindir}/exiftool${exeext}"
+cp -r lib ${libdir}/
 """
+
 
 # These are the platforms we will build for by default, unless further
 # platforms are passed in on the command line
-# platforms = supported_platforms()
+platforms = supported_platforms()
 # platforms = [Platform("x86_64", "linux")]
-# platforms = [Platform("x86_64", "linux")]
-platforms = [Platform("x86_64", "windows")]
+# platforms = [Platform("x86_64", "windows")]
 
 # The products that we will ensure are always built
 products = Product[ExecutableProduct("exiftool", :exiftool)]
 
 # Dependencies that must be installed before this package can be built
 dependencies = Dependency[
-]
+                         ]
 
 # Build the tarballs, and possibly a `build.jl` as well.
-build_tarballs(ARGS, name, version, sources, script, platforms, products, dependencies; julia_compat="1.7")
+build_tarballs(ARGS, name, version, sources, script, platforms, products, dependencies; julia_compat="1.6")
