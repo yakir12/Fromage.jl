@@ -1,6 +1,6 @@
 using Test
 using Dates
-using exiftool_jll
+using Exiftool_jll
 
 function get_recording_datetime(file)
     txts = strip.(split(read(`$(exiftool()) -T -AllDates -n $file`, String), '\t'))
@@ -12,4 +12,4 @@ function get_recording_datetime(file)
     end
 end
 file = "a.png"
-get_recording_datetime(file)
+@test get_recording_datetime(file) == DateTime(2024, 12, 13, 9, 38, 5)
