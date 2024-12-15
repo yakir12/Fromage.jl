@@ -66,4 +66,3 @@ runs_start = 0
 runs_stop = 86399.999
 target_width = 60
 temporal_step = 2.0
-kaka = 123456789
