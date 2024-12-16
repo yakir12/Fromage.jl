@@ -54,8 +54,8 @@ function calibrate_all(df, results_dir, data_path)
         df[!, k] .= 0.0
     end
 
-    p = Progress(nrow(df), "Calculating all calibrations:")
-    ϵs = map(eachrow(df)) do row
+    p = Progress(nrow(df); desc = "Calculating all calibrations:")
+    ϵs = tmap(eachrow(df)) do row
         c, ϵ = calib(joinpath(data_path, row.calibs_path, row.file), row.calibs_start, row.calibs_stop, row.extrinsic, row.checker_size, row.n_corners, row.temporal_step)
         CameraCalibrations.save(joinpath(results_dir, row.calibration_id), c)
         next!(p)

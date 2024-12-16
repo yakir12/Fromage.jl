@@ -44,7 +44,7 @@ function track_all(runs, results_dir, data_path)
     dofirst = innerjoin(runs, select(runs, :start_xy), on = :uuid => :start_xy, matchmissing=:notequal)
     dosecond = antijoin(runs, select(runs, :start_xy), on = :uuid => :start_xy, matchmissing=:notequal)
 
-    p = Progress(nrow(runs), "Tracking all the runs:")
+    p = Progress(nrow(runs); desc = "Tracking all the runs:")
     # @info "started dofirst"
     tforeach(eachrow(dofirst)) do row
     # for row in eachrow(dofirst)
