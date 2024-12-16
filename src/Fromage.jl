@@ -6,8 +6,7 @@ module Fromage
 #
 
 using Preferences
-using Dates, UUIDs, TOML
-using AstroLib, TimeZones
+using Dates, UUIDs
 using CSV, DataFrames, Missings
 using VideoIO, FileIO, Colors, ImageTransformations, ImageDraw
 using OhMyThreads, ProgressMeter
@@ -81,11 +80,9 @@ end # module Fromage
 
 
 # TODO:
-# think about how to deal with the station thing and the analysis
-# I thnik tforeach on the same video file might be a problem?
+# think about how to deal with the station thing and the analysis: move sun elevation etc to analysis
 # avoid writing to disk for the calibration
-# move sun elevation etc to analysis
-# Actual data I would like to retrieve from the tracking
+# Actual data Bastien would like to retrieve from the tracking
 # For the second and third roll, the exit angle at 15cm, 30cm, 150cm
 # For the first angle, the exit angle depending on the condition:
 # If condition 1, exit angle at 15cm OR max
