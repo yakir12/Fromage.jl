@@ -136,6 +136,7 @@ function both_quality!(calibs, io, runs)
     end
 
     # replace missing start_xy with center
+    @show calibs
     leftjoin!(runs, select(calibs, Cols(:calibration_id, :center)), on = :calibration_id)
     runs.start_xy .= coalesce.(runs.start_xy, runs.center)
     select!(runs, Not(:center))
