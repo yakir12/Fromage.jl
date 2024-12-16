@@ -1,7 +1,7 @@
 name = "Fromage"
 uuid = "f7d2997e-1be8-4771-a487-05d70e6e0672"
 authors = ["Yakir Gagnon <12.yakir@gmail.com> and contributors"]
-version = "0.0.3"
+version = "0.0.4"
 
 [deps]
 BinDeps = "9e28174c-4ba2-5203-b857-d8d62c4213ee"
