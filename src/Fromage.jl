@@ -52,6 +52,14 @@ include("track.jl")
 
 export main
 
+function throw_non_empty(io)
+    bytes = take!(io)
+    close(io)
+    if !isempty(bytes)
+        error(String(bytes))
+    end
+end
+
 function main(data_path::String)
     results_dir = @load_preference("results_dir")
     mkpath(results_dir)
@@ -60,16 +68,13 @@ function main(data_path::String)
     runs = get_df(data_path, "runs")
 
     io = IOBuffer()
-
     calib_quality!(calibs, io, data_path)
     runs_quality!(runs, io, data_path)
-    both_quality!(calibs, io, runs)
+    throw_non_empty(io)
 
-    bytes = take!(io)
-    close(io)
-    if !isempty(bytes)
-        error(String(bytes))
-    end
+    io = IOBuffer()
+    both_quality!(calibs, io, runs)
+    throw_non_empty(io)
 
     calibrate_all(calibs, results_dir, data_path)
     track_all(runs, results_dir, data_path)
