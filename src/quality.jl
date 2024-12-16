@@ -88,7 +88,7 @@ function runs_quality!(df, io, data_path)
     # parse values to correct format
     transform!(df,
                [:runs_start, :runs_stop] .=> ByRow(tosecond), 
-               [:file, :runs_path, :calibration_id, :station] .=> ByRow(passmissing(string)), 
+               [:file, :runs_path, :calibration_id] .=> ByRow(passmissing(string)), 
                [:window_size, :start_xy] .=> ByRow(to_tuple),
                :target_width => ByRow(Float64); renamecols = false)
 
@@ -109,9 +109,9 @@ function runs_quality!(df, io, data_path)
         if row.runs_start > row.runs_stop 
             println(io, "stop shouldn't come before start in row $row")
         end
-        if !ismissing(row.station) && !haskey(STATIONS, row.station)
-            println(io, "Station $(row.station) should be one of the registered stations")
-        end
+        # if !ismissing(row.station) && !haskey(STATIONS, row.station)
+        #     println(io, "Station $(row.station) should be one of the registered stations")
+        # end
     end
 
     return nothing

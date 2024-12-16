@@ -17,8 +17,8 @@ using CameraCalibrations, PawsomeTracker
 exiftool_base = joinpath(@__DIR__(), "..", "deps", "src", "exiftool", "exiftool")
 const exiftool = exiftool_base*(Sys.iswindows() ? ".exe" : "")
 
-dict = TOML.parsefile(joinpath(@__DIR__(), "..", "Stations.toml"))["stations"]
-const STATIONS = Dict(v["name"] => v for v in values(dict))
+# dict = TOML.parsefile(joinpath(@__DIR__(), "..", "Stations.toml"))["stations"]
+# const STATIONS = Dict(v["name"] => v for v in values(dict))
 
 const calibs_preferences = (checker_size = 4, 
                             n_corners = "(5, 8)",
@@ -27,8 +27,7 @@ const calibs_preferences = (checker_size = 4,
                             calibs_start = 0,
                             calibs_stop = 86399.999, # here, we assume that no video will be longer than 23:59:59.999... Hope this holds
                             north = missing,
-                            center = missing, 
-                            station = missing)
+                            center = missing)
 
 const runs_preferences = (target_width = 60,
                           runs_start = 0,
