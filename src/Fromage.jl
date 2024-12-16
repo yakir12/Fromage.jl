@@ -48,7 +48,7 @@ include("quality.jl")
 include("functions.jl")
 include("calibrate.jl")
 include("track.jl")
-include("sun.jl")
+# include("sun.jl")
 
 export main
 
