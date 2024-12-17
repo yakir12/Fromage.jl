@@ -48,7 +48,7 @@ function calib_quality!(df, io, data_path)
                [:calibs_start, :calibs_stop, :extrinsic] .=> ByRow(tosecond), 
                [:file, :calibs_path, :calibration_id] .=> ByRow(string), 
                [:center, :north, :n_corners] .=> ByRow(to_tuple),
-               :checker_size => ByRow(Float64); renamecols = false)
+               :checker_size => ByRow(tofloat); renamecols = false)
 
     # verification tests
     if !allunique(df.calibration_id)

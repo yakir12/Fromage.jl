@@ -20,8 +20,9 @@ end
 function get_all_csv(dir, type)
     files = String[]
     r = Regex("^.*$type.*\\.csv\$")
+    # r = Regex("^[^\\.].*$type.*\\.csv\$") # doesn't work
     for (root, _, _files) in walkdir(dir), file in _files
-        if occursin(r, file)
+        if !startswith(file, '.') && occursin(r, file)
             push!(files, joinpath(root, file))
         end
     end
@@ -30,6 +31,9 @@ end
 
 function get_df(data_path, type)
     files = get_all_csv(data_path, type)
+    if isempty(files)
+        error("no $type csv files found")
+    end
     tbl = CSV.File(files; source = :csv_source, stripwhitespace = true, types = String)
     df = DataFrame(tbl)
     fix_issue_1146!(df, files)
@@ -125,6 +129,10 @@ end
 #     s = VideoIO.get_duration(fullfile)
 #     Time(0) + Millisecond(1000floor(s, digits = 3))
 # end
+
+tofloat(x::AbstractString) = parse(Float64, x)
+tofloat(x::Real) = Float64(x)
+
 
 tosecond(t::T) where {T <: TimePeriod} = t / convert(T, Dates.Second(1))
 tosecond(t::TimeType) = tosecond(t - Time(0))
