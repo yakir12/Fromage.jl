@@ -8,11 +8,13 @@ module Fromage
 using Preferences
 using Dates, UUIDs
 using CSV, DataFrames, Missings
-using VideoIO, FileIO, Colors, ImageTransformations, ImageDraw
+using FFMPEG, VideoIO, FileIO, Colors, ImageTransformations, ImageDraw
 using OhMyThreads, ProgressMeter
 
 using CameraCalibrations, PawsomeTracker
 # using CameraCalibrationMeta, CameraCalibrationFit, SimpTrack
+
+using FreeTypeAbstraction, FixedPointNumbers
 
 exiftool_base = joinpath(@__DIR__(), "..", "deps", "src", "exiftool", "exiftool")
 const exiftool = exiftool_base*(Sys.iswindows() ? ".exe" : "")
@@ -27,14 +29,16 @@ const calibs_preferences = (checker_size = 4,
                             calibs_start = 0,
                             calibs_stop = 86399.999, # here, we assume that no video will be longer than 23:59:59.999... Hope this holds
                             north = missing,
-                            center = missing)
+                            center = missing,
+                            with_distortion = true)
 
 const runs_preferences = (target_width = 60,
                           runs_start = 0,
                           runs_stop = 86399.999, # same
                           runs_path = ".",
-                          start_xy = missing,
-                          window_size = missing)
+                          start_location = missing,
+                          window_size = missing,
+                          fps = missing)
 
 preferences = filter(!ismissing, merge(calibs_preferences, runs_preferences, (;results_dir = "tracks and calibrations")))
 
@@ -73,11 +77,14 @@ function main(data_path::String)
     throw_non_empty(io)
 
     io = IOBuffer()
-    both_quality!(calibs, io, runs)
+    both_quality!(calibs, io, runs, data_path)
     throw_non_empty(io)
 
-    calibrate_all(calibs, results_dir, data_path)
+
+    # calibrate_all(calibs, results_dir, data_path)
     track_all(runs, results_dir, data_path)
+
+    @time save_all_videos(results_dir, data_path, runs)
 end
 
 end # module Fromage

@@ -48,7 +48,9 @@ function calib_quality!(df, io, data_path)
                [:calibs_start, :calibs_stop, :extrinsic] .=> ByRow(tosecond), 
                [:file, :calibs_path, :calibration_id] .=> ByRow(string), 
                [:center, :north, :n_corners] .=> ByRow(to_tuple),
-               :checker_size => ByRow(tofloat); renamecols = false)
+               :checker_size => ByRow(tofloat),
+               :with_distortion => ByRow(tobool),
+               ; renamecols = false)
 
     # verification tests
     if !allunique(df.calibration_id)
@@ -89,14 +91,14 @@ function runs_quality!(df, io, data_path)
     transform!(df,
                [:runs_start, :runs_stop] .=> ByRow(tosecond), 
                [:file, :runs_path, :calibration_id] .=> ByRow(passmissing(string)), 
-               [:window_size, :start_xy] .=> ByRow(to_tuple),
-               :target_width => ByRow(Float64); renamecols = false)
+               [:window_size, :start_location] .=> ByRow(to_tuple), # TODO stupid that I use the same function to convert a coordinate start_location as well as a Int
+               :target_width => ByRow(to_target_width); renamecols = false)
 
     # verification tests
-    if any(x -> isa(x, Int), df.start_xy)
+    if any(x -> isa(x, Int), df.start_location)
         for g in groupby(df, :csv_source), row in eachrow(g)
-            if isa(row.start_xy, Int) && row.start_xy > nrow(g)
-                println(io, """Hmm... there is a start_xy that refers to a non existant run in $(row.csv_source). See row:
+            if isa(row.start_location, Int) && row.start_location > nrow(g)
+                println(io, """Hmm... there is a start_location that refers to a non existant run in $(row.csv_source). See row:
                         $row""")
             end
         end
@@ -117,7 +119,7 @@ function runs_quality!(df, io, data_path)
     return nothing
 end
 
-function both_quality!(calibs, io, runs)
+function both_quality!(calibs, io, runs, data_path)
     u_runs_calibration_id = unique(runs.calibration_id)
     bad = false
     for row in eachrow(calibs)
@@ -135,10 +137,21 @@ function both_quality!(calibs, io, runs)
         end
     end
 
-    # replace missing start_xy with center
+    # replace missing start_location with center
     leftjoin!(runs, select(calibs, Cols(:calibration_id, :center)), on = :calibration_id)
-    runs.start_xy .= coalesce.(runs.start_xy, runs.center)
+    runs.start_location .= coalesce.(runs.start_location, runs.center)
     select!(runs, Not(:center))
+
+    files = unique([joinpath.(runs.runs_path, runs.file); joinpath.(calibs.calibs_path, calibs.file)])
+    others = get_all_other(data_path)
+
+    Δ = setdiff(others, files)
+
+    if !isempty(Δ)
+        @warn "the following files are not used:"
+        println.(Δ)
+    end
+
 
     return nothing
 end
@@ -151,15 +164,15 @@ end
 #     nonmissing_columns = ("file", "calibration_id")
 #     mandatory_quality(df, nonmissing_columns)
 #
-#     columns = ("runs_start", "runs_stop", "runs_path", "start_xy", "target_width", "window_size", "station")
+#     columns = ("runs_start", "runs_stop", "runs_path", "start_location", "target_width", "window_size", "station")
 #     coalesce_df!(df, columns)
 #
 #     transform!(df, [:runs_start, :runs_stop] .=> ByRow(tosecond); renamecols = false)
 #
-#     if any(x -> isa(x, Int), df.start_xy)
+#     if any(x -> isa(x, Int), df.start_location)
 #         for g in groupby(df, :csv_source), row in eachrow(g)
-#             if isa(row.start_xy, Int) && row.start_xy > nrow(g)
-#                 @error """Hmm... there is a start_xy that refers to a non existant run in $(row.csv_source). See row:
+#             if isa(row.start_location, Int) && row.start_location > nrow(g)
+#                 @error """Hmm... there is a start_location that refers to a non existant run in $(row.csv_source). See row:
 #                 $row"""
 #             end
 #         end
@@ -176,15 +189,15 @@ end
 #             @error "target width shouldn't be equal to or smaller than zero in row $row"
 #         end
 #         tuple_check(row, :window_size)
-#         if !ismissing(row.start_xy) && !isa(row.start_xy, Int)
-#             tuple_check(row, :start_xy)
+#         if !ismissing(row.start_location) && !isa(row.start_location, Int)
+#             tuple_check(row, :start_location)
 #         end
 #         if !ismissing(row.station) && !haskey(STATIONS, row.station)
 #             @error "Station $(row.station) should be one of the registered stations"
 #         end
 #     end
 #
-#     transform!(df, [:start_xy, :window_size] .=> ByRow(to_tuple); renamecols = false)
+#     transform!(df, [:start_location, :window_size] .=> ByRow(to_tuple); renamecols = false)
 #
 #     return nothing
 # end
