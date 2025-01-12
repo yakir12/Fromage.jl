@@ -6,16 +6,16 @@
 #     CSV.read(take!(io), DataFrame)
 # end
 
-function get_recording_datetime(file)
-    # txts = strip.(split(read(`$exiftool -T -AllDates -n $file`, String), '\t'))
-    txts = strip.(split(read(`exiftool -T -AllDates -n $file`, String), '\t'))
-    dts = [DateTime(txt[1:19], DateFormat("yyyy:mm:dd HH:MM:SS")) for txt in txts if length(txt) > 18 && txt[1:19] ≠ "0000:00:00 00:00:00"]
-    if isempty(dts)
-        return missing
-    else
-        minimum(dts)
-    end
-end
+# function get_recording_datetime(file)
+#     # txts = strip.(split(read(`$exiftool -T -AllDates -n $file`, String), '\t'))
+#     txts = strip.(split(read(`exiftool -T -AllDates -n $file`, String), '\t'))
+#     dts = [DateTime(txt[1:19], DateFormat("yyyy:mm:dd HH:MM:SS")) for txt in txts if length(txt) > 18 && txt[1:19] ≠ "0000:00:00 00:00:00"]
+#     if isempty(dts)
+#         return missing
+#     else
+#         minimum(dts)
+#     end
+# end
 
 function get_all_other(dir)
     files = String[]
@@ -208,34 +208,78 @@ end
 
 
 
-function save_all_videos(results_dir, data_path, runs)
-    face = findfirstfont()
-    w, h = (480, 270)
-    img = Matrix{RGB{N0f8}}(undef, h, w)
-    open_video_out(joinpath(results_dir, "all.mp4"), img; framerate = 90, codec_name = "libx264", encoder_options = (color_range = 2, crf = 0, preset = "ultrafast")) do writer
-        for row in eachrow(runs)
-            start, stop, path, file = (row.runs_start, row.runs_stop, row.runs_path, row.file)
-            file = joinpath(data_path, path, file)
-            wh = openvideo(VideoIO.out_frame_size, file)
-            ss = (h, w) ./ reverse(wh)
-            t = stop - start
-            ijt = CSV.read(joinpath(results_dir, "$(row.row_number).csv"), DataFrame)
-            framerate = 1/first(diff(ijt.t))
-            ij = CartesianIndex.(ijt.i, ijt.j)
-            cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $framerate -vf "scale=$w:$h" -preset veryfast -f matroska -`
-            openvideo(open(cmd)) do vid
-                for (img, i) in zip(vid, ij)
-                    j = CartesianIndex(round.(Int, Tuple(i) .* ss))
-                    draw!(img, CirclePointRadius(j, 5), colorant"red")
-                    renderstring!(img, string(row.row_number), face, 30, 30, 30, halign=:hleft, valign=:vtop, fcolor=RGB(0, 1, 0), bcolor=nothing) 
-                    write(writer, img)
-                end
-            end
-        end
+# function save_all_videos(results_dir, data_path, runs)
+#     face = findfirstfont()
+#     w, h = (480, 270)
+#     img = Matrix{RGB{N0f8}}(undef, h, w)
+#     open_video_out(joinpath(results_dir, "all.mp4"), img; framerate = 90, codec_name = "libx264", encoder_options = (color_range = 2, crf = 0, preset = "ultrafast")) do writer
+#         for row in eachrow(runs)
+#             start, stop, path, file = (row.runs_start, row.runs_stop, row.runs_path, row.file)
+#             file = joinpath(data_path, path, file)
+#             wh = openvideo(VideoIO.out_frame_size, file)
+#             ss = (h, w) ./ reverse(wh)
+#             t = stop - start
+#             ijt = CSV.read(joinpath(results_dir, "$(row.row_number).csv"), DataFrame)
+#             framerate = 1/first(diff(ijt.t))
+#             ij = CartesianIndex.(ijt.i, ijt.j)
+#             cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $framerate -vf "scale=$w:$h" -preset veryfast -f matroska -`
+#             openvideo(open(cmd)) do vid
+#                 for (img, i) in zip(vid, ij)
+#                     j = CartesianIndex(round.(Int, Tuple(i) .* ss))
+#                     draw!(img, CirclePointRadius(j, 5), colorant"red")
+#                     renderstring!(img, string(row.row_number), face, 30, 30, 30, halign=:hleft, valign=:vtop, fcolor=RGB(0, 1, 0), bcolor=nothing) 
+#                     write(writer, img)
+#                 end
+#             end
+#         end
+#     end
+# end
+function getsz(file)  
+    openvideo(file) do vid
+        img = read(vid)
+        size(img)
     end
 end
 
+function save_diagnostic_video(path, row_number, start, stop, fullfile, results_dir)
+    # face = findfirstfont()
+    sz_out = (270, 480)
+    h, w = sz_out
+    sz_in = getsz(fullfile)
+    scaling_factor = sz_out ./ sz_in
+    t = stop - start
+    ijt = CSV.read(joinpath(results_dir, "$row_number.csv"), DataFrame)
+    framerate = 1/2first(diff(ijt.t))
+    ij = [CartesianIndex(round.(Int, (ijt.i[i], ijt.j[i]) .* scaling_factor)) for i in 1:2:nrow(ijt)]
+    # cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $fullfile -r $framerate -vf "scale=$w:$h, drawtext=text='$row_number':fontsize=30:fontcolor=green:x=30:y=30" -preset veryfast -f matroska -`
+    cmd = `$(ffmpeg()) -ss $start -i $fullfile -r $framerate -t $t -vf "scale=$w:$h, drawtext=fontfile=arialbd.ttf:text='1'" -preset veryfast -f matroska $(joinpath(path, "$row_number.ts"))`
+    run(cmd)
+    # cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $fullfile -t $t -r $framerate -vf "scale=$w:$h" -preset veryfast -f matroska -`
+    # open_video_out(joinpath(path, "$row_number.ts"), RGB{N0f8}, sz_out; framerate = 90, encoder_options = (;color_range = 2)) do writer
+    #     io = open(cmd)
+    #     openvideo(io) do vid
+    #         for (img, i) in zip(vid, ij)
+    #             draw!(img, CirclePointRadius(i, 5), colorant"red")
+    #             # renderstring!(img, string(row_number), face, 30, 30, 30, halign=:hleft, valign=:vtop, fcolor=RGB(0, 1, 0), bcolor=nothing) 
+    #             write(writer, img)
+    #         end
+    #     end
+    #     close(io)
+    # end
+end
 
+function save_all_videos(results_dir, data_path, runs)
+    mktempdir() do path
+        p = Progress(nrow(runs); desc = "Generating all the diagnostic videos for the runs:")
+        foreach(eachrow(runs)) do row
+            save_diagnostic_video(path, row.row_number, row.runs_start, row.runs_stop, row.fullfile, results_dir)
+            next!(p)
+        end
+        finish!(p)
+        file_list = join([joinpath(path, string(row.row_number, ".ts")) for row in eachrow(runs)], '|')
+        @time run(`$(ffmpeg()) -loglevel 8 -i "concat:$file_list" -c copy $(joinpath(results_dir, "all.mp4"))`)
+    end
+end
 
 
 

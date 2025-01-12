@@ -61,13 +61,19 @@ end
 
 # df = df[3:3,:]
 
+function xy2ij(file, xys)
+    sar = openvideo(VideoIO.aspect_ratio, file)
+    [round.(Int, (last(xy), first(xy) / sar)) for xy in xys]
+end
 
 # calibrate and save calibration file
 
 function calibrate_all(calibs, results_dir, data_path)
 
     # # TODO: rm
-    # subset!(calibs, :calibration_id => ByRow(==("20221221_calibration.MTS")))
+    # subset!(calibs, :calibration_id => ByRow(==("20220304_calibration_B08_B11.mov")))
+
+    transform!(calibs, [:calibs_path, :file, :center, :north] => ByRow((p, f, c, n) -> xy2ij(joinpath(data_path, p, f), [c, n])) => [:center_ij, :north_ij])
 
     stats = (:n, :reprojection, :projection, :distance, :inverse)
     for k in stats

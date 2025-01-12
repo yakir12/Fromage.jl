@@ -84,7 +84,7 @@ function main(data_path::String)
     calibrate_all(calibs, results_dir, data_path)
     track_all(runs, results_dir, data_path)
 
-    save_all_videos(results_dir, data_path, runs)
+    # save_all_videos(results_dir, data_path, runs)
 end
 
 end # module Fromage
