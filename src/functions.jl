@@ -6,16 +6,18 @@
 #     CSV.read(take!(io), DataFrame)
 # end
 
-# function get_recording_datetime(file)
-#     # txts = strip.(split(read(`$exiftool -T -AllDates -n $file`, String), '\t'))
-#     txts = strip.(split(read(`exiftool -T -AllDates -n $file`, String), '\t'))
-#     dts = [DateTime(txt[1:19], DateFormat("yyyy:mm:dd HH:MM:SS")) for txt in txts if length(txt) > 18 && txt[1:19] ≠ "0000:00:00 00:00:00"]
-#     if isempty(dts)
-#         return missing
-#     else
-#         minimum(dts)
-#     end
-# end
+function get_recording_datetime(file)
+    # txts = strip.(split(read(`$exiftool -T -AllDates -n $file`, String), '\t'))
+    txts = strip.(split(read(`exiftool -T -AllDates -n $file`, String), '\t'))
+    dts = [DateTime(txt[1:19], DateFormat("yyyy:mm:dd HH:MM:SS")) for txt in txts if length(txt) > 18 && txt[1:19] ≠ "0000:00:00 00:00:00"]
+    if isempty(dts)
+        return missing
+    else
+        minimum(dts)
+    end
+end
+
+omit_missing(row, ks) = (k => row[k] for k in ks if haskey(row, k) && !ismissing(row[k]))
 
 function get_all_other(dir)
     files = String[]
@@ -40,12 +42,12 @@ function get_all_csv(dir, type)
     return files
 end
 
-function get_df(data_path, type)
+function get_df(data_path, type; kwargs...)
     files = get_all_csv(data_path, type)
     if isempty(files)
         error("no $type csv files found")
     end
-    tbl = CSV.File(files; source = :csv_source, stripwhitespace = true, types = String)
+    tbl = CSV.File(files; source = :csv_source, stripwhitespace = true, types = String, kwargs...)
     df = DataFrame(tbl)
     fix_issue_1146!(df, files)
     return df

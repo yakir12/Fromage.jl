@@ -38,7 +38,8 @@ const runs_preferences = (target_width = 60,
                           runs_path = ".",
                           start_location = missing,
                           window_size = missing,
-                          fps = missing)
+                          fps = missing,
+			  run_id = missing)
 
 preferences = filter(!ismissing, merge(calibs_preferences, runs_preferences, (;results_dir = "tracks and calibrations")))
 
@@ -64,12 +65,12 @@ function throw_non_empty(io)
     end
 end
 
-function main(data_path::String)
+function main(data_path::String; kwargs...)
     results_dir = @load_preference("results_dir")
     mkpath(results_dir)
 
-    calibs = get_df(data_path, "calibs")
-    runs = get_df(data_path, "runs")
+    calibs = get_df(data_path, "calibs"; kwargs...)
+    runs = get_df(data_path, "runs"; kwargs...)
 
     io = IOBuffer()
     calib_quality!(calibs, io, data_path)

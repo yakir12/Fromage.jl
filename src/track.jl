@@ -1,7 +1,3 @@
-# currently, start_location can be: 
-# missing => center of the frame
-# Tuple(Int, Int) => coordinate of where in th frame
-# Int => row number of where 
 function get_runs_df(data_path)
     files = get_all_csv(data_path, "run")
     tbl = CSV.File(files; source = :csv_source, stripwhitespace = true)
@@ -13,10 +9,11 @@ end
 function massage!(runs, data_path)
 
     # make sure run_id is globally unique and correct
-    transform!(groupby(runs, [:csv_source, :run_id]), groupindices => :run_id2)
-    rename!(select!(runs, Not(:run_id)), :run_id2 => :run_id)
+    transform!(groupby(runs, [:csv_source, :run_id]), groupindices => :temp_run_id)
+    rename!(select!(runs, Not(:run_id)), :temp_run_id => :run_id)
 
     # prepare the df for the start_location is an Int
+    # TODO: maybe you can pack this into one transform, would be nicer in terms of typing
     runs.row_uuid .= [uuid4() for _ in 1:nrow(runs)]
     runs.start_location = convert(Vector{Union{Missing, Tuple{Int, Int}, Int, UUID}}, runs.start_location)
     for g in groupby(runs, :csv_source), row in eachrow(g)
@@ -25,15 +22,8 @@ function massage!(runs, data_path)
         end
     end
 
-    # useful for naming the diagnostic videos
-    runs.tij_file .= ["$i.cav" for i in 1:nrow(runs)]
-
-    # recording_datetime
-    # transform!(runs, [:runs_path, :file] => ByRow((p, f) -> joinpath(data_path, p, f)) => :fullfile)
-    # transform!(groupby(runs, :fullfile), :fullfile => get_recording_datetime ∘ first => :recording_datetime)
-
     # start_datetime
-    # transform!(runs, [:recording_datetime, :runs_start] => ByRow(Missings.passmissing((dt, s) -> dt + Second(round(Int, s)))) => :start_datetime)
+    transform!(runs, [:recording_datetime, :runs_start] => ByRow(Missings.passmissing((dt, s) -> dt + Second(round(Int, s)))) => :start_datetime)
 
     # # this needs to move to analysis
     # transform!(runs, [:start_datetime, :station] => ByRow(get_sun_elevation_azimuth) => [:elevation, :azimuth])
@@ -58,7 +48,8 @@ function track_all(runs, results_dir, data_path)
         # @info "doing row $(row.row_number)"
         # row_number, row = first(enumerate(eachrow(dofirst)))
         file = joinpath(data_path, row.runs_path, row.file)
-        t, ij = track(file; start = row.runs_start, stop = row.runs_stop, start_location = row.start_location, target_width = row.target_width, window_size = row.window_size, fps = row.fps)
+	kwargs = omit_missing(row, (:start, :stop, :target_width, :start_location, :window_size, :darker_target, :fps))
+	t, ij = track(file; kwargs...)
         start_location = last(ij)
         # save_vid(results_dir, row.row_number, file, t, ij)
         CSV.write(joinpath(results_dir, row.tij_file), DataFrame(t = t, i = first.(Tuple.(ij)), j = last.(Tuple.(ij))))
@@ -80,10 +71,9 @@ function track_all(runs, results_dir, data_path)
     # @info "started dosecond"
     tforeach(eachrow(dosecond)) do row # Elins inner data took 28 minutes threaded, and 1 hr and 40 minutes on a single thread
     # for row in eachrow(dosecond)
-        # @info "doing row $(row.row_number)"
         file = joinpath(data_path, row.runs_path, row.file)
-        # @info file
-        t, ij = track(file; start = row.runs_start, stop = row.runs_stop, start_location = row.start_location, target_width = row.target_width, window_size = row.window_size, fps = row.fps)
+	kwargs = omit_missing(row, (:start, :stop, :target_width, :start_location, :window_size, :darker_target, :fps))
+	t, ij = track(file; kwargs...)
         # save_vid(results_dir, row.row_number, file, t, ij)
         CSV.write(joinpath(results_dir, row.tij_file), DataFrame(t = t, i = first.(Tuple.(ij)), j = last.(Tuple.(ij))))
         next!(p)

@@ -63,8 +63,11 @@ function calib_quality!(df, io, data_path)
             end
         end
     end
+
+    transform!(df, [:calibs_path, :file] => ByRow((p, f) -> joinpath(data_path, p, f)) => :calibs_fullfile)
+
     @showprogress "Checking the quality of the calibration csv data:" for row in eachrow(df)
-        file = joinpath(data_path, row.calibs_path, row.file)
+        file = row.calibs_fullfile
         if !isfile(file)
             println(io, "video file $file shouldn't be missing")
         end
@@ -73,10 +76,17 @@ function calib_quality!(df, io, data_path)
         end
     end
 
+    # recording_datetime
+    transform!(groupby(df, :calibs_fullfile), :calibs_fullfile => get_recording_datetime ∘ first => :calibs_recording_datetime)
+
     return nothing
 end
 
 function runs_quality!(df, io, data_path)
+
+    # useful for naming the diagnostic videos
+    runs.tij_file .= ["$i.cav" for i in 1:nrow(runs)]
+
 
     # checks for minimal requirements
     nonmissing_columns = ("file", "calibration_id")
@@ -86,6 +96,11 @@ function runs_quality!(df, io, data_path)
     for column in keys(runs_preferences)
         coalesce_df!(df, String(column), missing)
     end
+
+    # TODO: populate missing run_id enteries as a subset of the csv file, so it goes from 1 to n for each csv file,
+    # not globally as you're doing here, maybe use somethig like this:
+    # transform!(groupby(runs, [:csv_source, :run_id]), groupindices => :run_id2)
+    coalesce_df!(df, "run_id", 1:nrow(df))
 
     # parse values to correct format
     transform!(df,
@@ -103,8 +118,9 @@ function runs_quality!(df, io, data_path)
             end
         end
     end
+    transform!(df, [:runs_path, :file] => ByRow((p, f) -> joinpath(data_path, p, f)) => :runs_fullfile)
     @showprogress "Checking the quality of the run csv data:" for row in eachrow(df)
-        file = joinpath(data_path, row.runs_path, row.file)
+        file = row.runs_fullfile
         if !isfile(file)
             println(io, "video file $file shouldn't be missing")
         end
@@ -115,6 +131,9 @@ function runs_quality!(df, io, data_path)
         #     println(io, "Station $(row.station) should be one of the registered stations")
         # end
     end
+
+    # recording_datetime
+    transform!(groupby(df, :runs_fullfile), :runs_fullfile => get_recording_datetime ∘ first => :runs_recording_datetime)
 
     return nothing
 end
@@ -135,6 +154,15 @@ function both_quality!(calibs, io, runs, data_path)
         if id ∉ calibs.calibration_id
             println(io, "calibration ID, $id, is in the runs.csv file, but not in any of the calibs.csv file/s")
         end
+    end
+
+    df = leftjoin(rename(select(runs, Cols(:csv_course, :run_id, :calibration_id, :runs_recording_datetime)), :csv_source => :runs_csv_source), rename(select(calibs, Cols(:csv_source, :calibration_id, :calibs_recording_datetime)), :csv_source => :calibs_csv_source), on = :calibration_id)
+    transform!(df, Cols(:runs_recording_datetime, :calibs_recording_datetime) => ByRow(-) => :diff)
+    subset!(df, :diff => ByRow(>(Day(0))))
+    if !isempty(df)
+        select!(df, Cols(:runs_csv_course, :run_id, :calibs_csv_source, :calibration_id))
+        @warn "There are runs with calibrations that were not recorded on the same day:"
+	println(df)
     end
 
     # replace missing start_location with center
