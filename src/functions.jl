@@ -19,6 +19,8 @@ end
 
 omit_missing(row, ks) = (k => row[k] for k in ks if haskey(row, k) && !ismissing(row[k]))
 
+get_default_relpath(data_path, csv_source) = dirname(relpath(csv_source, data_path))
+
 function get_all_other(dir)
     files = String[]
     r = Regex("^.*[calibs|runs].*\\.csv\$")

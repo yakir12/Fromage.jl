@@ -17,6 +17,8 @@ function test_mandatory_quality(df, io, nonmissing_columns)
         catch ex
             if ex isa ArgumentError
                 println(io, "column $column should not contain any missing data")
+                subset!(df, column => ByRow(ismissing))
+                println(io, df)
             else
                 throw(ex)
             end
@@ -42,6 +44,7 @@ function calib_quality!(df, io, data_path)
         coalesce_df!(df, String(column), missing)
     end
     coalesce_df!(df, "calibration_id", 1:nrow(df))
+    coalesce_df!(df, "calibs_path", get_default_relpath.(data_path, df.csv_source))
 
     # parse values to correct format
     transform!(df,
@@ -84,18 +87,21 @@ end
 
 function runs_quality!(df, io, data_path)
 
-    # useful for naming the diagnostic videos
-    runs.tij_file .= ["$i.cav" for i in 1:nrow(runs)]
-
 
     # checks for minimal requirements
     nonmissing_columns = ("file", "calibration_id")
     test_mandatory_quality(df, io, nonmissing_columns)
 
+    throw_non_empty(io)
+
+    # useful for naming the diagnostic videos
+    df.tij_file .= ["$i.csv" for i in 1:nrow(df)]
+
     # fill in missing values
     for column in keys(runs_preferences)
         coalesce_df!(df, String(column), missing)
     end
+    coalesce_df!(df, "runs_path", get_default_relpath.(data_path, df.csv_source))
 
     # TODO: populate missing run_id enteries as a subset of the csv file, so it goes from 1 to n for each csv file,
     # not globally as you're doing here, maybe use somethig like this:
@@ -132,6 +138,7 @@ function runs_quality!(df, io, data_path)
         # end
     end
 
+    # TODO: a file that indeed doesn't exist seem to escape the quality checks above.
     # recording_datetime
     transform!(groupby(df, :runs_fullfile), :runs_fullfile => get_recording_datetime ∘ first => :runs_recording_datetime)
 

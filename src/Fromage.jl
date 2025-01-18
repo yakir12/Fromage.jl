@@ -25,7 +25,7 @@ const exiftool = exiftool_base*(Sys.iswindows() ? ".exe" : "")
 const calibs_preferences = (checker_size = 4, 
                             n_corners = "(5, 8)",
                             temporal_step = 2.0,
-                            calibs_path = ".",
+                            calibs_path = missing,
                             calibs_start = 0,
                             calibs_stop = 86399.999, # here, we assume that no video will be longer than 23:59:59.999... Hope this holds
                             north = missing,
@@ -35,7 +35,7 @@ const calibs_preferences = (checker_size = 4,
 const runs_preferences = (target_width = 60,
                           runs_start = 0,
                           runs_stop = 86399.999, # same
-                          runs_path = ".",
+                          runs_path = missing,
                           start_location = missing,
                           window_size = missing,
                           fps = missing,
@@ -58,8 +58,9 @@ include("track.jl")
 export main
 
 function throw_non_empty(io)
-    bytes = take!(io)
-    close(io)
+    _io = copy(io)
+    bytes = take!(_io)
+    close(_io)
     if !isempty(bytes)
         error(String(bytes))
     end
@@ -74,12 +75,13 @@ function main(data_path::String; kwargs...)
 
     io = IOBuffer()
     calib_quality!(calibs, io, data_path)
+    throw_non_empty(io)
     runs_quality!(runs, io, data_path)
     throw_non_empty(io)
 
-    io = IOBuffer()
     both_quality!(calibs, io, runs, data_path)
     throw_non_empty(io)
+    close(io)
 
 
     calibrate_all(calibs, results_dir, data_path)
