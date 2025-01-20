@@ -1,12 +1,12 @@
 function extract(extrinsic, file, path)
-    to = joinpath(path, "extrinsic.png")
+    to = joinpath(path, "$extrinsic extrinsic.png")
     ffmpeg_exe(` -loglevel 8 -ss $extrinsic -i $file -vf yadif=1,gblur=sigma=1 -vframes 1 $to`)
     # to
 end
 function extract(ss, stop, file, path, temporal_step)
     t = stop - ss
     r = 1/temporal_step
-    to = joinpath(path, "intrinsic%03d.png")
+    to = joinpath(path, "intrinsic%04d.png")
     ffmpeg_exe(` -loglevel 8 -ss $ss -i $file -t $t -r $r -vf yadif=1,gblur=sigma=1 $to`)
     # readdir(path, join = true)
 end

@@ -165,11 +165,11 @@ function both_quality!(calibs, io, runs, data_path)
 
     df = leftjoin(rename(select(runs, Cols(:csv_source, :run_id, :calibration_id, :runs_recording_datetime)), :csv_source => :runs_csv_source), rename(select(calibs, Cols(:csv_source, :calibration_id, :calibs_recording_datetime)), :csv_source => :calibs_csv_source), on = :calibration_id)
     transform!(df, Cols(:runs_recording_datetime, :calibs_recording_datetime) => ByRow(-) => :diff)
-    subset!(df, :diff => ByRow(>(Day(0))))
+    subset!(df, :diff => ByRow(>(Day(1))))
     if !isempty(df)
         select!(df, Cols(:runs_csv_source, :run_id, :calibs_csv_source, :calibration_id))
         @warn "There are runs with calibrations that were not recorded on the same day:"
-	println(df)
+        println(df)
     end
 
     # replace missing start_location with center

@@ -44,14 +44,14 @@ function track_all(runs, results_dir, data_path)
     p = Progress(nrow(runs); desc = "Tracking all the runs:")
     # @info "started dofirst"
     start_locations = tmap(eachrow(dofirst)) do row
-    # for row in eachrow(dofirst)
+        # for row in eachrow(dofirst)
         # @info "doing row $(row.row_number)"
         # row_number, row = first(enumerate(eachrow(dofirst)))
         file = joinpath(data_path, row.runs_path, row.file)
-	kwargs = omit_missing(row, (:start, :stop, :target_width, :start_location, :window_size, :darker_target, :fps))
-	t, ij = track(file; kwargs...)
+        kwargs = omit_missing(row, (:runs_start => :start, :runs_stop => :stop, :target_width => :target_width, :start_location => :start_location, :window_size => :window_size, :darker_target => :darker_target, :fps => :fps))
+        t, ij = track(file; kwargs...)
         start_location = last(ij)
-        # save_vid(results_dir, row.row_number, file, t, ij)
+        save_vid(results_dir, row.tij_file, file, t, ij)
         CSV.write(joinpath(results_dir, row.tij_file), DataFrame(t = t, i = first.(Tuple.(ij)), j = last.(Tuple.(ij))))
         next!(p)
         return start_location
@@ -70,11 +70,11 @@ function track_all(runs, results_dir, data_path)
 
     # @info "started dosecond"
     tforeach(eachrow(dosecond)) do row # Elins inner data took 28 minutes threaded, and 1 hr and 40 minutes on a single thread
-    # for row in eachrow(dosecond)
+        # for row in eachrow(dosecond)
         file = joinpath(data_path, row.runs_path, row.file)
-	kwargs = omit_missing(row, (:start, :stop, :target_width, :start_location, :window_size, :darker_target, :fps))
-	t, ij = track(file; kwargs...)
-        # save_vid(results_dir, row.row_number, file, t, ij)
+        kwargs = omit_missing(row, (:runs_start => :start, :runs_stop => :stop, :target_width => :target_width, :start_location => :start_location, :window_size => :window_size, :darker_target => :darker_target, :fps => :fps))
+        t, ij = track(file; kwargs...)
+        save_vid(results_dir, row.tij_file, file, t, ij)
         CSV.write(joinpath(results_dir, row.tij_file), DataFrame(t = t, i = first.(Tuple.(ij)), j = last.(Tuple.(ij))))
         next!(p)
     end

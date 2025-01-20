@@ -83,7 +83,6 @@ function main(data_path::String; kwargs...)
     throw_non_empty(io)
     close(io)
 
-
     calibrate_all(calibs, results_dir, data_path)
     track_all(runs, results_dir, data_path)
 
