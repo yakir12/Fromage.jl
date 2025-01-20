@@ -41,6 +41,9 @@ function calib(plot_folder, file, start, stop, extrinsic, checker_size, n_corner
             end
             return c, ϵ
         catch ex
+            # TODO: either fix CameraCalibrations.jl with OpenCV.jl 
+            # or
+            # switch to using CameraCalibrations.jl#main
             cp(path, fldr; force = true)
             open(joinpath(fldr, "error.log"), "w") do io
                 print(io, ex)
@@ -61,7 +64,14 @@ end
 
 # df = df[3:3,:]
 
-function xy2ij(file, xys)
+xy2ij(file, ::Missing) = missing
+
+function xy2ij(file, xy)
+    sar = openvideo(VideoIO.aspect_ratio, file)
+    round.(Int, (last(xy), first(xy) / sar))
+end
+
+function xy2ij(file, xys::Vector)
     sar = openvideo(VideoIO.aspect_ratio, file)
     [round.(Int, (last(xy), first(xy) / sar)) for xy in xys]
 end
@@ -73,7 +83,8 @@ function calibrate_all(calibs, results_dir, data_path)
     # # TODO: rm
     # subset!(calibs, :calibration_id => ByRow(==("20220304_calibration_B08_B11.mov")))
 
-    transform!(calibs, [:calibs_path, :file, :center, :north] => ByRow((p, f, c, n) -> xy2ij(joinpath(data_path, p, f), [c, n])) => [:center_ij, :north_ij])
+    transform!(calibs, [:calibs_path, :file, :center] => ByRow((p, f, c) -> xy2ij(joinpath(data_path, p, f), c)) => :center_ij)
+    transform!(calibs, [:calibs_path, :file, :north] => ByRow((p, f, c) -> xy2ij(joinpath(data_path, p, f), c)) => :north_ij)
 
     stats = (:n, :reprojection, :projection, :distance, :inverse)
     for k in stats

@@ -137,8 +137,8 @@ function runs_quality!(df, io, data_path)
         #     println(io, "Station $(row.station) should be one of the registered stations")
         # end
     end
-
-    # TODO: a file that indeed doesn't exist seem to escape the quality checks above.
+    throw_non_empty(io)
+    
     # recording_datetime
     transform!(groupby(df, :runs_fullfile), :runs_fullfile => get_recording_datetime ∘ first => :runs_recording_datetime)
 
@@ -163,11 +163,11 @@ function both_quality!(calibs, io, runs, data_path)
         end
     end
 
-    df = leftjoin(rename(select(runs, Cols(:csv_course, :run_id, :calibration_id, :runs_recording_datetime)), :csv_source => :runs_csv_source), rename(select(calibs, Cols(:csv_source, :calibration_id, :calibs_recording_datetime)), :csv_source => :calibs_csv_source), on = :calibration_id)
+    df = leftjoin(rename(select(runs, Cols(:csv_source, :run_id, :calibration_id, :runs_recording_datetime)), :csv_source => :runs_csv_source), rename(select(calibs, Cols(:csv_source, :calibration_id, :calibs_recording_datetime)), :csv_source => :calibs_csv_source), on = :calibration_id)
     transform!(df, Cols(:runs_recording_datetime, :calibs_recording_datetime) => ByRow(-) => :diff)
     subset!(df, :diff => ByRow(>(Day(0))))
     if !isempty(df)
-        select!(df, Cols(:runs_csv_course, :run_id, :calibs_csv_source, :calibration_id))
+        select!(df, Cols(:runs_csv_source, :run_id, :calibs_csv_source, :calibration_id))
         @warn "There are runs with calibrations that were not recorded on the same day:"
 	println(df)
     end
