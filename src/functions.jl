@@ -200,15 +200,15 @@ end
 
 
 
-function findfirstfont()
-    for c in 'a':'z'
-        face = findfont(string(c))
-        if !isnothing(face)
-            return face
-        end
-    end
-    return nothing
-end
+# function findfirstfont()
+#     for c in 'a':'z'
+#         face = findfont(string(c))
+#         if !isnothing(face)
+#             return face
+#         end
+#     end
+#     return nothing
+# end
 
 
 
@@ -238,52 +238,78 @@ end
 #         end
 #     end
 # end
-function getsz(file)  
-    openvideo(file) do vid
-        img = read(vid)
-        size(img)
-    end
-end
-
-function save_diagnostic_video(path, row_number, start, stop, fullfile, results_dir)
-    # face = findfirstfont()
-    sz_out = (270, 480)
-    h, w = sz_out
-    sz_in = getsz(fullfile)
-    scaling_factor = sz_out ./ sz_in
-    t = stop - start
-    ijt = CSV.read(joinpath(results_dir, "$row_number.csv"), DataFrame)
-    framerate = 1/2first(diff(ijt.t))
-    ij = [CartesianIndex(round.(Int, (ijt.i[i], ijt.j[i]) .* scaling_factor)) for i in 1:2:nrow(ijt)]
-    # cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $fullfile -r $framerate -vf "scale=$w:$h, drawtext=text='$row_number':fontsize=30:fontcolor=green:x=30:y=30" -preset veryfast -f matroska -`
-    cmd = `$(ffmpeg()) -ss $start -i $fullfile -r $framerate -t $t -vf "scale=$w:$h, drawtext=fontfile=arialbd.ttf:text='1'" -preset veryfast -f matroska $(joinpath(path, "$row_number.ts"))`
-    run(cmd)
-    # cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $fullfile -t $t -r $framerate -vf "scale=$w:$h" -preset veryfast -f matroska -`
-    # open_video_out(joinpath(path, "$row_number.ts"), RGB{N0f8}, sz_out; framerate = 90, encoder_options = (;color_range = 2)) do writer
-    #     io = open(cmd)
-    #     openvideo(io) do vid
-    #         for (img, i) in zip(vid, ij)
-    #             draw!(img, CirclePointRadius(i, 5), colorant"red")
-    #             # renderstring!(img, string(row_number), face, 30, 30, 30, halign=:hleft, valign=:vtop, fcolor=RGB(0, 1, 0), bcolor=nothing) 
-    #             write(writer, img)
-    #         end
-    #     end
-    #     close(io)
-    # end
-end
-
-function save_all_videos(results_dir, data_path, runs)
-    mktempdir() do path
-        p = Progress(nrow(runs); desc = "Generating all the diagnostic videos for the runs:")
-        foreach(eachrow(runs)) do row
-            save_diagnostic_video(path, row.row_number, row.runs_start, row.runs_stop, row.fullfile, results_dir)
-            next!(p)
-        end
-        finish!(p)
-        file_list = join([joinpath(path, string(row.row_number, ".ts")) for row in eachrow(runs)], '|')
-        @time run(`$(ffmpeg()) -loglevel 8 -i "concat:$file_list" -c copy $(joinpath(results_dir, "all.mp4"))`)
-    end
-end
-
-
+# function getsz(file)  
+#     openvideo(file) do vid
+#         img = read(vid)
+#         size(img)
+#     end
+# end
+#
+# function save_diagnostic_video(path, row_number, start, stop, fullfile, results_dir)
+#     # face = findfirstfont()
+#     sz_out = (270, 480)
+#     h, w = sz_out
+#     sz_in = getsz(fullfile)
+#     scaling_factor = sz_out ./ sz_in
+#     t = stop - start
+#     ijt = CSV.read(joinpath(results_dir, "$row_number.csv"), DataFrame)
+#     framerate = 1/2first(diff(ijt.t))
+#     ij = [CartesianIndex(round.(Int, (ijt.i[i], ijt.j[i]) .* scaling_factor)) for i in 1:2:nrow(ijt)]
+#     # cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $fullfile -r $framerate -vf "scale=$w:$h, drawtext=text='$row_number':fontsize=30:fontcolor=green:x=30:y=30" -preset veryfast -f matroska -`
+#     cmd = `$(ffmpeg()) -ss $start -i $fullfile -r $framerate -t $t -vf "scale=$w:$h, drawtext=fontfile=arialbd.ttf:text='1'" -preset veryfast -f matroska $(joinpath(path, "$row_number.ts"))`
+#     run(cmd)
+#     # cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $fullfile -t $t -r $framerate -vf "scale=$w:$h" -preset veryfast -f matroska -`
+#     # open_video_out(joinpath(path, "$row_number.ts"), RGB{N0f8}, sz_out; framerate = 90, encoder_options = (;color_range = 2)) do writer
+#     #     io = open(cmd)
+#     #     openvideo(io) do vid
+#     #         for (img, i) in zip(vid, ij)
+#     #             draw!(img, CirclePointRadius(i, 5), colorant"red")
+#     #             # renderstring!(img, string(row_number), face, 30, 30, 30, halign=:hleft, valign=:vtop, fcolor=RGB(0, 1, 0), bcolor=nothing) 
+#     #             write(writer, img)
+#     #         end
+#     #     end
+#     #     close(io)
+#     # end
+# end
+#
+# function save_all_videos(results_dir, data_path, runs)
+#     mktempdir() do path
+#         p = Progress(nrow(runs); desc = "Generating all the diagnostic videos for the runs:")
+#         foreach(eachrow(runs)) do row
+#             save_diagnostic_video(path, row.row_number, row.runs_start, row.runs_stop, row.fullfile, results_dir)
+#             next!(p)
+#         end
+#         finish!(p)
+#         file_list = join([joinpath(path, string(row.row_number, ".ts")) for row in eachrow(runs)], '|')
+#         @time run(`$(ffmpeg()) -loglevel 8 -i "concat:$file_list" -c copy $(joinpath(results_dir, "all.mp4"))`)
+#     end
+# end
+#
+#
+# function save_diagnostic_video(path, row_number, start, stop, fullfile, results_dir)
+#     # face = findfirstfont()
+#     sz_out = (270, 480)
+#     h, w = sz_out
+#     sz_in = getsz(fullfile)
+#     scaling_factor = sz_out ./ sz_in
+#     t = stop - start
+#     ijt = CSV.read(joinpath(results_dir, "$row_number.csv"), DataFrame)
+#     framerate = 1/2first(diff(ijt.t))
+#     ij = [CartesianIndex(round.(Int, (ijt.i[i], ijt.j[i]) .* scaling_factor)) for i in 1:2:nrow(ijt)]
+#     # cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $fullfile -r $framerate -vf "scale=$w:$h, drawtext=text='$row_number':fontsize=30:fontcolor=green:x=30:y=30" -preset veryfast -f matroska -`
+#     cmd = `$(ffmpeg()) -ss $start -i $fullfile -r $framerate -t $t -vf "scale=$w:$h, drawtext=fontfile=arialbd.ttf:text='1'" -preset veryfast -f matroska $(joinpath(path, "$row_number.ts"))`
+#     run(cmd)
+#     # cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $fullfile -t $t -r $framerate -vf "scale=$w:$h" -preset veryfast -f matroska -`
+#     # open_video_out(joinpath(path, "$row_number.ts"), RGB{N0f8}, sz_out; framerate = 90, encoder_options = (;color_range = 2)) do writer
+#     #     io = open(cmd)
+#     #     openvideo(io) do vid
+#     #         for (img, i) in zip(vid, ij)
+#     #             draw!(img, CirclePointRadius(i, 5), colorant"red")
+#     #             # renderstring!(img, string(row_number), face, 30, 30, 30, halign=:hleft, valign=:vtop, fcolor=RGB(0, 1, 0), bcolor=nothing) 
+#     #             write(writer, img)
+#     #         end
+#     #     end
+#     #     close(io)
+#     # end
+# end
 

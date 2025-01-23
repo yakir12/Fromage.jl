@@ -87,7 +87,6 @@ end
 
 function runs_quality!(df, io, data_path)
 
-
     # checks for minimal requirements
     nonmissing_columns = ("file", "calibration_id")
     test_mandatory_quality(df, io, nonmissing_columns)
@@ -102,6 +101,7 @@ function runs_quality!(df, io, data_path)
         coalesce_df!(df, String(column), missing)
     end
     coalesce_df!(df, "runs_path", get_default_relpath.(data_path, df.csv_source))
+    coalesce_df!(df, "row_number", 1:nrow(df))
 
     # TODO: populate missing run_id enteries as a subset of the csv file, so it goes from 1 to n for each csv file,
     # not globally as you're doing here, maybe use somethig like this:

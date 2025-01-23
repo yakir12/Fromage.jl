@@ -83,7 +83,7 @@ function main(data_path::String; kwargs...)
     throw_non_empty(io)
     close(io)
 
-    calibrate_all(calibs, results_dir, data_path)
+    # calibrate_all(calibs, results_dir, data_path)
     track_all(runs, results_dir, data_path)
 
     # save_all_videos(results_dir, data_path, runs)
