@@ -92,6 +92,7 @@ end
 end # module Fromage
 
 
+
 # TODO:
 # think about how to deal with the station thing and the analysis: move sun elevation etc to analysis
 # avoid writing to disk for the calibration

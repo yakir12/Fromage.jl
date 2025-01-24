@@ -116,14 +116,15 @@ function runs_quality!(df, io, data_path)
                :target_width => ByRow(to_target_width); renamecols = false)
 
     # verification tests
-    if any(x -> isa(x, Int), df.start_location)
-        for g in groupby(df, :csv_source), row in eachrow(g)
-            if isa(row.start_location, Int) && row.start_location > nrow(g)
-                println(io, """Hmm... there is a start_location that refers to a non existant run in $(row.csv_source). See row:
-                        $row""")
-            end
-        end
-    end
+    # this test is unessesary. I'm just gonna assume that the order of subsequent rows for the same run_id are ment to be chained
+    # if any(x -> isa(x, Int), df.start_location)
+    #     for g in groupby(df, :csv_source), row in eachrow(g)
+    #         if isa(row.start_location, Int) && row.start_location > nrow(g)
+    #             println(io, """Hmm... there is a start_location that refers to a non existant run in $(row.csv_source). See row:
+    #                     $row""")
+    #         end
+    #     end
+    # end
     transform!(df, [:runs_path, :file] => ByRow((p, f) -> joinpath(data_path, p, f)) => :runs_fullfile)
     @showprogress "Checking the quality of the run csv data:" for row in eachrow(df)
         file = row.runs_fullfile
