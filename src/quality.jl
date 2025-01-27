@@ -93,9 +93,6 @@ function runs_quality!(df, io, data_path)
 
     throw_non_empty(io)
 
-    # useful for naming the diagnostic videos
-    df.tij_file .= ["$i.csv" for i in 1:nrow(df)]
-
     # fill in missing values
     for column in keys(runs_preferences)
         coalesce_df!(df, String(column), missing)
@@ -103,10 +100,10 @@ function runs_quality!(df, io, data_path)
     coalesce_df!(df, "runs_path", get_default_relpath.(data_path, df.csv_source))
     coalesce_df!(df, "row_number", 1:nrow(df))
 
-    # TODO: populate missing run_id enteries as a subset of the csv file, so it goes from 1 to n for each csv file,
-    # not globally as you're doing here, maybe use somethig like this:
-    # transform!(groupby(runs, [:csv_source, :run_id]), groupindices => :run_id2)
-    coalesce_df!(df, "run_id", 1:nrow(df))
+    # fill in missing run_ids and make them globally unique
+    coalesce_df!(df, "run_id", [uuid4() for _ in 1:nrow(df)])
+    transform!(groupby(df, [:csv_source, :run_id]), groupindices => :temp_run_id)
+    rename!(select!(df, Not(:run_id)), :temp_run_id => :run_id)
 
     # parse values to correct format
     transform!(df,
