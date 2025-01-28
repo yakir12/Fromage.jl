@@ -11,8 +11,8 @@ function massage!(runs, data_path)
     # start_datetime
     transform!(runs, [:runs_recording_datetime, :runs_start] => ByRow(Missings.passmissing((dt, s) -> dt + Second(round(Int, s)))) => :start_datetime)
 
-    cols = (:file, :runs_start, :runs_stop)
-    runs = combine(groupby(runs, :run_id), Not(cols...) .=> Ref ∘ first,  Cols(cols...) .=> Ref ∘ (x -> length(x) == 1 ? only(x) : x), renamecols = false)
+    cols = (:file, :runs_start, :runs_stop, :start_location)
+    runs = combine(groupby(runs, :run_id), Not(cols..., :POI) .=> Ref ∘ first, [:POI, :runs_stop] => Ref ∘ ((poi, stop) -> length(poi) == 1 ? only(poi) : coalesce(poi..., stop[1])) => :poi, Cols(cols...) .=> Ref ∘ (x -> length(x) == 1 ? only(x) : x), renamecols = false)
 
     # useful for naming the diagnostic videos
     transform!(runs, :run_id => ByRow(i -> "$i.csv") => :tij_file)
@@ -41,18 +41,17 @@ function track_all(runs, results_dir, data_path)
     runs = massage!(runs, data_path)
 
     # # TODO: rm
-    subset!(runs, :run_id => ByRow(==(69))) # took 0:01:23 without calibrations
+    # subset!(runs, :run_id => ByRow(==(140))) # took 0:01:23 without calibrations
     # subset!(runs, :row_number => ByRow(x -> 1 < x < 10)) # took 0:01:23 without calibrations
 
     p = Progress(nrow(runs); desc = "Tracking all the runs:")
     mktempdir(results_dir) do path
         Threads.@threads for row in eachrow(runs)
-            if length(row.file) == 1
-                files = joinpath(data_path, row.runs_path, only(row.file))
-                kwargs = omit_missing(row, (:runs_start => :start, :runs_stop => :stop, :target_width => :target_width, :start_location => :start_location, :window_size => :window_size, :darker_target => :darker_target, :fps => :fps))
+            kwargs = omit_missing(row, (:runs_start => :start, :runs_stop => :stop, :target_width => :target_width, :start_location => :start_location, :window_size => :window_size, :darker_target => :darker_target, :fps => :fps))
+            files = if length(row.file) == 1
+                joinpath(data_path, row.runs_path, only(row.file))
             else
-                kwargs = omit_missing(row, (:runs_start => :start, :runs_stop => :stop, :target_width => :target_width, :start_location => :start_location, :window_size => :window_size, :darker_target => :darker_target, :fps => :fps))
-                files = joinpath.(data_path, row.runs_path, row.file)
+                joinpath.(data_path, row.runs_path, row.file)
             end
             t, ij = track(files; kwargs..., diagnostic_file = joinpath(path, string(row.run_id, ".ts")))
             CSV.write(joinpath(results_dir, row.tij_file), DataFrame(t = t, i = first.(Tuple.(ij)), j = last.(Tuple.(ij))))

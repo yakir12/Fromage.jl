@@ -107,7 +107,7 @@ function runs_quality!(df, io, data_path)
 
     # parse values to correct format
     transform!(df,
-               [:runs_start, :runs_stop] .=> ByRow(tosecond), 
+               [:runs_start, :runs_stop, :POI] .=> ByRow(passmissing(tosecond)), 
                [:file, :runs_path, :calibration_id] .=> ByRow(passmissing(string)), 
                [:window_size, :start_location] .=> ByRow(to_tuple), # TODO stupid that I use the same function to convert a coordinate start_location as well as a Int
                :target_width => ByRow(to_target_width); renamecols = false)
