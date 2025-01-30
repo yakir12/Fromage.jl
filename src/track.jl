@@ -41,7 +41,7 @@ function track_all(runs, results_dir, data_path)
     runs = massage!(runs, data_path)
 
     # # TODO: rm
-    # subset!(runs, :run_id => ByRow(==(140))) # took 0:01:23 without calibrations
+    # subset!(runs, :run_id => ByRow(==(3))) # took 0:01:23 without calibrations
     # subset!(runs, :row_number => ByRow(x -> 1 < x < 10)) # took 0:01:23 without calibrations
 
     p = Progress(nrow(runs); desc = "Tracking all the runs:")
