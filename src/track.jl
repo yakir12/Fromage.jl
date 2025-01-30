@@ -47,11 +47,10 @@ function track_all(runs, results_dir, data_path)
     p = Progress(nrow(runs); desc = "Tracking all the runs:")
     mktempdir(results_dir) do path
         Threads.@threads for row in eachrow(runs)
+            kwargs = omit_missing(row, (:runs_start => :start, :runs_stop => :stop, :target_width => :target_width, :start_location => :start_location, :window_size => :window_size, :darker_target => :darker_target, :fps => :fps))
             if length(row.file) == 1
                 files = joinpath(data_path, row.runs_path, only(row.file))
-                kwargs = omit_missing(row, (:runs_start => :start, :runs_stop => :stop, :target_width => :target_width, :start_location => :start_location, :window_size => :window_size, :darker_target => :darker_target, :fps => :fps))
             else
-                kwargs = omit_missing(row, (:runs_start => :start, :runs_stop => :stop, :target_width => :target_width, :start_location => :start_location, :window_size => :window_size, :darker_target => :darker_target, :fps => :fps))
                 files = joinpath.(data_path, row.runs_path, row.file)
             end
             t, ij = track(files; kwargs..., diagnostic_file = joinpath(path, string(row.run_id, ".ts")))
