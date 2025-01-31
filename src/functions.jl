@@ -17,7 +17,7 @@ function get_recording_datetime(file)
     end
 end
 
-omit_missing(row, ks) = (kwarg => row[key] for (key, kwarg) in ks if haskey(row, key) && !all(ismissing, row[key]))
+# omit_missing(row, ks) = (kwarg => row[key] for (key, kwarg) in ks if haskey(row, key) && !ismissing(row[key]))
 
 get_default_relpath(data_path, csv_source) = dirname(relpath(csv_source, data_path))
 

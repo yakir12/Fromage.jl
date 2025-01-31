@@ -17,6 +17,7 @@ function massage!(runs, data_path)
     # useful for naming the diagnostic videos
     transform!(runs, :run_id => ByRow(i -> "$i.csv") => :tij_file)
 
+    rename!(runs, :runs_start => :start, :runs_stop => :stop)
 
     # now I don't need this
     # # prepare the df for the start_location is an Int
@@ -47,7 +48,8 @@ function track_all(runs, results_dir, data_path)
     p = Progress(nrow(runs); desc = "Tracking all the runs:")
     mktempdir(results_dir) do path
         Threads.@threads for row in eachrow(runs)
-            kwargs = omit_missing(row, (:runs_start => :start, :runs_stop => :stop, :target_width => :target_width, :start_location => :start_location, :window_size => :window_size, :darker_target => :darker_target, :fps => :fps))
+            # kwargs = omit_missing(row, (:runs_start => :start, :runs_stop => :stop, :target_width => :target_width, :start_location => :start_location, :window_size => :window_size, :darker_target => :darker_target, :fps => :fps))
+            kwargs = (k => v for (k, v) in pairs(skipmissing(row)) if k ∈ (:start, :stop, :target_width, :start_location, :window_size, :darker_target, :fps))
             files = if length(row.file) == 1
                 joinpath(data_path, row.runs_path, only(row.file))
             else
