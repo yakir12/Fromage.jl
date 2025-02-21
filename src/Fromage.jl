@@ -30,7 +30,8 @@ const calibs_preferences = (checker_size = 4,
                             calibs_stop = 86399.999, # here, we assume that no video will be longer than 23:59:59.999... Hope this holds
                             north = missing,
                             center = missing,
-                            with_distortion = true)
+                            with_distortion = true,
+                            blur = 1)
 
 const runs_preferences = (target_width = 60,
                           runs_start = 0,
@@ -39,7 +40,8 @@ const runs_preferences = (target_width = 60,
                           start_location = missing,
                           window_size = missing,
                           fps = missing,
-			  run_id = missing)
+                          run_id = missing,
+                          POI = missing)
 
 preferences = filter(!ismissing, merge(calibs_preferences, runs_preferences, (;results_dir = "tracks and calibrations")))
 

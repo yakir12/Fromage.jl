@@ -4,23 +4,20 @@
 #     end
 # end
 
-function test_mandatory_quality(df, io, nonmissing_columns)
+function test_mandatory_quality(df, nonmissing_columns)
     if isempty(df)
-        println(io, "the table shouldn't be empty")
+        @error """all the csv files are empty!"""
     end
     for column in nonmissing_columns
         if column ∉ names(df)
-            println(io, "column $column missing from all files")
+            @error """column "$column" shouldn't be missing from all the files"""
         end
-        try
-            disallowmissing(df, column, error = true)
-        catch ex
-            if ex isa ArgumentError
-                println(io, "column $column should not contain any missing data")
-                subset!(df, column => ByRow(ismissing))
-                println(io, df)
-            else
-                throw(ex)
+        df1 = subset(df, column => ByRow(ismissing))
+        if !isempty(df1)
+            for (k, grp) in pairs(groupby(df1, :csv_source))
+                file = string(k.csv_source)
+                rows = join(grp.row_number, ',')
+                @error """in file "$file", rows: $rows, the column "$column" cannot be empty/missing"""
             end
         end
     end
@@ -35,9 +32,11 @@ end
 
 function calib_quality!(df, io, data_path)
 
+    transform!(groupby(df, :csv_source), eachindex => :row_number)
+
     # checks for minimal requirements
     nonmissing_columns = ("file", "extrinsic")
-    test_mandatory_quality(df, io, nonmissing_columns)
+    test_mandatory_quality(df, nonmissing_columns)
 
     # fill in missing values
     for column in keys(calibs_preferences)
@@ -87,6 +86,8 @@ end
 
 function runs_quality!(df, io, data_path)
 
+    transform!(groupby(df, :csv_source), eachindex => :row_number)
+
     # checks for minimal requirements
     nonmissing_columns = ("file", "calibration_id")
     test_mandatory_quality(df, io, nonmissing_columns)
@@ -98,7 +99,6 @@ function runs_quality!(df, io, data_path)
         coalesce_df!(df, String(column), missing)
     end
     coalesce_df!(df, "runs_path", get_default_relpath.(data_path, df.csv_source))
-    coalesce_df!(df, "row_number", 1:nrow(df))
 
     # fill in missing run_ids and make them globally unique
     coalesce_df!(df, "run_id", [uuid4() for _ in 1:nrow(df)])
@@ -123,13 +123,21 @@ function runs_quality!(df, io, data_path)
     #     end
     # end
     transform!(df, [:runs_path, :file] => ByRow((p, f) -> joinpath(data_path, p, f)) => :runs_fullfile)
+
+
+
+    df1 = subset(df, [:runs_start, :runs_stop] => ByRow(≥))
+    if !isempty(df1)
+        for (k, grp) in pairs(groupby(df1, :csv_source))
+            file = string(k.csv_source)
+            rows = join(grp.row_number, ',')
+            @error """in file "$file", rows: $rows, "runs_start" shouldn't be equal or come after "runs_stop" """
+        end
+    end
     @showprogress "Checking the quality of the run csv data:" for row in eachrow(df)
         file = row.runs_fullfile
         if !isfile(file)
             println(io, "video file $file shouldn't be missing")
-        end
-        if row.runs_start > row.runs_stop 
-            println(io, "stop shouldn't come before start in row $row")
         end
         # if !ismissing(row.station) && !haskey(STATIONS, row.station)
         #     println(io, "Station $(row.station) should be one of the registered stations")

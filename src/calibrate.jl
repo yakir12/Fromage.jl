@@ -1,13 +1,21 @@
-function extract(extrinsic, file, path)
+function extract(extrinsic, file, path, blur)
     to = joinpath(path, "$extrinsic extrinsic.png")
-    ffmpeg_exe(` -loglevel 8 -ss $extrinsic -i $file -vf yadif=1,gblur=sigma=1 -vframes 1 $to`)
+    if blur == 0
+        ffmpeg_exe(` -loglevel 8 -ss $extrinsic -i $file -vf yadif=1 -vframes 1 $to`)
+    else
+        ffmpeg_exe(` -loglevel 8 -ss $extrinsic -i $file -vf yadif=1,gblur=sigma=$blur -vframes 1 $to`)
+    end
     # to
 end
-function extract(ss, stop, file, path, temporal_step)
+function extract(ss, stop, file, path, temporal_step, blur)
     t = stop - ss
     r = 1/temporal_step
     to = joinpath(path, "intrinsic%04d.png")
-    ffmpeg_exe(` -loglevel 8 -ss $ss -i $file -t $t -r $r -vf yadif=1,gblur=sigma=1 $to`)
+    if blur == 0
+        ffmpeg_exe(` -loglevel 8 -ss $ss -i $file -t $t -r $r -vf yadif=1 $to`)
+    else
+        ffmpeg_exe(` -loglevel 8 -ss $ss -i $file -t $t -r $r -vf yadif=1,gblur=sigma=$blur $to`)
+    end
     # readdir(path, join = true)
 end
 # function seek_snap(path, vid, t, name = t)
@@ -16,7 +24,7 @@ end
 #     save(joinpath(path, "$name.png"), img)
 # end
 
-function calib(plot_folder, file, start, stop, extrinsic, checker_size, n_corners, temporal_step, with_distortion)
+function calib(plot_folder, file, start, stop, extrinsic, checker_size, n_corners, temporal_step, with_distortion, blur)
     # VideoIO.FFMPEG.@ffmpeg_env run(`$(FFMPEG.ffmpeg) -loglevel 8 -ss $extrinsic -i $video -vf format=gray,yadif=1,scale=sar"*"iw:ih -pix_fmt gray -vframes 1 $to`)
     # vid = openvideo(file, target_format=VideoIO.AV_PIX_FMT_GRAY8, )
     # read(vid)
@@ -26,8 +34,8 @@ function calib(plot_folder, file, start, stop, extrinsic, checker_size, n_corner
     # extrinsic += t₀
     ts = range(start, stop, step = temporal_step)
     mktempdir() do path
-        extract(extrinsic, file, path)
-        extract(start, stop, file, path, temporal_step)
+        extract(extrinsic, file, path, blur)
+        extract(start, stop, file, path, temporal_step, blur)
         fldr = basename(path)
         # foreach(t -> seek_snap(path, vid, t), ts)
         # seek_snap(path, vid, extrinsic, "extrinsic")
@@ -93,7 +101,7 @@ function calibrate_all(calibs, results_dir, data_path)
 
     p = Progress(nrow(calibs); desc = "Calculating all calibrations:")
     ϵs = map(eachrow(calibs)) do row
-        c, ϵ = calib(joinpath(results_dir, "debug_$(row.calibration_id)"), joinpath(data_path, row.calibs_path, row.file), row.calibs_start, row.calibs_stop, row.extrinsic, row.checker_size, row.n_corners, row.temporal_step, row.with_distortion)
+        c, ϵ = calib(joinpath(results_dir, "debug_$(row.calibration_id)"), joinpath(data_path, row.calibs_path, row.file), row.calibs_start, row.calibs_stop, row.extrinsic, row.checker_size, row.n_corners, row.temporal_step, row.with_distortion, row.blur)
         CameraCalibrations.save(joinpath(results_dir, row.calibration_id), c)
         next!(p)
         return ϵ
