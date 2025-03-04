@@ -90,7 +90,7 @@ function runs_quality!(df, io, data_path)
 
     # checks for minimal requirements
     nonmissing_columns = ("file", "calibration_id")
-    test_mandatory_quality(df, io, nonmissing_columns)
+    test_mandatory_quality(df, nonmissing_columns)
 
     throw_non_empty(io)
 
