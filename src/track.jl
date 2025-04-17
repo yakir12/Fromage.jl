@@ -42,8 +42,8 @@ function track_all(runs, results_dir, data_path)
     runs = massage!(runs, data_path)
 
     # # TODO: rm
-    # subset!(runs, :run_id => ByRow(==(3))) # took 0:01:23 without calibrations
-    # subset!(runs, :row_number => ByRow(x -> 1 < x < 10)) # took 0:01:23 without calibrations
+    # subset!(runs, :start_datetime => ByRow(>(Date(2025))))
+    # subset!(runs, :run_id => ByRow(∈((15, ))))
 
 
 
@@ -58,6 +58,10 @@ function track_all(runs, results_dir, data_path)
             else
                 joinpath.(data_path, row.runs_path, row.file)
             end
+
+            # @show files
+            # @show (; kwargs...)
+
             t, ij = track(files; kwargs..., diagnostic_file = joinpath(path, string(row.run_id, ".ts")))
             CSV.write(joinpath(results_dir, row.tij_file), DataFrame(t = t, i = first.(Tuple.(ij)), j = last.(Tuple.(ij))))
             next!(p)

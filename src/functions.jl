@@ -154,7 +154,14 @@ tobool(x) = x
 tosecond(t::T) where {T <: TimePeriod} = t / convert(T, Dates.Second(1))
 tosecond(t::TimeType) = tosecond(t - Time(0))
 tosecond(sec::Real) = sec
-tosecond(str::AbstractString) = ':' ∈ str ? tosecond(Time(str)) : parse(Float64, str)
+function tosecond(str::AbstractString) 
+    if ',' ∈ str
+        parse_string_time.(split(str, ','))
+    else
+        parse_string_time(str)
+    end
+end
+parse_string_time(str::AbstractString) = ':' ∈ str ? tosecond(Time(str)) : parse(Float64, str)
 
 function to_tuple(x::AbstractString)
     if contains(x, '(')

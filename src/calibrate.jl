@@ -90,6 +90,7 @@ function calibrate_all(calibs, results_dir, data_path)
 
     # # TODO: rm
     # subset!(calibs, :calibration_id => ByRow(==("20220304_calibration_B08_B11.mov")))
+    # subset!(calibs, :calibs_recording_datetime => ByRow(>(Date(2025))))
 
     transform!(calibs, [:calibs_path, :file, :center] => ByRow((p, f, c) -> xy2ij(joinpath(data_path, p, f), c)) => :center_ij)
     transform!(calibs, [:calibs_path, :file, :north] => ByRow((p, f, c) -> xy2ij(joinpath(data_path, p, f), c)) => :north_ij)
