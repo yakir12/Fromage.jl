@@ -50,7 +50,7 @@ function calib_quality!(df, io, data_path)
                [:calibs_start, :calibs_stop, :extrinsic] .=> ByRow(tosecond), 
                [:file, :calibs_path, :calibration_id] .=> ByRow(string), 
                [:center, :north, :n_corners] .=> ByRow(to_tuple),
-               :checker_size => ByRow(tofloat),
+               [:checker_size, :temporal_step] .=> ByRow(tofloat),
                :with_distortion => ByRow(tobool),
                ; renamecols = false)
 
@@ -66,6 +66,8 @@ function calib_quality!(df, io, data_path)
         end
     end
 
+    throw_non_empty(io)
+
     transform!(df, [:calibs_path, :file] => ByRow((p, f) -> joinpath(data_path, p, f)) => :calibs_fullfile)
 
     @showprogress "Checking the quality of the calibration csv data:" for row in eachrow(df)
@@ -77,6 +79,8 @@ function calib_quality!(df, io, data_path)
             println(io, "stop shouldn't come before start in row $row")
         end
     end
+
+    throw_non_empty(io)
 
     # recording_datetime
     transform!(groupby(df, :calibs_fullfile), :calibs_fullfile => get_recording_datetime ∘ first => :calibs_recording_datetime)

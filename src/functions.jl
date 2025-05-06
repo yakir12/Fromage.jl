@@ -52,6 +52,8 @@ function get_df(data_path, type; kwargs...)
     tbl = CSV.File(files; source = :csv_source, stripwhitespace = true, types = String, kwargs...)
     df = DataFrame(tbl)
     fix_issue_1146!(df, files)
+    empty_columns = findall(c -> all(ismissing, c), eachcol(df))
+    select!(df, Not(empty_columns...))
     return df
 end
 
