@@ -53,7 +53,9 @@ function get_df(data_path, type; kwargs...)
     df = DataFrame(tbl)
     fix_issue_1146!(df, files)
     empty_columns = findall(c -> all(ismissing, c), eachcol(df))
-    select!(df, Not(empty_columns...))
+    if !isempty(empty_columns)
+        select!(df, Not(empty_columns...))
+    end
     return df
 end
 
