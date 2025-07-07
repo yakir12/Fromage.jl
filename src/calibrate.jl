@@ -57,7 +57,8 @@ function calib(plot_folder, file, start, stop, extrinsic, checker_size, n_corner
                 print(io, ex)
             end
             @warn "Something went wrong with the calibration in video $file at timestamp $extrinsic (see files in $fldr)!"
-            throw(ex)
+            return missing
+            # throw(ex)
         end
     end
 end
@@ -102,17 +103,26 @@ function calibrate_all(calibs, results_dir, data_path)
 
     p = Progress(nrow(calibs); desc = "Calculating all calibrations:")
     ϵs = map(eachrow(calibs)) do row
-        c, ϵ = calib(joinpath(results_dir, "debug_$(row.calibration_id)"), joinpath(data_path, row.calibs_path, row.file), row.calibs_start, row.calibs_stop, row.extrinsic, row.checker_size, row.n_corners, row.temporal_step, row.with_distortion, row.blur)
-        CameraCalibrations.save(joinpath(results_dir, row.calibration_id), c)
-        next!(p)
-        return ϵ
+        maybe = calib(joinpath(results_dir, "debug_$(row.calibration_id)"), joinpath(data_path, row.calibs_path, row.file), row.calibs_start, row.calibs_stop, row.extrinsic, row.checker_size, row.n_corners, row.temporal_step, row.with_distortion, row.blur)
+        if ismissing(maybe)
+            return missing
+        else
+            c, ϵ = maybe
+            CameraCalibrations.save(joinpath(results_dir, row.calibration_id), c)
+            next!(p)
+            return ϵ
+        end
     end
     finish!(p)
     for (row, ϵ) in zip(eachrow(calibs), ϵs)
-        for k in stats
-            row[k] = getfield(ϵ, k)
+        if !ismissing(ϵ)
+            for k in stats
+                row[k] = getfield(ϵ, k)
+            end
         end
     end
+    subset!(calibs, Cols(stats...) => ByRow(x -> !all(iszero, x)))
+
     # p = Progress(nrow(calibs), "Calculating all calibrations:")
     # foreach(eachrow(calibs)) do row
     #     c, ϵ = calib(joinpath(data_path, row.calibs_path, row.file), row.calibs_start, row.calibs_stop, row.extrinsic, row.checker_size, row.n_corners, row.temporal_step)
