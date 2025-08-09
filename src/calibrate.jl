@@ -93,6 +93,7 @@ function calibrate_all(calibs, results_dir, data_path)
     # subset!(calibs, :calibration_id => ByRow(==("20230112_mirror_dance01_spontaneous_ID29.MTS")))
     # subset!(calibs, :calibs_recording_datetime => ByRow(>(Date(2025))))
 
+
     transform!(calibs, [:calibs_path, :file, :center] => ByRow((p, f, c) -> xy2ij(joinpath(data_path, p, f), c)) => :center_ij)
     transform!(calibs, [:calibs_path, :file, :north] => ByRow((p, f, c) -> xy2ij(joinpath(data_path, p, f), c)) => :north_ij)
 
@@ -102,7 +103,7 @@ function calibrate_all(calibs, results_dir, data_path)
     end
 
     p = Progress(nrow(calibs); desc = "Calculating all calibrations:")
-    ϵs = map(eachrow(calibs)) do row
+    ϵs = tmap(eachrow(calibs)) do row
         maybe = calib(joinpath(results_dir, "debug_$(row.calibration_id)"), joinpath(data_path, row.calibs_path, row.file), row.calibs_start, row.calibs_stop, row.extrinsic, row.checker_size, row.n_corners, row.temporal_step, row.with_distortion, row.blur)
         if ismissing(maybe)
             return missing
@@ -121,7 +122,7 @@ function calibrate_all(calibs, results_dir, data_path)
             end
         end
     end
-    subset!(calibs, Cols(stats...) => ByRow(x -> !all(iszero, x)))
+    subset!(calibs, Cols(stats...) => ByRow((x...) -> !all(iszero, x)))
 
     # p = Progress(nrow(calibs), "Calculating all calibrations:")
     # foreach(eachrow(calibs)) do row
@@ -133,6 +134,7 @@ function calibrate_all(calibs, results_dir, data_path)
     #     next!(p)
     # end
     # finish!(p)
-    CSV.write(joinpath(results_dir, "calibs.csv"), rename(select(calibs, Not(:csv_source)), :file => :calibs_file))
+    # CSV.write(joinpath(results_dir, "calibs.csv"), rename(select(calibs, Not(:csv_source)), :file => :calibs_file))
 
+    return calibs
 end

@@ -6,6 +6,7 @@ version = "0.0.4"
 [compat]
 BinDeps = "1.0.2"
 CSV = "0.10.15"
+CameraCalibrations = "0"
 Colors = "0"
 DataFrames = "1.7.0"
 Dates = "1.10.0"
@@ -18,7 +19,7 @@ ImageIO = "0.6.9"
 ImageTransformations = "0.10.1"
 Missings = "1.2.0"
 OhMyThreads = "0.7.0, 0.8"
-PawsomeTracker = "1"
+PawsomeTracker = "1.2.0"
 Preferences = "1.4.3"
 ProgressMeter = "1.10.2"
 UUIDs = "1.10.0"
@@ -50,6 +51,7 @@ VideoIO = "d6d074c3-1acf-5d4c-9a43-ef38773959a2"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [preferences.Fromage]
+blur = 1
 calibs_path = "."
 calibs_start = 0
 calibs_stop = 86399.999

@@ -31,7 +31,7 @@ const calibs_preferences = (checker_size = 4,
                             north = missing,
                             center = missing,
                             with_distortion = true,
-                            blur = 1)
+                            blur = 0)
 
 const runs_preferences = (target_width = 60,
                           runs_start = 0,
@@ -68,6 +68,9 @@ function throw_non_empty(io)
     end
 end
 
+function get_ignore_list()
+end
+
 function main(data_path::String; kwargs...)
     results_dir = @load_preference("results_dir")
     mkpath(results_dir)
@@ -85,12 +88,24 @@ function main(data_path::String; kwargs...)
     throw_non_empty(io)
     close(io)
 
-    done = readdir(results_dir)
-    calibs = antijoin(calibs, DataFrame(calibration_id = done), on = :calibration_id)
+    calibs_file = joinpath(results_dir, "calibs.csv")
 
-    calibrate_all(calibs, results_dir, data_path)
+    done = isfile(calibs_file) ? rename(CSV.read(calibs_file, DataFrame), :calibs_file => :file) : empty(calibs)
+    calibs = antijoin(calibs, done, on = :calibration_id)
+
+    ignore_file = joinpath(data_path, "ignore.txt")
+    ignore = isfile(ignore_file) ? readlines(ignore_file) : String[]
+    subset!(calibs, :calibration_id => ByRow(∉(ignore)))
+
+    calibs = calibrate_all(calibs, results_dir, data_path)
+
+    CSV.write(calibs_file, rename(calibs, :file => :calibs_file))
 
     # runs = antijoin(runs, DataFrame(calibration_id = done), on = :calibration_id)
+
+    subset!(runs, :calibration_id => ByRow(∈([calibs.calibration_id; done])))
+
+    # @show runs
 
     track_all(runs, results_dir, data_path)
 
