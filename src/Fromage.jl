@@ -75,6 +75,8 @@ function main(data_path::String; kwargs...)
     results_dir = @load_preference("results_dir")
     mkpath(results_dir)
 
+    @assert isdir(data_path) "the data path $data_path is missing"
+
     calibs = get_df(data_path, "calibs"; kwargs...)
     runs = get_df(data_path, "runs"; kwargs...)
 

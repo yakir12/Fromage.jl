@@ -37,6 +37,31 @@ function massage!(runs, data_path)
     return runs
 end
 
+function concatenate(path, files, results_dir)
+    filess = [files]
+    todo = Iterators.partition(filess[end], 2)
+    args = [join.(todo, "|")]
+    iter = 1
+    outs = [[joinpath(path, "$iter-$i.ts") for i in 1:length(todo)]]
+    while length(last(args)) > 1
+        todo = Iterators.partition(outs[end], 2)
+        push!(args, join.(todo, "|"))
+        iter += 1
+        out = [joinpath(path, "$iter-$i.ts") for i in 1:length(todo)]
+        push!(outs, out)
+    end
+    for (arg, out) in zip(args, outs)
+        Threads.@threads for i in 1:length(arg)
+            # run(`ffmpeg -i "concat:$(arg[i])" -c copy $(out[i])`)
+            ffmpeg_exe(` -loglevel 8 -i "concat:$(arg[i])" -c copy $(out[i])`)
+        end
+    end
+    arg = only(outs[end])
+    out = joinpath(results_dir, "diagnostic.mp4")
+    # run(`ffmpeg -i $arg -c copy $out`)
+    ffmpeg_exe(` -loglevel 8 -i $arg -c copy $out`)
+end
+
 function track_all(runs, results_dir, data_path)
 
     runs = massage!(runs, data_path)
@@ -47,8 +72,8 @@ function track_all(runs, results_dir, data_path)
 
 
 
-    p = Progress(nrow(runs); desc = "Tracking all the runs:")
     mktempdir(results_dir) do path
+        p = Progress(nrow(runs); desc = "Tracking all the runs:")
         Threads.@threads for row in eachrow(runs)
         # for row in eachrow(runs)
             # kwargs = omit_missing(row, (:runs_start => :start, :runs_stop => :stop, :target_width => :target_width, :start_location => :start_location, :window_size => :window_size, :darker_target => :darker_target, :fps => :fps))
@@ -66,11 +91,10 @@ function track_all(runs, results_dir, data_path)
             CSV.write(joinpath(results_dir, row.tij_file), DataFrame(t = t, i = first.(Tuple.(ij)), j = last.(Tuple.(ij))))
             next!(p)
         end
-        file_list = join((joinpath(path, string(run_id, ".ts")) for run_id in runs.run_id), '|')
-        out = joinpath(results_dir, "diagnostic.mp4")
-        run(`ffmpeg -y -loglevel 8 -i "concat:$file_list" -c copy $out`)
+        finish!(p)
+        file_list = [joinpath(path, string(run_id, ".ts")) for run_id in runs.run_id]
+        concatenate(path, file_list, results_dir)
     end
-    finish!(p)
 
     CSV.write(joinpath(results_dir, "runs.csv"), rename(select(runs, Not(:csv_source)), :file => :runs_file))
     # @info "done!"
