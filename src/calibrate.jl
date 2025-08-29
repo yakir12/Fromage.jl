@@ -24,7 +24,7 @@ end
 #     save(joinpath(path, "$name.png"), img)
 # end
 
-function calib(plot_folder, file, start, stop, extrinsic, checker_size, n_corners, temporal_step, with_distortion, blur)
+function calib(plot_folder, file, start, stop, extrinsic, checker_size, n_corners, temporal_step, radial_parameters, blur)
     # VideoIO.FFMPEG.@ffmpeg_env run(`$(FFMPEG.ffmpeg) -loglevel 8 -ss $extrinsic -i $video -vf format=gray,yadif=1,scale=sar"*"iw:ih -pix_fmt gray -vframes 1 $to`)
     # vid = openvideo(file, target_format=VideoIO.AV_PIX_FMT_GRAY8, )
     # read(vid)
@@ -43,15 +43,14 @@ function calib(plot_folder, file, start, stop, extrinsic, checker_size, n_corner
         aspect = openvideo(VideoIO.aspect_ratio, file)
         # aspect = VideoIO.aspect_ratio(vid)
         try
-            c, ϵ = fit(files, n_corners, checker_size; aspect, with_distortion, plot_folder)
+            c, ϵ = fit(files, n_corners, checker_size; aspect, radial_parameters, plot_folder)
             if isnothing(findfirst(contains(r"extrinsic"), c.files))
-                error("The extrinsic image in video $file at timestamp $extrinsic, is unusable (see files in $fldr)! Please choose a different time point for the extrinsic image. Or try perhaps different `n_corners`, right now it's $n_corners.")
+                msg = "The extrinsic image in video $file at timestamp $extrinsic, is unusable (see files in $fldr)! Please choose a different time point for the extrinsic image. Or try perhaps different `n_corners`, right now it's $n_corners."
+                @error msg
+                error(msg)
             end
             return c, ϵ
         catch ex
-            # TODO: either fix CameraCalibrations.jl with OpenCV.jl 
-            # or
-            # switch to using CameraCalibrations.jl#main
             cp(path, fldr; force = true)
             open(joinpath(fldr, "error.log"), "w") do io
                 print(io, ex)
@@ -102,16 +101,32 @@ function calibrate_all(calibs, results_dir, data_path)
         calibs[!, k] .= 0.0
     end
 
+    # df = subset(calibs, :type => ByRow(==("matlab")))
+    # if !isempty(df)
+    #     Threads.@threads for row in eachrow(df)
+    #         c = CameraCalibrations.load(joinpath(data_path, row.file))
+    #         CameraCalibrations.save(joinpath(results_dir, row.calibration_id), c)
+    #     end
+    #     subset!(calibs, :type => ByRow(==("video")))
+    # end
+
     p = Progress(nrow(calibs); desc = "Calculating all calibrations:")
     ϵs = tmap(eachrow(calibs)) do row
-        maybe = calib(joinpath(results_dir, "debug_$(row.calibration_id)"), joinpath(data_path, row.calibs_path, row.file), row.calibs_start, row.calibs_stop, row.extrinsic, row.checker_size, row.n_corners, row.temporal_step, row.with_distortion, row.blur)
-        if ismissing(maybe)
-            return missing
-        else
-            c, ϵ = maybe
+        if row.type == "matlab"
+            c = CameraCalibrations.load(joinpath(data_path, row.file))
             CameraCalibrations.save(joinpath(results_dir, row.calibration_id), c)
             next!(p)
-            return ϵ
+            return NamedTuple{stats}(ones(length(stats)))
+        else
+            maybe = calib(joinpath(results_dir, "debug_$(row.calibration_id)"), joinpath(data_path, row.calibs_path, row.file), row.calibs_start, row.calibs_stop, row.extrinsic, row.checker_size, row.n_corners, row.temporal_step, row.radial_parameters, row.blur)
+            if ismissing(maybe)
+                return missing
+            else
+                c, ϵ = maybe
+                CameraCalibrations.save(joinpath(results_dir, row.calibration_id), c)
+                next!(p)
+                return ϵ
+            end
         end
     end
     finish!(p)

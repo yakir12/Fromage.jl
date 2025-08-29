@@ -30,8 +30,9 @@ const calibs_preferences = (checker_size = 4,
                             calibs_stop = 86399.999, # here, we assume that no video will be longer than 23:59:59.999... Hope this holds
                             north = missing,
                             center = missing,
-                            with_distortion = true,
-                            blur = 0)
+                            radial_parameters = 1,
+                            blur = 0,
+                            type = "video")
 
 const runs_preferences = (target_width = 60,
                           runs_start = 0,
@@ -86,9 +87,11 @@ function main(data_path::String; kwargs...)
     runs_quality!(runs, io, data_path)
     throw_non_empty(io)
 
+
     both_quality!(calibs, io, runs, data_path)
     throw_non_empty(io)
     close(io)
+
 
     calibs_file = joinpath(results_dir, "calibs.csv")
 
@@ -99,7 +102,13 @@ function main(data_path::String; kwargs...)
     ignore = isfile(ignore_file) ? readlines(ignore_file) : String[]
     subset!(calibs, :calibration_id => ByRow(∉(ignore)))
 
+
+    # # TODO: rm this line
+    # subset!(calibs, :calibration_id => ByRow(∈(("calibs_A_1_T0_2.csv", ))))
+
+
     calibs = calibrate_all(calibs, results_dir, data_path)
+
 
     CSV.write(calibs_file, rename(calibs, :file => :calibs_file))
 

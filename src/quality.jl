@@ -51,7 +51,7 @@ function calib_quality!(df, io, data_path)
                [:file, :calibs_path, :calibration_id] .=> ByRow(string), 
                [:center, :north, :n_corners] .=> ByRow(to_tuple),
                [:checker_size, :temporal_step] .=> ByRow(tofloat),
-               :with_distortion => ByRow(tobool),
+               :radial_parameters => ByRow(Int),
                ; renamecols = false)
 
     # verification tests
@@ -82,8 +82,9 @@ function calib_quality!(df, io, data_path)
 
     throw_non_empty(io)
 
+
     # recording_datetime
-    transform!(groupby(df, :calibs_fullfile), :calibs_fullfile => get_recording_datetime ∘ first => :calibs_recording_datetime)
+    transform!(groupby(df, :calibs_fullfile), [:calibs_fullfile, :type] => ((calibs_fullfile, type) -> type[1] == "matlab" ? fill(DateTime(0), length(type)) : fill(get_recording_datetime(calibs_fullfile[1]), length(calibs_fullfile))) => :calibs_recording_datetime)
 
     return nothing
 end
