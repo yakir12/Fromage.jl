@@ -74,9 +74,9 @@ end
 # A clean load returns Vector{Run}; a load with issues returns the DataFrame (non-strict).
 # ---------------------------------------------------------------------------
 
-function check(name, rows; strict = false, header = HEADER)
+function check(name, rows; strict = false, header = HEADER, defaults = (;))
     csv = write_csv(joinpath(DATADIR, name), rows; header)
-    VR.load_runs(DATADIR, csv; strict)
+    VR.load_runs(DATADIR, csv; strict, defaults)
 end
 
 "Like `check`, but also capture stdout. Returns (result, output). Routed through a temp file because

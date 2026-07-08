@@ -78,6 +78,28 @@ These apply to both `runs.csv` and `calibs.csv`:
 - **Timestamps** (`start`, `stop`, `extrinsic`) are either a number of seconds (e.g. `12.345`) or a clock time `HH:MM:SS.mmm` (e.g. `00:02:09.123`; milliseconds optional). ⚠️ Always write all three clock parts: `01:30` means 1 hour 30 minutes, *not* 1 minute 30 seconds — if in doubt, use plain seconds.
 - **Pixel coordinates** (`start_location`, `center`, `north`) are written `"(x, y)"` — including the quotes, since the cell contains a comma — where `x` is the distance in pixels from the *left* edge of the frame and `y` from the *top* edge, exactly as an image viewer (GIMP, Photoshop, etc.) reports them when you hover over the displayed frame.
 
+### Global defaults
+
+The default of every *tuning* column can be overridden globally from `main`. The hierarchy is: a
+csv cell always wins over a global default, which wins over the built-in default (including the
+value probed from the video, for `yadif` and `fps`):
+
+```julia
+main("path/to/data";
+     rectification_defaults = (n_corners = (5, 8), blur = 0),
+     tracking_defaults      = (target_width = 60, fps = 25))
+```
+
+- `rectification_defaults` may set: `checker_size`, `n_corners`, `scale`, `temporal_step`,
+  `radial_parameters`, `blur`, `yadif`.
+- `tracking_defaults` may set: `target_width`, `window_size`, `darker_target`, `fps`, `apriltags`,
+  `initial_search_factor`, `white_point`, `scale`.
+
+Anything else (identities, file names, timestamps, `start_location`/`center`/`north`) is per-row
+only, and an unrecognized or unconvertible entry is rejected with an error before anything runs.
+Global values pass through the same validation as csv cells — e.g. a global `fps` must still not
+exceed each video's own frame rate. `only_rectify` and `only_track` accept the same keywords.
+
 ## runs.csv
 
 One row per run video (a run split across multiple video files uses several rows, see [Runs that span multiple videos](#runs-that-span-multiple-videos)).

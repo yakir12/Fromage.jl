@@ -12,6 +12,7 @@ const ART = setup_artifacts(DATADIR)
 @testset "VerifyRectifications" begin
     include("VerifyRectifications/test_input.jl")
     include("VerifyRectifications/test_parsing.jl")
+    include("VerifyRectifications/test_defaults.jl")
     include("VerifyRectifications/test_filesystem.jl")
     include("VerifyRectifications/test_structural.jl")
     include("VerifyRectifications/test_reading.jl")

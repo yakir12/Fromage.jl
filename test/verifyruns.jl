@@ -12,6 +12,7 @@ const ART = setup_artifacts(DATADIR)
 @testset "VerifyRuns" begin
     include("VerifyRuns/test_input.jl")
     include("VerifyRuns/test_parsing.jl")
+    include("VerifyRuns/test_defaults.jl")
     include("VerifyRuns/test_filesystem.jl")
     include("VerifyRuns/test_video_metadata.jl")
     include("VerifyRuns/test_values.jl")

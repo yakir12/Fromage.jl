@@ -23,12 +23,15 @@ include("types.jl")
 include("parsers.jl")
 include("verifications.jl")
 
-function load_rectifications(file; strict = true)
+function load_rectifications(file; strict = true, defaults = (;))
     data_path = dirname(file)
-    load_rectifications(data_path, file; strict)
+    load_rectifications(data_path, file; strict, defaults)
 end
 
-function load_rectifications(data_path, file; strict = true)
+# `defaults` globally replaces the hardcoded fallbacks of the whitelisted rectification parameters
+# (see DEFAULTS in parsers.jl); the hierarchy is csv cell → `defaults` → hardcoded/probed value.
+function load_rectifications(data_path, file; strict = true, defaults = (;))
+    defaults = resolve_defaults(defaults)   # fail fast on unknown keys / unconvertible values
     # verify csv file exists
     if !isfile(file)
         error("calibration `.csv` file missing")
@@ -48,7 +51,7 @@ function load_rectifications(data_path, file; strict = true)
     end
 
     # parse rows to RectificationMethods or error messages
-    cs = @showprogress desc = "Parsing calibs.csv" tmap(parse_row, collect(csvrows))
+    cs = @showprogress desc = "Parsing calibs.csv" tmap(r -> parse_row(r, defaults), collect(csvrows))
 
     df = DataFrame(Tables.dictrowtable(cs))
     allowmissing!(df)

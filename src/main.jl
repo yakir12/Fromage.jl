@@ -23,12 +23,18 @@ function concatenate(path, files)
     ffmpeg_exe(` -y -loglevel 8 -i $arg -c copy $out`)
 end
 
-function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.csv", rows = nothing, todo = nothing, kwargs...)
+# `rectification_defaults`/`tracking_defaults` globally replace the hardcoded defaults of the
+# tuning parameters (e.g. `rectification_defaults = (n_corners = (5, 8), blur = 0)`,
+# `tracking_defaults = (target_width = 60,)`). The hierarchy is: csv cell → these kwargs → the
+# hardcoded/probed defaults. Each gateway whitelists what may be set (see DEFAULTS in the
+# respective parsers.jl) and rejects anything else up front.
+function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.csv",
+        rectification_defaults = (;), tracking_defaults = (;), rows = nothing, todo = nothing, kwargs...)
 
     mkpath(results_dir)
 
-    cs = load_rectifications(joinpath(data_path, calibs_file))
-    rs = load_runs(joinpath(data_path, runs_file))
+    cs = load_rectifications(joinpath(data_path, calibs_file); defaults = rectification_defaults)
+    rs = load_runs(joinpath(data_path, runs_file); defaults = tracking_defaults)
 
     run_calib_ids = [r.source.calibration_id for r in rs]
     filter!(c -> c.calibration_id ∈ run_calib_ids, cs)
@@ -55,11 +61,11 @@ function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.c
 
 end
 
-function only_track(data_path::String; runs_file = "runs.csv", rows = nothing, kwargs...)
+function only_track(data_path::String; runs_file = "runs.csv", tracking_defaults = (;), rows = nothing, kwargs...)
 
     mkpath(results_dir)
 
-    rs = load_runs(joinpath(data_path, runs_file))
+    rs = load_runs(joinpath(data_path, runs_file); defaults = tracking_defaults)
 
     if !isnothing(rows)
         rows = filter(≤(length(rs)), rows)
@@ -71,10 +77,10 @@ function only_track(data_path::String; runs_file = "runs.csv", rows = nothing, k
     return runs
 end
 
-function only_rectify(data_path::String; calibs_file = "calibs.csv", todo = nothing, kwargs...)
+function only_rectify(data_path::String; calibs_file = "calibs.csv", rectification_defaults = (;), todo = nothing, kwargs...)
     mkpath(results_dir)
 
-    cs = load_rectifications(joinpath(data_path, calibs_file))
+    cs = load_rectifications(joinpath(data_path, calibs_file); defaults = rectification_defaults)
 
     if !isnothing(todo)
         filter!(c -> c.calibration_id ∈ todo, cs)

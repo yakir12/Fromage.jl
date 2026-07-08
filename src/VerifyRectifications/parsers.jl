@@ -55,11 +55,57 @@ function parseto!(dict, row, k, ::Type{T}, default = nothing) where T
 end
 
 
-function parse_only_scale!(dict, row)
+# The globally overridable defaults: exactly the rectification tuning parameters — not identities
+# or anchors (`calibration_id`/`file`/`extrinsic`/`matlab_file`/`extrinsic_index`/`path`), not the
+# scene points (`center`/`north`), not `aspect`, and not the intrinsic window (`start`/`stop`),
+# which are inherently per-row. The caller replaces any of these via `load_rectifications`'
+# `defaults` kwarg (in Fromage: `main`'s `rectification_defaults`); a csv cell always wins over
+# the replaced default (see parseto!). `yadif = missing` means "imputed from the probed video",
+# so a caller-supplied yadif beats the probe on every row whose cell is blank; `scale = nothing`
+# means only_scale's scale is required — a caller-supplied value makes it optional.
+const DEFAULTS = (;
+    checker_size = 4.0,
+    n_corners = (7, 10),
+    scale = nothing,
+    temporal_step = 2.0,
+    radial_parameters = 1,
+    blur = 1.0,
+    yadif = missing,
+)
+
+const DEFAULT_TYPES = (;
+    checker_size = Float64,
+    n_corners = NTuple{2, Int},
+    scale = Float64,
+    temporal_step = Float64,
+    radial_parameters = Int,
+    blur = Float64,
+    yadif = Bool,
+)
+
+# Validate and normalize the caller's overrides, failing fast (before any parsing): only the
+# whitelisted keys above may be set, and each value must convert to its column's type. Values are
+# otherwise not pre-checked — an out-of-range default flows into the normal verifications and is
+# flagged on every row that used it.
+function resolve_defaults(overrides)
+    unknown = setdiff(keys(overrides), keys(DEFAULTS))
+    isempty(unknown) || throw(ArgumentError("unknown rectification default(s): $(join(unknown, ", ")) (settable: $(join(keys(DEFAULTS), ", ")))"))
+    isempty(overrides) && return DEFAULTS
+    converted = NamedTuple{keys(overrides)}(map(keys(overrides)) do k
+        try
+            convert(DEFAULT_TYPES[k], overrides[k])
+        catch
+            throw(ArgumentError("rectification default $k must be convertible to $(DEFAULT_TYPES[k]), got $(repr(overrides[k]))"))
+        end
+    end)
+    return merge(DEFAULTS, converted)
+end
+
+function parse_only_scale!(dict, row, defaults)
     parseto!(dict, row, :calibration_id, String)
     parseto!(dict, row, :file, String)
     parseto!(dict, row, :extrinsic, MyTemporal)
-    parseto!(dict, row, :scale, Float64)
+    parseto!(dict, row, :scale, Float64, defaults.scale)
     parseto!(dict, row, :path, String, ".")
     parseto!(dict, row, :center, NTuple{2,Int}, missing)
     parseto!(dict, row, :north, NTuple{2,Int}, missing)
@@ -82,7 +128,7 @@ function parse_matlab!(dict, row)
     parseto!(dict, row, :aspect, Float64, missing)
 end
 
-function parse_video!(dict, row)
+function parse_video!(dict, row, defaults)
     parseto!(dict, row, :calibration_id, String)
     parseto!(dict, row, :file, String)
     parseto!(dict, row, :extrinsic, MyTemporal)
@@ -91,16 +137,17 @@ function parse_video!(dict, row)
     parseto!(dict, row, :path, String, ".")
     parseto!(dict, row, :center, NTuple{2,Int}, missing)
     parseto!(dict, row, :north, NTuple{2,Int}, missing)
-    parseto!(dict, row, :n_corners, NTuple{2,Int}, (7, 10))
-    parseto!(dict, row, :checker_size, Float64, 4.0)
-    parseto!(dict, row, :temporal_step, Float64, 2.0)
-    parseto!(dict, row, :blur, Float64, 1.0)
-    parseto!(dict, row, :radial_parameters, Int, 1)
+    parseto!(dict, row, :n_corners, NTuple{2,Int}, defaults.n_corners)
+    parseto!(dict, row, :checker_size, Float64, defaults.checker_size)
+    parseto!(dict, row, :temporal_step, Float64, defaults.temporal_step)
+    parseto!(dict, row, :blur, Float64, defaults.blur)
+    parseto!(dict, row, :radial_parameters, Int, defaults.radial_parameters)
     parseto!(dict, row, :aspect, Float64, missing)
     # aspect and yadif are read from the video itself (one ffprobe in read_video_metadata!) when left
-    # blank; a CSV-supplied value wins. yadif marks interlaced footage (deinterlace needed). width/height
-    # are always taken from the video (the frame size used to decode it) and have no CSV column.
-    parseto!(dict, row, :yadif, Bool, missing)
+    # blank; a CSV-supplied value (or a global yadif default) wins. yadif marks interlaced footage
+    # (deinterlace needed). width/height are always taken from the video (the frame size used to
+    # decode it) and have no CSV column.
+    parseto!(dict, row, :yadif, Bool, defaults.yadif)
 end
 
 function verify_pair(dict, k1, k2)
@@ -133,19 +180,19 @@ function verify_irrelevant(dict, row)
     end
 end
 
-function parse_row(row)
+function parse_row(row, defaults = DEFAULTS)
     dict = Dict{Symbol, Any}(:issues => String[])
     # trim whitespace (as for the other string fields) and treat a now-empty cell as the default.
     type = String(strip(coalesce(get(row, :type, "video"), "video")))
     isempty(type) && (type = "video")
     dict[:type] = type
     if type == "video"
-        parse_video!(dict, row)
+        parse_video!(dict, row, defaults)
         verify_pair(dict, :start, :stop)
     elseif type == "matlab"
         parse_matlab!(dict, row)
     elseif type == "only_scale"
-        parse_only_scale!(dict, row)
+        parse_only_scale!(dict, row, defaults)
     else
         dict[:type] = missing
         push!(dict[:issues], "wrong type")

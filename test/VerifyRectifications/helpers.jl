@@ -148,9 +148,9 @@ end
 "Write `rows` to a CSV in DATADIR and load it. Scenario rows keep indices 1:length(rows).
 (`parse_row` back-fills every COLUMNS entry with missing, so even a single-type CSV has every
 column `verifications!` references — no column-completing filler rows are needed.)"
-function check(name, rows; strict = false, header = HEADER)
+function check(name, rows; strict = false, header = HEADER, defaults = (;))
     csv = write_csv(joinpath(DATADIR, name), rows; header)
-    VRect.load_rectifications(DATADIR, csv; strict)
+    VRect.load_rectifications(DATADIR, csv; strict, defaults)
 end
 
 "Like `check`, but also capture what load_rectifications prints to stdout. Returns (df, output).

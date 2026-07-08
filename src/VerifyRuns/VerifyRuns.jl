@@ -23,11 +23,14 @@ include("types.jl")
 include("parsers.jl")
 include("verifications.jl")
 
-function load_runs(file; strict = true)
-    load_runs(dirname(file), file; strict)
+function load_runs(file; strict = true, defaults = (;))
+    load_runs(dirname(file), file; strict, defaults)
 end
 
-function load_runs(data_path, file; strict = true)
+# `defaults` globally replaces the hardcoded fallbacks of the whitelisted tracking parameters
+# (see DEFAULTS in parsers.jl); the hierarchy is csv cell → `defaults` → hardcoded/probed value.
+function load_runs(data_path, file; strict = true, defaults = (;))
+    defaults = resolve_defaults(defaults)   # fail fast on unknown keys / unconvertible values
     # verify csv file exists
     if !isfile(file)
         error("runs `.csv` file missing")
@@ -47,7 +50,7 @@ function load_runs(data_path, file; strict = true)
     end
 
     # parse each row to a Dict of parsed values + an :issues accumulator
-    cs = @showprogress desc = "Parsing runs.csv..." tmap(parse_row, collect(csvrows))
+    cs = @showprogress desc = "Parsing runs.csv..." tmap(r -> parse_row(r, defaults), collect(csvrows))
 
     df = DataFrame(Tables.dictrowtable(cs))
     allowmissing!(df)

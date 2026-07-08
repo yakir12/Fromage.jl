@@ -62,31 +62,78 @@ function parseto!(dict, row, k, ::Type{T}, default = nothing) where {T}
     end
 end
 
+# The globally overridable defaults: exactly the tracking tuning parameters — not identities
+# (`run_id`/`calibration_id`/`file`/`path`) and not the temporal window (`start`/`stop`/
+# `start_location`), which are inherently per-row. The caller replaces any of these via
+# `load_runs`' `defaults` kwarg (in Fromage: `main`'s `tracking_defaults`); a csv cell always
+# wins over the replaced default (see parseto!). `fps = missing` means "imputed from the probed
+# video", so a caller-supplied fps beats the probe on every row whose cell is blank.
+const DEFAULTS = (;
+    target_width = 25.0,
+    window_size = missing,
+    darker_target = true,
+    fps = missing,
+    apriltags = 0,
+    initial_search_factor = 4.0,
+    white_point = 1.0,
+    scale = 1.0,
+)
+
+const DEFAULT_TYPES = (;
+    target_width = Float64,
+    window_size = Union{Int, NTuple{2, Int}},
+    darker_target = Bool,
+    fps = Float64,
+    apriltags = Int,
+    initial_search_factor = Float64,
+    white_point = Float64,
+    scale = Float64,
+)
+
+# Validate and normalize the caller's overrides, failing fast (before any parsing): only the
+# whitelisted keys above may be set, and each value must convert to its column's type. Values are
+# otherwise not pre-checked — an out-of-range default flows into the normal verifications and is
+# flagged on every row that used it.
+function resolve_defaults(overrides)
+    unknown = setdiff(keys(overrides), keys(DEFAULTS))
+    isempty(unknown) || throw(ArgumentError("unknown tracking default(s): $(join(unknown, ", ")) (settable: $(join(keys(DEFAULTS), ", ")))"))
+    isempty(overrides) && return DEFAULTS
+    converted = NamedTuple{keys(overrides)}(map(keys(overrides)) do k
+        try
+            convert(DEFAULT_TYPES[k], overrides[k])
+        catch
+            throw(ArgumentError("tracking default $k must be convertible to $(DEFAULT_TYPES[k]), got $(repr(overrides[k]))"))
+        end
+    end)
+    return merge(DEFAULTS, converted)
+end
+
 # Every column maps to one `track` keyword (plus `run_id`/`path` for identity & path resolution).
-# Defaults mirror `PawsomeTracker.track`'s own defaults so a blank cell behaves exactly as omitting the
-# argument would. `stop`/`fps` are left missing here and imputed from the probed video (duration /
-# framerate); `window_size`/`start_location` stay missing and are simply omitted from the `track` call.
-function parse_run!(dict, row)
+# The hardcoded defaults (see DEFAULTS) mirror `PawsomeTracker.track`'s own so a blank cell behaves
+# exactly as omitting the argument would. `stop`/`fps` are left missing here and imputed from the
+# probed video (duration / framerate); `window_size`/`start_location` stay missing and are simply
+# omitted from the `track` call.
+function parse_run!(dict, row, defaults)
     parseto!(dict, row, :run_id, String, missing)               # all-or-nothing: blank only allowed when every row is blank (then imputed from the row number); see resolve_run_ids!
     parseto!(dict, row, :calibration_id, String)                # required: Fromage joins runs to rectifications on it
     parseto!(dict, row, :file, String)
     parseto!(dict, row, :path, String, ".")
     parseto!(dict, row, :start, MyTemporal, 0.0)
     parseto!(dict, row, :stop, MyTemporal, missing)              # imputed from video duration
-    parseto!(dict, row, :target_width, Float64, 25.0)
+    parseto!(dict, row, :target_width, Float64, defaults.target_width)
     parseto!(dict, row, :start_location, NTuple{2, Int}, missing)
-    parseto!(dict, row, :window_size, MyWindow, missing)
-    parseto!(dict, row, :darker_target, Bool, true)
-    parseto!(dict, row, :fps, Float64, missing)                  # imputed from video framerate
-    parseto!(dict, row, :apriltags, Int, 0)
-    parseto!(dict, row, :initial_search_factor, Float64, 4.0)
-    parseto!(dict, row, :white_point, Float64, 1.0)
-    parseto!(dict, row, :scale, Float64, 1.0)
+    parseto!(dict, row, :window_size, MyWindow, defaults.window_size)
+    parseto!(dict, row, :darker_target, Bool, defaults.darker_target)
+    parseto!(dict, row, :fps, Float64, defaults.fps)             # imputed from video framerate when missing
+    parseto!(dict, row, :apriltags, Int, defaults.apriltags)
+    parseto!(dict, row, :initial_search_factor, Float64, defaults.initial_search_factor)
+    parseto!(dict, row, :white_point, Float64, defaults.white_point)
+    parseto!(dict, row, :scale, Float64, defaults.scale)
 end
 
-function parse_row(row)
+function parse_row(row, defaults = DEFAULTS)
     dict = Dict{Symbol, Any}(:issues => String[])
-    parse_run!(dict, row)
+    parse_run!(dict, row, defaults)
     for col in COLUMNS
         haskey(dict, col) || (dict[col] = missing)
     end

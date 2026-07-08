@@ -20,18 +20,22 @@ using FFMPEG
     vf = "geq=lum='if(lt(sqrt((X-55+40*sin(0.5*PI*N/25))^2+(Y-50)^2),5),0,255)':cb=128:cr=128"
     FFMPEG.ffmpeg_exe(`-y -loglevel error -f lavfi -i color=white:s=100x100:d=2:r=25 -vf $vf -pix_fmt yuv420p -qp 0 $(joinpath(dir, "target.mp4"))`)
 
+    # n_corners and target_width are deliberately NOT in the CSVs: they arrive via main's global
+    # defaults (the hardcoded n_corners (7, 10) would fail detection on the 5×8 board, so a clean
+    # run proves the kwargs propagated into both gateways)
     open(joinpath(dir, "calibs.csv"), "w") do io
-        println(io, "calibration_id,file,type,extrinsic,start,stop,n_corners,checker_size")
-        println(io, "c1,board.mp4,video,1,0,4,\"(5, 8)\",4")
+        println(io, "calibration_id,file,type,extrinsic,start,stop,checker_size")
+        println(io, "c1,board.mp4,video,1,0,4,4")
     end
     open(joinpath(dir, "runs.csv"), "w") do io
-        println(io, "calibration_id,file,target_width,start_location")
-        println(io, "c1,target.mp4,10,\"(55, 50)\"")
+        println(io, "calibration_id,file,start_location")
+        println(io, "c1,target.mp4,\"(55, 50)\"")
     end
 
     # main writes results_dir/diagnostic.mp4 relative to the current directory
     outdir = mktempdir()
-    runs = cd(() -> main(dir), outdir)
+    runs = cd(() -> main(dir; rectification_defaults = (n_corners = (5, 8),),
+                              tracking_defaults = (target_width = 10,)), outdir)
 
     @test runs isa DataFrame
     @test nrow(runs) == 1
