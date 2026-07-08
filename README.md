@@ -90,7 +90,7 @@ main("path/to/data";
      tracking_defaults      = (target_width = 60, fps = 25))
 ```
 
-- `rectification_defaults` may set: `checker_size`, `n_corners`, `scale`, `temporal_step`,
+- `rectification_defaults` may set: `checker_size`, `n_corners`, `temporal_step`,
   `radial_parameters`, `blur`, `yadif`.
 - `tracking_defaults` may set: `target_width`, `window_size`, `darker_target`, `fps`, `apriltags`,
   `initial_search_factor`, `white_point`, `scale`.

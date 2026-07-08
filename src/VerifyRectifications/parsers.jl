@@ -55,18 +55,17 @@ function parseto!(dict, row, k, ::Type{T}, default = nothing) where T
 end
 
 
-# The globally overridable defaults: exactly the rectification tuning parameters — not identities
+# The globally overridable defaults: exactly the video-type tuning parameters — not identities
 # or anchors (`calibration_id`/`file`/`extrinsic`/`matlab_file`/`extrinsic_index`/`path`), not the
-# scene points (`center`/`north`), not `aspect`, and not the intrinsic window (`start`/`stop`),
-# which are inherently per-row. The caller replaces any of these via `load_rectifications`'
-# `defaults` kwarg (in Fromage: `main`'s `rectification_defaults`); a csv cell always wins over
-# the replaced default (see parseto!). `yadif = missing` means "imputed from the probed video",
-# so a caller-supplied yadif beats the probe on every row whose cell is blank; `scale = nothing`
-# means only_scale's scale is required — a caller-supplied value makes it optional.
+# scene points (`center`/`north`), not `aspect`, not the intrinsic window (`start`/`stop`), and
+# not only_scale's `scale` (a global pixels-per-unit makes no sense), which are all inherently
+# per-row. The caller replaces any of these via `load_rectifications`' `defaults` kwarg (in
+# Fromage: `main`'s `rectification_defaults`); a csv cell always wins over the replaced default
+# (see parseto!). `yadif = missing` means "imputed from the probed video", so a caller-supplied
+# yadif beats the probe on every row whose cell is blank.
 const DEFAULTS = (;
     checker_size = 4.0,
     n_corners = (7, 10),
-    scale = nothing,
     temporal_step = 2.0,
     radial_parameters = 1,
     blur = 1.0,
@@ -76,7 +75,6 @@ const DEFAULTS = (;
 const DEFAULT_TYPES = (;
     checker_size = Float64,
     n_corners = NTuple{2, Int},
-    scale = Float64,
     temporal_step = Float64,
     radial_parameters = Int,
     blur = Float64,
@@ -101,11 +99,11 @@ function resolve_defaults(overrides)
     return merge(DEFAULTS, converted)
 end
 
-function parse_only_scale!(dict, row, defaults)
+function parse_only_scale!(dict, row)
     parseto!(dict, row, :calibration_id, String)
     parseto!(dict, row, :file, String)
     parseto!(dict, row, :extrinsic, MyTemporal)
-    parseto!(dict, row, :scale, Float64, defaults.scale)
+    parseto!(dict, row, :scale, Float64)
     parseto!(dict, row, :path, String, ".")
     parseto!(dict, row, :center, NTuple{2,Int}, missing)
     parseto!(dict, row, :north, NTuple{2,Int}, missing)
@@ -192,7 +190,7 @@ function parse_row(row, defaults = DEFAULTS)
     elseif type == "matlab"
         parse_matlab!(dict, row)
     elseif type == "only_scale"
-        parse_only_scale!(dict, row, defaults)
+        parse_only_scale!(dict, row)
     else
         dict[:type] = missing
         push!(dict[:issues], "wrong type")

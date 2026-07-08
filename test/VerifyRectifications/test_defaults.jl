@@ -21,17 +21,10 @@
         @test only(cs).yadif == true
     end
 
-    @testset "a global scale makes only_scale's scale optional" begin
-        cs = check("d_scale.csv", [scalerow(scale = missing)]; defaults = (scale = 9.5,))
-        @test cs isa Vector
-        @test only(cs).scale == 9.5
-        # still required without the kwarg
-        @test flagged(check("d_scale2.csv", [scalerow(scale = missing)]), 1, "scale is missing")
-    end
-
     @testset "bad overrides fail fast; bad values are verified per row" begin
-        # non-whitelisted key (the intrinsic window is per-row only)
+        # non-whitelisted keys: the intrinsic window and only_scale's scale are per-row only
         @test_throws ArgumentError check("d_unknown.csv", [videorow()]; defaults = (start = 0,))
+        @test_throws ArgumentError check("d_scale.csv", [scalerow()]; defaults = (scale = 9.5,))
         # unconvertible value
         @test_throws ArgumentError check("d_badtype.csv", [videorow()]; defaults = (n_corners = "5x8",))
         # a convertible but nonsensical value flows into the normal verification
