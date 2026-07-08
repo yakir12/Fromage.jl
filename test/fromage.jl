@@ -7,18 +7,17 @@ module FromageTests
 using Test
 using Fromage
 using DataFrames: DataFrame, nrow
-using FFMPEG
+
+include("common.jl")
 
 @testset "Fromage end-to-end (main)" begin
     dir = mktempdir()
 
-    # calibration video: the static 500×376 checkerboard used by the VerifyRectifications suite
+    # calibration video: the static 500×376 checkerboard used by the VerifyRectifications suite;
+    # run video: the shared known-trajectory disc (defaults: 100×100, 2 s at 25 fps, start (55, 50))
     png = joinpath(@__DIR__, "VerifyRectifications", "fixtures", "checkerboard.png")
-    FFMPEG.ffmpeg_exe(`-y -loglevel error -framerate 10 -loop 1 -t 5 -i $png -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" -pix_fmt yuv420p $(joinpath(dir, "board.mp4"))`)
-
-    # run video: a dark disc on white whose center follows a known sine (see pawsometracker.jl)
-    vf = "geq=lum='if(lt(sqrt((X-55+40*sin(0.5*PI*N/25))^2+(Y-50)^2),5),0,255)':cb=128:cr=128"
-    FFMPEG.ffmpeg_exe(`-y -loglevel error -f lavfi -i color=white:s=100x100:d=2:r=25 -vf $vf -pix_fmt yuv420p -qp 0 $(joinpath(dir, "target.mp4"))`)
+    make_checkerboard_video(joinpath(dir, "board.mp4"), png)
+    target, expected = make_target_video(dir, "target")
 
     # n_corners and target_width are deliberately NOT in the CSVs: they arrive via main's global
     # defaults (the hardcoded n_corners (7, 10) would fail detection on the 5×8 board, so a clean
@@ -29,7 +28,7 @@ using FFMPEG
     end
     open(joinpath(dir, "runs.csv"), "w") do io
         println(io, "calibration_id,file,start_location")
-        println(io, "c1,target.mp4,\"(55, 50)\"")
+        println(io, "c1,$(only(target)),\"(55, 50)\"")
     end
 
     # main writes results_dir/diagnostic.mp4 relative to the current directory
@@ -41,7 +40,8 @@ using FFMPEG
     @test nrow(runs) == 1
     t, ij = only(runs.run)                          # each run entry is track's (timestamps, coords)
     @test length(ij) == 50                          # the full 2 s at 25 fps
-    @test only(runs.rectification).ratio > 0          # the joined rectification is a real one
+    @test tracking_rmse(ij, expected) < 1           # tracked against the analytic ground truth
+    @test only(runs.rectification).ratio > 0        # the joined rectification is a real one
     @test isfile(joinpath(outdir, "results_dir", "diagnostic.mp4"))
     @test filesize(joinpath(outdir, "results_dir", "diagnostic.mp4")) > 0
 end

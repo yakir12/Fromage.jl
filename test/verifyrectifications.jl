@@ -3,6 +3,7 @@ module VerifyRectificationsTests
 using Test
 using Fromage: Fromage
 
+include("common.jl")
 include("VerifyRectifications/helpers.jl")
 
 # Shared artifacts and CSV scratch space, built once (ffmpeg is the slow part).

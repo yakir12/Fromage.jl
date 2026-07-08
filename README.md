@@ -268,3 +268,20 @@ Both still run the full validation of their respective csv file.
 ## Example files
 
 Template csv files demonstrating the happy path live in [`examples/`](examples/): [`examples/runs.csv`](examples/runs.csv) and [`examples/calibs.csv`](examples/calibs.csv). They reference placeholder video file names — swap in your own.
+
+## Tests
+
+```sh
+JULIA_NUM_THREADS=auto julia --project -e 'using Pkg; Pkg.test()'
+```
+
+Each former package's tests run in their own wrapper module (`test/rectifications.jl`,
+`test/pawsometracker.jl`, `test/verifyrectifications.jl`, `test/verifyruns.jl`, with per-suite
+files under the matching directories and shared infrastructure in `test/common.jl`), plus
+package-wide quality checks (`test/quality.jl`: Aqua + ExplicitImports) and an end-to-end `main`
+run over a synthetic data folder (`test/fromage.jl`).
+
+Setting `JULIA_NUM_THREADS` (Pkg.test forwards it to the test process) runs the threaded code
+paths — frame reading, corner detection, tracking — with real parallelism. It barely changes the
+suite's wall time (which is dominated by serially encoding the synthetic test videos), but it
+exercises the ecosystem the way it runs in production and doubles as a thread-safety stress test.

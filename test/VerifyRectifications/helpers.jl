@@ -1,3 +1,5 @@
+# Suite-specific helpers; the generic infrastructure (video/CSV builders, flagged, …) lives in
+# test/common.jl, included by the wrapper module before this file.
 using Test
 using Fromage: VerifyRectifications
 using CSV, DataFrames
@@ -8,20 +10,6 @@ const VRect = VerifyRectifications
 # ---------------------------------------------------------------------------
 # Artifact generation (videos, matlab files) into a shared directory.
 # ---------------------------------------------------------------------------
-
-function make_video(path; duration = 10, size = (640, 480))
-    w, h = size
-    FFMPEG.ffmpeg_exe(`-y -loglevel error -f lavfi -i testsrc=duration=$duration:size=$(w)x$(h):rate=30 -pix_fmt yuv420p $path`)
-    path
-end
-
-function make_checkerboard_video(path, png; duration = 10)
-    pad = "pad=ceil(iw/2)*2:ceil(ih/2)*2"   # libx264/yuv420p needs even dimensions
-    FFMPEG.ffmpeg_exe(`-y -loglevel error -framerate 10 -loop 1 -i $png -t $duration -vf $pad -pix_fmt yuv420p $path`)
-    path
-end
-
-make_corrupt_video(path) = (write(path, rand(UInt8, 500)); path)
 
 # The first `board_t` seconds show the (padded, 500×376) checkerboard, the rest is cornerless
 # testsrc footage: an extrinsic inside the board portion detects fine while a calibs window over
@@ -104,11 +92,11 @@ const HEADER = ["calibration_id", "path", "file", "matlab_file", "type", "extrin
                 "checker_size", "scale", "temporal_step", "radial_parameters", "blur",
                 "yadif", "aspect"]
 
-row(; kw...) = [get(kw, Symbol(c), missing) for c in HEADER]
+row(; kw...) = buildrow(HEADER; kw...)
+write_csv(path, rows; header = HEADER) = write_csv(path, rows, header)
 
 # Clean baseline rows per rectification type; override any field via keyword to isolate one issue.
 # (Each scenario is loaded as its own single-row CSV, so there is no cross-row coupling.)
-_merge(base; kw...) = row(; merge(base, values(kw))...)
 videorow(; kw...) = _merge((calibration_id = "v", path = ".", file = ART.board, type = "video",
                             extrinsic = "00:00:01", start = "00:00:00", stop = "00:00:04",
                             center = (250, 180), north = (250, 1), n_corners = (5, 8),
@@ -125,24 +113,8 @@ mixedrow(; kw...) = _merge((calibration_id = "x", path = ".", file = ART.mixed, 
                             center = (250, 180), north = (250, 1), n_corners = (5, 8),
                             checker_size = 4, temporal_step = 0.9, radial_parameters = 1, blur = 0); kw...)
 
-csvcell(::Missing) = ""
-function csvcell(x)
-    s = x isa AbstractString ? String(x) : string(x)
-    (occursin(',', s) || occursin('"', s)) ? string('"', replace(s, '"' => "\"\""), '"') : s
-end
-
-function write_csv(path, rows; header = HEADER)
-    open(path, "w") do io
-        println(io, join(header, ","))
-        for r in rows
-            println(io, join(csvcell.(r), ","))
-        end
-    end
-    path
-end
-
 # ---------------------------------------------------------------------------
-# Run + assert. DATADIR is defined in runtests.jl before any test file runs.
+# Run + assert. DATADIR is defined in the wrapper module before any test file runs.
 # ---------------------------------------------------------------------------
 
 "Write `rows` to a CSV in DATADIR and load it. Scenario rows keep indices 1:length(rows).
@@ -153,17 +125,5 @@ function check(name, rows; strict = false, header = HEADER, defaults = (;))
     VRect.load_rectifications(DATADIR, csv; strict, defaults)
 end
 
-"Like `check`, but also capture what load_rectifications prints to stdout. Returns (df, output).
-Routed through a temp file because redirect_stdout needs a real file descriptor, not an IOBuffer."
-function load_capturing(name, rows; strict = false)
-    mktemp() do path, io
-        df = redirect_stdout(() -> check(name, rows; strict), io)
-        flush(io)
-        df, read(path, String)
-    end
-end
-
-flagged(df, r, sub) = hasproperty(df, :issues) && any(m -> occursin(sub, m), df.issues[r])
-# A clean load drops the :issues column (load_rectifications returns select(df, Not(:issues)));
-# a load with issues keeps it. So "clean" means the column is gone (or, defensively, all empty).
+# A clean load returns Vector{RectificationMethod}; a load with issues keeps the df's :issues.
 clean(df) = !hasproperty(df, :issues) || all(isempty, df.issues)

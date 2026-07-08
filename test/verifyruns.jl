@@ -3,6 +3,7 @@ module VerifyRunsTests
 using Test
 using Fromage: Fromage
 
+include("common.jl")
 include("VerifyRuns/helpers.jl")
 
 # Shared artifacts and CSV scratch space, built once (ffmpeg is the slow part).
