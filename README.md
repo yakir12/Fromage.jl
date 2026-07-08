@@ -253,8 +253,11 @@ xy = runs.rectification[1].image2real.(coords)   # real-world coordinates, e.g. 
 ```
 
 `main` also writes each run's track to `results_dir/<run_id>.csv` — three columns: `time` (the
-timestamp, in seconds into the video, of each detected coordinate) and the tracked `x`/`y` pixel
-coordinates (x from the frame's left edge, y from its top).
+timestamp, in seconds into the video, of each detected coordinate) and the run's **real-world**
+`x`/`y` coordinates: the tracked pixels passed through the run's rectification, so the origin is
+at `center`, north-aligned if `north` was given, in `checker_size`/`scale` units (x grows
+rightward and y downward in the image, like the pixel convention). The raw pixel track remains
+available as `runs.run` (see above).
 
 ## The diagnostic video
 

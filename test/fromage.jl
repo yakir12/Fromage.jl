@@ -7,6 +7,7 @@ module FromageTests
 using Test
 using Fromage
 using DataFrames: DataFrame, nrow
+using StaticArrays: SVector
 
 include("common.jl")
 
@@ -52,14 +53,18 @@ include("common.jl")
     @test s.nframes == 25
     @test s.fps ≈ 25
     @test s.duration ≈ 1.0 atol = 0.2
-    # one track csv per run: time,x,y with one row per detected coordinate (run_id imputed to "1")
+    # one track csv per run: time and the REAL-WORLD x/y (the pixel track through the run's
+    # rectification), one row per detected coordinate (run_id imputed to "1")
     lines = readlines(joinpath(outdir, "results_dir", "1.csv"))
     @test length(lines) == 51                       # header + 50 coordinates
     @test lines[1] == "time,x,y"
     t0, x0, y0 = parse.(Float64, split(lines[2], ','))
     @test t0 == 0.0
-    @test x0 ≈ expected(1)[2] atol = 1.5            # x = col, y = row of the analytic ground truth
-    @test y0 ≈ expected(1)[1] atol = 1.5
+    # the analytic ground-truth pixel, pushed through the same rectification (which returns
+    # (y-direction, x-direction), mirroring its (row, col) input)
+    gy, gx = only(runs.rectification).image2real(SVector(expected(1)...))
+    @test x0 ≈ gx atol = 0.2
+    @test y0 ≈ gy atol = 0.2
 end
 
 @testset "diagnostic video: multi-run, mixed calibrations" begin

@@ -14,14 +14,16 @@ function concatenate(path, files)
 end
 
 # Save one run's track to results_dir/<run_id>.csv: one row per detected coordinate, with the
-# `time` stamp (seconds into the video) and the tracked `x`/`y` pixel coordinates — x from the
-# frame's left edge and y from its top, the same convention the csv files' pixel coordinates use
-# (track reports (row, col) in stored pixels, so x = col and y = row).
-function save2csv(run_id, (ts, coords))
+# `time` stamp (seconds into the video) and the `x`/`y` real-world coordinates — the tracked
+# pixel coordinates passed through the run's rectification (origin at `center`, north-aligned
+# when `north` was given, in `checker_size`/`scale` units). Axis orientation follows the image:
+# x grows rightward and y downward, like the csv files' pixel coordinates (image2real returns
+# (y-direction, x-direction), mirroring track's (row, col) input).
+function save2csv(run_id, (ts, coords), rectification)
     open(joinpath(results_dir, string(run_id, ".csv")), "w") do io
         println(io, "time,x,y")
         for (t, rc) in zip(ts, coords)
-            y, x = rc
+            y, x = rectification.image2real(rc)
             println(io, t, ',', x, ',', y)
         end
     end
@@ -66,7 +68,7 @@ function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.c
         select!(runs, Not(:diagnostic_file))
     end
 
-    tforeach(save2csv, runs.run_id, runs.run)
+    tforeach(save2csv, runs.run_id, runs.run, runs.rectification)
 
     return runs
 
