@@ -49,11 +49,16 @@ const DATADIR = mktempdir()
         @test tracking_rmse(ij, seg_exp) < 1
     end
 
-    @testset "diagnostic file is written" begin
-        df = joinpath(DATADIR, "diag.ts")
+    @testset "diagnostic file plays at 2× real time" begin
+        df = joinpath(DATADIR, "diag.mp4")
         track(base_file; diagnostic_file = df)
         @test isfile(df)
         @test filesize(df) > 0
+        # 50 tracked frames at 25 fps: every 2nd written, declared at 2·25/2 = 25 fps
+        s = probe_stream(df)
+        @test (s.width, s.height) == (640, 360)     # the fixed unrectified canvas
+        @test s.nframes == 25
+        @test s.fps ≈ 25
     end
 end
 

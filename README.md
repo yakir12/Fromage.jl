@@ -248,7 +248,7 @@ xy = runs.rectification[1].image2real.(coords)   # real-world coordinates, e.g. 
 
 ## The diagnostic video
 
-`main` writes `results_dir/diagnostic.mp4` (in the folder Julia was started in): every run rendered top-down through its rectification, with a circle around the tracked position, a trailing trace, and the video's file name as a label — one run after the other. **Watch it.** It is the fastest way to catch a tracker that latched onto a shadow, a wrong starting position, or a bad rectification.
+`main` writes `results_dir/diagnostic.mp4` (in the folder Julia was started in): every run rendered top-down through its rectification into a fixed 540×540 canvas, with a circle around the tracked position, a trailing trace, and the video's file name as a label — one run after the other, playing at 2× real time (≈24 fps regardless of the tracking fps). **Watch it.** It is the fastest way to catch a tracker that latched onto a shadow, a wrong starting position, or a bad rectification.
 
 ## Running only part of the pipeline
 

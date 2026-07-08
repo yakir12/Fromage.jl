@@ -111,3 +111,44 @@ end
 # A load with issues returns a DataFrame carrying :issues (non-strict); a clean one returns the
 # built objects, so anything that isn't a DataFrame is unflagged by definition.
 flagged(x, r, sub) = x isa AbstractDataFrame && any(m -> occursin(sub, m), x.issues[r])
+
+# ---------------------------------------------------------------------------
+# Video probing (ffprobe) — for asserting on produced (diagnostic) videos.
+# ---------------------------------------------------------------------------
+
+"Facts of `file`'s first video stream: frame size, real frame count, declared fps, duration
+(NaN when the container doesn't store one, e.g. MPEG-TS)."
+function probe_stream(file)
+    fields = Dict{String, String}()
+    for l in eachline(pipeline(`$(FFMPEG.ffprobe()) -v error -select_streams v:0 -count_frames -show_entries stream=width,height,nb_read_frames,avg_frame_rate,duration -of default=noprint_wrappers=1 $file`))
+        isempty(l) && continue
+        k, v = split(l, '='; limit = 2)
+        fields[k] = v
+    end
+    num, den = parse.(Int, split(fields["avg_frame_rate"], '/'))
+    return (; width = parse(Int, fields["width"]), height = parse(Int, fields["height"]),
+        nframes = parse(Int, fields["nb_read_frames"]), fps = num / den,
+        duration = something(tryparse(Float64, get(fields, "duration", "")), NaN))
+end
+
+"Per-frame sizes (a Set of (w, h)) plus the packet PTS and DTS sequences in file (= decode)
+order — for asserting a single resolution and sane timestamps across concatenated segments.
+Note B-frames make PTS legitimately non-monotonic in decode order; DTS must be monotonic and
+every PTS unique."
+function probe_frames(file)
+    sizes = Set{NTuple{2, Int}}()
+    for l in eachline(pipeline(`$(FFMPEG.ffprobe()) -v error -select_streams v:0 -show_frames -show_entries frame=width,height -of csv=p=0 $file`))
+        isempty(l) && continue
+        w, h = parse.(Int, split(l, ',')[1:2])
+        push!(sizes, (w, h))
+    end
+    pts = Int[]
+    dts = Int[]
+    for l in eachline(pipeline(`$(FFMPEG.ffprobe()) -v error -select_streams v:0 -show_entries packet=pts,dts -of csv=p=0 $file`))
+        isempty(l) && continue
+        parts = split(l, ',')
+        push!(pts, parse(Int, parts[1]))
+        push!(dts, parse(Int, parts[2]))
+    end
+    return sizes, pts, dts
+end

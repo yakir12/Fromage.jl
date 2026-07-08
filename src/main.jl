@@ -1,26 +1,16 @@
 const results_dir = "results_dir"
 
+# Every segment shares one resolution, codec and quality (see diagnose.jl), so a single ffmpeg
+# concat-demuxer call stream-copies them into the final video. The demuxer rewrites timestamps
+# monotonically by design — unlike the former pairwise "concat:"-protocol tree, which leaned on
+# per-join discontinuity heuristics with every warning hidden at -loglevel 8.
 function concatenate(path, files)
-    filess = [files]
-    todo = Iterators.partition(filess[end], 2)
-    args = [join.(todo, "|")]
-    iter = 1
-    outs = [[joinpath(path, "$iter-$i.ts") for i in 1:length(todo)]]
-    while length(last(args)) > 1
-        todo = Iterators.partition(outs[end], 2)
-        push!(args, join.(todo, "|"))
-        iter += 1
-        out = [joinpath(path, "$iter-$i.ts") for i in 1:length(todo)]
-        push!(outs, out)
+    list = joinpath(path, "list.txt")
+    open(list, "w") do io
+        foreach(f -> println(io, "file '", f, "'"), files)
     end
-    for (arg, out) in zip(args, outs)
-        Threads.@threads for i in 1:length(arg)
-            ffmpeg_exe(` -loglevel 8 -i "concat:$(arg[i])" -c copy $(out[i])`)
-        end
-    end
-    arg = only(outs[end])
     out = joinpath(results_dir, "diagnostic.mp4")
-    ffmpeg_exe(` -y -loglevel 8 -i $arg -c copy $out`)
+    ffmpeg_exe(` -y -loglevel error -f concat -safe 0 -i $list -c copy $out`)
 end
 
 # `rectification_defaults`/`tracking_defaults` globally replace the hardcoded defaults of the
@@ -51,7 +41,7 @@ function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.c
     leftjoin!(runs, calibs, on = :calibration_id)
 
     mktempdir() do path
-        transform!(runs, :run_id => (x -> joinpath.(path, string.(x, ".ts"))) => :diagnostic_file)
+        transform!(runs, :run_id => (x -> joinpath.(path, string.(x, ".mp4"))) => :diagnostic_file)
         runs.run .= @showprogress desc = "Building runs" tmap((r, c, rectification, diagnostic_file) -> track(r; center = c.source.center, rectification, diagnostic_file), runs.r, runs.c, runs.rectification, runs.diagnostic_file)
         concatenate(path, runs.diagnostic_file)
         select!(runs, Not(:diagnostic_file))

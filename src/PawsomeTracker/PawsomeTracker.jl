@@ -18,15 +18,8 @@ using OpenCV: OpenCV
 using CoordinateTransformations: LinearMap
 using LinearAlgebra: I
 
-const FACE = Ref{FTFont}()
 const DEFAULT_MAX_DURATION_SECONDS = 86399.999  # 24 hours minus 1 millisecond
 const RowCol = SVector{2, Float32}
-
-
-function __init__()
-    assets = @path joinpath(@__DIR__, "assets")
-    return FACE[] = FTFont(joinpath(assets, "TeXGyreHerosMakie-Regular.otf"))
-end
 
 export track
 
@@ -263,7 +256,7 @@ function track(
         rectification = nothing # rectification object
     )
 
-    diagnose(diagnostic_file, darker_target, rectification) do dia
+    diagnose(diagnostic_file, darker_target, rectification, fps) do dia
         track_one(file, start, stop, scale*target_width, start_location, round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia, apriltags, scale * initial_search_factor, white_point, scale)
     end
 end
@@ -297,7 +290,7 @@ function track(
     ijs = Vector{Vector{RowCol}}(undef, nfiles)
     args = tuple.(files, start, stop, start_location)
 
-    diagnose(diagnostic_file, darker_target, rectification) do dia
+    diagnose(diagnostic_file, darker_target, rectification, fps) do dia
         end_location = missing
         for (i, (f, t_start, t_stop, loc)) in enumerate(args)
             loc = coalesce(loc, end_location)
