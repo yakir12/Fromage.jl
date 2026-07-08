@@ -1,0 +1,4 @@
+calibration_id,type,file,extrinsic,start,stop,checker_size,n_corners,center,north,scale
+morning,video,calib_morning.mp4,00:00:02,00:00:05,00:00:35,4,"(7, 10)","(960, 540)","(960, 100)",
+afternoon,,calib_afternoon.mp4,1.5,5,35,4,"(7, 10)","(955, 545)",,
+drone,only_scale,drone_shot.mp4,0,,,,,"(2000, 1500)",,0.21
