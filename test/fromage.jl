@@ -52,6 +52,14 @@ include("common.jl")
     @test s.nframes == 25
     @test s.fps ≈ 25
     @test s.duration ≈ 1.0 atol = 0.2
+    # one track csv per run: time,x,y with one row per detected coordinate (run_id imputed to "1")
+    lines = readlines(joinpath(outdir, "results_dir", "1.csv"))
+    @test length(lines) == 51                       # header + 50 coordinates
+    @test lines[1] == "time,x,y"
+    t0, x0, y0 = parse.(Float64, split(lines[2], ','))
+    @test t0 == 0.0
+    @test x0 ≈ expected(1)[2] atol = 1.5            # x = col, y = row of the analytic ground truth
+    @test y0 ≈ expected(1)[1] atol = 1.5
 end
 
 @testset "diagnostic video: multi-run, mixed calibrations" begin
@@ -83,6 +91,12 @@ end
     @test length(pts) == 3 * 25                     # 3 runs × 25 written frames each
     @test all(diff(dts) .> 0)                       # decode order strictly monotonic across joins
     @test allunique(pts)                            # every frame has its own presentation time
+    # one track csv per run, named by run_id
+    for i in 1:3
+        lines = readlines(joinpath(outdir, "results_dir", "run$i.csv"))
+        @test length(lines) == 51                   # header + 50 coordinates
+        @test lines[1] == "time,x,y"
+    end
 end
 
 end

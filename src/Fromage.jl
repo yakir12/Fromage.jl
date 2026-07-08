@@ -16,7 +16,7 @@ using .VerifyRuns: load_runs
 
 using DataFrames: DataFrame, Not, leftjoin!, select!, transform!
 using FFMPEG: ffmpeg_exe
-using OhMyThreads: tmap
+using OhMyThreads: tforeach, tmap
 using ProgressMeter: @showprogress
 
 export main

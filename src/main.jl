@@ -13,6 +13,20 @@ function concatenate(path, files)
     ffmpeg_exe(` -y -loglevel error -f concat -safe 0 -i $list -c copy $out`)
 end
 
+# Save one run's track to results_dir/<run_id>.csv: one row per detected coordinate, with the
+# `time` stamp (seconds into the video) and the tracked `x`/`y` pixel coordinates — x from the
+# frame's left edge and y from its top, the same convention the csv files' pixel coordinates use
+# (track reports (row, col) in stored pixels, so x = col and y = row).
+function save2csv(run_id, (ts, coords))
+    open(joinpath(results_dir, string(run_id, ".csv")), "w") do io
+        println(io, "time,x,y")
+        for (t, rc) in zip(ts, coords)
+            y, x = rc
+            println(io, t, ',', x, ',', y)
+        end
+    end
+end
+
 # `rectification_defaults`/`tracking_defaults` globally replace the hardcoded defaults of the
 # tuning parameters (e.g. `rectification_defaults = (n_corners = (5, 8), blur = 0)`,
 # `tracking_defaults = (target_width = 60,)`). The hierarchy is: csv cell → these kwargs → the
@@ -51,6 +65,8 @@ function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.c
         concatenate(path, runs.diagnostic_file)
         select!(runs, Not(:diagnostic_file))
     end
+
+    tforeach(save2csv, runs.run_id, runs.run)
 
     return runs
 
