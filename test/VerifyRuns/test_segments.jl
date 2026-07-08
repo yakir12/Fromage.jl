@@ -21,7 +21,7 @@
         @test clean(runs)
         @test length(runs) == 2
         @test all(r -> r isa VR.SingleRun, runs)
-        @test [r.source.run_id for r in runs] == ["x", "y"]
+        @test [r.run_id for r in runs] == ["x", "y"]
     end
 
     @testset "segments must agree on run-level parameters" begin
@@ -45,7 +45,7 @@
                                           runrow(run_id = "s", file = ART.b, calibration_id = "cal_1")])
         @test clean(runs)
         @test only(runs) isa VR.MultiRun
-        @test only(runs).source.calibration_id == "cal_1"
+        @test only(runs).calibration_id == "cal_1"
 
         # omitting it is no longer allowed: every such segment row is flagged at parse time
         df0 = check("seg_cal_none.csv", [runrow(run_id = "s", file = ART.a, calibration_id = missing),

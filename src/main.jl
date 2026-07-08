@@ -30,7 +30,7 @@ function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.c
         filter!(r -> r.run_id ∈ run_ids, rs)
     end
 
-    run_calib_ids = [r.source.calibration_id for r in rs]
+    run_calib_ids = [r.calibration_id for r in rs]
     filter!(c -> c.calibration_id ∈ run_calib_ids, cs)
 
     if any(∉(getfield.(cs, :calibration_id)), run_calib_ids)
@@ -41,7 +41,7 @@ function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.c
 
     calibs.rectification .= @showprogress desc = "Building rectifications" tmap(Rectification, calibs.c)
 
-    runs = DataFrame(calibration_id = [r.source.calibration_id for r in rs], run_id = [r.source.run_id for r in rs], r = rs)
+    runs = DataFrame(calibration_id = [r.calibration_id for r in rs], run_id = [r.run_id for r in rs], r = rs)
     leftjoin!(runs, calibs, on = :calibration_id)
 
     mktempdir() do path

@@ -9,7 +9,7 @@
     @testset "calibration_id is required" begin
         # a run is always rectified against a calibration (Fromage joins on calibration_id), so a
         # run without one has nothing to rectify against and is flagged rather than left missing.
-        @test only(check("cal_set.csv", [runrow(calibration_id = "cal_42")])).source.calibration_id == "cal_42"
+        @test only(check("cal_set.csv", [runrow(calibration_id = "cal_42")])).calibration_id == "cal_42"
         @test flagged(check("cal_missing.csv", [runrow(calibration_id = missing)]), 1, "calibration_id is missing")
         @test flagged(check("cal_blank.csv",   [runrow(calibration_id = "   ")]),   1, "calibration_id is missing")
     end
@@ -20,12 +20,12 @@
                      [runrow(run_id = missing), runrow(run_id = "   "), runrow(run_id = missing)])
         @test clean(runs)
         @test all(r -> r isa VR.SingleRun, runs)
-        @test [r.source.run_id for r in runs] == ["1", "2", "3"]
+        @test [r.run_id for r in runs] == ["1", "2", "3"]
 
         # all rows named ⇒ clean, ids used as-is
         runs2 = check("p_id_all.csv", [runrow(run_id = "x"), runrow(run_id = "y")])
         @test clean(runs2)
-        @test [r.source.run_id for r in runs2] == ["x", "y"]
+        @test [r.run_id for r in runs2] == ["x", "y"]
 
         # mixed ⇒ every blank row is flagged, the named row is not
         df = check("p_id_mixed.csv",
@@ -70,7 +70,7 @@
         @test clean(runs)
         r = only(runs)
         @test r isa VR.SingleRun                      # one file ⇒ scalar-field run type
-        @test r.source.calibration_id        == "c"   # the baseline's id (required, never defaulted)
+        @test r.calibration_id        == "c"   # the baseline's id (required, never defaulted)
         @test r.start                        == 0.0
         @test r.source.target_width          == 25.0
         @test r.source.window_size           === missing
