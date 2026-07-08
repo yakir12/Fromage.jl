@@ -1,7 +1,7 @@
 # Tracking accuracy through the gateway: CSV → load_runs → VR.track on synthetic videos with a
 # known trajectory (make_target_video), asserting the RMSE (stored-frame pixels) against the
 # closed-form ground truth. Covers the combinations VerifyRuns can hand PawsomeTracker: the
-# start_location sources (CSV cell, calibration `center`, frame-center default), the window_size
+# start_location sources (CSV cell, rectification `center`, frame-center default), the window_size
 # sources (imputed, CSV scalar, CSV (w, h) tuple), darker/lighter targets, reduced fps, a start/stop
 # sub-window, downscaling, segmented runs — and anamorphic videos (sar ≠ 1), where inputs
 # (start_location, center, frame center) are display-space and outputs are stored-space.
@@ -27,7 +27,7 @@
         @test clean(runs)
         _, ij = VR.track(only(runs))
         @test tracking_rmse(ij, base_exp) < 1
-        # the `center` keyword (what Fromage passes from the calibration)
+        # the `center` keyword (what Fromage passes from the rectification)
         runs = check("t_sl_ctr.csv", [runrow(file = only(base))])
         @test clean(runs)
         _, ij = VR.track(only(runs); center = (55, 50))

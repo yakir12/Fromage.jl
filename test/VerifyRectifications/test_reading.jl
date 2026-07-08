@@ -1,9 +1,9 @@
 @testset "file reading (durations & dimensions)" begin
-    # A clean load returns Vector{CalibrationMethod}; :dimension/:duration are intermediate validation
+    # A clean load returns Vector{RectificationMethod}; :dimension/:duration are intermediate validation
     # columns. One ffprobe per video file (probe_video) returns width/height/duration/aspect/yadif;
     # matlab metadata derives from one matread, exercised here through the dict-based helpers.
     @testset "valid video -> probe_video metadata" begin
-        m = VC.probe_video(joinpath(DATADIR, ART.video))   # video.mp4: 640x480, progressive
+        m = VRect.probe_video(joinpath(DATADIR, ART.video))   # video.mp4: 640x480, progressive
         @test m.width == 640
         @test m.height == 480
         @test m.duration ≈ VIDEO_DURATION atol = 0.5
@@ -13,17 +13,17 @@
 
     @testset "valid matlab -> dimension" begin
         # good.mat ImageSize [480,640] -> (640,480)
-        @test VC.matlab_dimension(MAT.matread(joinpath(DATADIR, ART.good_mat))) == (640, 480)
+        @test VRect.matlab_dimension(MAT.matread(joinpath(DATADIR, ART.good_mat))) == (640, 480)
     end
 
     @testset "matlab with nested ImageSize (findfirstkey recursion)" begin
-        @test VC.matlab_dimension(MAT.matread(joinpath(DATADIR, ART.nested_mat))) == (640, 480)
+        @test VRect.matlab_dimension(MAT.matread(joinpath(DATADIR, ART.nested_mat))) == (640, 480)
     end
 
     @testset "corrupt video is flagged for both video and only_scale" begin
         # probe_video's catch returns the message string; assert it directly, then end-to-end through
-        # load_calibrations for both types (both reach probe_video via read_video_metadata!).
-        @test VC.probe_video(joinpath(DATADIR, ART.corrupt)) isa String
+        # load_rectifications for both types (both reach probe_video via read_video_metadata!).
+        @test VRect.probe_video(joinpath(DATADIR, ART.corrupt)) isa String
         @test flagged(check("r_corrupt.csv",  [videorow(file = ART.corrupt)]), 1, "issue reading from video file")
         @test flagged(check("r_corrupts.csv", [scalerow(file = ART.corrupt)]), 1, "issue reading from video file")
     end
@@ -36,8 +36,8 @@
     @testset "matlab magic bytes" begin
         # A real MAT-file begins with the ASCII text "MATLAB"; matlab_magic_issue returns nothing for
         # a genuine .mat and a message otherwise. bad.mat ("this is not a mat file") fails the check.
-        @test VC.matlab_magic_issue(joinpath(DATADIR, ART.good_mat)) === nothing
-        @test VC.matlab_magic_issue(joinpath(DATADIR, ART.bad_mat))  isa String
+        @test VRect.matlab_magic_issue(joinpath(DATADIR, ART.good_mat)) === nothing
+        @test VRect.matlab_magic_issue(joinpath(DATADIR, ART.bad_mat))  isa String
         # end-to-end: a non-mat file is flagged and has :matlab_file nulled (the source video :file is fine)
         df = check("r_mat_magic.csv", [matlabrow(matlab_file = ART.bad_mat)])
         @test flagged(df, 1, "missing \"MATLAB\" magic bytes")
@@ -56,10 +56,10 @@
         # matlab_missing_keys returns nothing when all of MATLAB_REQUIRED_KEYS are present (searched
         # nested), and a message listing the absent ones otherwise. read_matlab turns a non-mat /
         # unreadable file into an issue string before any dict is produced.
-        @test VC.matlab_missing_keys(MAT.matread(joinpath(DATADIR, ART.good_mat)))    === nothing
-        @test VC.matlab_missing_keys(MAT.matread(joinpath(DATADIR, ART.nested_mat)))  === nothing
-        @test VC.matlab_missing_keys(MAT.matread(joinpath(DATADIR, ART.partial_mat))) isa String
-        @test VC.read_matlab(joinpath(DATADIR, ART.bad_mat))                          isa String  # unreadable / not a mat
+        @test VRect.matlab_missing_keys(MAT.matread(joinpath(DATADIR, ART.good_mat)))    === nothing
+        @test VRect.matlab_missing_keys(MAT.matread(joinpath(DATADIR, ART.nested_mat)))  === nothing
+        @test VRect.matlab_missing_keys(MAT.matread(joinpath(DATADIR, ART.partial_mat))) isa String
+        @test VRect.read_matlab(joinpath(DATADIR, ART.bad_mat))                          isa String  # unreadable / not a mat
 
         # end-to-end: a structurally-complete matlab row loads clean...
         @test clean(check("r_mat_ok.csv", [matlabrow()]))                 # good.mat has all fields
@@ -100,14 +100,14 @@
     @testset "matlab without ImageSize is flagged" begin
         # matlab_dimension guards findfirstkey(...) === nothing and returns the "does not contain any
         # image size" message instead of crashing when ImageSize is absent.
-        @test VC.matlab_dimension(MAT.matread(joinpath(DATADIR, ART.noimsize_mat))) isa String
+        @test VRect.matlab_dimension(MAT.matread(joinpath(DATADIR, ART.noimsize_mat))) isa String
     end
 
     @testset "single-type CSV (no per-type fillers) loads" begin
         # parse_row back-fills every COLUMNS entry with missing, so a video-only CSV (which never
         # creates the :scale column) no longer makes verifications! throw `column :scale not found`.
         csv = write_csv(joinpath(DATADIR, "videoonly.csv"), [videorow()])   # no fillers
-        @test (VC.load_calibrations(DATADIR, csv; strict = false); true)
+        @test (VRect.load_rectifications(DATADIR, csv; strict = false); true)
     end
 
     @testset "malformed ImageSize is flagged, never thrown" begin
@@ -119,9 +119,9 @@
             # include the required calibration fields so the structure check passes and the row
             # reaches the ImageSize validation under test.
             MAT.matwrite(p, merge(Dict("ImageSize" => val), MATLAB_CALIB_FIELDS))
-            @test VC.matlab_dimension(MAT.matread(p)) isa String
+            @test VRect.matlab_dimension(MAT.matread(p)) isa String
         end
-        # end-to-end: such a file is flagged, and load_calibrations does not throw
+        # end-to-end: such a file is flagged, and load_rectifications does not throw
         @test flagged(check("r_badimsize.csv", [matlabrow(matlab_file = "badimsize_three_elem.mat")]), 1, "ImageSize is malformed")
     end
 end

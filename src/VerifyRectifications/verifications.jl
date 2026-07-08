@@ -304,10 +304,10 @@ function verify_intrinsics!(df::AbstractDataFrame)
 end
 
 function verify_unique_calibrations!(df::AbstractDataFrame)
-    # What makes two calibrations "the same" is type-dependent, so partition by :type:
+    # What makes two rectifications "the same" is type-dependent, so partition by :type:
     #   * matlab / only_scale: identical on *every* field (calibration_id and issues aside).
     #   * video: identical on the identity key below. The remaining parameters are NOT part of identity
-    #     (one video can carry several calibrations differing only in, say, blur), but two same-identity
+    #     (one video can carry several rectifications differing only in, say, blur), but two same-identity
     #     rows still *should* agree on them — when they don't, the duplicate also gets a
     #     conflicting-parameters issue.
     # :file is already the canonical resolved path, so equivalent spellings / path splits compare equal
@@ -325,7 +325,7 @@ function verify_unique_calibrations!(df::AbstractDataFrame)
     nonvideo = @view cmp[ok .& .!coalesce.(cmp.type .== "video", false), :]
     nv_dups = nonvideo._row[nonunique(nonvideo, Not(:_row))]
     df[nv_dups, :calibration_id] .= missing
-    push!.(df[nv_dups, :issues], "duplicate calibration")
+    push!.(df[nv_dups, :issues], "duplicate rectification")
 
     # video: group by identity; within each group keep the first occurrence and reject the rest.
     identity = [:file, :start, :stop, :extrinsic, :center, :north]
@@ -334,9 +334,9 @@ function verify_unique_calibrations!(df::AbstractDataFrame)
         nrow(g) > 1 || continue
         g_dups = g._row[2:end]
         df[g_dups, :calibration_id] .= missing
-        push!.(df[g_dups, :issues], "duplicate calibration")
+        push!.(df[g_dups, :issues], "duplicate rectification")
         if any(c -> !allequal(g[!, c]), other)
-            push!.(df[g_dups, :issues], "same calibration with conflicting parameters")
+            push!.(df[g_dups, :issues], "same rectification with conflicting parameters")
         end
     end
 end

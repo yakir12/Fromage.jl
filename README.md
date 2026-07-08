@@ -9,11 +9,11 @@ This is the main package used to organise, calibrate, and track video files in t
 
 ## When is this useful
 
-You have video recordings of **runs** — an animal (or any other target) moving through an arena — and video recordings of **calibrations** — a checkerboard filmed in that same arena. Fromage tracks the target in every run, pairs each run with its calibration, and gives you everything needed to convert the tracked pixel coordinates into real-world coordinates (e.g. cm on the arena floor). It also produces a diagnostic video so you can quickly check, run by run, that the tracker followed the right thing.
+You have video recordings of **runs** — an animal (or any other target) moving through an arena — and video recordings of **calibrations** — a checkerboard filmed in that same arena. Fromage tracks the target in every run, pairs each run with its rectification, and gives you everything needed to convert the tracked pixel coordinates into real-world coordinates (e.g. cm on the arena floor). It also produces a diagnostic video so you can quickly check, run by run, that the tracker followed the right thing.
 
 ## Install
 
-This repository bundles Fromage's supporting packages (VerifyCalibrations, VerifyRuns,
+This repository bundles Fromage's supporting packages (VerifyRectifications, VerifyRuns,
 Rectifications, and PawsomeTracker) as submodules — installing Fromage installs everything.
 
 You'll need a recent version of Julia, at least 1.11 (see [here](https://julialang.org/downloads/) for instructions). Then, in Julia's Pkg mode (type `]` at the REPL):
@@ -38,7 +38,7 @@ pkg> add <path-or-URL-of-this-repository>
 `main` then:
 
 1. Reads and **validates every row** of both csv files: files exist and are readable videos, timestamps fall within the video's duration, the checkerboard is actually detectable, all parameters are within sane ranges, etc. If *anything* is wrong it prints one line per problematic row (e.g. `row 3: file does not exist, wrong start format`) and stops before any tracking starts — fix the csv files and run again.
-2. Builds a calibration (a "rectification") for every run from its referenced calibration entry.
+2. Builds a rectification for every run from its referenced `calibs.csv` entry.
 3. Tracks the target in every run.
 4. Writes a single diagnostic video, `results_dir/diagnostic.mp4`, containing all the runs (see [The diagnostic video](#the-diagnostic-video)).
 5. Returns a `DataFrame` with one row per run (see [What you get back](#what-you-get-back)).
@@ -87,7 +87,7 @@ One row per run video (a run split across multiple video files uses several rows
 | column | description |
 | --- | --- |
 | `file` | the video file name, including its extension (e.g. `beetle01.mp4`). |
-| `calibration_id` | which calibration to use for this run — must match a `calibration_id` in `calibs.csv`. |
+| `calibration_id` | which rectification to use for this run — must match a `calibration_id` in `calibs.csv`. |
 
 ### Optional columns
 
@@ -113,7 +113,7 @@ One row per run video (a run split across multiple video files uses several rows
 The starting position for a run is determined by the first available of:
 
 1. `start_location` in `runs.csv`,
-2. the `center` of the run's calibration in `calibs.csv`,
+2. the `center` of the run's rectification in `calibs.csv`,
 3. nothing — the target is searched for near the center of the frame, within a window of `min(width, height) / initial_search_factor` pixels.
 
 ### Runs that span multiple videos
@@ -132,9 +132,9 @@ long,afternoon,beetle03_b.mp4,0,00:01:03,
 
 ## calibs.csv
 
-One row per calibration. Every calibration is anchored to a video file of the arena. There are two kinds, selected with the `type` column:
+One row per rectification. Every rectification is anchored to a video file of the arena. There are two kinds, selected with the `type` column:
 
-- **`video`** (the default): a video of a checkerboard being moved around the arena, then laid flat on the arena floor. Yields a full calibration — lens distortion, perspective, and scale.
+- **`video`** (the default): a video of a checkerboard being moved around the arena, then laid flat on the arena floor. Yields a full rectification — lens distortion, perspective, and scale.
 - **`only_scale`**: no checkerboard; you supply a fixed scale (real-world units per pixel). No distortion or perspective correction — appropriate for e.g. distortion-free footage filmed straight down.
 
 ### Columns for `type = video`
@@ -143,7 +143,7 @@ Required:
 
 | column | description |
 | --- | --- |
-| `calibration_id` | a unique name for this calibration; referenced from `runs.csv`. |
+| `calibration_id` | a unique name for this rectification; referenced from `runs.csv`. |
 | `file` | the video file name, including extension. |
 | `extrinsic` | timestamp of a frame where the checkerboard lies **flat on the arena floor**. This frame anchors the mapping between the image and the arena surface, so make sure the full board is clearly visible in it. |
 
@@ -155,8 +155,8 @@ Optional:
 | `checker_size` | `4` | side length of a single checker square, in the real-world unit of your choice (e.g. cm). **The resulting track coordinates come out in this unit.** |
 | `n_corners` | `"(7, 10)"` | number of *internal* corners of the checkerboard along its two sides (a board of 8 × 11 squares has 7 × 10 internal corners). |
 | `temporal_step` | `2.0` | sample one frame every `temporal_step` seconds within [`start`, `stop`]. E.g. a 30-second window at the default yields 16 candidate frames. Ignored without a calibration window. |
-| `center` | — | `"(x, y)"` pixel coordinate of the arena's center. Becomes the **origin** of the real-world coordinate system, and doubles as the default starting location for this calibration's runs. |
-| `north` | — | `"(x, y)"` pixel coordinate of a point lying due north of `center`. Rotates the real-world coordinates so that north is consistent across calibrations. Requires `center`. |
+| `center` | — | `"(x, y)"` pixel coordinate of the arena's center. Becomes the **origin** of the real-world coordinate system, and doubles as the default starting location for this rectification's runs. |
+| `north` | — | `"(x, y)"` pixel coordinate of a point lying due north of `center`. Rotates the real-world coordinates so that north is consistent across rectifications. Requires `center`. |
 | `blur` | `1` | Gaussian blur (sigma, in pixels) applied to frames before corner detection; helps with noisy/sharpened footage. `0` disables. |
 | `radial_parameters` | `1` | number of radial lens-distortion coefficients to fit (1–3). More isn't automatically better — use 2–3 only for strongly distorting (e.g. fisheye) lenses. Ignored without a calibration window. |
 | `path` | `.` | folder containing `file`, relative to the location of the csv file. |
@@ -198,7 +198,7 @@ Before anything is tracked, every row of both files is checked, including (not e
 - timestamps are well-formatted, non-negative, ordered (`start` < `stop`), and within the video's duration;
 - pixel coordinates lie inside the frame;
 - numeric parameters are within their valid ranges;
-- `calibration_id`s are unique, and no two calibrations are effectively identical duplicates;
+- `calibration_id`s are unique, and no two rectifications are effectively identical duplicates;
 - the checkerboard is detected at the `extrinsic` timestamp, and — when a calibration window is given — at least 3 sampled frames within [`start`, `stop`] have a detectable board (this is the expensive part of validation — it reads real frames);
 - segments of a multi-video run agree on all their shared parameters;
 - every `calibration_id` used in `runs.csv` exists in `calibs.csv`.
@@ -213,30 +213,30 @@ All problems are reported at once, per row, and nothing runs until they're all f
 | --- | --- |
 | `run_id`, `calibration_id` | the identifiers from the csv files. |
 | `run` | the track: a tuple `(ts, coords)` of timestamps (seconds into the video) and pixel coordinates (`(row, col)` of the target in the original frame). |
-| `calibration` | the rectification: a named tuple whose `image2real` function converts pixel coordinates to real-world coordinates (origin at `center`, north-aligned if `north` was given, in `checker_size`/`scale` units); `real2image` is its inverse. |
-| `r`, `c` | the parsed run and calibration entries (all the resolved parameter values). |
+| `rectification` | the rectification: a named tuple whose `image2real` function converts pixel coordinates to real-world coordinates (origin at `center`, north-aligned if `north` was given, in `checker_size`/`scale` units); `real2image` is its inverse. |
+| `r`, `c` | the parsed run and rectification entries (all the resolved parameter values). |
 
 For example:
 
 ```julia
 runs = main("path/to/data")
 ts, coords = runs.run[1]                       # first run: timestamps + pixel coordinates
-xy = runs.calibration[1].image2real.(coords)   # real-world coordinates, e.g. in cm
+xy = runs.rectification[1].image2real.(coords)   # real-world coordinates, e.g. in cm
 ```
 
 ## The diagnostic video
 
-`main` writes `results_dir/diagnostic.mp4` (in the folder Julia was started in): every run rendered top-down through its calibration, with a circle around the tracked position, a trailing trace, and the video's file name as a label — one run after the other. **Watch it.** It is the fastest way to catch a tracker that latched onto a shadow, a wrong starting position, or a bad calibration.
+`main` writes `results_dir/diagnostic.mp4` (in the folder Julia was started in): every run rendered top-down through its rectification, with a circle around the tracked position, a trailing trace, and the video's file name as a label — one run after the other. **Watch it.** It is the fastest way to catch a tracker that latched onto a shadow, a wrong starting position, or a bad rectification.
 
 ## Running only part of the pipeline
 
 Two unexported helpers are useful while iterating on the csv files:
 
 ```julia
-# only build calibrations (all of them, or a subset of calibration_ids):
-Fromage.only_calibrate("path/to/data"; calibs_file = "calibs.csv", todo = ["morning"])
+# only build rectifications (all of them, or a subset of calibration_ids):
+Fromage.only_rectify("path/to/data"; calibs_file = "calibs.csv", todo = ["morning"])
 
-# only track (no calibration involved), optionally a subset of rows;
+# only track (no rectification involved), optionally a subset of rows;
 # writes one raw-view diagnostic per run: results_dir/1.mp4, 2.mp4, ...
 Fromage.only_track("path/to/data"; runs_file = "runs.csv", rows = 3:5)
 ```

@@ -16,7 +16,7 @@ using Fromage
 
     @testset "ExplicitImports" begin
         # These checks recurse into every submodule, so passing `Fromage` covers Rectifications,
-        # PawsomeTracker, VerifyCalibrations and VerifyRuns too — the whole package imports every
+        # PawsomeTracker, VerifyRectifications and VerifyRuns too — the whole package imports every
         # name explicitly, via its owning module. ImageIO is exempted from the stale check: it is
         # imported purely for its side effect (registering FileIO's image backend), never by name.
         @test check_no_implicit_imports(Fromage) === nothing

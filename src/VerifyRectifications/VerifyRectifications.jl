@@ -1,4 +1,4 @@
-module VerifyCalibrations
+module VerifyRectifications
 
 using CSV: CSV
 using ..Rectifications: get_corners, _vf
@@ -15,7 +15,7 @@ using PrecompileTools: @setup_workload, @compile_workload
 using ProgressMeter: ProgressMeter, @showprogress
 using Tables: Tables
 
-export load_calibrations
+export load_rectifications
 
 const COLUMNS = (:comment, :calibration_id, :path, :file, :matlab_file, :start, :stop, :extrinsic, :checker_size, :center, :north, :n_corners, :scale, :type, :temporal_step, :radial_parameters, :blur, :extrinsic_index, :aspect, :yadif)
 
@@ -23,12 +23,12 @@ include("types.jl")
 include("parsers.jl")
 include("verifications.jl")
 
-function load_calibrations(file; strict = true)
+function load_rectifications(file; strict = true)
     data_path = dirname(file)
-    load_calibrations(data_path, file; strict)
+    load_rectifications(data_path, file; strict)
 end
 
-function load_calibrations(data_path, file; strict = true)
+function load_rectifications(data_path, file; strict = true)
     # verify csv file exists
     if !isfile(file)
         error("calibration `.csv` file missing")
@@ -47,7 +47,7 @@ function load_calibrations(data_path, file; strict = true)
         error("unrecognized column/s in calibration file: $unrecognized")
     end
 
-    # parse rows to CalibrationMethods or error messages
+    # parse rows to RectificationMethods or error messages
     cs = @showprogress desc = "Parsing calibs.csv" tmap(parse_row, collect(csvrows))
 
     df = DataFrame(Tables.dictrowtable(cs))
@@ -65,12 +65,12 @@ function load_calibrations(data_path, file; strict = true)
         end
     end
 
-    return CalibrationMethod.(eachrow(df))
+    return RectificationMethod.(eachrow(df))
 end
 
 # Precompile the parse → verify → report pipeline at build time. The bulk of first-call latency is the
 # DataFrames/DataFramesMeta/Chain macro machinery (column-typed `@transform!`/`@chain`/`subset`/`verify!`
-# specializations), which a single `load_calibrations` run compiles. The workload CSV points at
+# specializations), which a single `load_rectifications` run compiles. The workload CSV points at
 # nonexistent files (one row per type), so the run exercises the full pipeline for all three types but
 # bails before any ffprobe/matread/corner detection — no bundled media needed, fast deterministic
 # precompile. (The video-read/corner-detection paths are left to compile on first real use.)
@@ -88,7 +88,7 @@ end
     @compile_workload begin
         redirect_stdout(devnull) do
             try
-                load_calibrations(dir, csv; strict = false)
+                load_rectifications(dir, csv; strict = false)
             catch
             end
         end

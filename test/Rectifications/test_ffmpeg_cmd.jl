@@ -7,11 +7,11 @@
         @test R._vf(missing, 2.0) == "gblur=sigma=2.0"                   # blur only
         @test R._vf(true, missing) == "yadif=1"                          # deinterlace only
         @test R._vf(true, 2.0) == "yadif=1,gblur=sigma=2.0"              # both, in order
-        # yadif = false means progressive footage: it must NOT deinterlace (VerifyCalibrations
+        # yadif = false means progressive footage: it must NOT deinterlace (VerifyRectifications
         # probes yadif as a Bool, so false is the common case — it used to hit the yadif branch)
         @test R._vf(false, missing) === missing
         @test R._vf(false, 2.0) == "gblur=sigma=2.0"
-        # blur = 0 means no blur (VerifyCalibrations' convention): no sigma-0 no-op filter
+        # blur = 0 means no blur (VerifyRectifications' convention): no sigma-0 no-op filter
         @test R._vf(missing, 0.0) === missing
         @test R._vf(false, 0) === missing
         @test R._vf(true, 0.0) == "yadif=1"

@@ -1,9 +1,9 @@
 using Test
-using Fromage: VerifyCalibrations
+using Fromage: VerifyRectifications
 using CSV, DataFrames
 using FFMPEG, MAT
 
-const VC = VerifyCalibrations
+const VRect = VerifyRectifications
 
 # ---------------------------------------------------------------------------
 # Artifact generation (videos, matlab files) into a shared directory.
@@ -96,7 +96,7 @@ end
 
 # ---------------------------------------------------------------------------
 # CSV building. One canonical header; `row(; ...)` fills absent cells with missing.
-# Only names from VerifyCalibrations.COLUMNS are allowed (others => "unrecognized column").
+# Only names from VerifyRectifications.COLUMNS are allowed (others => "unrecognized column").
 # ---------------------------------------------------------------------------
 
 const HEADER = ["calibration_id", "path", "file", "matlab_file", "type", "extrinsic", "extrinsic_index",
@@ -106,7 +106,7 @@ const HEADER = ["calibration_id", "path", "file", "matlab_file", "type", "extrin
 
 row(; kw...) = [get(kw, Symbol(c), missing) for c in HEADER]
 
-# Clean baseline rows per calibration type; override any field via keyword to isolate one issue.
+# Clean baseline rows per rectification type; override any field via keyword to isolate one issue.
 # (Each scenario is loaded as its own single-row CSV, so there is no cross-row coupling.)
 _merge(base; kw...) = row(; merge(base, values(kw))...)
 videorow(; kw...) = _merge((calibration_id = "v", path = ".", file = ART.board, type = "video",
@@ -150,10 +150,10 @@ end
 column `verifications!` references — no column-completing filler rows are needed.)"
 function check(name, rows; strict = false, header = HEADER)
     csv = write_csv(joinpath(DATADIR, name), rows; header)
-    VC.load_calibrations(DATADIR, csv; strict)
+    VRect.load_rectifications(DATADIR, csv; strict)
 end
 
-"Like `check`, but also capture what load_calibrations prints to stdout. Returns (df, output).
+"Like `check`, but also capture what load_rectifications prints to stdout. Returns (df, output).
 Routed through a temp file because redirect_stdout needs a real file descriptor, not an IOBuffer."
 function load_capturing(name, rows; strict = false)
     mktemp() do path, io
@@ -164,6 +164,6 @@ function load_capturing(name, rows; strict = false)
 end
 
 flagged(df, r, sub) = hasproperty(df, :issues) && any(m -> occursin(sub, m), df.issues[r])
-# A clean load drops the :issues column (load_calibrations returns select(df, Not(:issues)));
+# A clean load drops the :issues column (load_rectifications returns select(df, Not(:issues)));
 # a load with issues keeps it. So "clean" means the column is gone (or, defensively, all empty).
 clean(df) = !hasproperty(df, :issues) || all(isempty, df.issues)

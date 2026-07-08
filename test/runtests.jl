@@ -8,7 +8,7 @@ using Test
     include("quality.jl")
     include("rectifications.jl")
     include("pawsometracker.jl")
-    include("verifycalibrations.jl")
+    include("verifyrectifications.jl")
     include("verifyruns.jl")
     include("fromage.jl")
 end

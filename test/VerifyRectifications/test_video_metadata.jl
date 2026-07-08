@@ -5,27 +5,27 @@
     # yadif marks interlaced footage and is not otherwise constrained.
 
     @testset "probe_video reads interlacing and frame size" begin
-        prog = VC.probe_video(joinpath(DATADIR, ART.board))        # checkerboard, progressive
+        prog = VRect.probe_video(joinpath(DATADIR, ART.board))        # checkerboard, progressive
         @test prog.yadif == false
         @test prog.width > 0 && prog.height > 0
 
-        inter = VC.probe_video(joinpath(DATADIR, ART.interlaced))  # field_order tt
+        inter = VRect.probe_video(joinpath(DATADIR, ART.interlaced))  # field_order tt
         @test inter.yadif == true
         @test inter.width == 720
         @test inter.height == 576
     end
 
     @testset "parse_sample_aspect mirrors VideoIO's SAR fallback" begin
-        @test VC.parse_sample_aspect("1:1") == 1.0
-        @test VC.parse_sample_aspect("4:3") ≈ 4 / 3
-        @test VC.parse_sample_aspect("0:1") == 1.0   # zero -> default 1
-        @test VC.parse_sample_aspect("1:0") == 1.0   # zero denominator -> default 1
-        @test VC.parse_sample_aspect("N/A") == 1.0   # undefined -> default 1
+        @test VRect.parse_sample_aspect("1:1") == 1.0
+        @test VRect.parse_sample_aspect("4:3") ≈ 4 / 3
+        @test VRect.parse_sample_aspect("0:1") == 1.0   # zero -> default 1
+        @test VRect.parse_sample_aspect("1:0") == 1.0   # zero denominator -> default 1
+        @test VRect.parse_sample_aspect("N/A") == 1.0   # undefined -> default 1
     end
 
     @testset "missing yadif/width/height are imputed onto the Video struct" begin
         # A clean load returns Vector{Video}; with the columns left blank they are filled from the probe.
-        probed = VC.probe_video(joinpath(DATADIR, ART.board))
+        probed = VRect.probe_video(joinpath(DATADIR, ART.board))
         result = check("vm_impute.csv", [videorow()])
         @test result isa Vector
         v = first(result)
@@ -38,7 +38,7 @@
     @testset "a CSV-supplied yadif wins over the probe; width/height are always probed" begin
         # board is progressive, but an explicit yadif cell must be kept verbatim, not overwritten.
         # width/height have no CSV column, so they always come from the probe (the real frame size).
-        probed = VC.probe_video(joinpath(DATADIR, ART.board))
+        probed = VRect.probe_video(joinpath(DATADIR, ART.board))
         result = check("vm_provided.csv", [videorow(yadif = true)])
         @test result isa Vector
         v = first(result)
@@ -62,7 +62,7 @@
         # width/height live in the shared Source struct, so they are imputed from the source video for
         # every type now; yadif (interlacing) remains a video-only field. The clean load returns the
         # structs, so inspect c[1].source.width/height.
-        probed = VC.probe_video(joinpath(DATADIR, ART.video))   # video.mp4: 640×480
+        probed = VRect.probe_video(joinpath(DATADIR, ART.video))   # video.mp4: 640×480
         for (name, r) in (("scale", scalerow()), ("matlab", matlabrow()))
             c = check("vm_$name.csv", [r])
             @test c isa Vector

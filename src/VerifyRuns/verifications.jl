@@ -118,7 +118,7 @@ function verifications!(df::AbstractDataFrame, data_path)
     read_video_metadata!(df)
 
     # start_location is optional (missing rows skipped). It is (x, y) = (horizontal, vertical) in
-    # *display* pixels — like a calibration's center/north — while ffprobe's width is in stored
+    # *display* pixels — like a rectification's center/north — while ffprobe's width is in stored
     # pixels, so x is bounds-checked against the display width, width × sar (they only differ for
     # anamorphic videos); y against height, which sar does not affect.
     verify!(df, x -> any(<(1), x), "start_location cannot be smaller than 1", :start_location)

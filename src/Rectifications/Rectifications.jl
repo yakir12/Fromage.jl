@@ -17,7 +17,7 @@ using StaticArrays: SDiagonal, SVector, pop, push
 const CRITERIA = OpenCV.TermCriteria(OpenCV.TERM_CRITERIA_EPS + OpenCV.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
 # Global limiter on concurrent ffmpeg reads, shared by every `_frame_at` call (and thus by
-# VerifyCalibrations, which reads through `Rectifications.get_corners`). Bounds simultaneous
+# VerifyRectifications, which reads through `Rectifications.get_corners`). Bounds simultaneous
 # opens against the (CIFS/network) share so a burst of nested `tmap` tasks can't trip EAGAIN
 # ("Resource temporarily unavailable"). A single global limiter is what composes across the
 # nested tmaps — per-call `ntasks` limits would multiply. Tune via `set_read_limit!` or the

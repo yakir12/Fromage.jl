@@ -68,7 +68,7 @@ end
 # framerate); `window_size`/`start_location` stay missing and are simply omitted from the `track` call.
 function parse_run!(dict, row)
     parseto!(dict, row, :run_id, String, missing)               # all-or-nothing: blank only allowed when every row is blank (then imputed from the row number); see resolve_run_ids!
-    parseto!(dict, row, :calibration_id, String)                # required: Fromage joins runs to calibrations on it
+    parseto!(dict, row, :calibration_id, String)                # required: Fromage joins runs to rectifications on it
     parseto!(dict, row, :file, String)
     parseto!(dict, row, :path, String, ".")
     parseto!(dict, row, :start, MyTemporal, 0.0)

@@ -2,7 +2,7 @@
 # a single video, or several segment videos sharing a `run_id` — is materialized in the *type* so
 # `track` dispatches on it with no runtime branch, and grouping yields a `Vector{Run}` of the right
 # concrete types directly. The run-level values shared by both arities live in `Source` (mirroring
-# VerifyCalibrations' `Source`): identity (`run_id`, `calibration_id`), the `track`
+# VerifyRectifications' `Source`): identity (`run_id`, `calibration_id`), the `track`
 # parameters (`target_width`…`scale`), and the video's stored-pixel `width`/`height` plus sample
 # aspect ratio `sar` as probed by ffprobe (segments of a multi-segment run are verified to agree on
 # them; display width = `width × sar`). The per-segment fields stay in the
@@ -11,7 +11,7 @@
 # target continues from where the previous segment ended). `stop`/`fps` are concrete (imputed from the
 # probed video); `window_size` stays `missing` when the CSV omitted it, and `track(::Run)` imputes it
 # (impute_window_size) from `target_width`/`fps`/duration. `calibration_id` is required run-level
-# metadata (the calibration this run is rectified with — Fromage joins runs to calibrations on it,
+# metadata (the rectification this run uses — Fromage joins runs to rectifications on it,
 # so a run without one has nothing to rectify against); it is not forwarded to `track`.
 abstract type Run end
 
@@ -87,7 +87,7 @@ end
 # the vector method for a multi-segment `MultiRun`. Concrete-type dispatch, no runtime length check.
 # The returned coordinates are (row, col) in *stored*-frame pixels of the original (unscaled) video;
 # for an anamorphic video the display-space x is col × sar.
-# The run's (or first segment's) start_location falls back to `center` (e.g. the calibration's scene
+# The run's (or first segment's) start_location falls back to `center` (e.g. the rectification's scene
 # center) and then to the frame's center — (x, y) in *display* pixels, matching start_location's
 # convention, so x is half the display width, width × sar (`track` maps x back to stored columns) —
 # so `track` always gets a concrete starting point. `center` defaults to `missing` (not `nothing`):

@@ -49,14 +49,14 @@ end
 Base.close(dia :: Diagnosis) = close_video_out!(dia.writer)
 
 struct Dont end
-# `file` (the diagnostic_file) is nothing: no diagnostic video requested, whatever the calibration.
+# `file` (the diagnostic_file) is nothing: no diagnostic video requested, whatever the rectification.
 diagnose(::Nothing, _, _) = Dont()
 (::Dont)(_, _) = nothing
 Base.close(::Dont) = nothing
 update_ratio!(::Dont, _) = nothing
 
-function diagnose(f, file, darker_target, calibration)
-    dia = diagnose(file, darker_target, calibration)
+function diagnose(f, file, darker_target, rectification)
+    dia = diagnose(file, darker_target, rectification)
     return try
         f(dia)
     finally
@@ -64,7 +64,7 @@ function diagnose(f, file, darker_target, calibration)
     end
 end
 
-struct DiagnoseCalib <: Diagnosis
+struct DiagnoseRectified <: Diagnosis
     label::String
     # buffer::OffsetMatrix{Gray{N0f8}, Matrix{Gray{N0f8}}}
     indices
@@ -78,13 +78,13 @@ struct DiagnoseCalib <: Diagnosis
     radius::Int
     font::Int
 
-    function DiagnoseCalib(file, darker_target, calib)
+    function DiagnoseRectified(file, darker_target, rect)
         label = first(splitext(basename(file)))
         ratio = 2
-        D = LinearMap(SDiagonal{2}(ratio*calib.ratio*I))
-        real2image = calib.real2image ∘ D
-        image2real = inv(D) ∘ calib.image2real
-        m = min(calib.width, calib.height) ÷ ratio
+        D = LinearMap(SDiagonal{2}(ratio*rect.ratio*I))
+        real2image = rect.real2image ∘ D
+        image2real = inv(D) ∘ rect.image2real
+        m = min(rect.width, rect.height) ÷ ratio
         indices = (-m÷2:m÷2 - 1, -m÷2:m÷2 - 1)
         buffer = OffsetMatrix(Matrix{Gray{N0f8}}(undef, m, m), indices...)
         color = darker_target ? Gray{N0f8}(1) : Gray{N0f8}(0)
@@ -94,9 +94,9 @@ struct DiagnoseCalib <: Diagnosis
         return new(label, indices, color, writer, trace, Ref(0), fps, image2real, real2image, m ÷ 30, m ÷ 16)
     end
 end
-diagnose(file::AbstractString, darker_target::Bool, calibration) = DiagnoseCalib(file, darker_target, calibration)
+diagnose(file::AbstractString, darker_target::Bool, rectification) = DiagnoseRectified(file, darker_target, rectification)
 
-function (dia::DiagnoseCalib)(img, point)
+function (dia::DiagnoseRectified)(img, point)
     dia.state[] += 1
     if rem(dia.state[], dia.fps) == 0
         ij = CartesianIndex(Tuple(round.(Int, dia.image2real(point))))
@@ -111,4 +111,4 @@ function (dia::DiagnoseCalib)(img, point)
     return nothing
 end
 
-update_ratio!(::DiagnoseCalib, _) = nothing
+update_ratio!(::DiagnoseRectified, _) = nothing

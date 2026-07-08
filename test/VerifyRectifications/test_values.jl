@@ -15,7 +15,7 @@
         @test flagged(check("v_nl.csv", [videorow(north = (600, 600))]), 1, "north cannot be larger than the dimensions")
     end
 
-    # A clean load returns Vector{CalibrationMethod}; the scenario row is element 1, and center/north
+    # A clean load returns Vector{RectificationMethod}; the scenario row is element 1, and center/north
     # now live in the shared Source struct, so inspect df[1].source.center / df[1].source.north.
     # center/north are optional and never imputed: omitted values stay missing.
     @testset "both omitted stays missing" begin
@@ -52,7 +52,7 @@
         @test flagged(check("v_eneg.csv", [videorow(extrinsic = "-1")]),         1, "extrinsic must be larger than or equal to zero")
         @test flagged(check("v_edur.csv", [videorow(extrinsic = "00:01:00")]),   1, "extrinsic must come before the video duration")
         # the bound is strict: seeking at exactly the duration yields no frame, so == is rejected too
-        d = VC.probe_video(joinpath(DATADIR, ART.board)).duration
+        d = VRect.probe_video(joinpath(DATADIR, ART.board)).duration
         @test flagged(check("v_edur_eq.csv", [videorow(extrinsic = string(d))]), 1, "extrinsic must come before the video duration")
     end
 

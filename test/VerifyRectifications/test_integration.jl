@@ -1,4 +1,4 @@
-# The whole point of the gateway: every CalibrationMethod a clean load returns must be consumable
+# The whole point of the gateway: every RectificationMethod a clean load returns must be consumable
 # by Rectifications. This pins the cross-package contract end to end — in particular the `missing`
 # sentinel for omitted center/north (which Rectifications must default/ignore, not choke on) and
 # the Bool yadif (false must not deinterlace). MATLAB is excluded until Rectification(c::MATLAB)
@@ -37,7 +37,7 @@ using Fromage.Rectifications: Rectification
         cs = check("int_video_extonly.csv", [videorow(start = missing, stop = missing)])
         @test cs isa Vector
         c = only(cs)
-        @test c isa VC.Video{Missing}
+        @test c isa VRect.Video{Missing}
         rect = Rectification(c)
         @test rect.image2real isa Function
         @test rect.real2image isa Function

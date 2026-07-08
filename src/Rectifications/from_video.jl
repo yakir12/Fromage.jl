@@ -18,10 +18,10 @@ function _probe(file)
 end
 
 # `yadif` marks interlaced footage: `true` ⇒ deinterlace, `false`/`missing` ⇒ progressive, leave as
-# is. `blur` is a gblur sigma; `missing` *and* `0` mean no blur (VerifyCalibrations always sends a
+# is. `blur` is a gblur sigma; `missing` *and* `0` mean no blur (VerifyRectifications always sends a
 # number, with 0 as its "no blur", so a sigma-0 no-op filter must not be built). Returns the ffmpeg
 # `-vf` filter string, or `missing` when no filtering is needed. `missing` (not `nothing`) is the
-# absent-value sentinel for every optional here, matching the structs VerifyCalibrations feeds into
+# absent-value sentinel for every optional here, matching the structs VerifyRectifications feeds into
 # `Rectification`.
 function _vf(yadif, blur)
     filters = String[]
@@ -191,7 +191,7 @@ at zero — the map is effectively the board-plane homography, disregarding lens
 
 # Design note: selected by the absence of the calibs window, never flagged
 
-Which constructor a calibration gets is decided *solely* by whether the CSV row has a calibs
+Which constructor a rectification gets is decided *solely* by whether the CSV row has a calibs
 window: both `start` and `stop` blank ⇒ this single-frame fit. A row that omits the
 window but still fills the intrinsic-window parameters (`temporal_step`, `radial_parameters`) is
 NOT flagged as inconsistent — those two parameters are silently ignored (they only make sense when
@@ -200,8 +200,8 @@ a window of frames is sampled; everything else — `yadif`, `blur`, `n_corners`,
 
 We chose this simplification deliberately. Leaving *both* window time stamps out of a row is too
 large an "action" to plausibly happen by mistake — the user must have intended an extrinsics-only
-calibration — so stray leftover parameters shouldn't override that intent with an error (unlike a
-filled column that belongs to a different `type`, which VerifyCalibrations does flag). Filling only
+rectification — so stray leftover parameters shouldn't override that intent with an error (unlike a
+filled column that belongs to a different `type`, which VerifyRectifications does flag). Filling only
 one of the two bounds is still rejected upstream ("both present or both missing").
 """
 function Rectification(file, extrinsic, yadif, blur, width, height, n_corners, checker_size, aspect, center, north; diagnostic = nothing)

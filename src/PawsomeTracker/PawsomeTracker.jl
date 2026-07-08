@@ -260,10 +260,10 @@ function track(
         initial_search_factor::Real=4,
         scale::Real = 1,
         white_point::Real = 1,
-        calibration = nothing # calibration object
+        rectification = nothing # rectification object
     )
 
-    diagnose(diagnostic_file, darker_target, calibration) do dia
+    diagnose(diagnostic_file, darker_target, rectification) do dia
         track_one(file, start, stop, scale*target_width, start_location, round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia, apriltags, scale * initial_search_factor, white_point, scale)
     end
 end
@@ -287,7 +287,7 @@ function track(
         initial_search_factor::Real = 4,
         scale::Real = 1,
         white_point::Real = 1, # clamped linear rescaling
-        calibration = nothing
+        rectification = nothing
     )
 
     @assert length(files) == length(start) == length(stop) == length(start_location) "Array length mismatch: files=$(length(files)), start=$(length(start)), stop=$(length(stop)), start_location=$(length(start_location))"
@@ -297,7 +297,7 @@ function track(
     ijs = Vector{Vector{RowCol}}(undef, nfiles)
     args = tuple.(files, start, stop, start_location)
 
-    diagnose(diagnostic_file, darker_target, calibration) do dia
+    diagnose(diagnostic_file, darker_target, rectification) do dia
         end_location = missing
         for (i, (f, t_start, t_stop, loc)) in enumerate(args)
             loc = coalesce(loc, end_location)

@@ -27,7 +27,7 @@ function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.c
 
     mkpath(results_dir)
 
-    cs = load_calibrations(joinpath(data_path, calibs_file))
+    cs = load_rectifications(joinpath(data_path, calibs_file))
     rs = load_runs(joinpath(data_path, runs_file))
 
     run_calib_ids = [r.source.calibration_id for r in rs]
@@ -39,14 +39,14 @@ function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.c
 
     calibs = DataFrame(calibration_id = getfield.(cs, :calibration_id), c = cs)
 
-    calibs.calibration .= @showprogress desc = "Building rectifications" tmap(Rectification, calibs.c)
+    calibs.rectification .= @showprogress desc = "Building rectifications" tmap(Rectification, calibs.c)
 
     runs = DataFrame(calibration_id = [r.source.calibration_id for r in rs], run_id = [r.source.run_id for r in rs], r = rs)
     leftjoin!(runs, calibs, on = :calibration_id)
 
     mktempdir() do path
         transform!(runs, :run_id => (x -> joinpath.(path, string.(x, ".ts"))) => :diagnostic_file)
-        runs.run .= @showprogress desc = "Building runs" tmap((r, c, calibration, diagnostic_file) -> track(r; center = c.source.center, calibration, diagnostic_file), runs.r, runs.c, runs.calibration, runs.diagnostic_file)
+        runs.run .= @showprogress desc = "Building runs" tmap((r, c, rectification, diagnostic_file) -> track(r; center = c.source.center, rectification, diagnostic_file), runs.r, runs.c, runs.rectification, runs.diagnostic_file)
         concatenate(path, runs.diagnostic_file)
         select!(runs, Not(:diagnostic_file))
     end
@@ -71,10 +71,10 @@ function only_track(data_path::String; runs_file = "runs.csv", rows = nothing, k
     return runs
 end
 
-function only_calibrate(data_path::String; calibs_file = "calibs.csv", todo = nothing, kwargs...)
+function only_rectify(data_path::String; calibs_file = "calibs.csv", todo = nothing, kwargs...)
     mkpath(results_dir)
 
-    cs = load_calibrations(joinpath(data_path, calibs_file))
+    cs = load_rectifications(joinpath(data_path, calibs_file))
 
     if !isnothing(todo)
         filter!(c -> c.calibration_id ∈ todo, cs)

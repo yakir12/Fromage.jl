@@ -5,10 +5,10 @@
     @testset "matlab_extrinsic_count reads the pose count" begin
         # Counts come off an already-read .mat dict (one matread per file in the pipeline).
         # good.mat / nested.mat both use MATLAB_CALIB_FIELDS -> N poses (nested exercises findfirstkey recursion)
-        @test VC.matlab_extrinsic_count(MAT.matread(joinpath(DATADIR, ART.good_mat)))   == MATLAB_N_EXTRINSICS
-        @test VC.matlab_extrinsic_count(MAT.matread(joinpath(DATADIR, ART.nested_mat))) == MATLAB_N_EXTRINSICS
+        @test VRect.matlab_extrinsic_count(MAT.matread(joinpath(DATADIR, ART.good_mat)))   == MATLAB_N_EXTRINSICS
+        @test VRect.matlab_extrinsic_count(MAT.matread(joinpath(DATADIR, ART.nested_mat))) == MATLAB_N_EXTRINSICS
         # translation/rotation pose counts disagree -> an issue string, not a count
-        @test VC.matlab_extrinsic_count(MAT.matread(joinpath(DATADIR, ART.mismatch_mat))) isa String
+        @test VRect.matlab_extrinsic_count(MAT.matread(joinpath(DATADIR, ART.mismatch_mat))) isa String
     end
 
     @testset "in-range index loads clean (both boundaries)" begin
