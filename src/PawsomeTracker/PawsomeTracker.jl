@@ -239,6 +239,20 @@ function track_one(file, start, stop, target_width, start_location, window_size,
     end
 end
 
+"""
+    track(file::AbstractString; start, stop, target_width, start_location, window_size,
+          darker_target, fps, diagnostic_file, rectification, scale, …)
+
+Use a Difference of Gaussian (DoG) filter to track a target in the video `file` between `start`
+and `stop` seconds, sampling `fps` frames per second (capped at the video's own rate). Returns
+`(ts, coords)`: timestamps and the target's per-frame (row, col) coordinates in original-frame
+pixels (`scale` only speeds tracking up; coordinates are always reported unscaled).
+`start_location` is the target's `"(x, y)"` display-pixel position at `start`; when `missing` the
+target is searched for around the frame center. When `diagnostic_file` (an `.mp4` path — that
+container selects the H.264 encoder) is given, an annotated diagnostic video is written there,
+playing at $(DIAGNOSTIC_SPEEDUP)× real time; pass a `rectification` to render it top-down through
+that rectification instead of as the raw frame.
+"""
 function track(
         file::AbstractString;
         start::Real = 0,
@@ -262,9 +276,16 @@ function track(
 end
 
 """
-    track(files::AbstractVector; start::AbstractVector, stop::AbstractVector, target_width, start_location::AbstractVector, window_size, darker_target, fps, diagnostic_file)
+    track(files::AbstractVector; start::AbstractVector, stop::AbstractVector, target_width,
+          start_location::AbstractVector, window_size, darker_target, fps, diagnostic_file,
+          rectification, scale, …)
 
-Use a Difference of Gaussian (DoG) filter to track a target across multiple video `files`. `start`, `stop`, and `start_location` all must have the same number of elements as `files` does. If the second, third, etc elements in `start_location` are `missing` then the target is assumed to start where it ended in the previous video (as is the case in segmented videos).
+Use a Difference of Gaussian (DoG) filter to track a target across multiple video `files` (the
+segments of one continuous run). `start`, `stop`, and `start_location` all must have the same
+number of elements as `files` does. If the second, third, etc elements in `start_location` are
+`missing` then the target is assumed to start where it ended in the previous video (as is the
+case in segmented videos). All other keywords behave as in the single-file method, and one
+diagnostic video covers all the segments.
 """
 function track(
         files::AbstractVector;

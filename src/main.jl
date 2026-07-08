@@ -17,7 +17,8 @@ end
 # tuning parameters (e.g. `rectification_defaults = (n_corners = (5, 8), blur = 0)`,
 # `tracking_defaults = (target_width = 60,)`). The hierarchy is: csv cell → these kwargs → the
 # hardcoded/probed defaults. Each gateway whitelists what may be set (see DEFAULTS in the
-# respective parsers.jl) and rejects anything else up front.
+# respective parsers.jl) and rejects anything else up front. `run_ids` restricts processing to
+# the named runs (only the rectifications those runs reference are built).
 function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.csv",
         rectification_defaults = (;), tracking_defaults = (;), run_ids = nothing)
 

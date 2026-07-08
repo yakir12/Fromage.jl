@@ -98,7 +98,8 @@ main("path/to/data";
 Anything else (identities, file names, timestamps, `start_location`/`center`/`north`) is per-row
 only, and an unrecognized or unconvertible entry is rejected with an error before anything runs.
 Global values pass through the same validation as csv cells — e.g. a global `fps` must still not
-exceed each video's own frame rate. `only_rectify` and `only_track` accept the same keywords.
+exceed each video's own frame rate. `only_rectify` and `only_track` accept their respective
+keyword (`rectification_defaults` / `tracking_defaults`).
 
 ## runs.csv
 
@@ -159,6 +160,10 @@ One row per rectification. Every rectification is anchored to a video file of th
 - **`video`** (the default): a video of a checkerboard being moved around the arena, then laid flat on the arena floor. Yields a full rectification — lens distortion, perspective, and scale.
 - **`only_scale`**: no checkerboard; you supply a fixed scale (real-world units per pixel). No distortion or perspective correction — appropriate for e.g. distortion-free footage filmed straight down.
 
+(A third kind, `matlab` — a calibration imported from a MATLAB `cameraParams` file — is parsed and
+fully validated, but its rectification builder is not implemented yet, so it cannot be used from
+`main`.)
+
 ### Columns for `type = video`
 
 Required:
@@ -175,7 +180,7 @@ Optional:
 | --- | --- | --- |
 | `start`, `stop` | — | the time window during which the checkerboard is being moved around (tilted, shifted) for the internal camera calibration. Provide both or neither. The window must be long enough to contain at least 3 sampled frames with a detectable checkerboard (see `temporal_step`). When **both** are omitted the calibration is fit from the single `extrinsic` frame alone, and lens distortion is disregarded — only appropriate for distortion-free lenses; otherwise film a calibration window and provide it. |
 | `checker_size` | `4` | side length of a single checker square, in the real-world unit of your choice (e.g. cm). **The resulting track coordinates come out in this unit.** |
-| `n_corners` | `"(7, 10)"` | number of *internal* corners of the checkerboard along its two sides (a board of 8 × 11 squares has 7 × 10 internal corners). |
+| `n_corners` | `"(7, 10)"` | number of *internal* corners of the checkerboard along its two sides (a board of 8 × 11 squares has 7 × 10 internal corners); each must be at least 2. |
 | `temporal_step` | `2.0` | sample one frame every `temporal_step` seconds within [`start`, `stop`]. E.g. a 30-second window at the default yields 16 candidate frames. Ignored without a calibration window. |
 | `center` | — | `"(x, y)"` pixel coordinate of the arena's center. Becomes the **origin** of the real-world coordinate system, and doubles as the default starting location for this rectification's runs. |
 | `north` | — | `"(x, y)"` pixel coordinate of a point lying due north of `center`. Rotates the real-world coordinates so that north is consistent across rectifications. Requires `center`. |
@@ -221,6 +226,7 @@ Before anything is tracked, every row of both files is checked, including (not e
 - pixel coordinates lie inside the frame;
 - numeric parameters are within their valid ranges;
 - `calibration_id`s are unique, and no two rectifications are effectively identical duplicates;
+- a filled cell in a column that the row's `type` doesn't use is flagged (it usually means the `type` itself is wrong);
 - the checkerboard is detected at the `extrinsic` timestamp, and — when a calibration window is given — at least 3 sampled frames within [`start`, `stop`] have a detectable board (this is the expensive part of validation — it reads real frames);
 - segments of a multi-video run agree on all their shared parameters;
 - every `calibration_id` used in `runs.csv` exists in `calibs.csv`.
@@ -256,14 +262,16 @@ Two unexported helpers are useful while iterating on the csv files:
 
 ```julia
 # only build rectifications (all of them, or a subset of calibration_ids):
-Fromage.only_rectify("path/to/data"; calibs_file = "calibs.csv", todo = ["morning"])
+Fromage.only_rectify("path/to/data"; calibs_file = "calibs.csv", calibration_ids = ["morning"])
 
-# only track (no rectification involved), optionally a subset of rows;
+# only track (no rectification involved), optionally a subset of run_ids;
 # writes one raw-view diagnostic per run: results_dir/1.mp4, 2.mp4, ...
-Fromage.only_track("path/to/data"; runs_file = "runs.csv", rows = 3:5)
+Fromage.only_track("path/to/data"; runs_file = "runs.csv", run_ids = ["run1", "long"])
 ```
 
-Both still run the full validation of their respective csv file.
+Both still run the full validation of their respective csv file. `main` itself also accepts
+`run_ids` to process only a subset of the runs (only the rectifications those runs reference are
+built).
 
 ## Example files
 
@@ -277,9 +285,10 @@ JULIA_NUM_THREADS=auto julia --project -e 'using Pkg; Pkg.test()'
 
 Each former package's tests run in their own wrapper module (`test/rectifications.jl`,
 `test/pawsometracker.jl`, `test/verifyrectifications.jl`, `test/verifyruns.jl`, with per-suite
-files under the matching directories and shared infrastructure in `test/common.jl`), plus
-package-wide quality checks (`test/quality.jl`: Aqua + ExplicitImports) and an end-to-end `main`
-run over a synthetic data folder (`test/fromage.jl`).
+files under the matching directories and shared infrastructure in `test/common.jl`), plus unit
+tests for the shared csv-cell machinery (`test/parsing.jl`), package-wide quality checks
+(`test/quality.jl`: Aqua + ExplicitImports) and an end-to-end `main` run over a synthetic data
+folder (`test/fromage.jl`).
 
 Setting `JULIA_NUM_THREADS` (Pkg.test forwards it to the test process) runs the threaded code
 paths — frame reading, corner detection, tracking — with real parallelism. It barely changes the
