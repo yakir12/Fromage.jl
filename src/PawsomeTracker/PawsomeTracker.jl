@@ -176,7 +176,7 @@ function build_stack(scale, sz, n_bkgd, pad_indices)
 end
 
 function get_stack(vid, sz, h)
-    n_bkgd = vid.nframes > 50 ? 50 : vid.nframes
+    n_bkgd = vid.nframes > 250 ? 250 : vid.nframes
     pad_indices = UnitRange.(((1 .- h)..., 1), ((sz .+ h)..., n_bkgd))
     build_stack(vid.scale, size(vid.img), n_bkgd, pad_indices)
 end

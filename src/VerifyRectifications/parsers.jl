@@ -1,59 +1,6 @@
-# Local parse helper mirroring Base.tryparse semantics (returns the parsed value or
-# `nothing` on failure). Defining our own avoids type piracy on Base.tryparse for
-# types we don't own (String, NTuple). The generic fallback delegates to Base for
-# the standard types (Int, Float64, ...) used elsewhere in the parsers.
-mytryparse(::Type{T}, x) where {T} = tryparse(T, x)
-
-function mytryparse(::Type{NTuple{2, Int}}, s)
-    m = match(r"^\s*[\(\[]?\s*(\d+)\s*,\s*(\d+)\s*[\)\]]?\s*$", s)
-    isnothing(m) && return nothing
-    a = tryparse(Int, m.captures[1])      # tryparse (not parse): a >Int64 value overflows ->
-    b = tryparse(Int, m.captures[2])      # nothing -> "wrong format" issue, not an uncaught throw
-    (isnothing(a) || isnothing(b)) && return nothing
-    return (a, b)
-end
-
-tosecond(x::T) where {T <: TimePeriod} = Float64(x/convert(T, Second(1)))
-tosecond(x::Time) = tosecond(x - Time(0))
-
-struct MyTemporal end
-function mytryparse(::Type{MyTemporal}, x)
-    seconds = tryparse(Float64, x)
-    isnothing(seconds) || return seconds
-    time = tryparse(Time, x)
-    isnothing(time) || return tosecond(time)
-    return nothing
-end
-
-# Trim surrounding whitespace from hand-edited CSV cells: a stray space must not turn "video " into a
-# wrong type, " file.mp4" into a missing file, or "id " vs "id" into a missed duplicate. (The numeric
-# and tuple/time parsers already tolerate surrounding whitespace.)
-# `String(...)` (not just `strip`) because strip returns a SubString, and the struct fields — notably
-# Video's parametric auto-constructor — are typed `::String` and won't accept a SubString.
-mytryparse(::Type{String}, x) = String(strip(string(x)))
-
-function set!(dict, y, k, _)
-    dict[k] = y
-end
-
-function set!(dict, ::Nothing, k, msg)
-    dict[k] = missing
-    push!(dict[:issues], msg)
-end
-
-function parseto!(dict, row, k, ::Type{T}, default = nothing) where T
-    raw = haskey(row, k) ? row[k] : missing
-    # A present-but-blank cell (whitespace only) is treated exactly like an absent one: a required
-    # field then reports "is missing" instead of silently becoming an empty string, and an optional
-    # field falls back to its default.
-    if !ismissing(raw) && !(raw isa AbstractString && isempty(strip(raw)))
-        y = mytryparse(T, raw)
-        set!(dict, y, k, "wrong $k format")
-    else
-        set!(dict, default, k, "$k is missing")
-    end
-end
-
+# The per-cell parsing machinery (mytryparse/MyTemporal/parseto!) and the defaults validation
+# live in the shared ..Parsing module; this file holds what is gateway-specific — the defaults
+# whitelist and the per-type row parsers and row-level checks.
 
 # The globally overridable defaults: exactly the video-type tuning parameters — not identities
 # or anchors (`calibration_id`/`file`/`extrinsic`/`matlab_file`/`extrinsic_index`/`path`), not the
@@ -81,23 +28,7 @@ const DEFAULT_TYPES = (;
     yadif = Bool,
 )
 
-# Validate and normalize the caller's overrides, failing fast (before any parsing): only the
-# whitelisted keys above may be set, and each value must convert to its column's type. Values are
-# otherwise not pre-checked — an out-of-range default flows into the normal verifications and is
-# flagged on every row that used it.
-function resolve_defaults(overrides)
-    unknown = setdiff(keys(overrides), keys(DEFAULTS))
-    isempty(unknown) || throw(ArgumentError("unknown rectification default(s): $(join(unknown, ", ")) (settable: $(join(keys(DEFAULTS), ", ")))"))
-    isempty(overrides) && return DEFAULTS
-    converted = NamedTuple{keys(overrides)}(map(keys(overrides)) do k
-        try
-            convert(DEFAULT_TYPES[k], overrides[k])
-        catch
-            throw(ArgumentError("rectification default $k must be convertible to $(DEFAULT_TYPES[k]), got $(repr(overrides[k]))"))
-        end
-    end)
-    return merge(DEFAULTS, converted)
-end
+resolve_defaults(overrides) = Parsing.resolve_defaults(overrides, DEFAULTS, DEFAULT_TYPES, "rectification")
 
 function parse_only_scale!(dict, row)
     parseto!(dict, row, :calibration_id, String)

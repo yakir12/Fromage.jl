@@ -92,27 +92,10 @@
         @test clean(check("p_ws_file.csv", [runrow(file = " " * ART.a)]))   # " a.mp4" still resolves
     end
 
-    @testset "low-level parsers" begin
-        @testset "MyTemporal: seconds vs HH:MM:SS precedence" begin
-            @test VR.mytryparse(VR.MyTemporal, "1.5")      == 1.5
-            @test VR.mytryparse(VR.MyTemporal, "90")       == 90.0
-            @test VR.mytryparse(VR.MyTemporal, "00:01:30") == 90.0
-            @test VR.mytryparse(VR.MyTemporal, "garbage")  === nothing
-        end
-        @testset "NTuple{2,Int}: accepted forms and rejects" begin
-            @test VR.mytryparse(NTuple{2, Int}, "(7,10)")      == (7, 10)
-            @test VR.mytryparse(NTuple{2, Int}, "[250, 1]")    == (250, 1)
-            @test VR.mytryparse(NTuple{2, Int}, "250,1")       == (250, 1)
-            @test VR.mytryparse(NTuple{2, Int}, "  250 , 1  ") == (250, 1)
-            @test VR.mytryparse(NTuple{2, Int}, "1,2,3")       === nothing
-            @test VR.mytryparse(NTuple{2, Int}, "abc")         === nothing
-            @test VR.mytryparse(NTuple{2, Int}, "(10000000000000000000,1)") === nothing
-        end
-        @testset "MyWindow: Int or (w,h)" begin
-            @test VR.mytryparse(VR.MyWindow, "31")      == 31           # scalar side length
-            @test VR.mytryparse(VR.MyWindow, "(31,41)") == (31, 41)     # (w, h) tuple
-            @test VR.mytryparse(VR.MyWindow, "31, 41")  == (31, 41)
-            @test VR.mytryparse(VR.MyWindow, "wide")    === nothing
-        end
+    @testset "MyWindow: Int or (w,h) (this gateway's own cell type)" begin
+        @test VR.mytryparse(VR.MyWindow, "31")      == 31           # scalar side length
+        @test VR.mytryparse(VR.MyWindow, "(31,41)") == (31, 41)     # (w, h) tuple
+        @test VR.mytryparse(VR.MyWindow, "31, 41")  == (31, 41)
+        @test VR.mytryparse(VR.MyWindow, "wide")    === nothing
     end
 end

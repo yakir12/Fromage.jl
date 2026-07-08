@@ -6,6 +6,7 @@ using Test
 
 @testset "Fromage (consolidated)" begin
     include("quality.jl")
+    include("parsing.jl")
     include("rectifications.jl")
     include("pawsometracker.jl")
     include("verifyrectifications.jl")

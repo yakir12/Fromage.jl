@@ -113,25 +113,8 @@
         @test clean(check("p_clock.csv", [videorow(extrinsic = "00:00:01")]))
     end
 
-    @testset "low-level parsers" begin
-        @testset "MyTemporal: seconds vs HH:MM:SS precedence" begin
-            @test VRect.mytryparse(VRect.MyTemporal, "1.5")      == 1.5    # float path taken before Time
-            @test VRect.mytryparse(VRect.MyTemporal, "90")       == 90.0
-            @test VRect.mytryparse(VRect.MyTemporal, "00:01:30") == 90.0   # clock converted to seconds
-            @test VRect.mytryparse(VRect.MyTemporal, "garbage")  === nothing
-        end
-        @testset "NTuple{2,Int}: accepted forms and rejects" begin
-            @test VRect.mytryparse(NTuple{2, Int}, "(7,10)")      == (7, 10)
-            @test VRect.mytryparse(NTuple{2, Int}, "[250, 1]")    == (250, 1)   # bracket form
-            @test VRect.mytryparse(NTuple{2, Int}, "250,1")       == (250, 1)   # bare form
-            @test VRect.mytryparse(NTuple{2, Int}, "  250 , 1  ") == (250, 1)   # surrounding whitespace
-            @test VRect.mytryparse(NTuple{2, Int}, "1,2,3")       === nothing   # not a 2-tuple
-            @test VRect.mytryparse(NTuple{2, Int}, "abc")         === nothing
-            @test VRect.mytryparse(NTuple{2, Int}, "(10000000000000000000,1)") === nothing  # >Int64 overflows -> nothing, not a throw
-        end
-        @testset "type defaults to video when column absent or empty" begin
-            @test VRect.parse_row((file = "x.mp4", extrinsic = "00:00:01"))[:type] == "video"
-            @test VRect.parse_row((type = missing, file = "x.mp4"))[:type] == "video"
-        end
+    @testset "type defaults to video when column absent or empty" begin
+        @test VRect.parse_row((file = "x.mp4", extrinsic = "00:00:01"))[:type] == "video"
+        @test VRect.parse_row((type = missing, file = "x.mp4"))[:type] == "video"
     end
 end
