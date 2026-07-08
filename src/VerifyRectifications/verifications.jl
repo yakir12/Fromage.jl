@@ -190,13 +190,13 @@ end
 
 # Probe one video file with a single ffprobe call: frame width/height, container duration, sample
 # (pixel) aspect ratio and field order (interlacing). Returns a NamedTuple, or an "issue reading..."
-# string if the file can't be probed (corrupt/unreadable). The `ffprobe() do exe` form sets up the
-# binary's environment; stderr is dropped so ffmpeg's diagnostics don't leak into the program output.
+# string if the file can't be probed (corrupt/unreadable). Uses the non-do-block `ffprobe()` (an
+# env-baked Cmd; the deprecated do-block form mutates the global ENV, a race under the tmap that
+# calls this); stderr is dropped so ffmpeg's diagnostics don't leak into the program output.
 function probe_video(file)
     try
-        out = ffprobe() do exe
-            read(pipeline(`$exe -v error -select_streams v:0 -show_entries stream=width,height,sample_aspect_ratio,field_order:format=duration -of default=noprint_wrappers=1 $file`, stderr = devnull), String)
-        end
+        exe = ffprobe()   # env-baked Cmd; its env survives interpolation into the command below
+        out = read(pipeline(`$exe -v error -select_streams v:0 -show_entries stream=width,height,sample_aspect_ratio,field_order:format=duration -of default=noprint_wrappers=1 $file`, stderr = devnull), String)
         fields = Dict{String,String}()
         for line in eachline(IOBuffer(out))
             isempty(line) && continue

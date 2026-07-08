@@ -19,12 +19,16 @@ end
 # hardcoded/probed defaults. Each gateway whitelists what may be set (see DEFAULTS in the
 # respective parsers.jl) and rejects anything else up front.
 function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.csv",
-        rectification_defaults = (;), tracking_defaults = (;), rows = nothing, todo = nothing, kwargs...)
+        rectification_defaults = (;), tracking_defaults = (;), run_ids = nothing)
 
     mkpath(results_dir)
 
     cs = load_rectifications(joinpath(data_path, calibs_file); defaults = rectification_defaults)
     rs = load_runs(joinpath(data_path, runs_file); defaults = tracking_defaults)
+
+    if !isnothing(run_ids)
+        filter!(r -> r.run_id ∈ run_ids, rs)
+    end
 
     run_calib_ids = [r.source.calibration_id for r in rs]
     filter!(c -> c.calibration_id ∈ run_calib_ids, cs)
@@ -51,15 +55,14 @@ function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.c
 
 end
 
-function only_track(data_path::String; runs_file = "runs.csv", tracking_defaults = (;), rows = nothing, kwargs...)
+function only_track(data_path::String; runs_file = "runs.csv", tracking_defaults = (;), run_ids = nothing)
 
     mkpath(results_dir)
 
     rs = load_runs(joinpath(data_path, runs_file); defaults = tracking_defaults)
 
-    if !isnothing(rows)
-        rows = filter(≤(length(rs)), rows)
-        rs = rs[rows]
+    if !isnothing(run_ids)
+        filter!(r -> r.run_id ∈ run_ids, rs)
     end
 
     runs = @showprogress desc = "Building runs" tmap((i, r) -> track(r; diagnostic_file = joinpath(results_dir, "$i.mp4")), 1:length(rs), rs)
@@ -67,13 +70,13 @@ function only_track(data_path::String; runs_file = "runs.csv", tracking_defaults
     return runs
 end
 
-function only_rectify(data_path::String; calibs_file = "calibs.csv", rectification_defaults = (;), todo = nothing, kwargs...)
+function only_rectify(data_path::String; calibs_file = "calibs.csv", rectification_defaults = (;), calibration_ids = nothing)
     mkpath(results_dir)
 
     cs = load_rectifications(joinpath(data_path, calibs_file); defaults = rectification_defaults)
 
-    if !isnothing(todo)
-        filter!(c -> c.calibration_id ∈ todo, cs)
+    if !isnothing(calibration_ids)
+        filter!(c -> c.calibration_id ∈ calibration_ids, cs)
     end
 
     calibs = @showprogress desc = "Building rectifications" tmap(Rectification, cs)
