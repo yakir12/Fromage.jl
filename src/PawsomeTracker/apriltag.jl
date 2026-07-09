@@ -131,8 +131,8 @@ ground_homography(ref::ReferenceFrame, corners) = ref.M * register(ref, corners)
 # The AprilTag detector needs a plain Gray{N0f8}/UInt8 matrix (not the Gray{Float32} background
 # stack), so detection always runs on the raw frame. Whole-frame detection for now — the ROI /
 # local-search fast path is PHASE 4.
-function set_detector!(det)
-    det.nThreads = Threads.nthreads()
+function set_detector!(det; nthreads = 1)
+    det.nThreads = nthreads
     det.quad_decimate = 1.0
     det.quad_sigma = 0.0
     det.refine_edges = 1
@@ -188,15 +188,16 @@ function find_tag_roi(det, img, id, box, sz)
 end
 
 # detect all tags by per-tag local search, updating `boxes` in place; corners aligned to `ids`
-# order, or `nothing` if any tag is not found anywhere in the frame.
-function detect_tags_roi!(det, img, ids, boxes, sz)
-    out = Vector{Vector{SVector{2,Float64}}}(undef, length(ids))
-    for k in eachindex(ids)
-        corners, box = find_tag_roi(det, img, ids[k], boxes[k], sz)
-        isnothing(corners) && return nothing
-        boxes[k] = box; out[k] = corners
-    end
-    return out
+# order, or `nothing` if any tag is not found anywhere in the frame. PHASE 5: the tags are
+# independent, so each is searched concurrently on its OWN detector (`dets[k]`) — the AprilTag C
+# detector is not safe to share across threads, and each reads a disjoint crop of the (read-only)
+# frame, so the searches compose cleanly.
+function detect_tags_roi!(dets, img, ids, boxes, sz)
+    tasks = [Threads.@spawn find_tag_roi(dets[k], img, ids[k], boxes[k], sz) for k in eachindex(ids)]
+    results = fetch.(tasks)
+    any(r -> isnothing(first(r)), results) && return nothing
+    for k in eachindex(ids); boxes[k] = results[k][2]; end
+    return [first(results[k]) for k in eachindex(ids)]
 end
 
 # Diagnostic for AprilTag mode: a top-down rectified video. Each frame is warped into a fixed cm
@@ -270,7 +271,7 @@ diagnose_apriltag(file::AbstractString, ref, darker_target, fps) = DiagnoseApril
 function track_apriltag(file, start, stop, target_width, start_location, window_size, darker_target,
                         fps, diagnostic_file, ntags, initial_search_factor, white_point, scale)
     video(file, fps, start, stop, scale) do vid
-        det = AprilTagDetector(); set_detector!(det)
+        dets = [set_detector!(AprilTagDetector()) for _ in 1:ntags]   # one per tag (PHASE 5: concurrent)
         try
             tr = Tracker(vid, darker_target, target_width, window_size)
             stack = get_stack(vid, tr.sz, tr.h); n_bkgd = size(stack, 3); n = vid.nframes
@@ -285,16 +286,16 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
             for i in 1:n_bkgd
                 next!(vid); populate_slice!(stack, i, vid)
                 if ref === nothing
-                    tags = det(collect(vid.img))
+                    tags = dets[1](collect(vid.img))                       # whole-frame until ids known
                     if length(tags) ≥ ntags
                         ids = sort(getfield.(tags, :id))[1:ntags]
-                        reftc = detect_tags(det, vid.img, ids)
+                        reftc = detect_tags(dets[1], vid.img, ids)
                         ref = ReferenceFrame(ids, reftc)
                         boxes = [tag_box(c, sz) for c in reftc]
                     end
                     Hs[i] = ref === nothing ? nothing : ref.M              # reference frame: H = M
                 else
-                    tc = detect_tags_roi!(det, vid.img, ids, boxes, sz)
+                    tc = detect_tags_roi!(dets, vid.img, ids, boxes, sz)
                     Hs[i] = isnothing(tc) ? nothing : ground_homography(ref, reduce(vcat, tc))
                 end
             end
@@ -322,7 +323,7 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
                 # rolling phase: read, detect, track
                 for i in (n_bkgd + 1):n
                     next!(vid); j = mod1(i, n_bkgd)
-                    tc = detect_tags_roi!(det, vid.img, ids, boxes, sz)
+                    tc = detect_tags_roi!(dets, vid.img, ids, boxes, sz)
                     H = isnothing(tc) ? nothing : ground_homography(ref, reduce(vcat, tc))
                     isnothing(H) || prev === missing || (guess = cm_to_img(H, prev))
                     protect, keep = protect_target(stack, j, guess, tr.radii, vid.scale)
@@ -341,7 +342,7 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
             end
             return (range(start, stop, n), coords)
         finally
-            freeDetector!(det)
+            foreach(freeDetector!, dets)
         end
     end
 end
