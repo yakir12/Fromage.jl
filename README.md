@@ -92,7 +92,7 @@ main("path/to/data";
 
 - `rectification_defaults` may set: `checker_size`, `n_corners`, `temporal_step`,
   `radial_parameters`, `blur`, `yadif`.
-- `tracking_defaults` may set: `target_width`, `window_size`, `darker_target`, `fps`, `apriltags`,
+- `tracking_defaults` may set: `target_width`, `window_size`, `darker_target`, `fps`,
   `initial_search_factor`, `white_point`, `scale`.
 
 Anything else (identities, file names, timestamps, `start_location`/`center`/`north`) is per-row
@@ -129,7 +129,8 @@ One row per run video (a run split across multiple video files uses several rows
 | `path` | `.` | folder containing `file`, relative to the location of the csv file. |
 | `comment` | — | free text, ignored. |
 
-(Two more columns, `apriltags` and `white_point`, are accepted for compatibility but currently have **no effect**.)
+(The `white_point` column is accepted for compatibility but currently has **no effect**. AprilTag
+drone tracking is configured entirely from `calibs.csv` — see [`type = apriltag`](#columns-for-type--apriltag) — so `runs.csv` has no `apriltags` column.)
 
 ### Where the tracker starts looking
 
@@ -155,11 +156,12 @@ long,afternoon,beetle03_b.mp4,0,00:01:03,
 
 ## calibs.csv
 
-One row per rectification. Every rectification is anchored to a video file of the arena. There are three kinds, selected with the `type` column:
+One row per rectification. Every rectification is anchored to a video file of the arena. There are four kinds, selected with the `type` column:
 
 - **`video`** (the default): a video of a checkerboard being moved around the arena, then laid flat on the arena floor. Yields a full rectification — lens distortion, perspective, and scale.
 - **`only_scale`**: no checkerboard; you supply a fixed scale (real-world units per pixel). No distortion or perspective correction — appropriate for e.g. distortion-free footage filmed straight down.
 - **`matlab`**: a calibration you already made with MATLAB's Camera Calibrator app, supplied as a `.mat` file. The camera model — intrinsics, lens distortion, and the extrinsic poses — is read from the file instead of being fit from a video.
+- **`apriltag`**: drone (moving-camera) footage with four (or more) coplanar AprilTags visible on the arena floor. Instead of a fixed image→arena map, every run frame is registered to a shared reference — built from the `extrinsic` frame — so the drone's motion is cancelled and the target comes out in metric ground coordinates. The tags must stay in the same physical place across the calibration and all its runs.
 
 ### Columns for `type = video`
 
@@ -212,13 +214,33 @@ frame, used for the diagnostics), and:
 Optional: `path`, `center`, `north`, `aspect` — same meaning as above. Real-world coordinates come
 out in whatever world units the MATLAB calibration was given (its square size).
 
+### Columns for `type = apriltag`
+
+Required: `calibration_id`, `file` (the drone footage — a video where the tags are visible),
+`extrinsic` (a timestamp of the frame that establishes the shared reference: **all** the tags must
+be clearly visible and lie flat on the arena floor there). Optional:
+
+| column | default | description |
+| --- | --- | --- |
+| `apriltags` | `4` | how many tags to expect. The `apriltags` lowest tag ids seen at `extrinsic` become the reference set; every run must show those same tags. |
+| `family` | `tag36h11` | the AprilTag family; one of `tag36h11`, `tag25h9`, `tag16h5`. |
+| `checker_size` | `12` | the real-world size of a single tag **cell** (e.g. cm). The black-border square is `cells × checker_size`, where `cells` is 8 for `tag36h11`, 7 for `tag25h9`, 6 for `tag16h5`. **Track coordinates come out in this unit.** |
+| `center` | — | `"(x, y)"` pixel of the arena's origin **in the `extrinsic` frame**. Becomes the origin of the real-world coordinates. |
+| `north` | — | `"(x, y)"` pixel due north of `center` in the `extrinsic` frame; rotates the coordinates so north is consistent. Requires `center`. |
+| `path` | `.` | folder containing `file`, relative to the csv file. |
+
+The tags are stationary across the whole experiment, so the reference is established once here and
+shared by every run — `runs.csv` therefore has no `apriltags` column (and, for an apriltag run, a
+run's own `start` frame is where its target search begins, not the calibration's `center`).
+
 All kinds can be mixed in one file — leave a column blank on the rows where it doesn't apply:
 
 ```csv
-calibration_id,type,file,extrinsic,start,stop,checker_size,n_corners,center,north,scale
-morning,video,calib_morning.mp4,00:00:02,00:00:05,00:00:35,4,"(7, 10)","(960, 540)","(960, 100)",
-afternoon,,calib_afternoon.mp4,1.5,5,35,4,"(7, 10)","(955, 545)",,
-drone,only_scale,drone_shot.mp4,0,,,,,"(2000, 1500)",,0.21
+calibration_id,type,file,extrinsic,start,stop,checker_size,n_corners,center,north,scale,apriltags,family
+morning,video,calib_morning.mp4,00:00:02,00:00:05,00:00:35,4,"(7, 10)","(960, 540)","(960, 100)",,,
+afternoon,,calib_afternoon.mp4,1.5,5,35,4,"(7, 10)","(955, 545)",,,,
+drone,only_scale,drone_shot.mp4,0,,,,,"(2000, 1500)",,0.21,,
+flight,apriltag,drone_flight.mp4,00:00:04,,,12,,"(960, 540)","(960, 100)",,4,tag36h11
 ```
 
 ### What makes a good calibration video
@@ -239,6 +261,7 @@ Before anything is tracked, every row of both files is checked, including (not e
 - `calibration_id`s are unique, and no two rectifications are effectively identical duplicates;
 - a filled cell in a column that the row's `type` doesn't use is flagged (it usually means the `type` itself is wrong);
 - the checkerboard is detected at the `extrinsic` timestamp, and — when a calibration window is given — at least 3 sampled frames within [`start`, `stop`] have a detectable board (this is the expensive part of validation — it reads real frames);
+- for an `apriltag` rectification, at least `apriltags` tags of the chosen `family` are detected at the `extrinsic` frame and their metric fit converges (they are coplanar and correctly detected);
 - segments of a multi-video run agree on all their shared parameters;
 - every `calibration_id` used in `runs.csv` exists in `calibs.csv`.
 

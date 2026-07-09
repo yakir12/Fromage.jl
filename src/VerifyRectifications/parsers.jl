@@ -43,6 +43,23 @@ function parse_only_scale!(dict, row)
     parseto!(dict, row, :aspect, Float64, missing)
 end
 
+# AprilTag rectification. `apriltags` (expected tag count) defaults to 4, `family` to "tag36h11",
+# and `checker_size` here is the size of a single tag CELL (default 12) — not the black-corner-to-
+# corner span (that is `cells_across(family) × checker_size`). `center`/`north` are pixels in the
+# extrinsic frame, optional as elsewhere. aspect is imputed from the video (unused by the method).
+function parse_apriltag!(dict, row)
+    parseto!(dict, row, :calibration_id, String)
+    parseto!(dict, row, :file, String)
+    parseto!(dict, row, :extrinsic, MyTemporal)
+    parseto!(dict, row, :apriltags, Int, 4)
+    parseto!(dict, row, :family, String, "tag36h11")
+    parseto!(dict, row, :checker_size, Float64, 12.0)
+    parseto!(dict, row, :path, String, ".")
+    parseto!(dict, row, :center, NTuple{2,Int}, missing)
+    parseto!(dict, row, :north, NTuple{2,Int}, missing)
+    parseto!(dict, row, :aspect, Float64, missing)
+end
+
 function parse_matlab!(dict, row)
     parseto!(dict, row, :calibration_id, String)
     parseto!(dict, row, :file, String)
@@ -122,6 +139,8 @@ function parse_row(row, defaults = DEFAULTS)
         parse_matlab!(dict, row)
     elseif type == "only_scale"
         parse_only_scale!(dict, row)
+    elseif type == "apriltag"
+        parse_apriltag!(dict, row)
     else
         dict[:type] = missing
         push!(dict[:issues], "wrong type")

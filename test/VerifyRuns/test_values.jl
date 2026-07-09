@@ -15,11 +15,8 @@
         @test flagged(check("v_tw0.csv",  [runrow(target_width = "0")]),            1, "target_width must be larger than zero")
         @test flagged(check("v_win.csv",  [runrow(window_size = "0")]),             1, "window_size must be larger than zero")
         @test flagged(check("v_wint.csv", [runrow(window_size = "(0, 5)")]),        1, "window_size must be larger than zero")
-        @test flagged(check("v_apr.csv",  [runrow(apriltags = "-1")]),              1, "apriltags cannot be negative")
         @test flagged(check("v_isf.csv",  [runrow(initial_search_factor = "0")]),   1, "initial_search_factor must be larger than zero")
         @test flagged(check("v_wp.csv",   [runrow(white_point = "0")]),             1, "white_point must be larger than zero")
-        # apriltags == 0 is fine (the default: no tags)
-        @test clean(check("v_apr0.csv",   [runrow(apriltags = "0")]))
     end
 
     @testset "scale must be in (0, 1]" begin

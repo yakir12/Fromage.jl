@@ -23,7 +23,6 @@ const DEFAULTS = (;
     window_size = missing,
     darker_target = true,
     fps = missing,
-    apriltags = 0,
     initial_search_factor = 4.0,
     white_point = 1.0,
     scale = 1.0,
@@ -34,7 +33,6 @@ const DEFAULT_TYPES = (;
     window_size = Union{Int, NTuple{2, Int}},
     darker_target = Bool,
     fps = Float64,
-    apriltags = Int,
     initial_search_factor = Float64,
     white_point = Float64,
     scale = Float64,
@@ -59,7 +57,6 @@ function parse_run!(dict, row, defaults)
     parseto!(dict, row, :window_size, MyWindow, defaults.window_size)
     parseto!(dict, row, :darker_target, Bool, defaults.darker_target)
     parseto!(dict, row, :fps, Float64, defaults.fps)             # imputed from video framerate when missing
-    parseto!(dict, row, :apriltags, Int, defaults.apriltags)
     parseto!(dict, row, :initial_search_factor, Float64, defaults.initial_search_factor)
     parseto!(dict, row, :white_point, Float64, defaults.white_point)
     parseto!(dict, row, :scale, Float64, defaults.scale)

@@ -15,9 +15,10 @@ end
 
 # Save one run's track to results_dir/<run_id>.csv: one row per detected coordinate, with the
 # `time` stamp (seconds into the video) and the `x`/`y` real-world coordinates. `track` already
-# returns real-world coordinates (it applied the run's rectification, or AprilTag mode produced
-# metric ground coordinates directly): origin at `center`, north-aligned when `north` was given, in
-# `checker_size`/`scale` units. Axis orientation follows the image — x rightward, y downward — as
+# returns real-world coordinates: it applied the run's rectification's `image2real` — for the video
+# kinds a pixel→real map, for AprilTag a metric ground map carrying the same centre/north gauge — so
+# the origin is at `center`, north-aligned when `north` was given, in `checker_size`/`scale` units.
+# Axis orientation follows the image — x rightward, y downward — as
 # `(y-direction, x-direction)`, so we unpack `y, x`.
 function save2csv(run_id, (ts, coords))
     open(joinpath(results_dir, string(run_id, ".csv")), "w") do io

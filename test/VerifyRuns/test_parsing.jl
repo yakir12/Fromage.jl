@@ -58,7 +58,6 @@
         @test flagged(check("p_sl_ovf.csv", [runrow(start_location = "(10000000000000000000,1)")]), 1, "wrong start_location format")
         @test flagged(check("p_win.csv",    [runrow(window_size = "wide")]),          1, "wrong window_size format")
         @test flagged(check("p_fps.csv",    [runrow(fps = "fast")]),                  1, "wrong fps format")
-        @test flagged(check("p_apr.csv",    [runrow(apriltags = "2.5")]),             1, "wrong apriltags format")
         @test flagged(check("p_isf.csv",    [runrow(initial_search_factor = "x")]),   1, "wrong initial_search_factor format")
         @test flagged(check("p_wp.csv",     [runrow(white_point = "x")]),             1, "wrong white_point format")
         @test flagged(check("p_sc.csv",     [runrow(scale = "big")]),                 1, "wrong scale format")
@@ -76,7 +75,6 @@
         @test r.source.window_size           === missing
         @test r.start_location               === missing
         @test r.source.darker_target         == true
-        @test r.source.apriltags             == 0
         @test r.source.initial_search_factor == 4.0
         @test r.source.white_point           == 1.0
         @test r.source.scale                 == 1.0

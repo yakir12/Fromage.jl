@@ -303,6 +303,23 @@ function verify_intrinsics!(df::AbstractDataFrame)
     end
 end
 
+# The AprilTag analog of verify_extrinsics!: at the extrinsic frame, ≥ `apriltags` tags of `family`
+# must be detectable and their metric fit must converge (coplanar, not mis-detected). Reads real
+# frames, so it runs on the reduced set of otherwise-clean apriltag rows, grouped so a physical file
+# reached via different spellings is checked once per (extrinsic, apriltags, family, checker_size).
+function verify_apriltag_extrinsics!(df::AbstractDataFrame)
+    gs = @chain df begin
+        subset(:type => ByRow(passmissing(==("apriltag"))), view = true, skipmissing = true)
+        subset(:issues => ByRow(isempty), view = true)
+        dropmissing([:file, :extrinsic, :apriltags, :family, :checker_size], view = true)
+        @groupby [:file, :extrinsic, :apriltags, :family, :checker_size]
+    end
+    issues = @showprogress desc = "Validating AprilTag extrinsics..." tmap(k -> PawsomeTracker.apriltag_extrinsic_issue(k.file, k.extrinsic, k.apriltags, k.family, k.checker_size), keys(gs))
+    for (g, issue) in zip(gs, issues)
+        isnothing(issue) || @transform! g :extrinsic = missing :issues = push!.(:issues, issue)
+    end
+end
+
 function verify_unique_calibrations!(df::AbstractDataFrame)
     # What makes two rectifications "the same" is type-dependent, so partition by :type:
     #   * matlab / only_scale: identical on *every* field (calibration_id and issues aside).
@@ -389,6 +406,9 @@ function verifications!(df::AbstractDataFrame, data_path)
     verify!(df, ≤(0), "extrinsic_index must be larger than zero", :extrinsic_index)
     verify!(df, (i, n) -> i > n, "extrinsic_index exceeds the number of extrinsics in the matlab file", :extrinsic_index, :n_extrinsics)
     verify!(df, ≤(0), "checker_size must be larger than zero", :checker_size)
+    # apriltag-only value checks (non-apriltag rows leave these missing ⇒ skipped by verify!):
+    verify!(df, <(1), "apriltags must be at least 1", :apriltags)
+    verify!(df, f -> !PawsomeTracker.valid_apriltag_family(f), "family is not a supported AprilTag family (" * join(PawsomeTracker.APRIL_FAMILY_NAMES, ", ") * ")", :family)
     verify!(df, ∉(1:3), "radial_parameters must be 1, 2, or 3", :radial_parameters)
     verify!(df, <(0), "blur must be larger than or equal to zero", :blur)
     # a checkerboard needs at least a 2×2 grid of inner corners: OpenCV's detector can't find a
@@ -413,6 +433,9 @@ function verifications!(df::AbstractDataFrame, data_path)
     # the calibs window must actually contain ≥ 3 detectable-corner frames; runs after
     # verify_extrinsics! so rows whose extrinsic already failed are skipped, not re-scanned
     verify_intrinsics!(df)
+
+    # apriltag rows: the extrinsic frame must yield a valid shared reference (tags detectable + coplanar)
+    verify_apriltag_extrinsics!(df)
 
     verify_unique_calibrations!(df)
 

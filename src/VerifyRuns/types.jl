@@ -21,7 +21,6 @@ struct Source
     window_size::Union{Missing, Int, NTuple{2, Int}}
     darker_target::Bool
     fps::Float64
-    apriltags::Int
     initial_search_factor::Float64
     white_point::Float64
     scale::Float64
@@ -56,7 +55,7 @@ end
 function Source(g::AbstractDataFrame)
     width, height = g.dimension[1]
     Source(g.target_width[1], g.window_size[1], g.darker_target[1],
-        g.fps[1], g.apriltags[1], g.initial_search_factor[1], g.white_point[1], g.scale[1],
+        g.fps[1], g.initial_search_factor[1], g.white_point[1], g.scale[1],
         width, height, g.sar[1])
 end
 
@@ -83,7 +82,7 @@ end
 # impute_window_size).
 function shared_kw(r::Run)
     s = r.source
-    (; s.target_width, s.darker_target, s.fps, s.apriltags, s.initial_search_factor, s.white_point, s.scale)
+    (; s.target_width, s.darker_target, s.fps, s.initial_search_factor, s.white_point, s.scale)
 end
 
 # Drive `PawsomeTracker.track` from a verified run — the scalar method for a one-segment `SingleRun`,
@@ -118,9 +117,17 @@ function impute_window_size(r)
     return @coalesce s.window_size get_window(s.target_width, s.fps, min(s.height, s.width), get_duration(r))
 end
 
-function track(r::SingleRun; center = missing, kwargs...)
-    start_location = @coalesce r.start_location center frame_center(r)
-    track(r.file; start = r.start, stop = r.stop, start_location, window_size = impute_window_size(r), shared_kw(r)..., kwargs...)
+# For an AprilTag run the calibration's `center` is a pixel in the (moved) extrinsic frame, not the
+# run frame, so it can't seed the tracker's start: fall straight back to the run's own start_location
+# (a missing one becomes the frame-centre search inside `track`). Every other rectification shares the
+# run frame, so its centre is a valid start fallback.
+function track(r::SingleRun; center = missing, rectification = nothing, kwargs...)
+    start_location = if rectification isa ApriltagRectification
+        r.start_location
+    else
+        @coalesce r.start_location center frame_center(r)
+    end
+    track(r.file; start = r.start, stop = r.stop, start_location, window_size = impute_window_size(r), shared_kw(r)..., rectification, kwargs...)
 end
 
 function impute_start_location(r::MultiRun, center)
@@ -129,7 +136,10 @@ function impute_start_location(r::MultiRun, center)
     return sls
 end
 
-function track(r::MultiRun; center = missing, kwargs...)
-    track(r.files; start = r.starts, stop = r.stops, start_location = impute_start_location(r, center), window_size = impute_window_size(r), shared_kw(r)..., kwargs...)
+function track(r::MultiRun; center = missing, rectification = nothing, kwargs...)
+    # AprilTag: use the per-segment start_locations as-is (see the SingleRun note); each segment
+    # relocates on its own. Other rectifications keep the centre fallback for the first segment.
+    sls = rectification isa ApriltagRectification ? r.start_locations : impute_start_location(r, center)
+    track(r.files; start = r.starts, stop = r.stops, start_location = sls, window_size = impute_window_size(r), shared_kw(r)..., rectification, kwargs...)
 end
 

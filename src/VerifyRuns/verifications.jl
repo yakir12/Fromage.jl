@@ -87,7 +87,7 @@ end
 # verify_run_consistency! via `allequal`, which treats all-missing as agreeing — isequal(missing,
 # missing) is true). All but `calibration_id` (run metadata) and `dimension`/`sar` (the ffprobe-read
 # pixel width/height and sample aspect ratio, not CSV columns) feed `track`.
-const SHARED_PARAMS = (:target_width, :window_size, :darker_target, :fps, :apriltags,
+const SHARED_PARAMS = (:target_width, :window_size, :darker_target, :fps,
     :initial_search_factor, :white_point, :scale, :calibration_id, :dimension, :sar)
 
 # A run may be split across several CSV rows (one per segment video) sharing a :run_id. Those rows
@@ -130,7 +130,6 @@ function verifications!(df::AbstractDataFrame, data_path)
     verify!(df, ≤(0), "fps must be larger than zero", :fps)
     # track downsamples via round(video_fps/fps) - 1, so a requested fps above the video's own rate is nonsensical.
     verify!(df, (f, vf) -> f > vf, "fps cannot exceed the video frame rate", :fps, :video_fps)
-    verify!(df, <(0), "apriltags cannot be negative", :apriltags)
     verify!(df, ≤(0), "initial_search_factor must be larger than zero", :initial_search_factor)
     verify!(df, ≤(0), "white_point must be larger than zero", :white_point)
     verify!(df, ≤(0), "scale must be larger than zero", :scale)

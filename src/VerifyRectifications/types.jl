@@ -29,6 +29,19 @@ struct MATLAB <: RectificationMethod
     extrinsic_index::Int
 end
 
+# An AprilTag rectification: the drone footage is registered to a shared reference frame (built from
+# the `extrinsic` frame, where ≥ `apriltags` tags of `family` must be detectable and coplanar) rather
+# than to a fixed image→real map. `checker_size` is the size of one tag CELL; the black-border square
+# is `cells_across(family) × checker_size` (see PawsomeTracker.canon_square). `center`/`north` live in
+# `source` and gauge the metric output exactly as for the other methods.
+struct Apriltag <: RectificationMethod
+    source::Source
+    calibration_id::String
+    apriltags::Int
+    family::String
+    checker_size::Float64
+end
+
 struct Video{S <: Union{Missing, Float64}} <: RectificationMethod
     source::Source
     calibration_id::String
@@ -49,6 +62,8 @@ RectificationMethod(row) = if row.type == "video"
         row.n_corners, row.temporal_step, row.radial_parameters, row.blur, row.yadif)
 elseif row.type == "only_scale"
     Scale(source(row), row.calibration_id, row.scale)
+elseif row.type == "apriltag"
+    Apriltag(source(row), row.calibration_id, row.apriltags, row.family, row.checker_size)
 else # can only be matlab
     MATLAB(source(row), row.calibration_id, row.matlab_file, row.extrinsic_index)
 end
@@ -68,3 +83,9 @@ Rectification(c::Video{Missing}; kwargs...) = Rectification(c.source.file, c.sou
 Rectification(c::MATLAB; kwargs...) = Rectification(c.source.file, c.source.extrinsic, c.matlab_file, c.extrinsic_index, c.source.aspect, c.source.center, c.source.north, c.source.width, c.source.height; kwargs...)
 
 Rectification(c::Scale; kwargs...) = Rectification(c.source.file, c.source.extrinsic, c.scale, c.source.aspect, c.source.center, c.source.north, c.source.width, c.source.height; kwargs...)
+
+# An AprilTag rectification builds its shared reference from the extrinsic frame (detecting the tags
+# and fitting the metric map) and carries the centre/north gauge; there is no diagnostic image to
+# render at build time (the top-down diagnostic is produced per-run during tracking), so `kwargs`
+# (e.g. `diagnostic`) are ignored.
+Rectification(c::Apriltag; kwargs...) = ApriltagRectification(c.source.file, c.source.extrinsic, c.apriltags, c.family, c.checker_size, c.source.center, c.source.north, c.source.width, c.source.height)

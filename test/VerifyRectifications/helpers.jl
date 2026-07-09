@@ -101,7 +101,7 @@ end
 const HEADER = ["calibration_id", "path", "file", "matlab_file", "type", "extrinsic", "extrinsic_index",
                 "start", "stop", "center", "north", "n_corners",
                 "checker_size", "scale", "temporal_step", "radial_parameters", "blur",
-                "yadif", "aspect"]
+                "yadif", "aspect", "apriltags", "family"]
 
 row(; kw...) = buildrow(HEADER; kw...)
 write_csv(path, rows; header = HEADER) = write_csv(path, rows, header)

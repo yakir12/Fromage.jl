@@ -3,6 +3,7 @@ module VerifyRectifications
 using CSV: CSV
 using ..Rectifications: get_corners, _vf
 import ..Rectifications: Rectification
+using ..PawsomeTracker: PawsomeTracker, ApriltagRectification
 using Chain: Chain, @chain
 using DataFramesMeta: DataFramesMeta, @groupby, @rtransform!, @transform!, AbstractDataFrame,
     ByRow, Cols, DataFrame, Not, allowmissing!, completecases, dropmissing, groupby,
@@ -17,7 +18,7 @@ using Tables: Tables
 
 export load_rectifications
 
-const COLUMNS = (:comment, :calibration_id, :path, :file, :matlab_file, :start, :stop, :extrinsic, :checker_size, :center, :north, :n_corners, :scale, :type, :temporal_step, :radial_parameters, :blur, :extrinsic_index, :aspect, :yadif)
+const COLUMNS = (:comment, :calibration_id, :path, :file, :matlab_file, :start, :stop, :extrinsic, :checker_size, :center, :north, :n_corners, :scale, :type, :temporal_step, :radial_parameters, :blur, :extrinsic_index, :aspect, :yadif, :apriltags, :family)
 
 include("types.jl")
 include("parsers.jl")
@@ -87,6 +88,7 @@ end
         println(io, "v,nope.mp4,,video,1,,")
         println(io, "m,nope.mp4,nope.mat,matlab,1,1,")
         println(io, "s,nope.mp4,,only_scale,1,,9.5")
+        println(io, "a,nope.mp4,,apriltag,1,,")
     end
     @compile_workload begin
         redirect_stdout(devnull) do

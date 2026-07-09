@@ -31,7 +31,7 @@ const GATE_FRACTION = 0.2
 const LEVEL_SMOOTH = 0.9
 const GATE_DECAY = 0.99
 
-export track
+export track, ApriltagRectification
 
 include("diagnose.jl")
 include("apriltag.jl")
@@ -268,7 +268,7 @@ function track!(coords, stack, guess, tr, vid, dia)
     end
 end
 
-function track_one(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia, apriltags, initial_search_factor, white_point, scale)
+function track_one(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia, initial_search_factor, white_point, scale)
     video(file, fps, start, stop, scale) do vid
         update_ratio!(dia, size(vid.img))
         tr = Tracker(vid, darker_target, target_width, window_size)
@@ -289,11 +289,13 @@ and `stop` seconds, sampling `fps` frames per second (capped at the video's own 
 `(ts, coords)`: timestamps and the target's per-frame position. With a `rectification`, `coords`
 are **real-world** coordinates (the rectification's `image2real` applied); without one, they are
 raw `(row, col)` pixels in the original frame (`scale` only speeds tracking up; coordinates are
-always reported unscaled). `start_location` is the target's `"(x, y)"` display-pixel position at
-`start`; when `missing` the target is searched for around the frame center. When `diagnostic_file`
-(an `.mp4` path — that container selects the H.264 encoder) is given, an annotated diagnostic
-video is written there, playing at $(DIAGNOSTIC_SPEEDUP)× real time; the `rectification` also
-renders it top-down instead of as the raw frame.
+always reported unscaled). An `ApriltagRectification` selects AprilTag mode (drone footage): drone
+motion is registered out against the rectification's shared reference and `coords` are metric ground
+coordinates, `missing` on frames where a tag was lost. `start_location` is the target's `"(x, y)"`
+display-pixel position at `start`; when `missing` the target is searched for around the frame
+center. When `diagnostic_file` (an `.mp4` path — that container selects the H.264 encoder) is given,
+an annotated diagnostic video is written there, playing at $(DIAGNOSTIC_SPEEDUP)× real time; a
+`rectification` also renders it top-down instead of as the raw frame.
 """
 function track(
         file::AbstractString;
@@ -305,26 +307,39 @@ function track(
         darker_target::Bool = true,
         fps::Real = get_framerate(file),
         diagnostic_file::Union{Nothing, AbstractString} = nothing,
-        apriltags::Int = 0,
         initial_search_factor::Real=4,
         scale::Real = 1,
         white_point::Real = 1,
         rectification = nothing # rectification object
     )
 
-    # AprilTag mode (drone footage): register out camera motion and return the beetle in metric
-    # ground coordinates (cm); with a diagnostic_file, write the top-down rectified DiagnoseApriltag.
-    apriltags > 0 && return track_apriltag(file, start, stop, scale*target_width, start_location,
-        round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, diagnostic_file, apriltags,
-        scale * initial_search_factor, white_point, scale)
+    # AprilTag mode (drone footage): the rectification carries the shared reference and detector
+    # family; register out camera motion, track, and return metric ground coordinates with the
+    # rectification's centre/north gauge applied. The DiagnoseApriltag (top-down rectified) is created
+    # here and shared with track_apriltag.
+    if rectification isa ApriltagRectification
+        dia = diagnose_apriltag(diagnostic_file, rectification.reference, darker_target, fps)
+        ts, coords = try
+            track_apriltag(file, start, stop, scale * target_width, start_location,
+                round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia,
+                rectification.reference, rectification.family, scale * initial_search_factor, white_point, scale)
+        finally
+            close(dia)
+        end
+        return (ts, _apply_image2real(rectification.image2real, coords))
+    end
 
     ts, coords = diagnose(diagnostic_file, darker_target, rectification, fps) do dia
-        track_one(file, start, stop, scale*target_width, start_location, round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia, apriltags, scale * initial_search_factor, white_point, scale)
+        track_one(file, start, stop, scale*target_width, start_location, round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia, scale * initial_search_factor, white_point, scale)
     end
     # With a rectification, return the target in real-world coordinates (its `image2real` applied);
-    # without one, the raw pixel track. AprilTag mode already returns metric ground coordinates.
+    # without one, the raw pixel track.
     return isnothing(rectification) ? (ts, coords) : (ts, map(rectification.image2real, coords))
 end
+
+# Apply an image2real map over a track that may hold `missing` frames (AprilTag mode reports
+# `missing` where a frame lost a tag), leaving the missings in place.
+_apply_image2real(f, coords) = map(c -> ismissing(c) ? missing : f(c), coords)
 
 """
     track(files::AbstractVector; start::AbstractVector, stop::AbstractVector, target_width,
@@ -348,7 +363,6 @@ function track(
         darker_target::Bool = true,
         fps::Real = get_framerate(files[1]),
         diagnostic_file::Union{Nothing, AbstractString} = nothing,
-        apriltags::Int = 0,
         initial_search_factor::Real = 4,
         scale::Real = 1,
         white_point::Real = 1, # clamped linear rescaling
@@ -359,14 +373,36 @@ function track(
 
     nfiles = length(files)
     tss = Vector{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}(undef, nfiles)
-    ijs = Vector{Vector{RowCol}}(undef, nfiles)
     args = tuple.(files, start, stop, start_location)
 
+    # AprilTag mode: every segment registers to the SAME shared reference (the tags are stationary
+    # across the whole run). Segments are tracked independently — each uses its own start_location (a
+    # missing one falls back to the frame-centre search; a previous segment's *metric* end position
+    # can't seed the next segment's *pixel* guess without that frame's homography). One diagnostic
+    # spans all segments.
+    if rectification isa ApriltagRectification
+        segs = Vector{Vector{Union{Missing, RowCol}}}(undef, nfiles)
+        dia = diagnose_apriltag(diagnostic_file, rectification.reference, darker_target, fps)
+        try
+            for (i, (f, t_start, t_stop, loc)) in enumerate(args)
+                tss[i], segs[i] = track_apriltag(f, t_start, t_stop, scale * target_width, loc,
+                    round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia,
+                    rectification.reference, rectification.family, scale * initial_search_factor, white_point, scale)
+            end
+        finally
+            close(dia)
+        end
+        n = sum(length, tss)
+        ts = range(tss[1][1], step = step(tss[1]), length = n)
+        return (ts, _apply_image2real(rectification.image2real, reduce(vcat, segs)))
+    end
+
+    ijs = Vector{Vector{RowCol}}(undef, nfiles)
     diagnose(diagnostic_file, darker_target, rectification, fps) do dia
         end_location = missing
         for (i, (f, t_start, t_stop, loc)) in enumerate(args)
             loc = coalesce(loc, end_location)
-            tss[i], ijs[i] = track_one(f, t_start, t_stop, scale*target_width, loc, round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia, apriltags, scale * initial_search_factor, white_point, scale)
+            tss[i], ijs[i] = track_one(f, t_start, t_stop, scale*target_width, loc, round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia, scale * initial_search_factor, white_point, scale)
             end_location = ijs[i][end]
         end
     end

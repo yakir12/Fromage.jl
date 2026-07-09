@@ -15,15 +15,28 @@
 
 using StaticArrays: SVector, SMatrix
 using LinearAlgebra: svd, det, norm
-using AprilTags: AprilTagDetector, freeDetector!
+using AprilTags: AprilTags, AprilTagDetector, freeDetector!
+using ..Rectifications: i2r_centering_northing
 
-# tag36h11 physical geometry: the black border is a 96 cm square. AprilTags reports each tag's four
-# corners (`.p`, as [col, row]) in the order that maps to the tag-local unit square below; scaled
-# by half the side length these are the canonical corner positions in cm.
-const TAG_SIZE_CM = 96.0
-const CANON = let h = TAG_SIZE_CM / 2
+# The tag families the AprilTag detector supports (`@enum TagFamilies tag36h11 tag25h9 tag16h5`),
+# keyed by the `family` CSV value, and how many cells span each tag's black border corner to
+# corner: the N×N data grid plus one black border cell on every side. tag36h11 is 6×6 data ⇒ 8,
+# tag25h9 5×5 ⇒ 7, tag16h5 4×4 ⇒ 6. AprilTags reports each tag's four OUTER black-border corners
+# (`.p`, as [col, row]; the tag's unit square [-1, 1] maps to them), so corner-to-corner in real
+# units is `cells_across × cell_size`.
+const APRIL_FAMILIES = Dict("tag36h11" => AprilTags.tag36h11, "tag25h9" => AprilTags.tag25h9,
+                            "tag16h5" => AprilTags.tag16h5)
+const CELLS_ACROSS = Dict("tag36h11" => 8, "tag25h9" => 7, "tag16h5" => 6)
+
+# The canonical tag corners in real-world units, in the detector's `.p` order, for a tag of
+# `family` whose single cell measures `cell` units. `CANON`/`TAG_SIZE_CM` are the default gauge —
+# tag36h11 at 12 cm/cell ⇒ a 96 cm black-border square — on which the geometry unit tests are built.
+function canon_square(family, cell)
+    h = CELLS_ACROSS[family] * cell / 2
     SVector{2, Float64}[SVector(-h, h), SVector(h, h), SVector(h, -h), SVector(-h, -h)]
 end
+const TAG_SIZE_CM = 96.0
+const CANON = canon_square("tag36h11", 12.0)
 
 # apply a 3×3 homography to a 2D point (perspective divide)
 apply_h(H, p) = (v = H * SVector(p[1], p[2], 1.0); SVector(v[1] / v[3], v[2] / v[3]))
@@ -50,20 +63,22 @@ function homography_dlt(src, dst)
     H / H[3, 3]
 end
 
-# Rigid Procrustes: place the canonical 96 cm square (no scaling — its size is known exactly) onto
+# Rigid Procrustes: place the canonical square `canon` (no scaling — its size is known exactly) onto
 # four measured cm points, giving the best-fit true square at that pose. This is how each tag's
 # known metric geometry is imposed during the consensus fit.
-function place_square(D)
-    mc = sum(CANON) / 4; md = sum(D) / 4
-    H = sum((D[i] - md) * (CANON[i] - mc)' for i in 1:4)      # 2×2 cross-covariance
+function place_square(D, canon = CANON)
+    mc = sum(canon) / 4; md = sum(D) / 4
+    H = sum((D[i] - md) * (canon[i] - mc)' for i in 1:4)      # 2×2 cross-covariance
     F = svd(H); R = F.U * F.Vt
     det(R) < 0 && (R = F.U * SMatrix{2,2,Float64}(1, 0, 0, -1) * F.Vt)   # reflection guard
-    [R * (c - mc) + md for c in CANON]
+    [R * (c - mc) + md for c in canon]
 end
 
-# worst deviation (cm) of any tag edge from the true 96 cm, under an image→cm homography `M`
-_worst_side(M, tag_corners) = maximum(abs(norm(apply_h(M, tc[i]) - apply_h(M, tc[mod1(i+1, 4)])) - TAG_SIZE_CM)
-                                      for tc in tag_corners for i in 1:4)
+# worst deviation (real units) of any tag edge from the true side length `side`, under an
+# image→cm homography `M`
+_worst_side(M, tag_corners, side = TAG_SIZE_CM) =
+    maximum(abs(norm(apply_h(M, tc[i]) - apply_h(M, tc[mod1(i+1, 4)])) - side)
+            for tc in tag_corners for i in 1:4)
 
 # best-fit rigid transform (rotation + translation, no scale) mapping point set `A` onto `B`,
 # returned as a function — used to pin the metric fit's global gauge each iteration.
@@ -86,23 +101,24 @@ end
 # to 35 cm), so we try EVERY tag as the bootstrap and keep the globally best result. On real footage
 # at least one bootstrap reaches sub-cm; `fail` throws if none does (non-coplanar / mis-detected
 # tags). Fit once per reference frame — the whole thing is a one-time few ms, not a per-frame cost.
-function fit_metric(tag_corners; maxiter = 1000, tol = 1e-9, fail = 5.0)
+function fit_metric(tag_corners; canon = CANON, maxiter = 1000, tol = 1e-9, fail = 5.0)
+    side = norm(canon[1] - canon[2])
     flat = reduce(vcat, tag_corners)
-    bestM = homography_dlt(collect(tag_corners[1]), CANON); beste = _worst_side(bestM, tag_corners)
+    bestM = homography_dlt(collect(tag_corners[1]), canon); beste = _worst_side(bestM, tag_corners, side)
     for boot in eachindex(tag_corners)
-        M = homography_dlt(collect(tag_corners[boot]), CANON); e = _worst_side(M, tag_corners)
+        M = homography_dlt(collect(tag_corners[boot]), canon); e = _worst_side(M, tag_corners, side)
         for _ in 1:maxiter
-            sq = [place_square(SVector{2,Float64}[apply_h(M, p) for p in tc]) for tc in tag_corners]
-            T = rigid_align(sq[1], CANON)                     # pin gauge: tag 1 → canonical square
+            sq = [place_square(SVector{2,Float64}[apply_h(M, p) for p in tc], canon) for tc in tag_corners]
+            T = rigid_align(sq[1], canon)                     # pin gauge: tag 1 → canonical square
             G = reduce(vcat, [[T(g) for g in s] for s in sq])
-            Mn = homography_dlt(flat, G); en = _worst_side(Mn, tag_corners)
+            Mn = homography_dlt(flat, G); en = _worst_side(Mn, tag_corners, side)
             en < beste && (bestM = Mn; beste = en)
             converged = abs(e - en) < tol
             M = Mn; e = en
             converged && break
         end
     end
-    beste > fail && error("AprilTag metric fit did not converge (worst square error $(round(beste, digits=2)) cm > $fail); tags may be non-coplanar or mis-detected")
+    beste > fail && error("AprilTag metric fit did not converge (worst square error $(round(beste, digits=2)) > $fail; in the calibration's real units); tags may be non-coplanar or mis-detected")
     return bestM
 end
 
@@ -116,6 +132,117 @@ end
 
 function ReferenceFrame(ids::AbstractVector{<:Integer}, tag_corners; kw...)
     ReferenceFrame(collect(Int, ids), reduce(vcat, tag_corners), fit_metric(tag_corners; kw...))
+end
+
+# ---- the shared reference as a rectification -------------------------------------------------
+# The AprilTag calibration is a rectification like any other (VerifyRectifications builds it from a
+# `type = apriltag` calibs row and Fromage joins it to the runs that reference it). Unlike the video
+# rectifications there is no fixed image→real map: the drone moves, so each run frame is registered
+# to this ONE shared `reference` (established from the calibration's extrinsic frame; the tags are
+# stationary across every run) before the fixed metric map takes it to ground cm. `image2real` is
+# therefore not a pixel map but the cm→real gauge (centre/north) applied to `track_apriltag`'s metric
+# output; `family` is the detector family the runs must be detected with; `ratio` is a representative
+# cm-per-pixel scale (kept positive for the diagnostics/tests that read it).
+struct ApriltagRectification{I}
+    reference::ReferenceFrame
+    family::AprilTags.TagFamilies
+    image2real::I
+    ratio::Float64
+    width::Int
+    height::Int
+end
+
+# family CSV value → detector enum; also the validity gate for the `family` column.
+function april_family(family::AbstractString)
+    fam = get(APRIL_FAMILIES, family, nothing)
+    isnothing(fam) && error("unknown AprilTag family \"$family\" (supported: $(join(sort(collect(keys(APRIL_FAMILIES))), ", ")))")
+    return fam
+end
+
+# Read the single frame at timestamp `t` (seconds), in the same orientation `track_apriltag` sees
+# frames in, so reference and run corners correspond directly.
+function read_frame_at(file, t)
+    vid = openvideo(file; target_format = AV_PIX_FMT_GRAY8)
+    try
+        read(vid)                 # prime a frame so gettime returns the stream's base time
+        seek(vid, t + gettime(vid))
+        return read(vid)
+    finally
+        close(vid)
+    end
+end
+
+# Establish the shared reference frame from the calibration's extrinsic frame: detect ≥ `ntags` tags
+# of `family`, take the `ntags` lowest ids, and fit the metric map from their known cell geometry
+# (`fit_metric` throws if the tags are not coplanar / were mis-detected).
+function reference_frame(file, extrinsic, ntags, family, checker_size)
+    img = read_frame_at(file, extrinsic)
+    det = set_detector!(AprilTagDetector(april_family(family)))
+    try
+        tags = det(collect(img))
+        length(tags) ≥ ntags || error("only $(length(tags)) of $ntags AprilTags detected at the extrinsic frame")
+        ids = sort(getfield.(tags, :id))[1:ntags]
+        tc = detect_tags(det, img, ids)
+        isnothing(tc) && error("could not read all $ntags AprilTag corners at the extrinsic frame")
+        return ReferenceFrame(ids, tc; canon = canon_square(family, checker_size))
+    finally
+        freeDetector!(det)
+    end
+end
+
+# A representative cm-per-pixel scale of the reference frame: the mean tag side in cm over its mean
+# side in pixels. Only used where a positive scalar `ratio` is expected (diagnostics/tests) — the
+# real image→ground map is the per-frame homography, not a single scale.
+function reference_ratio(ref::ReferenceFrame)
+    px = 0.0; cm = 0.0
+    for t in 0:(length(ref.ids) - 1)
+        tc = ref.corners[4t + 1:4t + 4]
+        for i in 1:4
+            px += norm(tc[i] - tc[mod1(i + 1, 4)])
+            cm += norm(apply_h(ref.M, tc[i]) - apply_h(ref.M, tc[mod1(i + 1, 4)]))
+        end
+    end
+    return cm / px
+end
+
+# The cm → real gauge: `track_apriltag` already maps each frame to metric ground cm (x, y); this
+# applies the `center`/`north` origin and orientation, exactly as the video pipeline's centre/north
+# does, and returns real coordinates as `(y, x)` (matching every other rectification's `image2real`,
+# so `save2csv` unpacks them the same way). `center`/`north` are pixels in the reference (extrinsic)
+# frame; a missing `center` defaults to the frame centre, a missing `north` leaves orientation alone.
+function apriltag_image2real(M, center, north, width, height)
+    c = center === missing ? SVector{2, Float64}(width / 2, height / 2) : SVector{2, Float64}(center[1], center[2])
+    n = north === missing ? missing : SVector{2, Float64}(north[1], north[2])
+    # `f` mirrors a video image2real: reference pixel (col, row) → real (y, x). Feeding it and the
+    # gauge points to the shared centre/north helpers pins the SAME north convention as the video path.
+    f = p -> (cm = apply_h(M, SVector(Float64(p[1]), Float64(p[2]))); SVector(cm[2], cm[1]))
+    centering, northing = i2r_centering_northing(f, c, n)
+    gauge = northing ∘ centering
+    return cm -> gauge(SVector(Float64(cm[2]), Float64(cm[1])))     # raw cm (x, y) → gauged real (y, x)
+end
+
+# Build the AprilTag rectification from a verified `type = apriltag` calibs row.
+function ApriltagRectification(file, extrinsic, ntags, family, checker_size, center, north, width, height)
+    ref = reference_frame(file, extrinsic, ntags, family, checker_size)
+    i2r = apriltag_image2real(ref.M, center, north, width, height)
+    return ApriltagRectification(ref, april_family(family), i2r, reference_ratio(ref), width, height)
+end
+
+# ---- verification hooks (used by VerifyRectifications) ---------------------------------------
+# The families the `family` column may name, and a cheap validity predicate for it.
+const APRIL_FAMILY_NAMES = sort(collect(keys(APRIL_FAMILIES)))
+valid_apriltag_family(family) = haskey(APRIL_FAMILIES, family)
+
+# Does the extrinsic frame support a shared reference? Returns `nothing` on success or an issue
+# string (unreadable frame, too few tags, non-coplanar / mis-detected tags) — never throws, so it
+# composes with the gateway's other checks.
+function apriltag_extrinsic_issue(file, extrinsic, ntags, family, checker_size)
+    try
+        reference_frame(file, extrinsic, ntags, family, checker_size)
+        return nothing
+    catch e
+        return sprint(showerror, e)
+    end
 end
 
 # `register`: homography mapping the current frame's image to the reference image, from all 16
@@ -263,47 +390,50 @@ diagnose_apriltag(file::AbstractString, ref, darker_target, fps) = DiagnoseApril
 (::Dont)(_, _, _) = nothing                                     # 3-arg no-op for the apriltag callback
 
 # Track the beetle across drone footage in a single pass: per frame, detect the tags, register the
-# frame to the reference (removing drone motion), motion-compensate the tracker's guess, run the DoG
-# detection, and report the beetle in metric ground coordinates (cm). Frames missing any tag yield
-# `missing` (no registration possible) and the tracker holds its last position. The reference frame
-# is the first frame in which all `ntags` tags are seen. Reuses the Tracker / background-stack / DoG
-# machinery; detection is on the raw frame, tracking on the stack.
+# frame to the shared `ref` (removing drone motion), motion-compensate the tracker's guess, run the
+# DoG detection, and report the beetle in metric ground coordinates (cm). Frames missing any tag
+# yield `missing` (no registration possible) and the tracker holds its last position. The reference
+# is established once, from the calibration's extrinsic frame (the tags are stationary across every
+# run), and shared here; `family` is the detector family it was built with. Reuses the Tracker /
+# background-stack / DoG machinery; detection is on the raw frame, tracking on the stack. `dia` is a
+# `DiagnoseApriltag`/`Dont` created (and closed) by the caller — shared across a run's segments.
 function track_apriltag(file, start, stop, target_width, start_location, window_size, darker_target,
-                        fps, diagnostic_file, ntags, initial_search_factor, white_point, scale)
+                        fps, dia, ref::ReferenceFrame, family, initial_search_factor, white_point, scale)
+    ids = ref.ids; ntags = length(ids)
     video(file, fps, start, stop, scale) do vid
-        dets = [set_detector!(AprilTagDetector()) for _ in 1:ntags]   # one per tag (PHASE 5: concurrent)
+        dets = [set_detector!(AprilTagDetector(family)) for _ in 1:ntags]   # one per tag (concurrent)
         try
             tr = Tracker(vid, darker_target, target_width, window_size)
             stack = get_stack(vid, tr.sz, tr.h); n_bkgd = size(stack, 3); n = vid.nframes
             sz = size(vid.img)                                            # raw frame size (row, col)
             Hs = Vector{Union{Nothing, SMatrix{3,3,Float64}}}(undef, n)    # per-frame image→cm map
             coords = Vector{Union{Missing, RowCol}}(undef, n)
-            ref = nothing; ids = Int[]; boxes = NTuple{4,Int}[]           # per-tag ROI search boxes
+            boxes = NTuple{4,Int}[]; seeded = false                        # per-tag ROI search boxes
 
-            # fill the background stack, detecting tags and establishing the reference as we go. Until
-            # the reference is set the tag ids are unknown, so detection is whole-frame; afterwards it
-            # is per-tag local search seeded from each tag's last box (PHASE 4).
+            # fill the background stack, registering each frame to the shared reference. The run's
+            # `start` can be far from the calibration's extrinsic frame, so the (stationary) tags may
+            # sit anywhere in the first frame: locate them by a full-frame scan, NOT an ROI around
+            # their reference positions. Once found, subsequent frames use per-tag local search seeded
+            # from each tag's last box — a graceful fall back to full-frame when the drone jumps.
             for i in 1:n_bkgd
                 next!(vid); populate_slice!(stack, i, vid)
-                if ref === nothing
-                    tags = dets[1](collect(vid.img))                       # whole-frame until ids known
-                    if length(tags) ≥ ntags
-                        ids = sort(getfield.(tags, :id))[1:ntags]
-                        reftc = detect_tags(dets[1], vid.img, ids)
-                        ref = ReferenceFrame(ids, reftc)
-                        boxes = [tag_box(c, sz) for c in reftc]
+                if !seeded
+                    tc = detect_tags(dets[1], vid.img, ids)                # whole-frame relocation
+                    if isnothing(tc)
+                        Hs[i] = nothing
+                    else
+                        boxes = [tag_box(c, sz) for c in tc]; seeded = true
+                        Hs[i] = ground_homography(ref, reduce(vcat, tc))
                     end
-                    Hs[i] = ref === nothing ? nothing : ref.M              # reference frame: H = M
                 else
                     tc = detect_tags_roi!(dets, vid.img, ids, boxes, sz)
                     Hs[i] = isnothing(tc) ? nothing : ground_homography(ref, reduce(vcat, tc))
                 end
             end
-            isnothing(ref) && error("no frame in the background window held all $ntags AprilTags")
+            !seeded && error("no frame in the background window held all $ntags AprilTags")
 
-            dia = diagnose_apriltag(diagnostic_file, ref, darker_target, fps)
             slice(k) = selectdim(parent(parent(stack)), 3, k)              # frame k's image (in the stack)
-            try
+            begin
                 # track the already-read background-window frames (images are the stack slices)
                 level = Ref(0.0)
                 guess = get_guess(start_location, stack, vid, darker_target, target_width, initial_search_factor)
@@ -337,8 +467,6 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
                     dia(vid.img, coords[i], H)
                     restore_background!(stack, j, protect, keep)
                 end
-            finally
-                close(dia)
             end
             return (range(start, stop, n), coords)
         finally

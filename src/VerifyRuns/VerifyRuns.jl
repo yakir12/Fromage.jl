@@ -8,6 +8,7 @@ using ..Parsing: Parsing, MyTemporal, parseto!
 import ..Parsing: mytryparse                # extended on MyWindow (a type this module owns)
 using FFMPEG: ffprobe
 using OhMyThreads: OhMyThreads, tmap
+using ..PawsomeTracker: ApriltagRectification
 import ..PawsomeTracker: track
 using PrecompileTools: @setup_workload, @compile_workload
 using ProgressMeter: ProgressMeter, @showprogress
@@ -18,7 +19,7 @@ export load_runs
 # Every column maps onto a `PawsomeTracker.track` keyword, plus `run_id` (identity / segment grouping)
 # and `path` (path resolution). This is the full set of recognized CSV columns; anything else is
 # rejected as unrecognized.
-const COLUMNS = (:calibration_id, :comment, :run_id, :path, :file, :start, :stop, :target_width, :start_location, :window_size, :darker_target, :fps, :apriltags, :initial_search_factor, :white_point, :scale)
+const COLUMNS = (:calibration_id, :comment, :run_id, :path, :file, :start, :stop, :target_width, :start_location, :window_size, :darker_target, :fps, :initial_search_factor, :white_point, :scale)
 
 include("types.jl")
 include("parsers.jl")

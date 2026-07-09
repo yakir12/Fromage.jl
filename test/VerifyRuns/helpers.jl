@@ -32,7 +32,7 @@ make_target_video(name; kw...) = make_target_video(DATADIR, name; kw...)
 # ---------------------------------------------------------------------------
 
 const HEADER = ["run_id", "calibration_id", "path", "file", "start", "stop", "target_width",
-                "start_location", "window_size", "darker_target", "fps", "apriltags",
+                "start_location", "window_size", "darker_target", "fps",
                 "initial_search_factor", "white_point", "scale"]
 
 row(; kw...) = buildrow(HEADER; kw...)
