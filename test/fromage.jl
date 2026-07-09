@@ -8,6 +8,7 @@ using Test
 using Fromage
 using DataFrames: DataFrame, nrow
 using StaticArrays: SVector
+using MAT: matwrite
 
 include("common.jl")
 
@@ -68,36 +69,45 @@ include("common.jl")
 end
 
 @testset "diagnostic video: multi-run, mixed calibrations" begin
-    # Two only_scale rectifications on different-sized source videos used to produce
-    # different-sized diagnostic segments, stream-copied into one broken mixed-resolution track
-    # (players decode everything at the first segment's dimensions). The fixed canvas makes every
-    # segment identical, and the concat-demuxer keeps timestamps strictly monotonic.
+    # All three rectification kinds in one pipeline run: two only_scale rectifications on
+    # different-sized source videos (which used to produce a broken mixed-resolution diagnostic —
+    # the fixed canvas makes every segment identical, and the concat-demuxer keeps timestamps
+    # strictly monotonic) plus a matlab rectification read from a .mat file.
     dir = mktempdir()
     make_video(joinpath(dir, "cal_big.mp4"); size = (640, 480))
     make_video(joinpath(dir, "cal_small.mp4"); size = (320, 240))
-    targets = [make_target_video(dir, "t$i") for i in 1:3]
+    # fronto-parallel pinhole; ImageSize [480, 640] matches cal_big.mp4 (the cross-check)
+    matwrite(joinpath(dir, "cal.mat"), Dict("cameraParams" => Dict(
+        "ImageSize" => [480.0, 640.0],
+        "K" => [500.0 0.0 320.0; 0.0 500.0 240.0; 0.0 0.0 1.0],
+        "RotationVectors" => zeros(2, 3),
+        "TranslationVectors" => [0.0 0.0 100.0; 0.0 0.0 200.0],
+        "RadialDistortion" => [0.0, 0.0])))
+    targets = [make_target_video(dir, "t$i") for i in 1:4]
     open(joinpath(dir, "calibs.csv"), "w") do io
-        println(io, "calibration_id,type,file,extrinsic,scale")
-        println(io, "c1,only_scale,cal_big.mp4,1,1")
-        println(io, "c2,only_scale,cal_small.mp4,1,1")
+        println(io, "calibration_id,type,file,extrinsic,scale,matlab_file,extrinsic_index")
+        println(io, "c1,only_scale,cal_big.mp4,1,1,,")
+        println(io, "c2,only_scale,cal_small.mp4,1,1,,")
+        println(io, "m1,matlab,cal_big.mp4,1,,cal.mat,1")
     end
+    calib_ids = ("c1", "c1", "c2", "m1")
     open(joinpath(dir, "runs.csv"), "w") do io
         println(io, "run_id,calibration_id,file,start_location")
         for (i, (files, _)) in enumerate(targets)
-            println(io, "run$i,$(i < 3 ? "c1" : "c2"),$(only(files)),\"(55, 50)\"")
+            println(io, "run$i,$(calib_ids[i]),$(only(files)),\"(55, 50)\"")
         end
     end
     outdir = mktempdir()
     runs = cd(() -> main(dir; tracking_defaults = (target_width = 10,)), outdir)
-    @test nrow(runs) == 3
+    @test nrow(runs) == 4
     diag = joinpath(outdir, "results_dir", "diagnostic.mp4")
     sizes, pts, dts = probe_frames(diag)
     @test sizes == Set([(540, 540)])                # one resolution across every frame
-    @test length(pts) == 3 * 25                     # 3 runs × 25 written frames each
+    @test length(pts) == 4 * 25                     # 4 runs × 25 written frames each
     @test all(diff(dts) .> 0)                       # decode order strictly monotonic across joins
     @test allunique(pts)                            # every frame has its own presentation time
     # one track csv per run, named by run_id
-    for i in 1:3
+    for i in 1:4
         lines = readlines(joinpath(outdir, "results_dir", "run$i.csv"))
         @test length(lines) == 51                   # header + 50 coordinates
         @test lines[1] == "time,x,y"

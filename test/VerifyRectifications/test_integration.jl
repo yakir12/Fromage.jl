@@ -1,9 +1,9 @@
 # The whole point of the gateway: every RectificationMethod a clean load returns must be consumable
 # by Rectifications. This pins the cross-package contract end to end — in particular the `missing`
 # sentinel for omitted center/north (which Rectifications must default/ignore, not choke on) and
-# the Bool yadif (false must not deinterlace). MATLAB is excluded until Rectification(c::MATLAB)
-# is implemented.
+# the Bool yadif (false must not deinterlace).
 using Fromage.Rectifications: Rectification
+using StaticArrays: SVector
 
 @testset "integration: clean loads build Rectifications" begin
 
@@ -28,6 +28,19 @@ using Fromage.Rectifications: Rectification
             @test rect.real2image isa Function
             @test (rect.width, rect.height) == (500, 376)
         end
+    end
+
+    @testset "matlab ⇒ rectification read from the .mat parameters" begin
+        # consistent.mat is a fronto-parallel pinhole (see make_matlab_consistent): pose 1 sits at
+        # Z = 100 with f = 500, so one pixel spans Z/f = 0.2 of the .mat's world units.
+        cs = check("int_matlab.csv", [matlabrow(matlab_file = ART.consistent_mat)])
+        @test cs isa Vector
+        @test only(cs) isa VRect.MATLAB
+        rect = Rectification(only(cs))
+        p = SVector(100.0, 120.0)
+        @test rect.real2image(rect.image2real(p)) ≈ p atol = 1e-6
+        @test rect.ratio ≈ 0.2
+        @test (rect.width, rect.height) == (640, 480)
     end
 
     @testset "video without a calibs window ⇒ extrinsics-only rectification" begin

@@ -62,6 +62,9 @@ Rectification(c::Video; kwargs...) = Rectification(c.source.file, c.source.extri
 # Rectifications for the full rationale). Only one bound filled is still an error (verify_pair).
 Rectification(c::Video{Missing}; kwargs...) = Rectification(c.source.file, c.source.extrinsic, c.yadif, c.blur, c.source.width, c.source.height, c.n_corners, c.checker_size, c.source.aspect, c.source.center, c.source.north; kwargs...)
 
-# Rectification(c::MATLAB) = loadMAT(c.matlab_file; extrinsic_index = c.extrinsic_index, center = c.source.center, north = c.source.north, aspect = c.source.aspect)
+# A MATLAB rectification reads the camera model (intrinsics, distortion, and the pose picked by
+# extrinsic_index) from the .mat file; the source video supplies the frame size (already
+# cross-checked against the .mat's ImageSize) and the extrinsic timestamp for the diagnostics.
+Rectification(c::MATLAB; kwargs...) = Rectification(c.source.file, c.source.extrinsic, c.matlab_file, c.extrinsic_index, c.source.aspect, c.source.center, c.source.north, c.source.width, c.source.height; kwargs...)
 
 Rectification(c::Scale; kwargs...) = Rectification(c.source.file, c.source.extrinsic, c.scale, c.source.aspect, c.source.center, c.source.north, c.source.width, c.source.height; kwargs...)

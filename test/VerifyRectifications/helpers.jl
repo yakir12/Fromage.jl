@@ -55,6 +55,15 @@ make_matlab_nested(path; imagesize = (480, 640)) = (MAT.matwrite(path, Dict("cam
 # TranslationVectors (6×3, from MATLAB_CALIB_FIELDS) and RotationVectors (overridden to 5×3) disagree on
 # the number of extrinsic poses -> matlab_extrinsic_count returns an issue instead of a count.
 make_matlab_mismatch(path; imagesize = (480, 640)) = (MAT.matwrite(path, merge(MATLAB_CALIB_FIELDS, Dict("ImageSize" => collect(imagesize), "RotationVectors" => zeros(5, 3)))); path)
+# A geometrically consistent calibration (unlike the structural dummies above): fronto-parallel
+# pinhole poses (R = 0, t = (0, 0, Z)) with a real K — enough for the matlab Rectification to
+# build an invertible map (ratio = Z/f at pose 1). ImageSize (480, 640) matches video.mp4.
+make_matlab_consistent(path; f = 500.0, Z = 100.0) = (MAT.matwrite(path, Dict("cameraParams" => Dict(
+    "ImageSize" => [480.0, 640.0],
+    "K" => [f 0.0 320.0; 0.0 f 240.0; 0.0 0.0 1.0],
+    "RotationVectors" => zeros(2, 3),
+    "TranslationVectors" => [0.0 0.0 Z; 0.0 0.0 2Z],
+    "RadialDistortion" => [0.0, 0.0]))); path)
 
 # Kept as short as the tests allow: ffmpeg encoding dominates artifact setup, so shorter videos
 # load faster. Two floors now apply: (1) the largest `extrinsic` time stamp any *clean* row uses,
@@ -77,9 +86,11 @@ function setup_artifacts(dir)
     make_matlab_partial(joinpath(dir, "partialcalib.mat"))                         # missing 2 required fields
     make_matlab_nested(joinpath(dir, "nested.mat"); imagesize = (480, 640))        # dim (640,480), matches video.mp4
     make_matlab_mismatch(joinpath(dir, "mismatch.mat"))                            # translation/rotation pose counts differ
+    make_matlab_consistent(joinpath(dir, "consistent.mat"))                        # buildable: fronto-parallel pinhole, dim (640,480)
     return (video = "video.mp4", board = "board.mp4", mixed = "mixed.mp4", corrupt = "corrupt.mp4", interlaced = "interlaced.mp4",
             good_mat = "good.mat", noimsize_mat = "noimsize.mat", bad_mat = "bad.mat",
-            partial_mat = "partialcalib.mat", nested_mat = "nested.mat", mismatch_mat = "mismatch.mat")
+            partial_mat = "partialcalib.mat", nested_mat = "nested.mat", mismatch_mat = "mismatch.mat",
+            consistent_mat = "consistent.mat")
 end
 
 # ---------------------------------------------------------------------------

@@ -220,19 +220,32 @@ function _rectification(file, extrinsic, imgpointss, width, height, n_corners, c
     extrinsic_corners = imgpointss[extrinsic_index]
     R = Rs[extrinsic_index]
     t = ts[extrinsic_index]
+    image2real, real2image = _maps(R, t, frow, fcol, crow, ccol, k, checker_size, width, height, aspect, center, north)
+    ratio = checker_size/checker_size_pixel(extrinsic_corners, n_corners)
+    _diagnostic(diagnostic, file, extrinsic, width, height, ratio, real2image)
+    return (; image2real, real2image, ratio, width, height)
+end
+
+# Assemble the image ↔ real transform pair from one camera pose: the intrinsics
+# (frow/fcol/crow/ccol), the extrinsic pose (R, t), the radial distortion k and the real-unit
+# scale. Shared by the video paths above (parameters fit by fit_model) and the matlab path
+# (parameters read from the .mat file; see from_matlab.jl).
+function _maps(R, t, frow, fcol, crow, ccol, k, checker_size, width, height, aspect, center, north)
     intrinsic, extrinsic_transform, scale = obj2img(R, t, frow, fcol, crow, ccol, checker_size)
     distort(rc) = lens_distortion(rc, k)
     inv_scale, inv_extrinsic, inv_perspective_map, inv_distort, inv_intrinsic = img2obj(intrinsic, extrinsic_transform, scale, k)
     image2real = ∘(pop, inv_scale, inv_extrinsic, inv_perspective_map, inv_distort, inv_intrinsic)
     real2image = ∘(intrinsic, distort, PerspectiveMap(), extrinsic_transform, scale, Base.Fix2(push, 0))
     center = default_center(center, width, height)
-    image2real, real2image = add_center_north(image2real, real2image, center, north, aspect)
+    return add_center_north(image2real, real2image, center, north, aspect)
+end
 
-    ratio = checker_size/checker_size_pixel(extrinsic_corners, n_corners)
+# Save the warped extrinsic frame as a JPEG into the `diagnostic` directory (a no-op when none
+# was requested) — a quick visual check that the rectification looks right.
+function _diagnostic(diagnostic, file, extrinsic, width, height, ratio, real2image)
+    isnothing(diagnostic) && return
     warp_trans = get_warp(ratio, real2image)
-    if !isnothing(diagnostic)
-        imgw = warp_extrinsic(file, extrinsic, width, height, warp_trans)
-        FileIO.save(joinpath(diagnostic, string(first(splitext(basename(file))), "_$extrinsic.jpg")), parent(imgw))
-    end
-    return (; image2real, real2image, ratio, width, height)
+    imgw = warp_extrinsic(file, extrinsic, width, height, warp_trans)
+    FileIO.save(joinpath(diagnostic, string(first(splitext(basename(file))), "_$extrinsic.jpg")), parent(imgw))
+    return
 end

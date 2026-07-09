@@ -8,6 +8,7 @@ using ImageCore: colorview, normedview
 using ImageIO: ImageIO       # never used by name: loaded for FileIO's image backend (diagnostic JPEG)
 using ImageTransformations: warp
 using LinearAlgebra: I, norm, ⋅
+using MAT: matread
 using OhMyThreads: tmap
 using OpenCV: OpenCV
 using Polynomials: Polynomial, roots
@@ -44,6 +45,7 @@ include("detect_fit.jl")
 include("center_north.jl")
 include("from_scale.jl")
 include("from_video.jl")
+include("from_matlab.jl")
 include("plotting.jl")
 
 export Rectification

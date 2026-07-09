@@ -155,14 +155,11 @@ long,afternoon,beetle03_b.mp4,0,00:01:03,
 
 ## calibs.csv
 
-One row per rectification. Every rectification is anchored to a video file of the arena. There are two kinds, selected with the `type` column:
+One row per rectification. Every rectification is anchored to a video file of the arena. There are three kinds, selected with the `type` column:
 
 - **`video`** (the default): a video of a checkerboard being moved around the arena, then laid flat on the arena floor. Yields a full rectification — lens distortion, perspective, and scale.
 - **`only_scale`**: no checkerboard; you supply a fixed scale (real-world units per pixel). No distortion or perspective correction — appropriate for e.g. distortion-free footage filmed straight down.
-
-(A third kind, `matlab` — a calibration imported from a MATLAB `cameraParams` file — is parsed and
-fully validated, but its rectification builder is not implemented yet, so it cannot be used from
-`main`.)
+- **`matlab`**: a calibration you already made with MATLAB's Camera Calibrator app, supplied as a `.mat` file. The camera model — intrinsics, lens distortion, and the extrinsic poses — is read from the file instead of being fit from a video.
 
 ### Columns for `type = video`
 
@@ -201,7 +198,21 @@ Required: `calibration_id`, `file`, `extrinsic` (a timestamp of any representati
 
 Optional: `path`, `center`, `north`, `aspect` — same meaning as above.
 
-Both kinds can be mixed in one file — leave a column blank on the rows where it doesn't apply:
+### Columns for `type = matlab`
+
+Required: `calibration_id`, `file` (a video of the arena from the same camera — its frame size is
+cross-checked against the `.mat`'s `ImageSize`), `extrinsic` (a timestamp of any representative
+frame, used for the diagnostics), and:
+
+| column | description |
+| --- | --- |
+| `matlab_file` | the `.mat` file exported by MATLAB's Camera Calibrator (must contain `K`, `RotationVectors`, `TranslationVectors`, `RadialDistortion`, and `ImageSize`; a nested `cameraParams` struct is handled). |
+| `extrinsic_index` | 1-based index of the calibration image whose pose anchors the image ↔ arena mapping — pick the one where the board lies flat on the arena floor. |
+
+Optional: `path`, `center`, `north`, `aspect` — same meaning as above. Real-world coordinates come
+out in whatever world units the MATLAB calibration was given (its square size).
+
+All kinds can be mixed in one file — leave a column blank on the rows where it doesn't apply:
 
 ```csv
 calibration_id,type,file,extrinsic,start,stop,checker_size,n_corners,center,north,scale

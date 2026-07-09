@@ -7,6 +7,7 @@ using LinearAlgebra
 using CoordinateTransformations
 using Rotations
 using Logging
+using MAT
 
 # Most of the submodule's functions are internal (not exported); reach them through the module.
 const R = Rectifications
@@ -18,6 +19,7 @@ const R = Rectifications
     include("Rectifications/test_ffmpeg_cmd.jl")
     include("Rectifications/test_module_state.jl")
     include("Rectifications/test_from_scale.jl")
+    include("Rectifications/test_from_matlab.jl")
 
     # Tier 2 — OpenCV-backed corner detection & camera-model fit (synthetic data, no video).
     include("Rectifications/test_calibration.jl")
