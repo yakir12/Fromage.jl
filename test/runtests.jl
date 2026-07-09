@@ -9,6 +9,7 @@ using Test
     include("parsing.jl")
     include("rectifications.jl")
     include("pawsometracker.jl")
+    include("apriltag.jl")
     include("verifyrectifications.jl")
     include("verifyruns.jl")
     include("fromage.jl")
