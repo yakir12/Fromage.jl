@@ -13,7 +13,7 @@
 #   * Our normalized-DLT homography is both more accurate (Float64 vs OpenCV's Float32 marshalling)
 #     and faster (~28 µs vs ~41 µs) than OpenCV.findHomography, so no OpenCV dependency is needed.
 
-using StaticArrays: SVector, SMatrix, MVector
+using StaticArrays: SVector, SMatrix
 using LinearAlgebra: svd, det, norm
 using AprilTags: AprilTagDetector, freeDetector!
 
@@ -79,24 +79,28 @@ end
 # corners, then alternate: place a true 96 cm square on each tag's current cm estimate (Procrustes),
 # pin the global gauge by rigidly mapping tag 1's square back onto the canonical square, and refit
 # `M` from all 16 corners to those pinned squares (DLT). The gauge pin is essential — without it the
-# iteration's cm frame drifts in scale/pose and diverges under strong perspective; with it the fit
-# converges to sub-cm worst-square error on real footage (and machine precision on clean synthetic).
-# `keep-best` returns the best `M` seen, and `fail` guards against a non-coplanar / mis-detected set
-# by throwing rather than returning a silently wrong map. Fit once per reference frame — the
-# iteration cost is a one-time few ms, not per frame.
+# iteration's cm frame drifts in scale/pose and diverges under strong perspective.
+#
+# The gauge-pinned iteration still has convergence basins: which bootstrap tag lands in the good
+# basin is sensitive to sub-pixel corner noise (a 0.1 px difference flipped a real frame from 0.5 cm
+# to 35 cm), so we try EVERY tag as the bootstrap and keep the globally best result. On real footage
+# at least one bootstrap reaches sub-cm; `fail` throws if none does (non-coplanar / mis-detected
+# tags). Fit once per reference frame — the whole thing is a one-time few ms, not a per-frame cost.
 function fit_metric(tag_corners; maxiter = 1000, tol = 1e-9, fail = 5.0)
     flat = reduce(vcat, tag_corners)
-    M = homography_dlt(collect(tag_corners[1]), CANON)        # bootstrap image→cm from one tag
-    e = _worst_side(M, tag_corners); bestM = M; beste = e
-    for _ in 1:maxiter
-        sq = [place_square(SVector{2,Float64}[apply_h(M, p) for p in tc]) for tc in tag_corners]
-        T = rigid_align(sq[1], CANON)                         # pin gauge: tag 1 → canonical square
-        G = reduce(vcat, [[T(g) for g in s] for s in sq])
-        Mn = homography_dlt(flat, G); en = _worst_side(Mn, tag_corners)
-        en < beste && (bestM = Mn; beste = en)
-        converged = abs(e - en) < tol
-        M = Mn; e = en
-        converged && break
+    bestM = homography_dlt(collect(tag_corners[1]), CANON); beste = _worst_side(bestM, tag_corners)
+    for boot in eachindex(tag_corners)
+        M = homography_dlt(collect(tag_corners[boot]), CANON); e = _worst_side(M, tag_corners)
+        for _ in 1:maxiter
+            sq = [place_square(SVector{2,Float64}[apply_h(M, p) for p in tc]) for tc in tag_corners]
+            T = rigid_align(sq[1], CANON)                     # pin gauge: tag 1 → canonical square
+            G = reduce(vcat, [[T(g) for g in s] for s in sq])
+            Mn = homography_dlt(flat, G); en = _worst_side(Mn, tag_corners)
+            en < beste && (bestM = Mn; beste = en)
+            converged = abs(e - en) < tol
+            M = Mn; e = en
+            converged && break
+        end
     end
     beste > fail && error("AprilTag metric fit did not converge (worst square error $(round(beste, digits=2)) cm > $fail); tags may be non-coplanar or mis-detected")
     return bestM
@@ -121,51 +125,104 @@ register(ref::ReferenceFrame, corners) = homography_dlt(corners, ref.corners)
 ground_homography(ref::ReferenceFrame, corners) = ref.M * register(ref, corners)
 
 # ============================================================================================
-# PHASE 2+ reference — detection, ROI search and the tracking-loop wiring, to integrate next.
-# Preserved from the original scratch; not active (needs AprilTags/VideoIO), kept for reuse.
+# PHASE 2 — detection and the single-pass tracking loop.
 # ============================================================================================
-#
-# const widen_radius = 50
-# const SV = SVector{2, Float64}
-#
-# function set_detector!(detector)
-#     detector.nThreads = Threads.nthreads()
-#     detector.quad_decimate = 1.0
-#     detector.quad_sigma = 0.0
-#     detector.refine_edges = 1
-#     detector.decode_sharpening = 0.25
-#     return detector
-# end
-#
-# # Per-tag ROI detector with an expanding search rectangle (PHASE 4: local search / reacquisition).
-# struct DetectoRect
-#     sz::NTuple{2, Int}
-#     detector::AprilTagDetector
-#     rect::MVector{4, Int}
-#     min_radius::Float64
-#     function DetectoRect(sz)
-#         detector = AprilTagDetector(); set_detector!(detector)
-#         new(sz, detector, MVector(1, 1, sz...), 10)
-#     end
-# end
-# Base.close(d::DetectoRect) = freeDetector!(d.detector)
-#
-# function (d::DetectoRect)(buff)
-#     r1, c1, r2, c2 = d.rect
-#     tags = d.detector(buff[r1:r2, c1:c2])
-#     if length(tags) ≠ 1                        # not found → widen the ROI
-#         d.rect[1:2] .= max.(1, d.rect[1:2] .- widen_radius)
-#         d.rect[3:4] .= min.(d.sz, d.rect[3:4] .+ widen_radius)
-#         return nothing
-#     else
-#         t = only(tags); c = SV(reverse(t.H[1:2, 3])) + SV(r1, c1)   # tag centre → global (row,col)
-#         d.rect[1:2] .= max.(1, round.(Int, c .- d.min_radius))
-#         d.rect[3:4] .= min.(d.sz, round.(Int, c .+ d.min_radius))
-#         return t
-#     end
-# end
-#
-# # Original per-frame homography chain (PHASE 2): frame→reference (h) then reference→ground (H, from
-# # a tag's own homography), scaled to cm. Superseded by fit_metric + ground_homography above, kept
-# # for reference:
-# #   trans = LinearMap(SDiagonal(96/2, 96/2)) ∘ pop ∘ LinearMap(H) ∘ LinearMap(h) ∘ push1 ∘ RowCol
+
+# The AprilTag detector needs a plain Gray{N0f8}/UInt8 matrix (not the Gray{Float32} background
+# stack), so detection always runs on the raw frame. Whole-frame detection for now — the ROI /
+# local-search fast path is PHASE 4.
+function set_detector!(det)
+    det.nThreads = Threads.nthreads()
+    det.quad_decimate = 1.0
+    det.quad_sigma = 0.0
+    det.refine_edges = 1
+    det.decode_sharpening = 0.25
+    return det
+end
+
+# Detect and return the 16 corners grouped per tag, aligned to `ids` order (each tag's `.p` corners
+# as [col, row]); `nothing` if any expected id is absent. `SVector`-typed so the geometry consumes
+# them directly.
+function detect_tags(det, img, ids)
+    tags = det(collect(img))
+    byid = Dict(t.id => t for t in tags)
+    all(haskey(byid, i) for i in ids) || return nothing
+    [SVector{2,Float64}[SVector(p[1], p[2]) for p in byid[i].p] for i in ids]
+end
+
+# tag geometry is (x, y) = (col, row); the DoG tracker works in (row, col). These bridge the two.
+img_to_cm(H, rc) = apply_h(H, SVector(rc[2], rc[1]))                       # (row,col) px → cm
+cm_to_img(H, cm) = (xy = apply_h(inv(H), cm); (round(Int, xy[2]), round(Int, xy[1])))  # cm → (row,col) px
+
+# Track the beetle across drone footage in a single pass: per frame, detect the tags, register the
+# frame to the reference (removing drone motion), motion-compensate the tracker's guess, run the DoG
+# detection, and report the beetle in metric ground coordinates (cm). Frames missing any tag yield
+# `missing` (no registration possible) and the tracker holds its last position. The reference frame
+# is the first frame in which all `ntags` tags are seen. Reuses the Tracker / background-stack / DoG
+# machinery; detection is on the raw frame, tracking on the stack.
+function track_apriltag(file, start, stop, target_width, start_location, window_size, darker_target,
+                        fps, dia, ntags, initial_search_factor, white_point, scale)
+    video(file, fps, start, stop, scale) do vid
+        det = AprilTagDetector(); set_detector!(det)
+        try
+            tr = Tracker(vid, darker_target, target_width, window_size)
+            stack = get_stack(vid, tr.sz, tr.h); n_bkgd = size(stack, 3); n = vid.nframes
+            Hs = Vector{Union{Nothing, SMatrix{3,3,Float64}}}(undef, n)    # per-frame image→cm map
+            coords = Vector{Union{Missing, RowCol}}(undef, n)
+            ref = nothing; ids = Int[]
+
+            # fill the background stack, detecting tags and establishing the reference as we go
+            for i in 1:n_bkgd
+                next!(vid); populate_slice!(stack, i, vid)
+                if ref === nothing
+                    tags = det(collect(vid.img))
+                    if length(tags) ≥ ntags
+                        ids = sort(getfield.(tags, :id))[1:ntags]
+                        ref = ReferenceFrame(ids, detect_tags(det, vid.img, ids))
+                    end
+                    Hs[i] = ref === nothing ? nothing : ref.M              # reference frame: H = M
+                else
+                    tc = detect_tags(det, vid.img, ids)
+                    Hs[i] = isnothing(tc) ? nothing : ground_homography(ref, reduce(vcat, tc))
+                end
+            end
+            isnothing(ref) && error("no frame in the background window held all $ntags AprilTags")
+
+            # track the already-read background-window frames (their images are the stack slices)
+            level = Ref(0.0)
+            guess = get_guess(start_location, stack, vid, darker_target, target_width, initial_search_factor)
+            prev = missing
+            for i in 1:n_bkgd
+                H = Hs[i]
+                if isnothing(H)
+                    coords[i] = missing; continue
+                end
+                prev !== missing && (guess = cm_to_img(H, prev))
+                rc, guess = detect(guess, stack, i, tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, vid.scale, tr.bkgd_reduce, level)
+                coords[i] = img_to_cm(H, rc); prev = coords[i]
+                dia(selectdim(parent(parent(stack)), 3, i), round.(Int, Tuple(rc)))
+            end
+
+            # rolling phase: read, detect, track
+            for i in (n_bkgd + 1):n
+                next!(vid); j = mod1(i, n_bkgd)
+                tc = detect_tags(det, vid.img, ids)
+                H = isnothing(tc) ? nothing : ground_homography(ref, reduce(vcat, tc))
+                protect, keep = protect_target(stack, j, guess, tr.radii, vid.scale)
+                populate_slice!(stack, j, vid)
+                if isnothing(H)
+                    coords[i] = missing
+                else
+                    prev !== missing && (guess = cm_to_img(H, prev))
+                    rc, guess = detect(guess, stack, j, tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, vid.scale, tr.bkgd_reduce, level)
+                    coords[i] = img_to_cm(H, rc); prev = coords[i]
+                    dia(selectdim(parent(parent(stack)), 3, j), round.(Int, Tuple(rc)))
+                end
+                restore_background!(stack, j, protect, keep)
+            end
+            return (range(start, stop, n), coords)
+        finally
+            freeDetector!(det)
+        end
+    end
+end

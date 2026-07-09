@@ -1,5 +1,4 @@
-# Phase-1 unit tests for the AprilTag ground-plane geometry (src/PawsomeTracker/apriltag.jl),
-# which is not yet wired into the PawsomeTracker module — so we include it directly. All tests are
+# Unit tests for the AprilTag ground-plane geometry (src/PawsomeTracker/apriltag.jl). All tests are
 # synthetic and deterministic: a known camera homography maps a known four-tag ground layout into
 # an image; the geometry must invert it (recover metric ground coordinates) without the detector
 # or any video. The behaviour matches what was verified live against the real drone frame.
@@ -8,8 +7,9 @@ module ApriltagTests
 using Test
 using StaticArrays
 using LinearAlgebra
-
-include(joinpath(@__DIR__, "..", "src", "PawsomeTracker", "apriltag.jl"))
+# the geometry is internal to the submodule; import the (non-exported) names directly
+using Fromage.PawsomeTracker: CANON, apply_h, homography_dlt, place_square, fit_metric,
+    _worst_side, ReferenceFrame, register, ground_homography
 
 rot(θ) = SMatrix{2,2,Float64}(cos(θ), sin(θ), -sin(θ), cos(θ))    # proper 2D rotation
 

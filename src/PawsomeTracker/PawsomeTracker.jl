@@ -34,6 +34,7 @@ const GATE_DECAY = 0.99
 export track
 
 include("diagnose.jl")
+include("apriltag.jl")
 
 function get_framerate(file)
     vid_fps = openvideo(framerate, file)
@@ -309,6 +310,12 @@ function track(
         white_point::Real = 1,
         rectification = nothing # rectification object
     )
+
+    # AprilTag mode (drone footage): register out camera motion and return the beetle in metric
+    # ground coordinates (cm). PHASE 2 — no diagnostic yet (DiagnoseApriltag is PHASE 3).
+    apriltags > 0 && return track_apriltag(file, start, stop, scale*target_width, start_location,
+        round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, Dont(), apriltags,
+        scale * initial_search_factor, white_point, scale)
 
     diagnose(diagnostic_file, darker_target, rectification, fps) do dia
         track_one(file, start, stop, scale*target_width, start_location, round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia, apriltags, scale * initial_search_factor, white_point, scale)
