@@ -154,6 +154,51 @@ end
 img_to_cm(H, rc) = apply_h(H, SVector(rc[2], rc[1]))                       # (row,col) px → cm
 cm_to_img(H, cm) = (xy = apply_h(inv(H), cm); (round(Int, xy[2]), round(Int, xy[1])))  # cm → (row,col) px
 
+# ---- PHASE 4: local ROI search ----------------------------------------------------------------
+# AprilTag detection cost scales with pixels, so after the reference frame each tag is searched in a
+# small box around where it was last seen instead of over the whole 1080×1920 frame. Detecting on a
+# crop reproduces the full-frame corners to < 0.1 px (verified), so this is a pure speedup. The box
+# grows and re-searches until the tag is found or it spans the whole frame — a graceful fallback to
+# full-frame detection when the drone jumps, never worse than it.
+const ROI_MARGIN = 40      # px padded around a tag's corners to form its search box
+const ROI_GROW = 250       # px the box expands on each side when the tag isn't found
+
+# search box (r1, c1, r2, c2) around a tag's `corners` ([col,row]), padded and clamped to the frame
+function tag_box(corners, sz)
+    cols = getindex.(corners, 1); rows = getindex.(corners, 2)
+    (clamp(floor(Int, minimum(rows)) - ROI_MARGIN, 1, sz[1]), clamp(floor(Int, minimum(cols)) - ROI_MARGIN, 1, sz[2]),
+     clamp(ceil(Int, maximum(rows)) + ROI_MARGIN, 1, sz[1]), clamp(ceil(Int, maximum(cols)) + ROI_MARGIN, 1, sz[2]))
+end
+
+# find tag `id` by local search from `box`, expanding until found or the box is the whole frame.
+# returns (corners in global [col,row], updated tight box) or (nothing, box) if never found.
+function find_tag_roi(det, img, id, box, sz)
+    r1, c1, r2, c2 = box
+    while true
+        tags = det(collect(@view img[r1:r2, c1:c2]))
+        k = findfirst(t -> t.id == id, tags)
+        if k !== nothing
+            corners = SVector{2,Float64}[SVector(p[1] + c1 - 1, p[2] + r1 - 1) for p in tags[k].p]
+            return corners, tag_box(corners, sz)
+        end
+        (r1 == 1 && c1 == 1 && r2 == sz[1] && c2 == sz[2]) && return nothing, box
+        r1 = max(1, r1 - ROI_GROW); c1 = max(1, c1 - ROI_GROW)
+        r2 = min(sz[1], r2 + ROI_GROW); c2 = min(sz[2], c2 + ROI_GROW)
+    end
+end
+
+# detect all tags by per-tag local search, updating `boxes` in place; corners aligned to `ids`
+# order, or `nothing` if any tag is not found anywhere in the frame.
+function detect_tags_roi!(det, img, ids, boxes, sz)
+    out = Vector{Vector{SVector{2,Float64}}}(undef, length(ids))
+    for k in eachindex(ids)
+        corners, box = find_tag_roi(det, img, ids[k], boxes[k], sz)
+        isnothing(corners) && return nothing
+        boxes[k] = box; out[k] = corners
+    end
+    return out
+end
+
 # Diagnostic for AprilTag mode: a top-down rectified video. Each frame is warped into a fixed cm
 # canvas through that frame's own image→cm homography, so a correct rectification renders the ground
 # plane stationary (the tags stop moving) while the beetle dot follows the target — letting the user
@@ -229,22 +274,27 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
         try
             tr = Tracker(vid, darker_target, target_width, window_size)
             stack = get_stack(vid, tr.sz, tr.h); n_bkgd = size(stack, 3); n = vid.nframes
+            sz = size(vid.img)                                            # raw frame size (row, col)
             Hs = Vector{Union{Nothing, SMatrix{3,3,Float64}}}(undef, n)    # per-frame image→cm map
             coords = Vector{Union{Missing, RowCol}}(undef, n)
-            ref = nothing; ids = Int[]
+            ref = nothing; ids = Int[]; boxes = NTuple{4,Int}[]           # per-tag ROI search boxes
 
-            # fill the background stack, detecting tags and establishing the reference as we go
+            # fill the background stack, detecting tags and establishing the reference as we go. Until
+            # the reference is set the tag ids are unknown, so detection is whole-frame; afterwards it
+            # is per-tag local search seeded from each tag's last box (PHASE 4).
             for i in 1:n_bkgd
                 next!(vid); populate_slice!(stack, i, vid)
                 if ref === nothing
                     tags = det(collect(vid.img))
                     if length(tags) ≥ ntags
                         ids = sort(getfield.(tags, :id))[1:ntags]
-                        ref = ReferenceFrame(ids, detect_tags(det, vid.img, ids))
+                        reftc = detect_tags(det, vid.img, ids)
+                        ref = ReferenceFrame(ids, reftc)
+                        boxes = [tag_box(c, sz) for c in reftc]
                     end
                     Hs[i] = ref === nothing ? nothing : ref.M              # reference frame: H = M
                 else
-                    tc = detect_tags(det, vid.img, ids)
+                    tc = detect_tags_roi!(det, vid.img, ids, boxes, sz)
                     Hs[i] = isnothing(tc) ? nothing : ground_homography(ref, reduce(vcat, tc))
                 end
             end
@@ -272,7 +322,7 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
                 # rolling phase: read, detect, track
                 for i in (n_bkgd + 1):n
                     next!(vid); j = mod1(i, n_bkgd)
-                    tc = detect_tags(det, vid.img, ids)
+                    tc = detect_tags_roi!(det, vid.img, ids, boxes, sz)
                     H = isnothing(tc) ? nothing : ground_homography(ref, reduce(vcat, tc))
                     isnothing(H) || prev === missing || (guess = cm_to_img(H, prev))
                     protect, keep = protect_target(stack, j, guess, tr.radii, vid.scale)
