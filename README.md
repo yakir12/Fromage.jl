@@ -251,7 +251,7 @@ All problems are reported at once, per row, and nothing runs until they're all f
 | column | content |
 | --- | --- |
 | `run_id`, `calibration_id` | the identifiers from the csv files. |
-| `run` | the track: a tuple `(ts, coords)` of timestamps (seconds into the video) and pixel coordinates (`(row, col)` of the target in the original frame). |
+| `run` | the track: a tuple `(ts, coords)` of timestamps (seconds into the video) and the target's **real-world** coordinates (origin at `center`, north-aligned if `north` was given, in `checker_size`/`scale` units) — the rectification is already applied. |
 | `rectification` | the rectification: a named tuple whose `image2real` function converts pixel coordinates to real-world coordinates (origin at `center`, north-aligned if `north` was given, in `checker_size`/`scale` units); `real2image` is its inverse. |
 | `r`, `c` | the parsed run and rectification entries (all the resolved parameter values). |
 
@@ -259,16 +259,14 @@ For example:
 
 ```julia
 runs = main("path/to/data")
-ts, coords = runs.run[1]                       # first run: timestamps + pixel coordinates
-xy = runs.rectification[1].image2real.(coords)   # real-world coordinates, e.g. in cm
+ts, xy = runs.run[1]                           # first run: timestamps + real-world coordinates (e.g. cm)
 ```
 
 `main` also writes each run's track to `results_dir/<run_id>.csv` — three columns: `time` (the
 timestamp, in seconds into the video, of each detected coordinate) and the run's **real-world**
-`x`/`y` coordinates: the tracked pixels passed through the run's rectification, so the origin is
-at `center`, north-aligned if `north` was given, in `checker_size`/`scale` units (x grows
-rightward and y downward in the image, like the pixel convention). The raw pixel track remains
-available as `runs.run` (see above).
+`x`/`y` coordinates (the same coordinates as `runs.run`), with the origin at `center`,
+north-aligned if `north` was given, in `checker_size`/`scale` units (x grows rightward and y
+downward in the image, like the pixel convention).
 
 ## The diagnostic video
 

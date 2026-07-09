@@ -14,16 +14,16 @@ function concatenate(path, files)
 end
 
 # Save one run's track to results_dir/<run_id>.csv: one row per detected coordinate, with the
-# `time` stamp (seconds into the video) and the `x`/`y` real-world coordinates — the tracked
-# pixel coordinates passed through the run's rectification (origin at `center`, north-aligned
-# when `north` was given, in `checker_size`/`scale` units). Axis orientation follows the image:
-# x grows rightward and y downward, like the csv files' pixel coordinates (image2real returns
-# (y-direction, x-direction), mirroring track's (row, col) input).
-function save2csv(run_id, (ts, coords), rectification)
+# `time` stamp (seconds into the video) and the `x`/`y` real-world coordinates. `track` already
+# returns real-world coordinates (it applied the run's rectification, or AprilTag mode produced
+# metric ground coordinates directly): origin at `center`, north-aligned when `north` was given, in
+# `checker_size`/`scale` units. Axis orientation follows the image — x rightward, y downward — as
+# `(y-direction, x-direction)`, so we unpack `y, x`.
+function save2csv(run_id, (ts, coords))
     open(joinpath(results_dir, string(run_id, ".csv")), "w") do io
         println(io, "time,x,y")
-        for (t, rc) in zip(ts, coords)
-            y, x = rectification.image2real(rc)
+        for (t, c) in zip(ts, coords)
+            y, x = c
             println(io, t, ',', x, ',', y)
         end
     end
@@ -68,7 +68,7 @@ function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.c
         select!(runs, Not(:diagnostic_file))
     end
 
-    tforeach(save2csv, runs.run_id, runs.run, runs.rectification)
+    tforeach(save2csv, runs.run_id, runs.run)
 
     return runs
 

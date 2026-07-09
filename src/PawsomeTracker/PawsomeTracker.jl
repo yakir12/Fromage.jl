@@ -286,13 +286,14 @@ end
 
 Use a Difference of Gaussian (DoG) filter to track a target in the video `file` between `start`
 and `stop` seconds, sampling `fps` frames per second (capped at the video's own rate). Returns
-`(ts, coords)`: timestamps and the target's per-frame (row, col) coordinates in original-frame
-pixels (`scale` only speeds tracking up; coordinates are always reported unscaled).
-`start_location` is the target's `"(x, y)"` display-pixel position at `start`; when `missing` the
-target is searched for around the frame center. When `diagnostic_file` (an `.mp4` path — that
-container selects the H.264 encoder) is given, an annotated diagnostic video is written there,
-playing at $(DIAGNOSTIC_SPEEDUP)× real time; pass a `rectification` to render it top-down through
-that rectification instead of as the raw frame.
+`(ts, coords)`: timestamps and the target's per-frame position. With a `rectification`, `coords`
+are **real-world** coordinates (the rectification's `image2real` applied); without one, they are
+raw `(row, col)` pixels in the original frame (`scale` only speeds tracking up; coordinates are
+always reported unscaled). `start_location` is the target's `"(x, y)"` display-pixel position at
+`start`; when `missing` the target is searched for around the frame center. When `diagnostic_file`
+(an `.mp4` path — that container selects the H.264 encoder) is given, an annotated diagnostic
+video is written there, playing at $(DIAGNOSTIC_SPEEDUP)× real time; the `rectification` also
+renders it top-down instead of as the raw frame.
 """
 function track(
         file::AbstractString;
@@ -317,9 +318,12 @@ function track(
         round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, diagnostic_file, apriltags,
         scale * initial_search_factor, white_point, scale)
 
-    diagnose(diagnostic_file, darker_target, rectification, fps) do dia
+    ts, coords = diagnose(diagnostic_file, darker_target, rectification, fps) do dia
         track_one(file, start, stop, scale*target_width, start_location, round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia, apriltags, scale * initial_search_factor, white_point, scale)
     end
+    # With a rectification, return the target in real-world coordinates (its `image2real` applied);
+    # without one, the raw pixel track. AprilTag mode already returns metric ground coordinates.
+    return isnothing(rectification) ? (ts, coords) : (ts, map(rectification.image2real, coords))
 end
 
 """
@@ -370,7 +374,8 @@ function track(
     ts = range(tss[1][1], step = step(tss[1]), length = n)
     ij = vcat(ijs...)
 
-    return ts, ij
+    # real-world coordinates when a rectification is given (see the single-file method), else pixels
+    return isnothing(rectification) ? (ts, ij) : (ts, map(rectification.image2real, ij))
 end
 
 end

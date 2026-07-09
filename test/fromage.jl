@@ -40,9 +40,11 @@ include("common.jl")
 
     @test runs isa DataFrame
     @test nrow(runs) == 1
-    t, ij = only(runs.run)                          # each run entry is track's (timestamps, coords)
-    @test length(ij) == 50                          # the full 2 s at 25 fps
-    @test tracking_rmse(ij, expected) < 1           # tracked against the analytic ground truth
+    t, xy = only(runs.run)                          # track returns (timestamps, REAL-WORLD coords)
+    @test length(xy) == 50                          # the full 2 s at 25 fps
+    # ground truth is the analytic pixel path pushed through the same rectification
+    real_expected(i; kw...) = Tuple(only(runs.rectification).image2real(SVector(expected(i; kw...)...)))
+    @test tracking_rmse(xy, real_expected) < 0.3    # tracked vs ground truth, in real-world units
     @test only(runs.rectification).ratio > 0        # the joined rectification is a real one
     diag = joinpath(outdir, "results_dir", "diagnostic.mp4")
     @test isfile(diag)
@@ -54,8 +56,8 @@ include("common.jl")
     @test s.nframes == 25
     @test s.fps ≈ 25
     @test s.duration ≈ 1.0 atol = 0.2
-    # one track csv per run: time and the REAL-WORLD x/y (the pixel track through the run's
-    # rectification), one row per detected coordinate (run_id imputed to "1")
+    # one track csv per run: time and the REAL-WORLD x/y (track already applied the rectification),
+    # one row per detected coordinate (run_id imputed to "1")
     lines = readlines(joinpath(outdir, "results_dir", "1.csv"))
     @test length(lines) == 51                       # header + 50 coordinates
     @test lines[1] == "time,x,y"
