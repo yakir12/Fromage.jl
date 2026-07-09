@@ -30,17 +30,23 @@ make_corrupt_video(path) = (write(path, rand(UInt8, 500)); path)
 # 0-based coordinates, A = width/2.5), drawn by ffmpeg's geq expression at width×height square
 # pixels, then squeezed to (width/sar)×height stored pixels with setsar=sar — a genuinely
 # anamorphic file when sar ≠ 1. `nsegments > 1` splits the same trajectory into several files on
-# forced keyframes (a segmented run). Writes into `dir`; returns the basename(s) and the
-# ground-truth closure `expected(i; skip, offset)`: the stored-frame 1-based (row, col) of the
-# disc center at sample i, where sample i reads global frame `offset + (i − 1)·skip` (skip =
-# video fps ÷ requested fps).
+# forced keyframes (a segmented run). `pause = (t1, t2)` freezes the trajectory between those
+# seconds (the disc sits perfectly still, then resumes where it left off) — the long-stationary
+# target that used to be absorbed into the tracker's background model. Writes into `dir`; returns
+# the basename(s) and the ground-truth closure `expected(i; skip, offset)`: the stored-frame
+# 1-based (row, col) of the disc center at sample i, where sample i reads global frame
+# `offset + (i − 1)·skip` (skip = video fps ÷ requested fps).
 function make_target_video(dir, name; width = 100, height = 100, sar = 1//1, fps = 25, duration = 2,
-        target_width = 10, darker_target = true, row = 50, col = 55, nsegments = 1)
+        target_width = 10, darker_target = true, row = 50, col = 55, nsegments = 1, pause = nothing)
     A = width / 2.5
     target_c, bkgd_c = darker_target ? (0, 255) : (255, 0)
     w2 = round(Int, width / sar)
     sarg = "$(numerator(sar))/$(denominator(sar))"
-    vf = "geq=lum='if(lt(sqrt((X-$col+$A*sin(0.5*PI*N/$fps))^2+(Y-$row)^2),$(target_width/2)),$target_c,$bkgd_c)':cb=128:cr=128,scale=$w2:$height,setsar=$sarg"
+    # the frame index driving the trajectory: identity, or frozen at p1 for the pause's span
+    p1, p2 = isnothing(pause) ? (0, 0) : round.(Int, pause .* fps)
+    Nexpr = isnothing(pause) ? "N" : "if(lt(N,$p1),N,if(lt(N,$p2),$p1,N-($p2-$p1)))"
+    freeze(N) = isnothing(pause) ? N : (N < p1 ? N : (N < p2 ? p1 : N - (p2 - p1)))
+    vf = "geq=lum='if(lt(sqrt((X-$col+$A*sin(0.5*PI*($Nexpr)/$fps))^2+(Y-$row)^2),$(target_width/2)),$target_c,$bkgd_c)':cb=128:cr=128,scale=$w2:$height,setsar=$sarg"
     # -qp 0: lossless — the analytic ground truth stays exact, with no encoder noise around the disc
     src = `-y -loglevel error -f lavfi -i color=white:s=$(width)x$(height):d=$duration:r=$fps -vf $vf -pix_fmt yuv420p -qp 0`
     files = if nsegments == 1
@@ -53,7 +59,7 @@ function make_target_video(dir, name; width = 100, height = 100, sar = 1//1, fps
         [string(name, "_", lpad(k, 2, '0'), ".mp4") for k in 0:(nsegments - 1)]
     end
     expected = (i; skip = 1, offset = 0) -> begin
-        N = offset + (i - 1) * skip
+        N = freeze(offset + (i - 1) * skip)
         (row + 1.0, (col - A * sin(0.5π * N / fps)) / sar + 1)
     end
     return files, expected

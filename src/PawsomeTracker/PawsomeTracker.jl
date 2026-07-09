@@ -21,6 +21,16 @@ using LinearAlgebra: I
 const DEFAULT_MAX_DURATION_SECONDS = 86399.999  # 24 hours minus 1 millisecond
 const RowCol = SVector{2, Float32}
 
+# Confidence gate for `detect`: when the window's peak DoG response falls below GATE_FRACTION of
+# the running response level, the frame is treated as "target not seen" (occlusion, glare,
+# washout) and the tracker holds its last position instead of chasing the weighted mean of noise.
+# The level is an exponential moving average of accepted peaks — self-normalized, so there is no
+# per-video threshold to tune — and it decays slowly while holding, so a genuine, lasting drop in
+# contrast eventually re-opens the gate.
+const GATE_FRACTION = 0.2
+const LEVEL_SMOOTH = 0.9
+const GATE_DECAY = 0.99
+
 export track
 
 include("diagnose.jl")
@@ -176,6 +186,27 @@ end
 
 populate_slice!(stack, i, vid) = copy!(selectdim(parent(parent(stack)), 3, i), vid.img)
 
+# Keep the (possibly long-stationary) target OUT of the background history. The stack doubles as
+# the background model and as detect's source of the current frame, so the protection happens
+# AFTER detection: the frame enters the stack whole (detect must see the target), and once the
+# position is known the target's search window (the same guess ± radii rectangle detect scans) in
+# that slice is restored to the pre-target background the evicted frame held there. By induction
+# the history never contains the target — a target that sits still for longer than the rolling
+# window would otherwise be absorbed by the per-pixel max/min, erased from the subtracted image,
+# and the tracker set wandering. (The prefill in collect_stack is unprotected: absorption needs
+# the stationary spell to exceed the whole background window within the rolling phase.)
+function protect_target(stack, j, guess, radii, scale)
+    slice = selectdim(parent(parent(stack)), 3, j)
+    protect = CartesianIndices(UnitRange.(round.(Int, (guess .- radii) ./ scale),
+                                          round.(Int, (guess .+ radii) ./ scale))) ∩ CartesianIndices(slice)
+    return protect, slice[protect]
+end
+
+function restore_background!(stack, j, protect, keep)
+    selectdim(parent(parent(stack)), 3, j)[protect] = keep
+    return
+end
+
 # Sequential on purpose: next!(vid) decodes into the single shared vid.img buffer, so copying
 # slice i must complete before the next read — a spawned copy raced the following next! and
 # nondeterministically corrupted background slices with (parts of) the wrong frame.
@@ -192,7 +223,7 @@ _weightedmean(v) = mapreduce(+, zip(Iterators.product(parentindices(v)...), v)) 
     RowCol(rc) * v
 end / sum(v)
 
-function detect(guess, stack, j, h, img, radii, buff, kernel, sz, scale, bkgd_reduce = maximum)
+function detect(guess, stack, j, h, img, radii, buff, kernel, sz, scale, bkgd_reduce = maximum, level = Ref(0.0))
     slice = selectdim(stack, 3, j)
     bkgd_indices = CartesianIndices(UnitRange.(guess .- h, guess .+ h)) ∩ CartesianIndices(Base.OneTo.(sz))
     img.data[bkgd_indices] .= slice[bkgd_indices] .- bkgd_reduce(stack[bkgd_indices, :], dims = 3)
@@ -200,6 +231,14 @@ function detect(guess, stack, j, h, img, radii, buff, kernel, sz, scale, bkgd_re
     imfilter!(CPUThreads(Algorithm.FIR()), buff, img, kernel, NoPad(), window_indices)
     v = view(buff, window_indices...)
     clamp!(v, 0, Inf)
+    # the confidence gate (see GATE_FRACTION above): hold the last position when the response
+    # collapses to noise, rather than wander after the weighted mean of nothing
+    peak = maximum(v)
+    if peak < GATE_FRACTION * level[]
+        level[] *= GATE_DECAY
+        return RowCol(guess) / scale, guess
+    end
+    level[] = level[] == 0 ? peak : LEVEL_SMOOTH * level[] + (1 - LEVEL_SMOOTH) * peak
     coord = _weightedmean(v)
     if any(isnan, coord)
         return RowCol(guess) / scale, guess
@@ -211,19 +250,20 @@ function detect(guess, stack, j, h, img, radii, buff, kernel, sz, scale, bkgd_re
 end
 
 function track!(coords, stack, guess, tr, vid, dia)
+    level = Ref(0.0)                 # running response level for detect's confidence gate
     for i in axes(stack, 3)
-        coords[i], guess = detect(guess, stack, i, tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, vid.scale, tr.bkgd_reduce)
+        coords[i], guess = detect(guess, stack, i, tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, vid.scale, tr.bkgd_reduce, level)
         dia(selectdim(parent(parent(stack)), 3, i), round.(Int, Tuple(coords[i])))
     end
     n_bkgd = size(stack, 3)
     for i in n_bkgd + 1:vid.nframes
         next!(vid)
         j = mod1(i, n_bkgd)
-        # populate_slice!(selectdim(parent(stack), 3, j), vid)
-        # populate_slice!(selectdim(parent(parent(stack)), 3, j), vid)
+        protect, keep = protect_target(stack, j, guess, tr.radii, vid.scale)
         populate_slice!(stack, j, vid)
-        coords[i], guess = detect(guess, stack, j, tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, vid.scale, tr.bkgd_reduce)
+        coords[i], guess = detect(guess, stack, j, tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, vid.scale, tr.bkgd_reduce, level)
         dia(selectdim(parent(parent(stack)), 3, j), round.(Int, Tuple(coords[i])))
+        restore_background!(stack, j, protect, keep)
     end
 end
 

@@ -49,6 +49,16 @@ const DATADIR = mktempdir()
         @test tracking_rmse(ij, seg_exp) < 1
     end
 
+    @testset "a long-stationary target is not absorbed into the background" begin
+        # the disc pauses for 17 s — far longer than the 250-frame rolling background window — which
+        # used to absorb it into the per-pixel background model (the model's max saw only the disc
+        # at those pixels), erase it from the subtracted image, and set the tracker wandering
+        paused, paused_exp = make_target_video(DATADIR, "pt_pause"; duration = 30, pause = (8, 25))
+        _, ij = track(joinpath(DATADIR, only(paused)); start_location = (55, 50), target_width = 10)
+        @test length(ij) == 750
+        @test tracking_rmse(ij, paused_exp) < 1
+    end
+
     @testset "diagnostic file plays at 2× real time" begin
         df = joinpath(DATADIR, "diag.mp4")
         track(base_file; diagnostic_file = df)
