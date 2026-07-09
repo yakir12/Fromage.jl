@@ -154,6 +154,68 @@ end
 img_to_cm(H, rc) = apply_h(H, SVector(rc[2], rc[1]))                       # (row,col) px → cm
 cm_to_img(H, cm) = (xy = apply_h(inv(H), cm); (round(Int, xy[2]), round(Int, xy[1])))  # cm → (row,col) px
 
+# Diagnostic for AprilTag mode: a top-down rectified video. Each frame is warped into a fixed cm
+# canvas through that frame's own image→cm homography, so a correct rectification renders the ground
+# plane stationary (the tags stop moving) while the beetle dot follows the target — letting the user
+# judge both rectification quality and tracking at a glance. The canvas covers the reference tags'
+# cm bounding box (plus a margin) at a fixed pixel size, with square pixels.
+struct DiagnoseApriltag <: Diagnosis
+    writer::VideoWriter
+    m::Int
+    xc::Float64; yc::Float64; ppc::Float64        # canvas ↔ cm: centre (cm) and pixels-per-cm
+    color::Gray{N0f8}
+    trace::CircularBuffer{CartesianIndex{2}}
+    state::Ref{Int}
+    skip::Int
+    radius::Int
+
+    function DiagnoseApriltag(file, ref, darker_target, fps)
+        m = DIAGNOSTIC_SIZE
+        cm = [apply_h(ref.M, p) for p in ref.corners]           # tag corners in ground cm
+        xs = getindex.(cm, 1); ys = getindex.(cm, 2)
+        margin = 0.15 * max(maximum(xs) - minimum(xs), maximum(ys) - minimum(ys))
+        xc = (minimum(xs) + maximum(xs)) / 2; yc = (minimum(ys) + maximum(ys)) / 2
+        span = max(maximum(xs) - minimum(xs), maximum(ys) - minimum(ys)) + 2margin
+        ppc = m / span
+        skip = diagnostic_stride(fps)
+        buffer = Matrix{Gray{N0f8}}(undef, m, m)
+        writer = open_video_out(file, buffer; framerate = diagnostic_framerate(fps, skip),
+            encoder_private_options = DIAGNOSTIC_ENCODER)
+        new(writer, m, xc, yc, ppc, darker_target ? Gray{N0f8}(1) : Gray{N0f8}(0),
+            CircularBuffer{CartesianIndex{2}}(TRACE_BUFFER_SIZE), Ref(0), skip, max(2, m ÷ 60))
+    end
+end
+
+# canvas pixel (row i, col j) ↔ ground cm (x, y), square pixels centred on (xc, yc)
+_canvas_to_cm(d::DiagnoseApriltag, i, j) = SVector(d.xc + (j - d.m/2)/d.ppc, d.yc + (i - d.m/2)/d.ppc)
+_cm_to_canvas(d::DiagnoseApriltag, cm) = CartesianIndex(round(Int, (cm[2]-d.yc)*d.ppc + d.m/2),
+                                                        round(Int, (cm[1]-d.xc)*d.ppc + d.m/2))
+
+# per-frame: warp `frame` into the cm canvas via this frame's image→cm homography `H`, draw the
+# beetle (in cm) and its trace. `beetle` is `missing` on frames without a full tag set.
+function (d::DiagnoseApriltag)(frame, beetle, H)
+    d.state[] += 1
+    rem(d.state[], d.skip) == 0 || return nothing
+    Hinv = isnothing(H) ? nothing : inv(H)
+    # output canvas (i,j) → source image (row,col): canvas→cm→image (cm→image is inv(H))
+    tf = idx -> begin
+        isnothing(Hinv) && return SVector(-1.0, -1.0)           # no map → fill (out of bounds)
+        c = _canvas_to_cm(d, idx[1], idx[2]); v = Hinv * SVector(c[1], c[2], 1.0)
+        SVector(v[2]/v[3], v[1]/v[3])                           # (row, col) = (img_y, img_x)
+    end
+    wimg = warp(Gray{N0f8}.(frame), tf, (1:d.m, 1:d.m); fillvalue = zero(Gray{N0f8}))
+    if beetle !== missing
+        ij = _cm_to_canvas(d, beetle); push!(d.trace, ij)
+        draw!(wimg, CirclePointRadius(ij, d.radius; thickness = max(1, d.radius ÷ 2), fill = false), d.color)
+        draw!(wimg, Path(d.trace), d.color)
+    end
+    write(d.writer, parent(wimg))
+    return nothing
+end
+diagnose_apriltag(::Nothing, _, _, _) = Dont()
+diagnose_apriltag(file::AbstractString, ref, darker_target, fps) = DiagnoseApriltag(file, ref, darker_target, fps)
+(::Dont)(_, _, _) = nothing                                     # 3-arg no-op for the apriltag callback
+
 # Track the beetle across drone footage in a single pass: per frame, detect the tags, register the
 # frame to the reference (removing drone motion), motion-compensate the tracker's guess, run the DoG
 # detection, and report the beetle in metric ground coordinates (cm). Frames missing any tag yield
@@ -161,7 +223,7 @@ cm_to_img(H, cm) = (xy = apply_h(inv(H), cm); (round(Int, xy[2]), round(Int, xy[
 # is the first frame in which all `ntags` tags are seen. Reuses the Tracker / background-stack / DoG
 # machinery; detection is on the raw frame, tracking on the stack.
 function track_apriltag(file, start, stop, target_width, start_location, window_size, darker_target,
-                        fps, dia, ntags, initial_search_factor, white_point, scale)
+                        fps, diagnostic_file, ntags, initial_search_factor, white_point, scale)
     video(file, fps, start, stop, scale) do vid
         det = AprilTagDetector(); set_detector!(det)
         try
@@ -188,37 +250,44 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
             end
             isnothing(ref) && error("no frame in the background window held all $ntags AprilTags")
 
-            # track the already-read background-window frames (their images are the stack slices)
-            level = Ref(0.0)
-            guess = get_guess(start_location, stack, vid, darker_target, target_width, initial_search_factor)
-            prev = missing
-            for i in 1:n_bkgd
-                H = Hs[i]
-                if isnothing(H)
-                    coords[i] = missing; continue
+            dia = diagnose_apriltag(diagnostic_file, ref, darker_target, fps)
+            slice(k) = selectdim(parent(parent(stack)), 3, k)              # frame k's image (in the stack)
+            try
+                # track the already-read background-window frames (images are the stack slices)
+                level = Ref(0.0)
+                guess = get_guess(start_location, stack, vid, darker_target, target_width, initial_search_factor)
+                prev = missing
+                for i in 1:n_bkgd
+                    H = Hs[i]
+                    if isnothing(H)
+                        coords[i] = missing
+                    else
+                        prev !== missing && (guess = cm_to_img(H, prev))
+                        rc, guess = detect(guess, stack, i, tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, vid.scale, tr.bkgd_reduce, level)
+                        coords[i] = img_to_cm(H, rc); prev = coords[i]
+                    end
+                    dia(slice(i), coords[i], H)
                 end
-                prev !== missing && (guess = cm_to_img(H, prev))
-                rc, guess = detect(guess, stack, i, tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, vid.scale, tr.bkgd_reduce, level)
-                coords[i] = img_to_cm(H, rc); prev = coords[i]
-                dia(selectdim(parent(parent(stack)), 3, i), round.(Int, Tuple(rc)))
-            end
 
-            # rolling phase: read, detect, track
-            for i in (n_bkgd + 1):n
-                next!(vid); j = mod1(i, n_bkgd)
-                tc = detect_tags(det, vid.img, ids)
-                H = isnothing(tc) ? nothing : ground_homography(ref, reduce(vcat, tc))
-                protect, keep = protect_target(stack, j, guess, tr.radii, vid.scale)
-                populate_slice!(stack, j, vid)
-                if isnothing(H)
-                    coords[i] = missing
-                else
-                    prev !== missing && (guess = cm_to_img(H, prev))
-                    rc, guess = detect(guess, stack, j, tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, vid.scale, tr.bkgd_reduce, level)
-                    coords[i] = img_to_cm(H, rc); prev = coords[i]
-                    dia(selectdim(parent(parent(stack)), 3, j), round.(Int, Tuple(rc)))
+                # rolling phase: read, detect, track
+                for i in (n_bkgd + 1):n
+                    next!(vid); j = mod1(i, n_bkgd)
+                    tc = detect_tags(det, vid.img, ids)
+                    H = isnothing(tc) ? nothing : ground_homography(ref, reduce(vcat, tc))
+                    isnothing(H) || prev === missing || (guess = cm_to_img(H, prev))
+                    protect, keep = protect_target(stack, j, guess, tr.radii, vid.scale)
+                    populate_slice!(stack, j, vid)
+                    if isnothing(H)
+                        coords[i] = missing
+                    else
+                        rc, guess = detect(guess, stack, j, tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, vid.scale, tr.bkgd_reduce, level)
+                        coords[i] = img_to_cm(H, rc); prev = coords[i]
+                    end
+                    dia(vid.img, coords[i], H)
+                    restore_background!(stack, j, protect, keep)
                 end
-                restore_background!(stack, j, protect, keep)
+            finally
+                close(dia)
             end
             return (range(start, stop, n), coords)
         finally

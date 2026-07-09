@@ -312,9 +312,9 @@ function track(
     )
 
     # AprilTag mode (drone footage): register out camera motion and return the beetle in metric
-    # ground coordinates (cm). PHASE 2 — no diagnostic yet (DiagnoseApriltag is PHASE 3).
+    # ground coordinates (cm); with a diagnostic_file, write the top-down rectified DiagnoseApriltag.
     apriltags > 0 && return track_apriltag(file, start, stop, scale*target_width, start_location,
-        round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, Dont(), apriltags,
+        round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, diagnostic_file, apriltags,
         scale * initial_search_factor, white_point, scale)
 
     diagnose(diagnostic_file, darker_target, rectification, fps) do dia
