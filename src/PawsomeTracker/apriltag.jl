@@ -176,17 +176,21 @@ end
 # of `family`, take the `ntags` lowest ids, and fit the metric map from their known cell geometry
 # (`fit_metric` throws if the tags are not coplanar / were mis-detected).
 function reference_frame(file, extrinsic, ntags, family, checker_size)
-    img = read_frame_at(file, extrinsic)
-    det = set_detector!(AprilTagDetector(april_family(family)))
-    try
-        tags = det(collect(img))
-        length(tags) ≥ ntags || error("only $(length(tags)) of $ntags AprilTags detected at the extrinsic frame")
-        ids = sort(getfield.(tags, :id))[1:ntags]
-        tc = detect_tags(det, img, ids)
-        isnothing(tc) && error("could not read all $ntags AprilTag corners at the extrinsic frame")
-        return ReferenceFrame(ids, tc; canon = canon_square(family, checker_size))
-    finally
-        freeDetector!(det)
+    # Serialize the whole read+detect: concurrent AprilTag detection here corrupts/crashes (see
+    # APRILTAG_LOCK). One-time per calib, so the serial cost is negligible.
+    lock(APRILTAG_LOCK) do
+        img = read_frame_at(file, extrinsic)
+        det = set_detector!(AprilTagDetector(april_family(family)))
+        try
+            tags = det(collect(img))
+            length(tags) ≥ ntags || error("only $(length(tags)) of $ntags AprilTags detected at the extrinsic frame")
+            ids = sort(getfield.(tags, :id))[1:ntags]
+            tc = detect_tags(det, img, ids)
+            isnothing(tc) && error("could not read all $ntags AprilTag corners at the extrinsic frame")
+            ReferenceFrame(ids, tc; canon = canon_square(family, checker_size))
+        finally
+            freeDetector!(det)
+        end
     end
 end
 

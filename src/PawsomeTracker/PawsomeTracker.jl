@@ -43,6 +43,13 @@ export track, ApriltagRectification
 const OPENVIDEO_LOCK = ReentrantLock()
 open_gray_video(file) = lock(() -> openvideo(file; target_format = AV_PIX_FMT_GRAY8), OPENVIDEO_LOCK)
 
+# Establishing an AprilTag reference frame (a one-shot VideoIO read + the AprilTag C detector) is not
+# thread-safe: run under the verification / rectification-building `tmap` over many calibrations it
+# silently corrupts frames (tags "vanish") and can even segfault the process. Serializing only the
+# video open is NOT enough — the detection itself is unsafe. Reference building is one-time setup over
+# a handful of calibs, so we serialize it wholesale; per-run tracking is unaffected. See reference_frame.
+const APRILTAG_LOCK = ReentrantLock()
+
 include("diagnose.jl")
 include("apriltag.jl")
 
