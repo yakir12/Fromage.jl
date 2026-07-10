@@ -31,5 +31,9 @@ jobs:
           - windows-latest
           
         arch:
-          - x64
+          # Local deviation from BestieTemplate (which pins x64, as of v0.18.6): macOS-latest
+          # runners are Apple Silicon, and setup-julia@v3 (Dependabot-bumped from the template's
+          # v2) rejects x64 there instead of falling back to Rosetta. "default" resolves to the
+          # runner's native arch (aarch64 on macOS, x64 on ubuntu/windows).
+          - default
         allow_failure: [false]
