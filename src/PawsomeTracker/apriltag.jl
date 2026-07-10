@@ -46,14 +46,18 @@ apply_h(H, p) = (v = H * SVector(p[1], p[2], 1.0); SVector(v[1] / v[3], v[2] / v
 # solve well-conditioned when the pixel coordinates are large and off-origin, as tag corners are.
 function homography_dlt(src, dst)
     n = length(src)
-    norm_pts(pts) = (c = sum(pts) / n; s = sqrt(2) / (sum(p -> norm(p - c), pts) / n);
-                     (SMatrix{3,3,Float64}(s, 0, 0, 0, s, 0, -s*c[1], -s*c[2], 1),
-                      [SVector(s * (p[1] - c[1]), s * (p[2] - c[2])) for p in pts]))
+    function norm_pts(pts)
+        c = sum(pts) / n
+        s = sqrt(2) / (sum(p -> norm(p - c), pts) / n)
+        T = SMatrix{3, 3, Float64}(s, 0, 0, 0, s, 0, -s * c[1], -s * c[2], 1)
+        return T, [SVector(s * (p[1] - c[1]), s * (p[2] - c[2])) for p in pts]
+    end
     Ts, ns = norm_pts(src)
     Td, nd = norm_pts(dst)
     A = Matrix{Float64}(undef, 2n, 9)
     for i in 1:n
-        x, y = ns[i]; xp, yp = nd[i]
+        x, y = ns[i]
+        xp, yp = nd[i]
         A[2i-1, :] .= (-x, -y, -1, 0, 0, 0, xp*x, xp*y, xp)
         A[2i,   :] .= (0, 0, 0, -x, -y, -1, yp*x, yp*y, yp)
     end
@@ -67,10 +71,14 @@ end
 # four measured cm points, giving the best-fit true square at that pose. This is how each tag's
 # known metric geometry is imposed during the consensus fit.
 function place_square(D, canon = CANON)
-    mc = sum(canon) / 4; md = sum(D) / 4
+    mc = sum(canon) / 4
+    md = sum(D) / 4
     H = sum((D[i] - md) * (canon[i] - mc)' for i in 1:4)      # 2×2 cross-covariance
-    F = svd(H); R = F.U * F.Vt
-    det(R) < 0 && (R = F.U * SMatrix{2,2,Float64}(1, 0, 0, -1) * F.Vt)   # reflection guard
+    F = svd(H)
+    R = F.U * F.Vt
+    if det(R) < 0                                             # reflection guard
+        R = F.U * SMatrix{2, 2, Float64}(1, 0, 0, -1) * F.Vt
+    end
     [R * (c - mc) + md for c in canon]
 end
 
@@ -83,10 +91,14 @@ _worst_side(M, tag_corners, side = TAG_SIZE_CM) =
 # best-fit rigid transform (rotation + translation, no scale) mapping point set `A` onto `B`,
 # returned as a function — used to pin the metric fit's global gauge each iteration.
 function rigid_align(A, B)
-    ma = sum(A) / length(A); mb = sum(B) / length(B)
+    ma = sum(A) / length(A)
+    mb = sum(B) / length(B)
     H = sum((B[i] - mb) * (A[i] - ma)' for i in eachindex(A))
-    F = svd(H); R = F.U * F.Vt
-    det(R) < 0 && (R = F.U * SMatrix{2,2,Float64}(1, 0, 0, -1) * F.Vt)
+    F = svd(H)
+    R = F.U * F.Vt
+    if det(R) < 0                                             # reflection guard
+        R = F.U * SMatrix{2, 2, Float64}(1, 0, 0, -1) * F.Vt
+    end
     p -> R * (p - ma) + mb
 end
 
@@ -104,18 +116,26 @@ end
 function fit_metric(tag_corners; canon = CANON, maxiter = 1000, tol = 1e-9, fail = 5.0)
     side = norm(canon[1] - canon[2])
     flat = reduce(vcat, tag_corners)
-    bestM = homography_dlt(collect(tag_corners[1]), canon); beste = _worst_side(bestM, tag_corners, side)
+    bestM = homography_dlt(collect(tag_corners[1]), canon)
+    beste = _worst_side(bestM, tag_corners, side)
     for boot in eachindex(tag_corners)
-        M = homography_dlt(collect(tag_corners[boot]), canon); e = _worst_side(M, tag_corners, side)
+        M = homography_dlt(collect(tag_corners[boot]), canon)
+        e = _worst_side(M, tag_corners, side)
         for _ in 1:maxiter
             sq = [place_square(SVector{2,Float64}[apply_h(M, p) for p in tc], canon) for tc in tag_corners]
             T = rigid_align(sq[1], canon)                     # pin gauge: tag 1 → canonical square
             G = reduce(vcat, [[T(g) for g in s] for s in sq])
-            Mn = homography_dlt(flat, G); en = _worst_side(Mn, tag_corners, side)
-            en < beste && (bestM = Mn; beste = en)
-            converged = abs(e - en) < tol
-            M = Mn; e = en
-            converged && break
+            Mn = homography_dlt(flat, G)
+            en = _worst_side(Mn, tag_corners, side)
+            if en < beste
+                bestM = Mn
+                beste = en
+            end
+            if abs(e - en) < tol
+                break
+            end
+            M = Mn
+            e = en
         end
     end
     beste > fail && error("AprilTag metric fit did not converge (worst square error $(round(beste, digits=2)) > $fail; in the calibration's real units); tags may be non-coplanar or mis-detected")
@@ -187,7 +207,7 @@ function reference_frame(file, extrinsic, ntags, family, checker_size)
         try
             tags = det(collect(img))                # already holding APRILTAG_LOCK
             length(tags) ≥ ntags || error("only $(length(tags)) of $ntags AprilTags detected at the extrinsic frame")
-            ids = sort(getfield.(tags, :id))[1:ntags]
+            ids = sort([t.id for t in tags])[1:ntags]
             tc = detect_tags(det, img, ids)         # re-enters the lock (re-entrant), fine
             isnothing(tc) && error("could not read all $ntags AprilTag corners at the extrinsic frame")
             ReferenceFrame(ids, tc; canon = canon_square(family, checker_size))
@@ -201,9 +221,9 @@ end
 # side in pixels. Only used where a positive scalar `ratio` is expected (diagnostics/tests) — the
 # real image→ground map is the per-frame homography, not a single scale.
 function reference_ratio(ref::ReferenceFrame)
-    px = 0.0; cm = 0.0
-    for t in 0:(length(ref.ids) - 1)
-        tc = ref.corners[4t + 1:4t + 4]
+    px = 0.0
+    cm = 0.0
+    for tc in Iterators.partition(ref.corners, 4)             # one tag's 4 corners at a time
         for i in 1:4
             px += norm(tc[i] - tc[mod1(i + 1, 4)])
             cm += norm(apply_h(ref.M, tc[i]) - apply_h(ref.M, tc[mod1(i + 1, 4)]))
@@ -218,8 +238,8 @@ end
 # so `save2csv` unpacks them the same way). `center`/`north` are pixels in the reference (extrinsic)
 # frame; a missing `center` defaults to the frame centre, a missing `north` leaves orientation alone.
 function apriltag_image2real(M, center, north, width, height)
-    c = center === missing ? SVector{2, Float64}(width / 2, height / 2) : SVector{2, Float64}(center[1], center[2])
-    n = north === missing ? missing : SVector{2, Float64}(north[1], north[2])
+    c = ismissing(center) ? SVector{2, Float64}(width / 2, height / 2) : SVector{2, Float64}(center[1], center[2])
+    n = ismissing(north) ? missing : SVector{2, Float64}(north[1], north[2])
     # `f` mirrors a video image2real: reference pixel (col, row) → real (y, x). Feeding it and the
     # gauge points to the shared centre/north helpers pins the SAME north convention as the video path.
     f = p -> (cm = apply_h(M, SVector(Float64(p[1]), Float64(p[2]))); SVector(cm[2], cm[1]))
@@ -333,10 +353,16 @@ end
 # AprilTag C detector is not reentrant (see detect_locked), so every detect is serialized process-
 # wide anyway — spawning one task per tag would only contend on that lock, for no gain.
 function detect_tags_roi!(dets, img, ids, boxes, sz)
-    results = [find_tag_roi(dets[k], img, ids[k], boxes[k], sz) for k in eachindex(ids)]
-    any(r -> isnothing(first(r)), results) && return nothing
-    for k in eachindex(ids); boxes[k] = results[k][2]; end
-    return [first(results[k]) for k in eachindex(ids)]
+    corners = Vector{Vector{SVector{2, Float64}}}(undef, length(ids))
+    newboxes = similar(boxes)
+    for k in eachindex(ids)
+        tc, box = find_tag_roi(dets[k], img, ids[k], boxes[k], sz)
+        isnothing(tc) && return nothing                       # a tag is lost: boxes stay untouched
+        corners[k] = tc
+        newboxes[k] = box
+    end
+    boxes .= newboxes                                         # commit only when every tag was found
+    return corners
 end
 
 # Diagnostic for AprilTag mode: a top-down rectified video. Each frame is warped into a fixed cm
@@ -347,7 +373,9 @@ end
 struct DiagnoseApriltag <: Diagnosis
     writer::VideoWriter
     m::Int
-    xc::Float64; yc::Float64; ppc::Float64        # canvas ↔ cm: centre (cm) and pixels-per-cm
+    xc::Float64                                   # canvas ↔ cm: centre (cm) …
+    yc::Float64
+    ppc::Float64                                  # … and pixels-per-cm
     color::Gray{N0f8}
     trace::CircularBuffer{CartesianIndex{2}}
     state::Ref{Int}
@@ -357,9 +385,11 @@ struct DiagnoseApriltag <: Diagnosis
     function DiagnoseApriltag(file::AbstractString, ref, darker_target, fps)
         m = DIAGNOSTIC_SIZE
         cm = [apply_h(ref.M, p) for p in ref.corners]           # tag corners in ground cm
-        xs = getindex.(cm, 1); ys = getindex.(cm, 2)
+        xs = getindex.(cm, 1)
+        ys = getindex.(cm, 2)
         margin = 0.15 * max(maximum(xs) - minimum(xs), maximum(ys) - minimum(ys))
-        xc = (minimum(xs) + maximum(xs)) / 2; yc = (minimum(ys) + maximum(ys)) / 2
+        xc = (minimum(xs) + maximum(xs)) / 2
+        yc = (minimum(ys) + maximum(ys)) / 2
         span = max(maximum(xs) - minimum(xs), maximum(ys) - minimum(ys)) + 2margin
         ppc = m / span
         skip = diagnostic_stride(fps)
@@ -389,8 +419,9 @@ function (d::DiagnoseApriltag)(frame, beetle, H)
         SVector(v[2]/v[3], v[1]/v[3])                           # (row, col) = (img_y, img_x)
     end
     wimg = warp(Gray{N0f8}.(frame), tf, (1:d.m, 1:d.m); fillvalue = zero(Gray{N0f8}))
-    if beetle !== missing
-        ij = _cm_to_canvas(d, beetle); push!(d.trace, ij)
+    if !ismissing(beetle)
+        ij = _cm_to_canvas(d, beetle)
+        push!(d.trace, ij)
         draw!(wimg, CirclePointRadius(ij, d.radius; thickness = max(1, d.radius ÷ 2), fill = false), d.color)
         draw!(wimg, Path(d.trace), d.color)
     end
@@ -411,16 +442,20 @@ diagnose_apriltag(file::AbstractString, ref, darker_target, fps) = DiagnoseApril
 # `DiagnoseApriltag`/`Dont` created (and closed) by the caller — shared across a run's segments.
 function track_apriltag(file, start, stop, target_width, start_location, window_size, darker_target,
                         fps, dia, ref::ReferenceFrame, family, initial_search_factor, white_point, scale)
-    ids = ref.ids; ntags = length(ids)
+    ids = ref.ids
+    ntags = length(ids)
     video(file, fps, start, stop, scale) do vid
         dets = [set_detector!(AprilTagDetector(family)) for _ in 1:ntags]   # one per tag (concurrent)
         try
             tr = Tracker(vid, darker_target, target_width, window_size)
-            stack = get_stack(vid, tr.sz, tr.h); n_bkgd = size(stack, 3); n = vid.nframes
+            stack = get_stack(vid, tr.sz, tr.h)
+            n_bkgd = size(stack, 3)
+            n = vid.nframes
             sz = size(vid.img)                                            # raw frame size (row, col)
             Hs = Vector{Union{Nothing, SMatrix{3,3,Float64}}}(undef, n)    # per-frame image→cm map
             coords = Vector{Union{Missing, RowCol}}(undef, n)
-            boxes = NTuple{4,Int}[]; seeded = false                        # per-tag ROI search boxes
+            boxes = NTuple{4, Int}[]                                       # per-tag ROI search boxes
+            seeded = false
 
             # fill the background stack, registering each frame to the shared reference. The run's
             # `start` can be far from the calibration's extrinsic frame, so the (stationary) tags may
@@ -434,7 +469,8 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
                     if isnothing(tc)
                         Hs[i] = nothing
                     else
-                        boxes = [tag_box(c, sz) for c in tc]; seeded = true
+                        boxes = [tag_box(c, sz) for c in tc]
+                        seeded = true
                         Hs[i] = ground_homography(ref, reduce(vcat, tc))
                     end
                 else
@@ -445,41 +481,48 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
             !seeded && error("no frame in the background window held all $ntags AprilTags")
 
             slice(k) = selectdim(parent(parent(stack)), 3, k)              # frame k's image (in the stack)
-            begin
-                # track the already-read background-window frames (images are the stack slices)
-                level = Ref(0.0)
-                guess = get_guess(start_location, stack, vid, darker_target, target_width, initial_search_factor)
-                prev = missing
-                for i in 1:n_bkgd
-                    H = Hs[i]
-                    if isnothing(H)
-                        coords[i] = missing
-                    else
-                        prev !== missing && (guess = cm_to_img(H, prev))
-                        rc, guess = detect(guess, stack, i, tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, vid.scale, tr.bkgd_reduce, level)
-                        coords[i] = img_to_cm(H, rc); prev = coords[i]
-                    end
-                    dia(slice(i), coords[i], H)
-                end
 
-                # rolling phase: read, detect, track
-                for i in (n_bkgd + 1):n
-                    next!(vid); j = mod1(i, n_bkgd)
-                    tc = detect_tags_roi!(dets, vid.img, ids, boxes, sz)
-                    H = isnothing(tc) ? nothing : ground_homography(ref, reduce(vcat, tc))
-                    isnothing(H) || prev === missing || (guess = cm_to_img(H, prev))
-                    protect, keep = protect_target(stack, j, guess, tr.radii, vid.scale)
-                    populate_slice!(stack, j, vid)
-                    if isnothing(H)
-                        coords[i] = missing
-                    else
-                        rc, guess = detect(guess, stack, j, tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, vid.scale, tr.bkgd_reduce, level)
-                        coords[i] = img_to_cm(H, rc); prev = coords[i]
+            # track the already-read background-window frames (images are the stack slices)
+            level = Ref(0.0)
+            guess = get_guess(start_location, stack, vid, darker_target, target_width, initial_search_factor)
+            prev = missing
+            for i in 1:n_bkgd
+                H = Hs[i]
+                if isnothing(H)
+                    coords[i] = missing
+                else
+                    if !ismissing(prev)
+                        guess = cm_to_img(H, prev)
                     end
-                    dia(vid.img, coords[i], H)
-                    restore_background!(stack, j, protect, keep)
+                    rc, guess = detect(guess, stack, i, tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, vid.scale, tr.bkgd_reduce, level)
+                    coords[i] = img_to_cm(H, rc)
+                    prev = coords[i]
                 end
+                dia(slice(i), coords[i], H)
             end
+
+            # rolling phase: read, detect, track
+            for i in (n_bkgd + 1):n
+                next!(vid)
+                j = mod1(i, n_bkgd)
+                tc = detect_tags_roi!(dets, vid.img, ids, boxes, sz)
+                H = isnothing(tc) ? nothing : ground_homography(ref, reduce(vcat, tc))
+                if !isnothing(H) && !ismissing(prev)
+                    guess = cm_to_img(H, prev)
+                end
+                protect, keep = protect_target(stack, j, guess, tr.radii, vid.scale)
+                populate_slice!(stack, j, vid)
+                if isnothing(H)
+                    coords[i] = missing
+                else
+                    rc, guess = detect(guess, stack, j, tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, vid.scale, tr.bkgd_reduce, level)
+                    coords[i] = img_to_cm(H, rc)
+                    prev = coords[i]
+                end
+                dia(vid.img, coords[i], H)
+                restore_background!(stack, j, protect, keep)
+            end
+
             return (range(start, stop, n), coords)
         finally
             foreach(freeDetector!, dets)

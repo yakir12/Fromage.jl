@@ -43,6 +43,14 @@ The rest of the suite (818/820 tests) passes on arm64 macOS. CI tests `macos-15-
   extension is absent?), moving tests into extension-conditional test sets, and deciding how
   track_calibrate declares the dependency.
 
+## Tracks / output
+
+- **Interpolate `missing` coordinates in AprilTag tracks.** Frames that lose a tag currently yield
+  `missing` and `save2csv` writes them as empty `x`/`y` cells. The plan is to interpolate those
+  gaps at some point, at which time the `ismissing` branch in `save2csv` goes away. Until then
+  `save2csv` deliberately stays hand-rolled (`println`-based, not CSV.jl) — the explicit missing
+  handling is the point — so don't "clean it up" in idiom passes.
+
 ## Performance / tooling
 
 - **Set up PkgBenchmark for regression tracking.** Add a `benchmark/benchmarks.jl` `BenchmarkGroup`

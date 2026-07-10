@@ -398,7 +398,7 @@ function track(
 
     nfiles = length(files)
     tss = Vector{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}(undef, nfiles)
-    args = tuple.(files, start, stop, start_location)
+    args = zip(files, start, stop, start_location)
 
     # AprilTag mode: every segment registers to the SAME shared reference (the tags are stationary
     # across the whole run). Segments are tracked independently — each uses its own start_location (a
