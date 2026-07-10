@@ -3,3 +3,5 @@ run1,morning,beetle01.mp4,00:00:12,00:02:30,25,"(960, 540)",a beetle with a pain
 run2,morning,beetle02.mp4,8,,25,,starts at the calibration's center
 long,afternoon,beetle03_a.mp4,0,,25,"(210, 400)",first half of a run that spans two video files
 long,afternoon,beetle03_b.mp4,0,00:01:03,25,,second half; continues where the first half ended
+drone1,flight,drone_flight.mp4,00:01:17,00:02:12,3,"(935, 506)",AprilTag drone run; coordinates come out in cm (checker_size)
+drone2,flight,drone_flight2.mp4,00:00:30,00:01:45,3,,another beetle on the same tag layout — shares the one reference
