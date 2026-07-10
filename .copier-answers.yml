@@ -1,12 +1,35 @@
 # Changes here will be overwritten by Copier
+AddAllcontributors: false
+AddChangelog: false
+AddCitationCFF: false
+AddCodeOfConduct: false
+AddCopierCI: false
+AddDocs: false
+AddDocsCI: false
+AddFormatterAndLinterConfigFiles: false
+AddGitHubPRTemplate: false
+AddGitHubTemplates: false
+AddLintCI: false
+AddLychee: false
+AddMacToCI: true
+AddTagBotCI: true
+AddTestCI: true
+AddWinToCI: true
 Authors: Yakir Gagnon <12.yakir@gmail.com> and contributors
+CheckExplicitImports: false
+GitHubActionVersionAutoUpdate: dependabot
+JuliaCompatAutoUpdate: compathelper
+JuliaMinCIVersion: '1.11'
 JuliaMinVersion: '1.11'
 License: MIT
 LicenseCopyrightHolders: Yakir Gagnon
 PackageName: Fromage
 PackageOwner: yakir12
 PackageUUID: f7d2997e-1be8-4771-a487-05d70e6e0672
-StrategyConfirmIncluded: false
+RunJuliaNightlyOnCI: false
+StrategyConfirmIncluded: true
 StrategyLevel: 0
-StrategyReviewExcluded: false
+StrategyReviewExcluded: true
+TestingStrategy: basic
+UseCirrusCI: false
 _src_path: /home/yakir/.julia/packages/BestieTemplate/6QVd6

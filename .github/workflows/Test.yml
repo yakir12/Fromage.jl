@@ -26,8 +26,18 @@ jobs:
           - "1"
         os:
           - ubuntu-latest
-          
+          # Local deviation from BestieTemplate's macOS-latest: those runners are Apple Silicon,
+          # where AprilTags_jll has no aarch64-apple-darwin binaries (libapriltag never loads).
+          # Test Intel macOS (supported by GitHub into 2027) until upstream ships arm64 binaries —
+          # see todo.md "Apple Silicon (aarch64 macOS) support".
+          - macos-15-intel
+
+          - windows-latest
           
         arch:
-          - x64
+          # Local deviation from BestieTemplate (which pins x64, as of v0.18.6): "default"
+          # resolves to each runner's native arch (x64 on all three today) — setup-julia@v3
+          # (Dependabot-bumped from the template's v2) hard-errors on an arch/runner mismatch,
+          # so this keeps working if an arm64 runner ever (re)enters the matrix.
+          - default
         allow_failure: [false]
