@@ -33,6 +33,16 @@ const GATE_DECAY = 0.99
 
 export track, ApriltagRectification
 
+# VideoIO.openvideo (libav's demuxer/codec open) is not thread-safe: concurrent opens race — badly so
+# on a cold network share, where the open path is slow enough to widen the window (it silently yields
+# garbled/wrong frames, not an error). Decoding independent streams IS safe, so we serialize only the
+# open and let every seek/read/decode run concurrently. This guards both the extrinsic-frame reads
+# (`read_frame_at`, run under `tmap` in verification and rectification building) and the per-run
+# tracking opens (the `Video` constructor); the open is fast, so serializing it costs essentially
+# nothing against the decode that follows.
+const OPENVIDEO_LOCK = ReentrantLock()
+open_gray_video(file) = lock(() -> openvideo(file; target_format = AV_PIX_FMT_GRAY8), OPENVIDEO_LOCK)
+
 include("diagnose.jl")
 include("apriltag.jl")
 
@@ -109,7 +119,7 @@ struct Video
     sar::Rational
 
     function Video(file, fps, start, stop, scale)
-        vid = openvideo(file; target_format = AV_PIX_FMT_GRAY8)
+        vid = open_gray_video(file)          # serialized open (openvideo isn't thread-safe); see OPENVIDEO_LOCK
         vid_fps = framerate(vid)
         fps = min(fps, vid_fps)
         skip = round(Int, vid_fps / fps)
