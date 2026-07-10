@@ -19,13 +19,19 @@ end
 # kinds a pixel→real map, for AprilTag a metric ground map carrying the same centre/north gauge — so
 # the origin is at `center`, north-aligned when `north` was given, in `checker_size`/`scale` units.
 # Axis orientation follows the image — x rightward, y downward — as
-# `(y-direction, x-direction)`, so we unpack `y, x`.
+# `(y-direction, x-direction)`, so we unpack `y, x`. AprilTag tracking reports `missing` for a frame
+# whose target couldn't be localized (e.g. a tag was momentarily lost); such a row keeps its `time`
+# with empty `x`/`y`, so the time axis stays intact and the gaps are explicit.
 function save2csv(run_id, (ts, coords))
     open(joinpath(results_dir, string(run_id, ".csv")), "w") do io
         println(io, "time,x,y")
         for (t, c) in zip(ts, coords)
-            y, x = c
-            println(io, t, ',', x, ',', y)
+            if ismissing(c)
+                println(io, t, ",,")
+            else
+                y, x = c
+                println(io, t, ',', x, ',', y)
+            end
         end
     end
 end

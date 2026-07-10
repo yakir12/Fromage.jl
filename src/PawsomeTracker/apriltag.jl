@@ -176,17 +176,24 @@ end
 # of `family`, take the `ntags` lowest ids, and fit the metric map from their known cell geometry
 # (`fit_metric` throws if the tags are not coplanar / were mis-detected).
 function reference_frame(file, extrinsic, ntags, family, checker_size)
-    img = read_frame_at(file, extrinsic)
-    det = set_detector!(AprilTagDetector(april_family(family)))
-    try
-        tags = detect_locked(det, collect(img))     # serialized: the detector is not reentrant
-        length(tags) ≥ ntags || error("only $(length(tags)) of $ntags AprilTags detected at the extrinsic frame")
-        ids = sort(getfield.(tags, :id))[1:ntags]
-        tc = detect_tags(det, img, ids)
-        isnothing(tc) && error("could not read all $ntags AprilTag corners at the extrinsic frame")
-        return ReferenceFrame(ids, tc; canon = canon_square(family, checker_size))
-    finally
-        freeDetector!(det)
+    # Serialize the WHOLE read + detect. Two separate hazards, both under the verification /
+    # rectification-building `tmap` at high thread counts on a cold network share: the one-shot VideoIO
+    # read (open+seek+read) races and returns garbled/wrong frames, and the AprilTag detector is not
+    # reentrant. Reference building is one-time setup over a handful of calibs, so serializing it costs
+    # essentially nothing. (Per-run tracking keeps concurrent decode; only its detection is serialized.)
+    lock(APRILTAG_LOCK) do
+        img = read_frame_at(file, extrinsic)
+        det = set_detector!(AprilTagDetector(april_family(family)))
+        try
+            tags = det(collect(img))                # already holding APRILTAG_LOCK
+            length(tags) ≥ ntags || error("only $(length(tags)) of $ntags AprilTags detected at the extrinsic frame")
+            ids = sort(getfield.(tags, :id))[1:ntags]
+            tc = detect_tags(det, img, ids)         # re-enters the lock (re-entrant), fine
+            isnothing(tc) && error("could not read all $ntags AprilTag corners at the extrinsic frame")
+            ReferenceFrame(ids, tc; canon = canon_square(family, checker_size))
+        finally
+            freeDetector!(det)
+        end
     end
 end
 
