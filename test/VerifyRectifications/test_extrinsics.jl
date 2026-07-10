@@ -20,4 +20,17 @@
         df = check("e_corrupt.csv", [videorow(file = ART.corrupt)])
         @test flagged(df, 1, "issue with corner detection")
     end
+
+    @testset "a failing extrinsic frame is dumped to the issues folder" begin
+        idir = mktempdir()
+        # a stale file proves the folder is wiped at the start of each run
+        touch(joinpath(idir, "stale.png"))
+        df = check("e_dump.csv", [videorow(file = ART.video, n_corners = (5, 8))]; issues_dir = idir)
+        @test flagged(df, 1, "no corners detected")
+        @test flagged(df, 1, "saved the extrinsic frame")          # the message points at the file
+        pngs = filter(endswith(".png"), readdir(idir))
+        @test !("stale.png" in pngs)                               # emptied at the start of the run
+        @test length(pngs) == 1                                    # exactly the one failing frame
+        @test filesize(joinpath(idir, only(pngs))) > 0             # a real, non-empty image
+    end
 end

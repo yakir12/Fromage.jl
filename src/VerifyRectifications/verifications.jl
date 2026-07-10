@@ -248,7 +248,29 @@ function extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
     end
 end
 
-function verify_extrinsics!(df::AbstractDataFrame)
+# Save the frame that failed detection into `issues_dir` (created on demand) for the user to inspect,
+# named by the video and extrinsic timestamp — e.g. `board_t1.0s.png`. `get_frame` reads the frame
+# lazily; the whole thing is best effort (if the frame itself can't be re-read, e.g. a corrupt file,
+# saving is skipped and `nothing` is returned).
+function save_issue_frame(issues_dir, file, extrinsic, get_frame)
+    try
+        image = get_frame()
+        mkpath(issues_dir)
+        path = joinpath(issues_dir, string(first(splitext(basename(file))), "_t", extrinsic, "s.png"))
+        FileIO.save(path, image)
+        return path
+    catch
+        return nothing
+    end
+end
+
+# Append a "saved the frame to ..." note to an issue message, after dumping the failing frame.
+function note_saved_frame(issue, saved)
+    isnothing(saved) && return issue
+    return string(issue, " — saved the extrinsic frame to ", saved, " for inspection")
+end
+
+function verify_extrinsics!(df::AbstractDataFrame, issues_dir)
     # :file is the canonical resolved path, so grouping on it corner-detects a file reached via different
     # spellings once per (extrinsic, blur, n_corners).
     gs = @chain df begin
@@ -256,11 +278,13 @@ function verify_extrinsics!(df::AbstractDataFrame)
         dropmissing([:file, :extrinsic, :blur, :n_corners], view = true)
         @groupby [:file, :extrinsic, :yadif, :blur, :width, :height, :n_corners]
     end
-    issues = @showprogress desc = "Validating extrinsics..." tmap(k -> extrinsic_issue(k.file, k.extrinsic, k.yadif, k.blur, k.width, k.height, k.n_corners), keys(gs))
-    for (g, issue) in zip(gs, issues)
-        if !isnothing(issue)
-            @transform! g :extrinsic = missing :issues = push!.(:issues, issue)
-        end
+    ks = collect(keys(gs))
+    issues = @showprogress desc = "Validating extrinsics..." tmap(k -> extrinsic_issue(k.file, k.extrinsic, k.yadif, k.blur, k.width, k.height, k.n_corners), ks)
+    for (g, k, issue) in zip(gs, ks, issues)
+        isnothing(issue) && continue
+        # dump the frame the detector saw (deinterlaced/blurred) so the user can see what went wrong
+        saved = save_issue_frame(issues_dir, k.file, k.extrinsic, () -> extrinsic_gray_frame(k.file, k.extrinsic, _vf(k.yadif, k.blur), k.width, k.height))
+        @transform! g :extrinsic = missing :issues = push!.(:issues, note_saved_frame(issue, saved))
     end
 end
 
@@ -307,16 +331,20 @@ end
 # must be detectable and their metric fit must converge (coplanar, not mis-detected). Reads real
 # frames, so it runs on the reduced set of otherwise-clean apriltag rows, grouped so a physical file
 # reached via different spellings is checked once per (extrinsic, apriltags, family, checker_size).
-function verify_apriltag_extrinsics!(df::AbstractDataFrame)
+function verify_apriltag_extrinsics!(df::AbstractDataFrame, issues_dir)
     gs = @chain df begin
         subset(:type => ByRow(passmissing(==("apriltag"))), view = true, skipmissing = true)
         subset(:issues => ByRow(isempty), view = true)
         dropmissing([:file, :extrinsic, :apriltags, :family, :checker_size], view = true)
         @groupby [:file, :extrinsic, :apriltags, :family, :checker_size]
     end
-    issues = @showprogress desc = "Validating AprilTag extrinsics..." tmap(k -> PawsomeTracker.apriltag_extrinsic_issue(k.file, k.extrinsic, k.apriltags, k.family, k.checker_size), keys(gs))
-    for (g, issue) in zip(gs, issues)
-        isnothing(issue) || @transform! g :extrinsic = missing :issues = push!.(:issues, issue)
+    ks = collect(keys(gs))
+    issues = @showprogress desc = "Validating AprilTag extrinsics..." tmap(k -> PawsomeTracker.apriltag_extrinsic_issue(k.file, k.extrinsic, k.apriltags, k.family, k.checker_size), ks)
+    for (g, k, issue) in zip(gs, ks, issues)
+        isnothing(issue) && continue
+        # dump the extrinsic frame the tag detector saw so the user can see what went wrong
+        saved = save_issue_frame(issues_dir, k.file, k.extrinsic, () -> collect(PawsomeTracker.read_frame_at(k.file, k.extrinsic)))
+        @transform! g :extrinsic = missing :issues = push!.(:issues, note_saved_frame(issue, saved))
     end
 end
 
@@ -358,7 +386,11 @@ function verify_unique_calibrations!(df::AbstractDataFrame)
     end
 end
 
-function verifications!(df::AbstractDataFrame, data_path)
+function verifications!(df::AbstractDataFrame, data_path, issues_dir = joinpath("results_dir", "issues"))
+
+    # The issues folder is fully transient: it reflects only the current verification run, so wipe it
+    # up front (it is recreated lazily by save_issue_frame the first time a frame fails to detect).
+    rm(issues_dir; recursive = true, force = true)
 
     verify_unique_ids!(df)
     @transform! df :path = passmissing(joinpath).(data_path, :path)
@@ -428,14 +460,14 @@ function verifications!(df::AbstractDataFrame, data_path)
     verify!(df, (t, a, o) -> (o - a) ÷ t + 1 < 3, "temporal_step too short (results in less than 3 intrinsic images)", :temporal_step, :start, :stop)
 
     # verify that the extrinsic time stamp works (should only be done after extrinsic time-stamps have been verified
-    verify_extrinsics!(df)
+    verify_extrinsics!(df, issues_dir)
 
     # the calibs window must actually contain ≥ 3 detectable-corner frames; runs after
     # verify_extrinsics! so rows whose extrinsic already failed are skipped, not re-scanned
     verify_intrinsics!(df)
 
     # apriltag rows: the extrinsic frame must yield a valid shared reference (tags detectable + coplanar)
-    verify_apriltag_extrinsics!(df)
+    verify_apriltag_extrinsics!(df, issues_dir)
 
     verify_unique_calibrations!(df)
 

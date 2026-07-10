@@ -59,6 +59,10 @@ function get_corners(file, t, vf, w, h, n_corners)
     _detect_corners(reshape(img, 1, h, w), n_corners)
 end
 
+# The frame at `t` as a `Gray` image — the same deinterlaced/blurred frame corner detection sees.
+# Used to save a failing calibration's extrinsic frame to the issues folder for inspection.
+extrinsic_gray_frame(file, t, vf, w, h) = colorview(Gray, normedview(_frame_at(file, t, vf, w, h)))
+
 function extract_intrinsics(file, start, stop, temporal_step, vf, w, h, n_corners)
     ts = start:temporal_step:stop
     corners = tmap(t -> get_corners(file, t, vf, w, h, n_corners), ts)

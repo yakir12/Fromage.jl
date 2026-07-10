@@ -149,6 +149,22 @@ end
     @test isfile(diag) && filesize(diag) > 0
 end
 
+@testset "AprilTag calibration: failing extrinsic frame is dumped to the issues folder" begin
+    # the video has four tags; asking for six fails detection at the extrinsic frame, and the frame
+    # is dumped to the issues folder (pointed at a temp dir) for the user to inspect.
+    dir = mktempdir(); idir = mktempdir()
+    vid, _, _, _ = make_apriltag_video(dir, "drone")
+    open(joinpath(dir, "calibs.csv"), "w") do io
+        println(io, "calibration_id,type,file,extrinsic,apriltags,family,checker_size")
+        println(io, "drone,apriltag,$vid,0,6,tag36h11,12")
+    end
+    df = Fromage.VerifyRectifications.load_rectifications(dir, joinpath(dir, "calibs.csv"); strict = false, issues_dir = idir)
+    @test any(m -> occursin("only 4 of 6 AprilTags", m), only(df.issues))
+    @test any(m -> occursin("saved the extrinsic frame", m), only(df.issues))
+    pngs = filter(endswith(".png"), readdir(idir))
+    @test length(pngs) == 1 && filesize(joinpath(idir, only(pngs))) > 0
+end
+
 @testset "diagnostic video: multi-run, mixed calibrations" begin
     # All three rectification kinds in one pipeline run: two only_scale rectifications on
     # different-sized source videos (which used to produce a broken mixed-resolution diagnostic —

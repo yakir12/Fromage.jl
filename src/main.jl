@@ -41,7 +41,7 @@ function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.c
 
     mkpath(results_dir)
 
-    cs = load_rectifications(joinpath(data_path, calibs_file); defaults = rectification_defaults)
+    cs = load_rectifications(joinpath(data_path, calibs_file); defaults = rectification_defaults, issues_dir = joinpath(results_dir, "issues"))
     rs = load_runs(joinpath(data_path, runs_file); defaults = tracking_defaults)
 
     if !isnothing(run_ids)
@@ -93,7 +93,7 @@ end
 function only_rectify(data_path::String; calibs_file = "calibs.csv", rectification_defaults = (;), calibration_ids = nothing)
     mkpath(results_dir)
 
-    cs = load_rectifications(joinpath(data_path, calibs_file); defaults = rectification_defaults)
+    cs = load_rectifications(joinpath(data_path, calibs_file); defaults = rectification_defaults, issues_dir = joinpath(results_dir, "issues"))
 
     if !isnothing(calibration_ids)
         filter!(c -> c.calibration_id ∈ calibration_ids, cs)
