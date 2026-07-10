@@ -1,9 +1,8 @@
 # Fromage 🧀
 
-[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://yakir12.github.io/Fromage.jl/stable/)
-[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://yakir12.github.io/Fromage.jl/dev/)
-[![Build Status](https://github.com/yakir12/Fromage.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/yakir12/Fromage.jl/actions/workflows/CI.yml?query=branch%3Amain)
-[![Coverage](https://coveralls.io/repos/github/yakir12/Fromage.jl/badge.svg?branch=main)](https://coveralls.io/github/yakir12/Fromage.jl?branch=main)
+[![Test workflow status](https://github.com/yakir12/Fromage.jl/actions/workflows/Test.yml/badge.svg?branch=main)](https://github.com/yakir12/Fromage.jl/actions/workflows/Test.yml?query=branch%3Amain)
+[![Coverage](https://codecov.io/gh/yakir12/Fromage.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/yakir12/Fromage.jl)
+[![BestieTemplate](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/JuliaBesties/BestieTemplate.jl/main/docs/src/assets/badge.json)](https://github.com/JuliaBesties/BestieTemplate.jl)
 
 This is the main package used to organise, calibrate, and track video files in the Dacke lab.
 
