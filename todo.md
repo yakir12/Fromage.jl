@@ -18,3 +18,13 @@ Parked ideas and follow-ups, so they don't get lost.
   raw `vid.img` each frame with a `collect` conversion instead of reusing the stack slices. If the
   frames stayed `N0f8` (or the stack slices were detector-compatible), detection could run directly
   on the stack. Check whether the DoG path (imfilter, background subtraction) tolerates `N0f8`.
+
+## Performance / tooling
+
+- **Set up PkgBenchmark for regression tracking.** Add a `benchmark/benchmarks.jl` `BenchmarkGroup`
+  (wraps BenchmarkTools) covering representative operations — a rectification build on a synthetic
+  checkerboard, a short synthetic track — so `PkgBenchmark.judge(Fromage, "branch", "main")` reports
+  how much a change moved performance. `BenchmarkCI.jl` can run it in Actions and comment on PRs (the
+  BestieTemplate `.gitignore` already carries a `.benchmarkci` entry). Caveat: environment-specific
+  costs like concurrent VideoIO opens over a network share won't show up in a portable/synthetic
+  suite — those need timing on the real data + mount.
