@@ -38,15 +38,15 @@ _cmd(file, t, vf) = `$(FFMPEG.ffmpeg()) -hide_banner -loglevel error -ss $t -i $
 # the CIFS share is transient by definition, so a few backoff retries ride out residual blips even
 # under the concurrency limit. A persistent failure still rethrows after the last try.
 function _read_frame(cmd; tries = 4)
-    for i in 1:tries
+    for i in 1:(tries - 1)
         try
             return read(cmd)
-        catch e
-            i == tries && rethrow()
+        catch
             sleep(0.2 * 2^(i - 1))          # 0.2s, 0.4s, 0.8s backoff
         end
     end
-end
+    return read(cmd)   # last attempt outside the try: the real error propagates, and the
+end                    # function provably never returns `nothing`
 
 function _frame_at(file, t, vf, w, h)
     cmd = _cmd(file, t, vf)
@@ -161,7 +161,7 @@ function img2obj(intrinsic, extrinsic, scale, k)
     return inv(scale), inv_extrinsic, inv_perspective_map, inv_distort, inv(intrinsic)
 end
 
-function checker_size_pixel(extrinsic_corners, n_corners)
+function checker_size_pixel(extrinsic_corners::AbstractMatrix, n_corners)
     s = 0.0
     for col in eachcol(extrinsic_corners)
         s += sum(norm, diff(col))

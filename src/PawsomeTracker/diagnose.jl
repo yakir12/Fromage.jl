@@ -41,7 +41,7 @@ struct Diagnose <: Diagnosis
     skip::Int
     face::FTFont
 
-    function Diagnose(file, darker_target, fps)
+    function Diagnose(file::AbstractString, darker_target, fps)
         label = first(splitext(basename(file)))
         buff_sz = DIAGNOSTIC_VIDEO_SIZE
         buffer = Matrix{Gray{N0f8}}(undef, buff_sz...)
@@ -107,7 +107,7 @@ struct DiagnoseRectified <: Diagnosis
     font::Int
     face::FTFont
 
-    function DiagnoseRectified(file, darker_target, rect, fps)
+    function DiagnoseRectified(file::AbstractString, darker_target, rect, fps)
         label = first(splitext(basename(file)))
         # Fixed canvas: the zoom adapts so the frame's smaller dimension always spans the canvas.
         # For a 1080p source this is exactly the former half-resolution view (the old

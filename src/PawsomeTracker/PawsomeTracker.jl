@@ -331,6 +331,10 @@ function track(
         rectification = nothing # rectification object
     )
 
+    # `missing` means "use the default", like a blank csv cell: resolve it up front so the
+    # `Missing` never reaches fix_window_size (which has no method for it).
+    window_size = ismissing(window_size) ? round(Int, 2target_width) : window_size
+
     # AprilTag mode (drone footage): the rectification carries the shared reference and detector
     # family; register out camera motion, track, and return metric ground coordinates with the
     # rectification's centre/north gauge applied. The DiagnoseApriltag (top-down rectified) is created
@@ -388,6 +392,9 @@ function track(
     )
 
     @assert length(files) == length(start) == length(stop) == length(start_location) "Array length mismatch: files=$(length(files)), start=$(length(start)), stop=$(length(stop)), start_location=$(length(start_location))"
+
+    # `missing` means "use the default", like a blank csv cell (see the single-file method).
+    window_size = ismissing(window_size) ? round(Int, 2target_width) : window_size
 
     nfiles = length(files)
     tss = Vector{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}(undef, nfiles)

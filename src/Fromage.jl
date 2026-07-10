@@ -11,8 +11,8 @@ include("VerifyRuns/VerifyRuns.jl")
 
 using .Rectifications: Rectification
 using .PawsomeTracker: track
-using .VerifyRectifications: load_rectifications
-using .VerifyRuns: load_runs
+using .VerifyRectifications: load_rectifications, RectificationMethod
+using .VerifyRuns: load_runs, Run
 
 using DataFrames: DataFrame, Not, leftjoin!, select!, transform!
 using FFMPEG: ffmpeg_exe
