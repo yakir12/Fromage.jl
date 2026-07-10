@@ -1,0 +1,12 @@
+# Changes here will be overwritten by Copier
+Authors: Yakir Gagnon <12.yakir@gmail.com> and contributors
+JuliaMinVersion: '1.11'
+License: MIT
+LicenseCopyrightHolders: Yakir Gagnon
+PackageName: Fromage
+PackageOwner: yakir12
+PackageUUID: f7d2997e-1be8-4771-a487-05d70e6e0672
+StrategyConfirmIncluded: false
+StrategyLevel: 0
+StrategyReviewExcluded: false
+_src_path: /home/yakir/.julia/packages/BestieTemplate/6QVd6

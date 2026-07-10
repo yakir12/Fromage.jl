@@ -7,3 +7,12 @@
 /docs/build/
 /deps/downloads/
 /deps/src/
+
+# added by BestieTemplate
+*.rej
+.DS_Store
+.benchmarkci
+benchmark/*.json
+coverage
+env
+node_modules
