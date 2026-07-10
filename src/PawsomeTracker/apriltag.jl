@@ -176,21 +176,17 @@ end
 # of `family`, take the `ntags` lowest ids, and fit the metric map from their known cell geometry
 # (`fit_metric` throws if the tags are not coplanar / were mis-detected).
 function reference_frame(file, extrinsic, ntags, family, checker_size)
-    # Serialize the whole read+detect: concurrent AprilTag detection here corrupts/crashes (see
-    # APRILTAG_LOCK). One-time per calib, so the serial cost is negligible.
-    lock(APRILTAG_LOCK) do
-        img = read_frame_at(file, extrinsic)
-        det = set_detector!(AprilTagDetector(april_family(family)))
-        try
-            tags = det(collect(img))
-            length(tags) ≥ ntags || error("only $(length(tags)) of $ntags AprilTags detected at the extrinsic frame")
-            ids = sort(getfield.(tags, :id))[1:ntags]
-            tc = detect_tags(det, img, ids)
-            isnothing(tc) && error("could not read all $ntags AprilTag corners at the extrinsic frame")
-            ReferenceFrame(ids, tc; canon = canon_square(family, checker_size))
-        finally
-            freeDetector!(det)
-        end
+    img = read_frame_at(file, extrinsic)
+    det = set_detector!(AprilTagDetector(april_family(family)))
+    try
+        tags = detect_locked(det, collect(img))     # serialized: the detector is not reentrant
+        length(tags) ≥ ntags || error("only $(length(tags)) of $ntags AprilTags detected at the extrinsic frame")
+        ids = sort(getfield.(tags, :id))[1:ntags]
+        tc = detect_tags(det, img, ids)
+        isnothing(tc) && error("could not read all $ntags AprilTag corners at the extrinsic frame")
+        return ReferenceFrame(ids, tc; canon = canon_square(family, checker_size))
+    finally
+        freeDetector!(det)
     end
 end
 
@@ -271,11 +267,18 @@ function set_detector!(det; nthreads = 1)
     return det
 end
 
+# `apriltag_detector_detect` (the C detector) is NOT reentrant: it has global/static state that
+# concurrent calls corrupt — even distinct, per-thread detectors on distinct frames race (verified
+# three ways), and under enough pressure it segfaults. So EVERY detection call goes through this,
+# which serializes them process-wide via APRILTAG_LOCK. Reads/decode stay concurrent; only the
+# (comparatively cheap) detect is serial.
+detect_locked(det, img) = lock(() -> det(img), APRILTAG_LOCK)
+
 # Detect and return the 16 corners grouped per tag, aligned to `ids` order (each tag's `.p` corners
 # as [col, row]); `nothing` if any expected id is absent. `SVector`-typed so the geometry consumes
 # them directly.
 function detect_tags(det, img, ids)
-    tags = det(collect(img))
+    tags = detect_locked(det, collect(img))
     byid = Dict(t.id => t for t in tags)
     all(haskey(byid, i) for i in ids) || return nothing
     [SVector{2,Float64}[SVector(p[1], p[2]) for p in byid[i].p] for i in ids]
@@ -306,7 +309,7 @@ end
 function find_tag_roi(det, img, id, box, sz)
     r1, c1, r2, c2 = box
     while true
-        tags = det(collect(@view img[r1:r2, c1:c2]))
+        tags = detect_locked(det, collect(@view img[r1:r2, c1:c2]))
         k = findfirst(t -> t.id == id, tags)
         if k !== nothing
             corners = SVector{2,Float64}[SVector(p[1] + c1 - 1, p[2] + r1 - 1) for p in tags[k].p]
@@ -319,13 +322,11 @@ function find_tag_roi(det, img, id, box, sz)
 end
 
 # detect all tags by per-tag local search, updating `boxes` in place; corners aligned to `ids`
-# order, or `nothing` if any tag is not found anywhere in the frame. PHASE 5: the tags are
-# independent, so each is searched concurrently on its OWN detector (`dets[k]`) — the AprilTag C
-# detector is not safe to share across threads, and each reads a disjoint crop of the (read-only)
-# frame, so the searches compose cleanly.
+# order, or `nothing` if any tag is not found anywhere in the frame. Detection is SEQUENTIAL: the
+# AprilTag C detector is not reentrant (see detect_locked), so every detect is serialized process-
+# wide anyway — spawning one task per tag would only contend on that lock, for no gain.
 function detect_tags_roi!(dets, img, ids, boxes, sz)
-    tasks = [Threads.@spawn find_tag_roi(dets[k], img, ids[k], boxes[k], sz) for k in eachindex(ids)]
-    results = fetch.(tasks)
+    results = [find_tag_roi(dets[k], img, ids[k], boxes[k], sz) for k in eachindex(ids)]
     any(r -> isnothing(first(r)), results) && return nothing
     for k in eachindex(ids); boxes[k] = results[k][2]; end
     return [first(results[k]) for k in eachindex(ids)]
