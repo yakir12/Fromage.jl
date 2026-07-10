@@ -19,6 +19,30 @@ Parked ideas and follow-ups, so they don't get lost.
   frames stayed `N0f8` (or the stack slices were detector-compatible), detection could run directly
   on the stack. Check whether the DoG path (imfilter, background subtraction) tolerates `N0f8`.
 
+## Apple Silicon (aarch64 macOS) support
+
+Context (2026-07-10): CI on `macOS-latest` (arm64) showed Fromage's AprilTag functionality cannot
+run natively on Apple Silicon — `AprilTags_jll` ships no `aarch64-apple-darwin` binaries, so
+`AprilTags.libapriltag` is never defined and every tag create/detect call throws `UndefVarError`.
+The rest of the suite (818/820 tests) passes on arm64 macOS. CI tests `macos-15-intel`
+(x86_64-apple-darwin, where the JLL exists) as a stopgap; GitHub supports that runner into 2027.
+
+- **Upstream aarch64 binaries (ideal).** Before doing anything, survey what's already been
+  attempted: issues/PRs in JuliaRobotics/AprilTags.jl and JuliaBinaryWrappers/AprilTags_jll.jl,
+  and the Yggdrasil build recipe (`A/AprilTags/build_tarballs.jl`) — is `aarch64-apple-darwin`
+  merely missing from the platform list, or does the build actually fail there? The apriltag C
+  library itself is plain C and builds fine on ARM Macs (Homebrew ships it), so this may be a
+  small Yggdrasil PR + JLL version bump + AprilTags.jl compat bump.
+
+- **Factor AprilTag functionality into a Pkg extension (maybe more relevant to what users
+  actually need, but a serious effort).** Move all AprilTags-dependent code (calibration tag
+  detection, `track_apriltag`, tag-video helpers) behind a package extension that loads only when
+  the user has AprilTags.jl in their environment (`[extensions]` + `[weakdeps]` in Project.toml).
+  Fromage core would then install and run everywhere — including Apple Silicon — with tag features
+  lighting up where AprilTags works. Requires an API split (what does `main`/tracking do when the
+  extension is absent?), moving tests into extension-conditional test sets, and deciding how
+  track_calibrate declares the dependency.
+
 ## Performance / tooling
 
 - **Set up PkgBenchmark for regression tracking.** Add a `benchmark/benchmarks.jl` `BenchmarkGroup`

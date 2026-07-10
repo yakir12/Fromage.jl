@@ -15,6 +15,25 @@ You have video recordings of **runs** — an animal (or any other target) moving
 This repository bundles Fromage's supporting packages (VerifyRectifications, VerifyRuns,
 Rectifications, and PawsomeTracker) as submodules — installing Fromage installs everything.
 
+> [!IMPORTANT]
+> **Mac users — what works and what doesn't (as of July 2026).** What matters is the CPU, not the
+> macOS version:
+>
+> - **Intel Macs** (`x86_64`): everything works — the full test suite runs on every commit on an
+>   Intel macOS runner (currently macOS 15).
+> - **Apple Silicon Macs** (M1/M2/M3/…, `aarch64`) running the native arm64 Julia: everything
+>   works **except the AprilTag functionality** — `type = apriltag` calibrations and drone
+>   tracking fail with `UndefVarError: libapriltag not defined`. The cause is upstream:
+>   `AprilTags_jll` ships no `aarch64-apple-darwin` binaries, so the AprilTag C library can never
+>   load. Checkerboard (`video`), `only_scale`, and `matlab` rectifications, and all tracking of
+>   ordinary (fixed-camera) runs, are unaffected (818/820 tests pass natively on Apple Silicon).
+> - **Workaround on Apple Silicon**: install the **Intel (x86_64) Julia binary** and run it under
+>   Rosetta 2 — Julia then pulls the `x86_64-apple-darwin` artifacts for all binary dependencies,
+>   AprilTags included. Slower, but functional. (Not covered by CI.)
+>
+> Linux and Windows (x64) are fully tested in CI. Plans for proper Apple Silicon support (upstream
+> binaries, or making AprilTags an optional extension) are tracked in [`todo.md`](todo.md).
+
 You'll need a recent version of Julia, at least 1.11 (see [here](https://julialang.org/downloads/) for instructions). Then, in Julia's Pkg mode (type `]` at the REPL):
 
 ```
