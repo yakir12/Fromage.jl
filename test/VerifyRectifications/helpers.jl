@@ -131,9 +131,12 @@ mixedrow(; kw...) = _merge((calibration_id = "x", path = ".", file = ART.mixed, 
 "Write `rows` to a CSV in DATADIR and load it. Scenario rows keep indices 1:length(rows).
 (`parse_row` back-fills every COLUMNS entry with missing, so even a single-type CSV has every
 column `verifications!` references — no column-completing filler rows are needed.)"
-function check(name, rows; strict = false, header = HEADER, defaults = (;))
+# `issues_dir` defaults to a fresh temp dir so failure scenarios (which now dump the failing
+# extrinsic frame) don't write into the test's working directory; a test that inspects the dumped
+# frames passes an explicit path.
+function check(name, rows; strict = false, header = HEADER, defaults = (;), issues_dir = mktempdir())
     csv = write_csv(joinpath(DATADIR, name), rows; header)
-    VRect.load_rectifications(DATADIR, csv; strict, defaults)
+    VRect.load_rectifications(DATADIR, csv; strict, defaults, issues_dir)
 end
 
 # A clean load returns Vector{RectificationMethod}; a load with issues keeps the df's :issues.

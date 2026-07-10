@@ -1,9 +1,10 @@
 module VerifyRectifications
 
 using CSV: CSV
-using ..Rectifications: get_corners, _vf
+using ..Rectifications: get_corners, _vf, extrinsic_gray_frame
 import ..Rectifications: Rectification
 using ..PawsomeTracker: PawsomeTracker, ApriltagRectification
+using FileIO: FileIO
 using Chain: Chain, @chain
 using DataFramesMeta: DataFramesMeta, @groupby, @rtransform!, @transform!, AbstractDataFrame,
     ByRow, Cols, DataFrame, Not, allowmissing!, completecases, dropmissing, groupby,
@@ -24,14 +25,16 @@ include("types.jl")
 include("parsers.jl")
 include("verifications.jl")
 
-function load_rectifications(file; strict = true, defaults = (;))
+# `issues_dir` is where the extrinsic frame of a calibration that fails checkerboard/AprilTag
+# detection is dumped for inspection (see `verifications!`); it is emptied at the start of every run.
+function load_rectifications(file; strict = true, defaults = (;), issues_dir = joinpath("results_dir", "issues"))
     data_path = dirname(file)
-    load_rectifications(data_path, file; strict, defaults)
+    load_rectifications(data_path, file; strict, defaults, issues_dir)
 end
 
 # `defaults` globally replaces the hardcoded fallbacks of the whitelisted rectification parameters
 # (see DEFAULTS in parsers.jl); the hierarchy is csv cell → `defaults` → hardcoded/probed value.
-function load_rectifications(data_path, file; strict = true, defaults = (;))
+function load_rectifications(data_path, file; strict = true, defaults = (;), issues_dir = joinpath("results_dir", "issues"))
     defaults = resolve_defaults(defaults)   # fail fast on unknown keys / unconvertible values
     # verify csv file exists
     if !isfile(file)
@@ -57,7 +60,7 @@ function load_rectifications(data_path, file; strict = true, defaults = (;))
     df = DataFrame(Tables.dictrowtable(cs))
     allowmissing!(df)
 
-    verifications!(df, data_path)
+    verifications!(df, data_path, issues_dir)
 
     if any(!isempty, df.issues)
         msg = join([string("row $i: ", join(issues, ", ")) for (i, issues) in enumerate(df.issues) if !isempty(issues)], '\n')
