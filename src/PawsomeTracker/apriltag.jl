@@ -162,7 +162,7 @@ end
 # Read the single frame at timestamp `t` (seconds), in the same orientation `track_apriltag` sees
 # frames in, so reference and run corners correspond directly.
 function read_frame_at(file, t)
-    vid = openvideo(file; target_format = AV_PIX_FMT_GRAY8)
+    vid = open_gray_video(file)   # serialized open (openvideo isn't thread-safe); see OPENVIDEO_LOCK
     try
         read(vid)                 # prime a frame so gettime returns the stream's base time
         seek(vid, t + gettime(vid))
