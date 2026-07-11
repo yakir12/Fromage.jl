@@ -60,11 +60,12 @@ function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.c
     run_calib_ids = [r.calibration_id for r in rs]
     filter!(c -> c.calibration_id ∈ run_calib_ids, cs)
 
-    if any(∉(getfield.(cs, :calibration_id)), run_calib_ids)
+    calib_ids = [c.calibration_id for c in cs]
+    if any(∉(calib_ids), run_calib_ids)
         error("there are calibration IDs in the runs.csv file that are not present in the calibs.csv file")
     end
 
-    calibs = DataFrame(calibration_id = getfield.(cs, :calibration_id), c = cs)
+    calibs = DataFrame(calibration_id = calib_ids, c = cs)
 
     calibs.rectification .= @showprogress desc = "Building rectifications" tmap(Rectification, calibs.c)
 
