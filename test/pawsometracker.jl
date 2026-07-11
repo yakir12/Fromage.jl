@@ -20,7 +20,8 @@ const DATADIR = mktempdir()
     base_file = joinpath(DATADIR, only(base))
 
     @testset "single video, explicit start_location" begin
-        _, ij = track(base_file; start_location = (55, 50), target_width = 10)
+        # window_size = missing must mean "the default" (round(Int, 2target_width)), like a blank csv cell
+        _, ij = track(base_file; start_location = (55, 50), target_width = 10, window_size = missing)
         @test length(ij) == 50                       # the full 2 s at 25 fps
         @test tracking_rmse(ij, base_exp) < 1
     end
@@ -44,7 +45,8 @@ const DATADIR = mktempdir()
     @testset "segmented (vector) track" begin
         sls = Vector{Union{Missing, NTuple{2, Int}}}(missing, length(seg))
         sls[1] = (55, 50)                            # later segments continue from the previous one
-        _, ij = track(joinpath.(DATADIR, seg); start_location = sls)
+        # window_size = missing must mean "the default" here too (the vector method's own branch)
+        _, ij = track(joinpath.(DATADIR, seg); start_location = sls, window_size = missing)
         @test length(ij) == 50
         @test tracking_rmse(ij, seg_exp) < 1
     end

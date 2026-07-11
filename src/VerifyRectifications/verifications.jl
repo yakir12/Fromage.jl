@@ -141,9 +141,9 @@ function matlab_metadata(file)
     return (; n_extrinsics = matlab_extrinsic_count(dict), dimension = matlab_dimension(dict))
 end
 
-apply_matlab_metadata!(g, structure_issue::String) = @transform! g :matlab_file = missing :issues = push!.(:issues, structure_issue)
+apply_matlab_metadata!(g::AbstractDataFrame, structure_issue::String) = @transform! g :matlab_file = missing :issues = push!.(:issues, structure_issue)
 
-function apply_matlab_metadata!(g, m::NamedTuple)
+function apply_matlab_metadata!(g::AbstractDataFrame, m::NamedTuple)
     m.n_extrinsics isa String ? (@transform! g :extrinsic_index = missing :issues = push!.(:issues, m.n_extrinsics)) :
                                 (@transform! g :n_extrinsics = m.n_extrinsics)
     if m.dimension isa String

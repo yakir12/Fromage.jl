@@ -47,8 +47,11 @@ function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.c
 
     mkpath(results_dir)
 
-    cs = load_rectifications(joinpath(data_path, calibs_file); defaults = rectification_defaults, issues_dir = joinpath(results_dir, "issues"))
-    rs = load_runs(joinpath(data_path, runs_file); defaults = tracking_defaults)
+    # The loaders return the annotated DataFrame instead only under `strict = false`; on the
+    # default strict path they provably return the run/rectification vectors — assert it so the
+    # union doesn't leak downstream (JET flags e.g. `length(::DataFrame)` otherwise).
+    cs = load_rectifications(joinpath(data_path, calibs_file); defaults = rectification_defaults, issues_dir = joinpath(results_dir, "issues"))::Vector{RectificationMethod}
+    rs = load_runs(joinpath(data_path, runs_file); defaults = tracking_defaults)::Vector{Run}
 
     if !isnothing(run_ids)
         filter!(r -> r.run_id ∈ run_ids, rs)
@@ -85,7 +88,7 @@ function only_track(data_path::String; runs_file = "runs.csv", tracking_defaults
 
     mkpath(results_dir)
 
-    rs = load_runs(joinpath(data_path, runs_file); defaults = tracking_defaults)
+    rs = load_runs(joinpath(data_path, runs_file); defaults = tracking_defaults)::Vector{Run}
 
     if !isnothing(run_ids)
         filter!(r -> r.run_id ∈ run_ids, rs)
@@ -99,7 +102,7 @@ end
 function only_rectify(data_path::String; calibs_file = "calibs.csv", rectification_defaults = (;), calibration_ids = nothing)
     mkpath(results_dir)
 
-    cs = load_rectifications(joinpath(data_path, calibs_file); defaults = rectification_defaults, issues_dir = joinpath(results_dir, "issues"))
+    cs = load_rectifications(joinpath(data_path, calibs_file); defaults = rectification_defaults, issues_dir = joinpath(results_dir, "issues"))::Vector{RectificationMethod}
 
     if !isnothing(calibration_ids)
         filter!(c -> c.calibration_id ∈ calibration_ids, cs)

@@ -354,7 +354,7 @@ struct DiagnoseApriltag <: Diagnosis
     skip::Int
     radius::Int
 
-    function DiagnoseApriltag(file, ref, darker_target, fps)
+    function DiagnoseApriltag(file::AbstractString, ref, darker_target, fps)
         m = DIAGNOSTIC_SIZE
         cm = [apply_h(ref.M, p) for p in ref.corners]           # tag corners in ground cm
         xs = getindex.(cm, 1); ys = getindex.(cm, 2)

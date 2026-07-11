@@ -6,6 +6,8 @@ using Test
 
 @testset "Fromage (consolidated)" begin
     include("quality.jl")
+    # Only on the pinned CI minor — see the header of jet.jl.
+    VERSION.major == 1 && VERSION.minor == 11 && include("jet.jl")
     include("parsing.jl")
     include("rectifications.jl")
     include("pawsometracker.jl")
