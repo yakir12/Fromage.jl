@@ -4,6 +4,7 @@
 [![Coverage](https://codecov.io/gh/yakir12/Fromage.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/yakir12/Fromage.jl)
 [![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 [![BestieTemplate](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/JuliaBesties/BestieTemplate.jl/main/docs/src/assets/badge.json)](https://github.com/JuliaBesties/BestieTemplate.jl)
+[![](https://img.shields.io/badge/%F0%9F%9B%A9%EF%B8%8F_tested_with-JET.jl-233f9a)](https://github.com/aviatesk/JET.jl)
 
 This is the main package used to organise, calibrate, and track video files in the Dacke lab.
 
