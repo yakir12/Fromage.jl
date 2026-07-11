@@ -108,6 +108,41 @@ end
     @test y0 ≈ gy atol = 0.2
 end
 
+@testset "only_rectify / only_track (partial pipeline)" begin
+    # The two iterate-on-your-csv helpers, each over the cheapest possible inputs: an only_scale
+    # calibration (no checkerboard detection) and the shared known-trajectory disc video.
+    dir = mktempdir()
+    make_video(joinpath(dir, "cal.mp4"); size = (320, 240), duration = 2)
+    target, expected = make_target_video(dir, "solo")
+    open(joinpath(dir, "calibs.csv"), "w") do io
+        println(io, "calibration_id,type,file,extrinsic,scale")
+        println(io, "c1,only_scale,cal.mp4,1,2")
+    end
+    open(joinpath(dir, "runs.csv"), "w") do io
+        println(io, "calibration_id,file,start_location")
+        println(io, "c1,$(only(target)),\"(55, 50)\"")
+    end
+    outdir = mktempdir()
+
+    calibs = cd(() -> Fromage.only_rectify(dir), outdir)
+    @test length(calibs) == 1
+    rect = only(calibs)
+    @test rect.ratio == 2                           # the csv's scale
+    @test (rect.width, rect.height) == (320, 240)
+    p = SVector(7.0, 11.0)
+    @test rect.real2image(rect.image2real(p)) ≈ p   # the two maps are inverses
+
+    # no rectification involved: raw pixel coordinates, one raw-view diagnostic per run (numbered)
+    runs = cd(() -> Fromage.only_track(dir; tracking_defaults = (target_width = 10,)), outdir)
+    @test length(runs) == 1
+    _, ij = only(runs)
+    @test length(ij) == 50                          # the full 2 s at 25 fps
+    @test tracking_rmse(ij, expected) < 1
+    diag = joinpath(outdir, "results_dir", "1.mp4")
+    @test isfile(diag)
+    @test filesize(diag) > 0
+end
+
 @testset "Fromage end-to-end: AprilTag drone tracking" begin
     # The whole AprilTag path through `main`: a `type = apriltag` calibs row builds the shared
     # reference from the extrinsic frame; the run registers each frame to it (cancelling the drone
