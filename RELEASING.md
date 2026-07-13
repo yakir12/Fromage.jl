@@ -19,6 +19,11 @@ push to main
                     └─► docs build for the tag ─► /stable/ on github.io advances
 ```
 
+Expect a release to land roughly **15–35 minutes after the push** — the Test matrix is
+the wait, and the macOS Intel runner is usually the long pole (slow to queue). "I
+pushed and nothing happened yet" is almost always just queue time; only start
+debugging if the Test run itself has finished green and no release appeared.
+
 Consequences of the design:
 
 - **Green CI on `main` *is* the release process.** There is no dev grace period; the
