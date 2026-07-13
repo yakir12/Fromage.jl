@@ -1,5 +1,6 @@
 # Fromage 🧀
 
+[![Docs](https://img.shields.io/badge/docs-dev-blue.svg)](https://yakir12.github.io/Fromage.jl/dev/)
 [![Test workflow status](https://github.com/yakir12/Fromage.jl/actions/workflows/Test.yml/badge.svg?branch=main)](https://github.com/yakir12/Fromage.jl/actions/workflows/Test.yml?query=branch%3Amain)
 [![Coverage](https://codecov.io/gh/yakir12/Fromage.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/yakir12/Fromage.jl)
 [![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
@@ -7,6 +8,9 @@
 [![](https://img.shields.io/badge/%F0%9F%9B%A9%EF%B8%8F_tested_with-JET.jl-233f9a)](https://github.com/aviatesk/JET.jl)
 
 This is the main package used to organise, calibrate, and track video files in the Dacke lab.
+
+> [!TIP]
+> **📖 The friendly documentation lives at [yakir12.github.io/Fromage.jl](https://yakir12.github.io/Fromage.jl/dev/)** — start there. The reference below covers the same ground in denser form.
 
 ## When is this useful
 
