@@ -1,6 +1,6 @@
 # Fromage 🧀
 
-[![Docs](https://img.shields.io/badge/docs-dev-blue.svg)](https://yakir12.github.io/Fromage.jl/dev/)
+[![Docs](https://img.shields.io/badge/docs-stable-blue.svg)](https://yakir12.github.io/Fromage.jl/stable/)
 [![Test workflow status](https://github.com/yakir12/Fromage.jl/actions/workflows/Test.yml/badge.svg?branch=main)](https://github.com/yakir12/Fromage.jl/actions/workflows/Test.yml?query=branch%3Amain)
 [![Coverage](https://codecov.io/gh/yakir12/Fromage.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/yakir12/Fromage.jl)
 [![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
@@ -12,7 +12,7 @@ This is the main package used to organise, calibrate, and track video files in t
 ## 📖 Documentation
 
 **Everything — installation, preparing your files, running, troubleshooting — lives at
-[yakir12.github.io/Fromage.jl](https://yakir12.github.io/Fromage.jl/dev/).** Start there.
+[yakir12.github.io/Fromage.jl](https://yakir12.github.io/Fromage.jl/stable/).** Start there.
 
 ## Install
 
@@ -24,7 +24,7 @@ pkg> add https://github.com/yakir12/Fromage.jl
 
 > [!NOTE]
 > On Apple Silicon Macs the AprilTag functionality (drone tracking) doesn't run natively — see
-> [the docs](https://yakir12.github.io/Fromage.jl/dev/help#Macs) for details and the workaround.
+> [the docs](https://yakir12.github.io/Fromage.jl/stable/help#Macs) for details and the workaround.
 
 ## Development
 
