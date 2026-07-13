@@ -22,9 +22,9 @@ The coordinates are already fully converted — lens distortion, perspective, an
 
 `main` also writes `results_dir/diagnostic.mp4`: every run rendered top-down through its calibration into a fixed 540×540 canvas, with a circle around the tracked position, a trailing trace, and the video's file name as a label — one run after the other, playing at 2× real time (≈24 fps regardless of the tracking fps).
 
-This is what a healthy run looks like — the circle sits on the animal, and the trace shows its path from the centre of the arena outwards:
+This is what a healthy run looks like — the circle sits on the animal for the whole run, and the trace grows behind it from the centre of the arena to the edge (one complete run, looping):
 
-![A frame of the diagnostic video: the arena viewed top-down, with a white circle around the tracked beetle and a trailing trace showing its path from the centre to the edge](assets/diagnostic-clean.png)
+![A complete run from the diagnostic video, looping: the arena viewed top-down, with a white circle following the tracked beetle while the trailing trace grows from the centre to the edge](assets/tracking-run.webp)
 
 And the same check works in harder conditions. Here the arena is covered in dappled light, yet the circle should still follow the animal — if it jumps to a bright patch instead, you've caught a bad track:
 
