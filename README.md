@@ -30,7 +30,8 @@ pkg> add https://github.com/yakir12/Fromage.jl
 
 Releases are automatic: every push to `main` that passes CI is patch-bumped, tagged, and
 released, and the stable docs advance with it. Put `#minor` or `#major` in the commit message
-to bump more than a patch. There is nothing to do manually.
+to bump more than a patch. There is nothing to do manually — see [RELEASING.md](RELEASING.md)
+for how it works, the commit-message rules, and recovery procedures.
 
 Run the tests with:
 
