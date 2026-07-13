@@ -5,9 +5,15 @@
 
     @testset "issue report is printed; non-strict returns the df with :issues" begin
         df, out = load_capturing("st_msg.csv", [runrow(target_width = "-1")])
-        @test occursin("row 1: target_width must be larger than zero", out)
+        @test occursin("row 1 (run_id: r): target_width must be larger than zero", out)
         @test !occursin("target_width must be larger than zero,", out)   # join adds no trailing separator
         @test df isa AbstractDataFrame
         @test hasproperty(df, :issues)
+    end
+
+    @testset "auto-assigned run_ids are not repeated in the issue report" begin
+        _, out = load_capturing("st_auto.csv", [row(calibration_id = "c", file = ART.a, target_width = "-1")])
+        @test occursin("row 1: target_width must be larger than zero", out)
+        @test !occursin("run_id", out)
     end
 end

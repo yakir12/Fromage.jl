@@ -65,7 +65,10 @@ function load_runs(data_path, file; strict = true, defaults = (;))
     verifications!(df, data_path)
 
     if any(!isempty, df.issues)
-        msg = join([string("row $i: ", join(issues, ", ")) for (i, issues) in enumerate(df.issues) if !isempty(issues)], '\n')
+        # a run_id that is missing (mixed-numbering case) or equal to the row number (auto-assigned)
+        # adds nothing over "row $i", so it is only mentioned when the csv named the run itself
+        msg = join([string(ismissing(rid) || rid == string(i) ? "row $i" : "row $i (run_id: $rid)", ": ", join(issues, ", "))
+                    for (i, (rid, issues)) in enumerate(zip(df.run_id, df.issues)) if !isempty(issues)], '\n')
         println('\n' * "The following are issues with the runs.csv file:\n" * msg)
         if strict
             error("there were issues with the runs (see above)")
