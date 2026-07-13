@@ -1,0 +1,78 @@
+name: AutoRelease
+
+# Every push to main that passes the Test workflow is released automatically:
+# the version in Project.toml is bumped (patch by default; put "#minor" or
+# "#major" in the head commit message for bigger bumps), the bump is committed
+# with [skip ci], tagged vX.Y.Z, and a GitHub release is created. The Docs
+# workflow is then dispatched on the tag so /stable/ advances too (tags pushed
+# with GITHUB_TOKEN do not trigger workflows on their own).
+
+on:
+  workflow_run:
+    workflows: [Test]
+    types: [completed]
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  release:
+    name: Bump version, tag, and release
+    # Only pushes to main (tag builds report the tag as head_branch and are excluded).
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Skip if main has moved past the tested commit
+        id: guard
+        run: |
+          if [ "$(git rev-parse HEAD)" != "${{ github.event.workflow_run.head_sha }}" ]; then
+            echo "main is ahead of the tested commit; the newer push will release instead."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute the new version
+        if: steps.guard.outputs.skip != 'true'
+        id: bump
+        run: |
+          current=$(sed -n 's/^version = "\(.*\)"$/\1/p' Project.toml)
+          IFS=. read -r major minor patch <<< "$current"
+          msg=$(git log -1 --pretty=%B)
+          case "$msg" in
+            *"#major"*) new="$((major + 1)).0.0" ;;
+            *"#minor"*) new="$major.$((minor + 1)).0" ;;
+            *)          new="$major.$minor.$((patch + 1))" ;;
+          esac
+          echo "bumping $current -> $new"
+          echo "version=$new" >> "$GITHUB_OUTPUT"
+
+      - name: Commit the bump, tag, and push
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          v="${{ steps.bump.outputs.version }}"
+          sed -i "s/^version = \".*\"$/version = \"$v\"/" Project.toml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Release v$v [skip ci]"
+          git tag "v$v"
+          git push --atomic origin main "v$v"
+
+      - name: Create the GitHub release
+        if: steps.guard.outputs.skip != 'true'
+        run: gh release create "v${{ steps.bump.outputs.version }}" --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Dispatch the Docs build for the tag (updates /stable/)
+        if: steps.guard.outputs.skip != 'true'
+        run: gh workflow run Docs.yml --ref "v${{ steps.bump.outputs.version }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

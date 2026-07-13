@@ -7,6 +7,9 @@ on:
     tags:
       - '*'
   pull_request:
+  # AutoRelease dispatches this workflow on the release tag, because tags
+  # pushed with GITHUB_TOKEN do not trigger tag-push workflows on their own.
+  workflow_dispatch:
 
 concurrency:
   # Skip intermediate builds: always.
