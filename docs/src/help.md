@@ -8,7 +8,7 @@ That's Fromage doing its job. Before anything is tracked, every row of both csv 
 row 3: file does not exist, wrong start format
 ```
 
-If you gave your runs names (a `run_id` column in `runs.csv`), the name is included too — e.g. `row 3 (run_id: beetle12): …` — so you can tell at a glance which run needs fixing.
+The row's name is included too, so you can tell at a glance which entry needs fixing: issues with `calibs.csv` show the row's `calibration_id` — e.g. `row 2 (calibration_id: morning): …` — and, if you gave your runs names (a `run_id` column in `runs.csv`), issues with runs show the `run_id` — e.g. `row 3 (run_id: beetle12): …`.
 
 Nothing runs until they're all fixed — so nothing is ever half-done. Fix the mentioned rows in your csv files and run `main` again.
 

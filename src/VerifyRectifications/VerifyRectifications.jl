@@ -63,7 +63,9 @@ function load_rectifications(data_path, file; strict = true, defaults = (;), iss
     verifications!(df, data_path, issues_dir)
 
     if any(!isempty, df.issues)
-        msg = join([string("row $i: ", join(issues, ", ")) for (i, issues) in enumerate(df.issues) if !isempty(issues)], '\n')
+        # a blank calibration_id cell is itself flagged as an issue, so it can be missing here
+        msg = join([string(ismissing(cid) ? "row $i" : "row $i (calibration_id: $cid)", ": ", join(issues, ", "))
+                    for (i, (cid, issues)) in enumerate(zip(df.calibration_id, df.issues)) if !isempty(issues)], '\n')
         println('\n' * "The following are issues with the calibs.csv file:\n" * msg)
         if strict
             error("there were issues with the calibration (see above)")
