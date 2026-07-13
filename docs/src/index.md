@@ -6,6 +6,9 @@ hero:
   name: "Fromage 🧀"
   text: "From videos to tracks"
   tagline: Organise, calibrate, and track your experiment videos — and get real-world coordinates out.
+  image:
+    src: /logo.png
+    alt: Fromage
   actions:
     - theme: brand
       text: Get started
