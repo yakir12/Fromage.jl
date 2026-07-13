@@ -9,8 +9,8 @@ AddDocsCI: false
 AddFormatterAndLinterConfigFiles: false
 AddGitHubPRTemplate: false
 AddGitHubTemplates: false
-AddLintCI: false
-AddLychee: false
+AddLintCI: true
+AddLychee: true
 AddMacToCI: true
 AddTagBotCI: true
 AddTestCI: true

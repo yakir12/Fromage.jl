@@ -1,0 +1,9 @@
+exclude = [
+  "@ref",
+  "@[Cc]ite.*",
+  "^https://github.com/.*/releases/tag/v.*$",
+]
+
+exclude_path = [
+  "docs/build"
+]
