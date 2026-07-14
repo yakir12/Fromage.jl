@@ -1,6 +1,6 @@
 name = "Fromage"
 uuid = "f7d2997e-1be8-4771-a487-05d70e6e0672"
-version = "0.1.5"
+version = "0.1.6"
 authors = ["Yakir Gagnon <12.yakir@gmail.com> and contributors"]
 
 [workspace]
