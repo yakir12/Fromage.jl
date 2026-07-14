@@ -210,7 +210,7 @@ function build_stack(tform::Transformation, canvas_sz, raw_sz, n_bkgd, pad_indic
     PaddedView(zero(Gray{Float32}), WarpedView(Array{Gray{Float32}}(undef, raw_sz..., n_bkgd), tform, inds; fillvalue = zero(Gray{Float32})), pad_indices)
 end
 
-n_background(vid) = vid.nframes > 250 ? 250 : vid.nframes
+n_background(vid) = vid.nframes > 50 ? 50 : vid.nframes
 
 function get_stack(vid, sz, h)
     n_bkgd = n_background(vid)
