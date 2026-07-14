@@ -15,7 +15,7 @@ using ComputationalResources: CPUThreads
 using DataStructures: CircularBuffer
 using StaticArrays: SVector, SDiagonal
 using OpenCV: OpenCV
-using CoordinateTransformations: LinearMap
+using CoordinateTransformations: LinearMap, Transformation
 using LinearAlgebra: I
 
 const DEFAULT_MAX_DURATION_SECONDS = 86399.999  # 24 hours minus 1 millisecond
@@ -106,10 +106,12 @@ end
 # todo: when the scale is lower then the tracker fails
 
 function get_guess(::Missing, stack, vid, darker_target, target_width, initial_search_factor)
+    # size the throwaway search Tracker from the stack itself, not the video: in AprilTag mode the
+    # stack's canvas is the (scaled) reference viewport, which may differ from the run frame's
     sz = size(parent(stack))[1:2]
     guess = sz .÷ 2
     window_size = fix_window_size(floor(Int, min(sz...) / initial_search_factor))
-    tr = Tracker(vid, darker_target, target_width, window_size)
+    tr = Tracker(vid, darker_target, target_width, window_size, sz)
     _, guess = detect(guess, stack, 1, tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, vid.scale, tr.bkgd_reduce)
     return guess
 end
@@ -172,7 +174,10 @@ struct Tracker
     # *is* the maximum wherever it ever passed (erasing itself and leaving a ghost swath along
     # its own trajectory), so there the background is the per-pixel `minimum`.
     bkgd_reduce::Union{typeof(maximum), typeof(minimum)}
-    function Tracker(vid, darker_target, target_width, window_size)
+    # `sz` is the working-canvas size the tracker's buffers cover: the scaled frame by default, or
+    # the scaled REFERENCE viewport in AprilTag mode (where the stack is registered — see
+    # track_apriltag).
+    function Tracker(vid, darker_target, target_width, window_size, sz = (vid.height, vid.width))
         # window_size arrives as (rows, cols) in display pixels; the stored frame is squeezed
         # horizontally by sar (stored x = display x / sar), so the column extent is converted to
         # stored pixels — otherwise an anamorphic (sar < 1) target fills its own search window.
@@ -183,9 +188,8 @@ struct Tracker
         kernel = direction * Kernel.DoG((σ/vid.sar, σ))
         h = radii .+ size(kernel)
 
-        sz = (vid.height, vid.width)
         pad_indices = UnitRange.(1 .- h, sz .+ h)
-        img = PaddedView(fillvalue, Matrix{Gray{Float32}}(undef, vid.height, vid.width), pad_indices)
+        img = PaddedView(fillvalue, Matrix{Gray{Float32}}(undef, sz...), pad_indices)
         _buff = Matrix{Float64}(undef, length.(pad_indices))
         buff = OffsetMatrix(_buff, pad_indices)
         new(img, buff, kernel, h, radii, sz, darker_target ? maximum : minimum)
@@ -197,10 +201,27 @@ function build_stack(scale, sz, n_bkgd, pad_indices)
     PaddedView(zero(Gray{Float32}), WarpedView(Array{Gray{Float32}}(undef, sz..., n_bkgd), tform; fillvalue = zero(Gray{Float32})), pad_indices)
 end
 
+# Registered variant (AprilTag mode): `tform` composes each slice's registration with the inverse
+# scaling (a RegisteredWarp — see apriltag.jl), so the stack's axes are the scaled REFERENCE
+# viewport. They are passed explicitly because a slice-dependent transform has no meaningful
+# `inv` for WarpedView's autorange.
+function build_stack(tform::Transformation, canvas_sz, raw_sz, n_bkgd, pad_indices)
+    inds = (Base.OneTo.(canvas_sz)..., Base.OneTo(n_bkgd))
+    PaddedView(zero(Gray{Float32}), WarpedView(Array{Gray{Float32}}(undef, raw_sz..., n_bkgd), tform, inds; fillvalue = zero(Gray{Float32})), pad_indices)
+end
+
+n_background(vid) = vid.nframes > 250 ? 250 : vid.nframes
+
 function get_stack(vid, sz, h)
-    n_bkgd = vid.nframes > 250 ? 250 : vid.nframes
+    n_bkgd = n_background(vid)
     pad_indices = UnitRange.(((1 .- h)..., 1), ((sz .+ h)..., n_bkgd))
     build_stack(vid.scale, size(vid.img), n_bkgd, pad_indices)
+end
+
+function get_stack(vid, sz, h, tform::Transformation)
+    n_bkgd = n_background(vid)
+    pad_indices = UnitRange.(((1 .- h)..., 1), ((sz .+ h)..., n_bkgd))
+    build_stack(tform, sz, size(vid.img), n_bkgd, pad_indices)
 end
 
 populate_slice!(stack, i, vid) = copy!(selectdim(parent(parent(stack)), 3, i), vid.img)
@@ -218,6 +239,23 @@ function protect_target(stack, j, guess, radii, scale)
     slice = selectdim(parent(parent(stack)), 3, j)
     protect = CartesianIndices(UnitRange.(round.(Int, (guess .- radii) ./ scale),
                                           round.(Int, (guess .+ radii) ./ scale))) ∩ CartesianIndices(slice)
+    return protect, slice[protect]
+end
+
+# Registered variant (AprilTag mode): the search window lives in canvas (reference-space)
+# coordinates, so its four corners cross `canvas2raw` — the slice's registration composed with
+# the inverse scaling — before the protected region is taken as their bounding box in the raw
+# frame. `pad` (raw px) absorbs the scheme's approximations: the box is computed under the
+# INCOMING frame's registration while `keep` holds the EVICTED frame's raw values at those same
+# indices, each off by up to one frame of drone motion. Padding only widens the protected area.
+function protect_target(stack, j, guess, radii, canvas2raw::Function, pad::Int)
+    slice = selectdim(parent(parent(stack)), 3, j)
+    corners = (canvas2raw(guess .- radii), canvas2raw(guess .+ radii),
+               canvas2raw((guess[1] - radii[1], guess[2] + radii[2])),
+               canvas2raw((guess[1] + radii[1], guess[2] - radii[2])))
+    lo = floor.(Int, reduce((a, b) -> min.(a, b), corners)) .- pad
+    hi = ceil.(Int, reduce((a, b) -> max.(a, b), corners)) .+ pad
+    protect = CartesianIndices(UnitRange.(lo, hi)) ∩ CartesianIndices(slice)
     return protect, slice[protect]
 end
 
@@ -307,8 +345,9 @@ and `stop` seconds, sampling `fps` frames per second (capped at the video's own 
 `(ts, coords)`: timestamps and the target's per-frame position. With a `rectification`, `coords`
 are **real-world** coordinates (the rectification's `image2real` applied); without one, they are
 raw `(row, col)` pixels in the original frame (`scale` only speeds tracking up; coordinates are
-always reported unscaled). An `ApriltagRectification` selects AprilTag mode (drone footage): drone
-motion is registered out against the rectification's shared reference and `coords` are metric ground
+always reported unscaled). An `ApriltagRectification` selects AprilTag mode (drone footage): every
+background-stack slice is lazily warped into the rectification's shared reference, so drone motion
+is removed at lookup time and tracking happens in a static scene; `coords` are metric ground
 coordinates, `missing` on frames where a tag was lost. `start_location` is the target's `"(x, y)"`
 display-pixel position at `start`; when `missing` the target is searched for around the frame
 center. When `diagnostic_file` (an `.mp4` path — that container selects the H.264 encoder) is given,
@@ -344,7 +383,9 @@ function track(
         ts, coords = try
             track_apriltag(file, start, stop, scale * target_width, start_location,
                 round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia,
-                rectification.reference, rectification.family, scale * initial_search_factor, white_point, scale)
+                rectification.reference, rectification.family,
+                (rectification.height, rectification.width), scale * initial_search_factor,
+                white_point, scale)
         finally
             close(dia)
         end
@@ -401,10 +442,11 @@ function track(
     args = zip(files, start, stop, start_location)
 
     # AprilTag mode: every segment registers to the SAME shared reference (the tags are stationary
-    # across the whole run). Segments are tracked independently — each uses its own start_location (a
-    # missing one falls back to the frame-centre search; a previous segment's *metric* end position
-    # can't seed the next segment's *pixel* guess without that frame's homography). One diagnostic
-    # spans all segments.
+    # across the whole run). Segments are tracked independently — each uses its own start_location
+    # (a missing one falls back to the frame-centre search; now that tracking happens in shared
+    # reference space, chaining a segment's metric end position into the next segment's guess via
+    # `inv(ref.M)` would be possible, but is deliberately not done yet). One diagnostic spans all
+    # segments.
     if rectification isa ApriltagRectification
         segs = Vector{Vector{Union{Missing, RowCol}}}(undef, nfiles)
         dia = diagnose_apriltag(diagnostic_file, rectification.reference, darker_target, fps)
@@ -412,7 +454,9 @@ function track(
             for (i, (f, t_start, t_stop, loc)) in enumerate(args)
                 tss[i], segs[i] = track_apriltag(f, t_start, t_stop, scale * target_width, loc,
                     round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia,
-                    rectification.reference, rectification.family, scale * initial_search_factor, white_point, scale)
+                    rectification.reference, rectification.family,
+                    (rectification.height, rectification.width), scale * initial_search_factor,
+                    white_point, scale)
             end
         finally
             close(dia)
