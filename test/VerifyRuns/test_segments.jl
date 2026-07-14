@@ -31,6 +31,13 @@
         @test flagged(df, 2, "run segments disagree on target_width")
     end
 
+    @testset "segments must agree on background_length (a run-level parameter)" begin
+        df = check("seg_bl.csv", [runrow(run_id = "b", file = ART.a, background_length = "30"),
+                                  runrow(run_id = "b", file = ART.b, background_length = "40")])
+        @test flagged(df, 1, "run segments disagree on background_length")
+        @test flagged(df, 2, "run segments disagree on background_length")
+    end
+
     @testset "segments must agree on the video's pixel dimensions" begin
         # width/height live on the run-level Source, so mixed-dimension segments are rejected
         df = check("seg_dim.csv", [runrow(run_id = "d", file = ART.a),

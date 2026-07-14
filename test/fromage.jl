@@ -123,8 +123,9 @@ end
         println(io, "c1,only_scale,cal.mp4,1,2")
     end
     open(joinpath(dir, "runs.csv"), "w") do io
-        println(io, "calibration_id,file,start_location")
-        println(io, "c1,$(only(target)),\"(55, 50)\"")
+        # background_length = 0 rides along to prove the column flows csv → gateway → track
+        println(io, "calibration_id,file,start_location,background_length")
+        println(io, "c1,$(only(target)),\"(55, 50)\",0")
     end
     outdir = mktempdir()
 
@@ -181,6 +182,13 @@ end
     @test hypot((present[end] - present[1])...) ≈ ground_disp rtol = 0.05
     a, b = present[1], present[end]; d = (b - a) ./ hypot((b - a)...)
     @test maximum(abs((p - a)[1] * d[2] - (p - a)[2] * d[1]) for p in present) < 3   # within 3 cm of the line
+    # the no-subtraction path (background_length = 0) through track_apriltag: the 2-slice
+    # registered stack still cancels the pan, and the same displacement contract holds
+    _, xy0 = Fromage.PawsomeTracker.track(joinpath(dir, vid); rectification = rect,
+        start_location = sl, target_width = 12, background_length = 0)
+    @test !any(ismissing, xy0)
+    p0 = collect(skipmissing(xy0))
+    @test hypot((p0[end] - p0[1])...) ≈ ground_disp rtol = 0.05
     # outputs: one track csv (real-world x/y) and the shared diagnostic video
     lines = readlines(joinpath(outdir, "results_dir", "beetle.csv"))
     @test length(lines) == nframes + 1 && lines[1] == "time,x,y"
