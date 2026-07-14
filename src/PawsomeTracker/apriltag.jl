@@ -348,9 +348,9 @@ img_to_cm(H, rc) = apply_h(H, SVector(rc[2], rc[1]))                       # (ro
 # (col, row) → reference → scaled (row, col)). The seed may lag the first frame by a few tag-less
 # frames; the drift is those frames' drone motion, well within the search window. The `missing`
 # (centre search) case already operates on the reference-space stack and needs no mapping.
-apriltag_guess(start_location::Missing, stack, vid, darker_target, target_width, initial_search_factor, _) =
-    get_guess(start_location, stack, vid, darker_target, target_width, initial_search_factor)
-function apriltag_guess(start_xy::NTuple{2, Int}, _, vid, _, _, _, seedR)
+apriltag_guess(start_location::Missing, stack, vid, darker_target, target_width, initial_search_factor, subtract, _) =
+    get_guess(start_location, stack, vid, darker_target, target_width, initial_search_factor, subtract)
+function apriltag_guess(start_xy::NTuple{2, Int}, _, vid, _, _, _, _, seedR)
     x, y = start_xy
     p = apply_h(seedR, SVector(x / vid.sar, Float64(y)))
     return round.(Int, vid.scale .* (p[2], p[1]))
@@ -489,17 +489,18 @@ diagnose_apriltag(file::AbstractString, ref, darker_target, fps) = DiagnoseApril
 # reference frame's (rows, cols) — the run may have a different resolution. `dia` is a
 # `DiagnoseApriltag`/`Dont` created (and closed) by the caller — shared across a run's segments.
 function track_apriltag(file, start, stop, target_width, start_location, window_size, darker_target,
-                        fps, dia, ref::ReferenceFrame, family, ref_sz, initial_search_factor, white_point, scale)
+                        fps, dia, ref::ReferenceFrame, family, ref_sz, initial_search_factor, white_point, scale, background_length)
     ids = ref.ids
     ntags = length(ids)
     video(file, fps, start, stop, scale) do vid
         dets = [set_detector!(AprilTagDetector(family)) for _ in 1:ntags]   # one per tag
         try
             canvas = round.(Int, vid.scale .* ref_sz)      # the reference viewport, tracker-scaled
-            tr = Tracker(vid, darker_target, target_width, window_size, canvas)
-            n_bkgd = n_background(vid)
+            subtract = background_length != 0              # off ⇒ raw-slice detect, no protect/restore
+            tr = Tracker(vid, darker_target, target_width, window_size, canvas, subtract)
+            n_bkgd = n_background(vid, background_length)
             warp = RegisteredWarp(vid.scale, Vector{SMatrix{3, 3, Float64, 9}}(undef, n_bkgd))
-            stack = get_stack(vid, tr.sz, tr.h, warp)
+            stack = get_stack(vid, tr.sz, tr.h, n_bkgd, warp)
             n = vid.nframes
             sz = size(vid.img)                             # raw frame size (row, col)
             Hs = Vector{Union{Nothing, SMatrix{3, 3, Float64}}}(undef, n_bkgd)  # image→cm per prefill frame (dia + gating)
@@ -548,7 +549,7 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
             # their own are reported `missing` and skipped (their borrowed alignment is good enough
             # for the background model, not for a measurement); the guess holds through them.
             level = Ref(0.0)
-            guess = apriltag_guess(start_location, stack, vid, darker_target, target_width, initial_search_factor, seedR)
+            guess = apriltag_guess(start_location, stack, vid, darker_target, target_width, initial_search_factor, subtract, seedR)
             for i in 1:n_bkgd
                 H = Hs[i]
                 if isnothing(H)
@@ -572,7 +573,9 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
                     lastHinv = inv(R)
                     H = ref.M * R
                 end
-                protect, keep = protect_target(stack, j, guess, tr.radii, canvas2raw(lastHinv, vid.scale), PROTECT_PAD)
+                if subtract
+                    protect, keep = protect_target(stack, j, guess, tr.radii, canvas2raw(lastHinv, vid.scale), PROTECT_PAD)
+                end
                 populate_slice!(stack, j, vid)
                 warp.Hinvs[j] = lastHinv
                 if isnothing(H)
@@ -582,7 +585,7 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
                     coords[i] = img_to_cm(ref.M, rc)
                 end
                 dia(vid.img, coords[i], H)
-                restore_background!(stack, j, protect, keep)
+                subtract && restore_background!(stack, j, protect, keep)
             end
 
             return (range(start, stop, n), coords)

@@ -88,7 +88,7 @@ end
 # missing) is true). All but `calibration_id` (run metadata) and `dimension`/`sar` (the ffprobe-read
 # pixel width/height and sample aspect ratio, not CSV columns) feed `track`.
 const SHARED_PARAMS = (:target_width, :window_size, :darker_target, :fps,
-    :initial_search_factor, :white_point, :scale, :calibration_id, :dimension, :sar)
+    :initial_search_factor, :white_point, :scale, :background_length, :calibration_id, :dimension, :sar)
 
 # A run may be split across several CSV rows (one per segment video) sharing a :run_id. Those rows
 # must agree on every run-level parameter — only file/start/stop/start_location may vary. Compared
@@ -138,6 +138,9 @@ function verifications!(df::AbstractDataFrame, data_path)
     # the tracker works in the scaled frame, so it is the *scaled* target width that must span at
     # least one pixel — each factor can be individually fine while their product is degenerate.
     verify!(df, (tw, sc) -> tw * sc < 1, "scaled target width (target_width × scale) is smaller than one pixel", :target_width, :scale)
+    # 0 is a real mode (no background subtraction); 1–24 would make a background model too short
+    # to model anything, and negatives are nonsense — the predicate covers both.
+    verify!(df, b -> b != 0 && b < 25, "background_length must be 0 (disables background subtraction) or at least 25", :background_length)
 
     # Temporal window must be sane and lie within the video. start ≥ 0 runs first and nulls :start on
     # failure, so a negative start does not also trip the "start must come before stop" message.
