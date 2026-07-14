@@ -19,9 +19,12 @@ include("common.jl")
 # sliding over the larger ground canvas) that stands in for drone motion — registration must cancel
 # it. Encoded losslessly (-qp 0) so the tags stay crisp for detection. `checker_size = cell = 8` (tag
 # cells are 8 px on the ground) makes the recovered metric unit equal one ground pixel, so the tracked
-# cm path is directly comparable to `groundpath`. Returns (basename, groundpath::Vector{(row, col)},
+# cm path is directly comparable to `groundpath`. `amp` is the pan amplitude (px; at most 59 to stay
+# inside the canvas margins) and frames listed in `occlude` get the first tag painted over (a lost
+# tag ⇒ that frame cannot register). Returns (basename, groundpath::Vector{(row, col)},
 # start_location::(x, y) of the disc in frame 1, nframes).
-function make_apriltag_video(dir, name; H = 480, W = 480, GH = 600, GW = 600, nframes = 60, fps = 25, tw = 12)
+function make_apriltag_video(dir, name; H = 480, W = 480, GH = 600, GW = 600, nframes = 60, fps = 25, tw = 12,
+                             amp = 40, occlude = Int[])
     cell = 8                                            # ground px per tag cell ⇒ 8-cell black square = 64 px
     upscale(t) = UInt8.(kron(Int.(t), ones(Int, cell, cell)))
     tagu8(id) = UInt8.(255 .* (Float64.(getAprilTagImage(id, tag36h11)) .> 0.5))
@@ -32,8 +35,8 @@ function make_apriltag_video(dir, name; H = 480, W = 480, GH = 600, GW = 600, nf
     rad = tw ÷ 2
     gr(k) = 260.0 + 40 * (k - 1) / (nframes - 1)        # disc ground path (row, col): a straight line
     gc(k) = 260.0 + 60 * (k - 1) / (nframes - 1)
-    oy(k) = round(Int, 60 + 40 * sin(2π * (k - 1) / nframes))   # drone pan (crop offset), within the margins
-    ox(k) = round(Int, 60 + 40 * cos(2π * (k - 1) / nframes))
+    oy(k) = round(Int, 60 + amp * sin(2π * (k - 1) / nframes))   # drone pan (crop offset), within the margins
+    ox(k) = round(Int, 60 + amp * cos(2π * (k - 1) / nframes))
     raw = joinpath(dir, "$name.raw")
     open(raw, "w") do io
         for k in 1:nframes
@@ -41,6 +44,7 @@ function make_apriltag_video(dir, name; H = 480, W = 480, GH = 600, GW = 600, nf
             for i in floor(Int, r0 - rad):ceil(Int, r0 + rad), j in floor(Int, c0 - rad):ceil(Int, c0 + rad)
                 (i - r0)^2 + (j - c0)^2 ≤ rad^2 && (g[i, j] = 0x00)
             end
+            k in occlude && (g[151:230, 151:230] .= 0xff)               # paint over the first tag
             write(io, vec(permutedims(g[oy(k)+1:oy(k)+H, ox(k)+1:ox(k)+W])))   # row-major gray for ffmpeg
         end
     end
@@ -182,6 +186,33 @@ end
     @test length(lines) == nframes + 1 && lines[1] == "time,x,y"
     diag = joinpath(outdir, "results_dir", "diagnostic.mp4")
     @test isfile(diag) && filesize(diag) > 0
+end
+
+@testset "AprilTag: registered stack survives a large pan, the rolling phase, and tag loss" begin
+    # A harder synthetic flight than the e2e above, aimed at the registered background stack: a
+    # large pan amplitude (the crop window sweeps nearly the whole canvas margin), more frames than
+    # the background window (so the rolling phase actually runs — the e2e above fits entirely in
+    # the prefill), and the first tag occluded both BEFORE the first full tag set (exercising the
+    # backfilled pre-seed registrations) and inside the rolling phase (the borrowed ones). Driven
+    # through `track` directly (no CSVs) with a start_location, which must cross the seed frame's
+    # registration to land on the (reference-space) stack.
+    dir = mktempdir()
+    occluded = vcat(1:3, 260:264)
+    vid, groundpath, sl, nframes = make_apriltag_video(dir, "bigpan"; nframes = 300, amp = 55, occlude = occluded)
+    file = joinpath(dir, vid)
+    # extrinsic at t = 0.2 s (frame 6): the frames around t = 0 have the occluded tag
+    rect = Fromage.PawsomeTracker.ApriltagRectification(file, 0.2, 4, "tag36h11", 8, missing, missing, 480, 480)
+    ts, xy = Fromage.PawsomeTracker.track(file; rectification = rect, start_location = sl, target_width = 12)
+    @test length(xy) == nframes
+    @test findall(ismissing, xy) == occluded            # a lost tag ⇒ missing, exactly there
+    pidx = findall(!ismissing, xy)
+    present = [xy[i] for i in pidx]
+    # same accuracy contract as the e2e above (checker_size = 8 ⇒ metric unit = ground px),
+    # between the first and last frames that actually registered
+    ground_disp = hypot((groundpath[pidx[end]] .- groundpath[pidx[1]])...)
+    @test hypot((present[end] - present[1])...) ≈ ground_disp rtol = 0.05
+    a, b = present[1], present[end]; d = (b - a) ./ hypot((b - a)...)
+    @test maximum(abs((p - a)[1] * d[2] - (p - a)[2] * d[1]) for p in present) < 3
 end
 
 @testset "AprilTag calibration: failing extrinsic frame is dumped to the issues folder" begin

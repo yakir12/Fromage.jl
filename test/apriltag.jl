@@ -9,7 +9,8 @@ using StaticArrays
 using LinearAlgebra
 # the geometry is internal to the submodule; import the (non-exported) names directly
 using Fromage.PawsomeTracker: CANON, apply_h, homography_dlt, place_square, fit_metric,
-    _worst_side, ReferenceFrame, register, ground_homography
+    _worst_side, ReferenceFrame, register, ground_homography,
+    RegisteredWarp, build_stack, canvas2raw, Gray
 
 rot(θ) = SMatrix{2,2,Float64}(cos(θ), sin(θ), -sin(θ), cos(θ))    # proper 2D rotation
 
@@ -73,6 +74,44 @@ project(H) = [[apply_h(H, c) for c in tc] for tc in TAGS_CM]
         Gh = ground_homography(ref, reduce(vcat, img2))
         d̂ = norm(apply_h(Gh, apply_h(HMILD2, g1)) - apply_h(Gh, apply_h(HMILD2, g2)))
         @test d̂ ≈ norm(g1 - g2) rtol = 1e-4
+    end
+
+    @testset "RegisteredWarp: the registered background stack is drone-motion invariant" begin
+        # three "drone" frames = crops of one static ground image at different offsets; with each
+        # slice's registration in the warp, every slice must reproduce the SAME static scene at the
+        # same canvas index, and so must the per-pixel reduction over slices (the background model)
+        # — the property the registered stack exists for. Integer translations keep the
+        # interpolation exact, so the comparisons are to machine precision.
+        ground = Gray{Float32}.(rand(Float32, 100, 120))
+        offs = [(0, 0), (5, 7), (10, 3)]                                   # (row, col) crop offsets
+        Hc, Wc = 60, 70
+        Hinv(o) = SMatrix{3,3,Float64}(1, 0, 0, 0, 1, 0, -o[2], -o[1], 1)  # ref (x,y) → frame (x,y)
+        w = RegisteredWarp(1.0, [Hinv(o) for o in offs])
+        stack = build_stack(w, (Hc, Wc), (Hc, Wc), 3, (1:Hc, 1:Wc, 1:3))
+        raw = parent(parent(stack))
+        for (k, (oy, ox)) in enumerate(offs)
+            raw[:, :, k] .= ground[oy+1:oy+Hc, ox+1:ox+Wc]
+        end
+        r, c = 11:Hc, 8:Wc                                                 # the overlap of all three crops
+        @test all(maximum(abs, Float32.(stack[r, c, k]) .- Float32.(ground[r, c])) < 1e-6 for k in 1:3)
+        bg = dropdims(maximum(Float32.(stack[r, c, :]), dims = 3), dims = 3)
+        @test maximum(abs, bg .- Float32.(ground[r, c])) < 1e-6
+
+        # the warp composes the inverse scaling exactly like the plain stack's LinearMap: canvas
+        # (r, c) samples the frame at the registration of (r, c)/scale. Two slices — a
+        # single-slice stack has no valid linear-interpolation stencil along the slice axis
+        # (production stacks always hold ≥ 2 frames).
+        w2 = RegisteredWarp(0.5, [Hinv(offs[2]), Hinv(offs[3])])
+        stack2 = build_stack(w2, (Hc ÷ 2, Wc ÷ 2), (Hc, Wc), 2, (1:Hc÷2, 1:Wc÷2, 1:2))
+        for (k, (oy, ox)) in enumerate((offs[2], offs[3]))
+            parent(parent(stack2))[:, :, k] .= ground[oy+1:oy+Hc, ox+1:ox+Wc]
+        end
+        @test Float32(stack2[10, 12, 1]) ≈ Float32(ground[20, 24]) atol = 1e-6
+        @test Float32(stack2[10, 12, 2]) ≈ Float32(ground[20, 24]) atol = 1e-6
+
+        # canvas2raw is the warp's 2D core: canvas (row, col) → raw frame (row, col)
+        c2r = canvas2raw(Hinv((5, 7)), 1.0)
+        @test all(c2r((20, 30)) .≈ (15.0, 23.0))
     end
 end
 

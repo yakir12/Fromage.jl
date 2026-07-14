@@ -1,8 +1,9 @@
 # AprilTag-based tracking for drone footage: register out drone motion and rectify the beetle
 # track into metric ground-plane coordinates (cm), in a single pass, using four coplanar tags as
-# landmarks. Built in phases; this file currently holds PHASE 1 (the ground-plane geometry, pure
-# and unit-tested). Detection, the tracking loop, diagnostics, ROI search and parallelism follow
-# in later phases — the salvageable detection scratch is preserved, commented, at the bottom.
+# landmarks. Built in phases, all present in this file: PHASE 1 the ground-plane geometry (pure
+# and unit-tested), PHASE 2 detection and the tracking loop, PHASE 4 the ROI local search.
+# Registration is folded into the background stack's lazy index pipe (RegisteredWarp), so the
+# tracker works in the shared reference frame — a static scene — rather than native image space.
 #
 # Geometry, verified against a real drone frame (1080×1920, four tag36h11 tags):
 #   * A homography from all 16 tag corners registers frames robustly; a single tag's homography
@@ -278,6 +279,33 @@ end
 register(ref::ReferenceFrame, corners) = homography_dlt(corners, ref.corners)
 ground_homography(ref::ReferenceFrame, corners) = ref.M * register(ref, corners)
 
+# The lazy registration warp: the background stack's index transform, composing each slice's
+# registration with the tracker's inverse scaling, so every slice is sampled in the SHARED
+# REFERENCE frame's coordinates. Drone motion is thereby removed at lookup time — the per-pixel
+# max/min background model sees a static scene — at the cost of one homography apply per lookup.
+# `Hinvs[k]` maps reference (x, y) px → frame-k (x, y) px (i.e. `inv(register(...))`) and is
+# mutated in place as the rolling window replaces slices; the WarpedView holds this same vector,
+# so updates are visible immediately. Coordinate bridge: the stack works in scaled (row, col)
+# ("canvas"), the homographies in (x, y) = (col, row) stored px — hence the flips.
+struct RegisteredWarp <: Transformation
+    scale::Float64
+    # NB the length parameter: `SMatrix{3, 3, Float64}` (abstract) would box every per-lookup
+    # load and cost two orders of magnitude in detect's background reduce
+    Hinvs::Vector{SMatrix{3, 3, Float64, 9}}
+end
+function (w::RegisteredWarp)(x::SVector{3})
+    p = apply_h(w.Hinvs[Int(x[3])], SVector(x[2], x[1]) / w.scale)
+    return SVector(p[2], p[1], x[3])
+end
+
+# the per-slice canvas → raw-frame (row, col) mapping (RegisteredWarp's 2D core), as a closure
+# for the registered protect_target
+canvas2raw(Hinv, scale) = rc -> (p = apply_h(Hinv, SVector(rc[2], rc[1]) ./ scale); (p[2], p[1]))
+
+# raw px padded around the protected target region, absorbing the one frame of drone motion the
+# registered protect_target approximates over (see its docstring in PawsomeTracker.jl)
+const PROTECT_PAD = 5
+
 # ============================================================================================
 # PHASE 2 — detection and the single-pass tracking loop.
 # ============================================================================================
@@ -311,9 +339,22 @@ function detect_tags(det, img, ids)
     [SVector{2,Float64}[SVector(p[1], p[2]) for p in byid[i].p] for i in ids]
 end
 
-# tag geometry is (x, y) = (col, row); the DoG tracker works in (row, col). These bridge the two.
+# tag geometry is (x, y) = (col, row); the DoG tracker works in (row, col). This bridges the two.
 img_to_cm(H, rc) = apply_h(H, SVector(rc[2], rc[1]))                       # (row,col) px → cm
-cm_to_img(H, cm) = (xy = apply_h(inv(H), cm); (round(Int, xy[2]), round(Int, xy[1])))  # cm → (row,col) px
+
+# Resolve the initial guess in CANVAS coordinates. `start_location` is the target's (x, y)
+# display-pixel position in the run's first frame — NATIVE space — while the stack lives in
+# reference space, so the guess crosses the seed frame's registration `seedR` (native stored
+# (col, row) → reference → scaled (row, col)). The seed may lag the first frame by a few tag-less
+# frames; the drift is those frames' drone motion, well within the search window. The `missing`
+# (centre search) case already operates on the reference-space stack and needs no mapping.
+apriltag_guess(start_location::Missing, stack, vid, darker_target, target_width, initial_search_factor, _) =
+    get_guess(start_location, stack, vid, darker_target, target_width, initial_search_factor)
+function apriltag_guess(start_xy::NTuple{2, Int}, _, vid, _, _, _, seedR)
+    x, y = start_xy
+    p = apply_h(seedR, SVector(x / vid.sar, Float64(y)))
+    return round.(Int, vid.scale .* (p[2], p[1]))
+end
 
 # ---- PHASE 4: local ROI search ----------------------------------------------------------------
 # AprilTag detection cost scales with pixels, so after the reference frame each tag is searched in a
@@ -432,92 +473,113 @@ diagnose_apriltag(::Nothing, _, _, _) = Dont()
 diagnose_apriltag(file::AbstractString, ref, darker_target, fps) = DiagnoseApriltag(file, ref, darker_target, fps)
 (::Dont)(_, _, _) = nothing                                     # 3-arg no-op for the apriltag callback
 
-# Track the beetle across drone footage in a single pass: per frame, detect the tags, register the
-# frame to the shared `ref` (removing drone motion), motion-compensate the tracker's guess, run the
-# DoG detection, and report the beetle in metric ground coordinates (cm). Frames missing any tag
-# yield `missing` (no registration possible) and the tracker holds its last position. The reference
-# is established once, from the calibration's extrinsic frame (the tags are stationary across every
-# run), and shared here; `family` is the detector family it was built with. Reuses the Tracker /
-# background-stack / DoG machinery; detection is on the raw frame, tracking on the stack. `dia` is a
+# Track the beetle across drone footage in a single pass, in the REFERENCE frame's coordinates:
+# the background stack lazily warps every slice through that slice's own registration (a
+# RegisteredWarp composed into the same index pipe as the scaling), so drone motion is removed at
+# lookup time and the DoG tracker sees a static scene — a stable background model, and no
+# per-frame guess compensation (the guess simply persists, as in the plain tracker). Per frame:
+# detect the tags (on the raw `vid.img`), fit the registration, roll the raw frame plus its
+# registration into the stack, run the DoG detection in reference space, and map the result
+# through the FIXED metric map `ref.M` to ground cm. Frames missing any tag yield `missing`
+# (their true registration is unknown; the slice borrows the nearest known one — misaligned only
+# by that brief unknown drone motion, where the old native-space stack was misaligned by ALL
+# drone motion) and the tracker holds its last reference-space position. The reference is
+# established once, from the calibration's extrinsic frame (the tags are stationary across every
+# run), and shared here; `family` is the detector family it was built with; `ref_sz` is the
+# reference frame's (rows, cols) — the run may have a different resolution. `dia` is a
 # `DiagnoseApriltag`/`Dont` created (and closed) by the caller — shared across a run's segments.
 function track_apriltag(file, start, stop, target_width, start_location, window_size, darker_target,
-                        fps, dia, ref::ReferenceFrame, family, initial_search_factor, white_point, scale)
+                        fps, dia, ref::ReferenceFrame, family, ref_sz, initial_search_factor, white_point, scale)
     ids = ref.ids
     ntags = length(ids)
     video(file, fps, start, stop, scale) do vid
-        dets = [set_detector!(AprilTagDetector(family)) for _ in 1:ntags]   # one per tag (concurrent)
+        dets = [set_detector!(AprilTagDetector(family)) for _ in 1:ntags]   # one per tag
         try
-            tr = Tracker(vid, darker_target, target_width, window_size)
-            stack = get_stack(vid, tr.sz, tr.h)
-            n_bkgd = size(stack, 3)
+            canvas = round.(Int, vid.scale .* ref_sz)      # the reference viewport, tracker-scaled
+            tr = Tracker(vid, darker_target, target_width, window_size, canvas)
+            n_bkgd = n_background(vid)
+            warp = RegisteredWarp(vid.scale, Vector{SMatrix{3, 3, Float64, 9}}(undef, n_bkgd))
+            stack = get_stack(vid, tr.sz, tr.h, warp)
             n = vid.nframes
-            sz = size(vid.img)                                            # raw frame size (row, col)
-            Hs = Vector{Union{Nothing, SMatrix{3,3,Float64}}}(undef, n)    # per-frame image→cm map
+            sz = size(vid.img)                             # raw frame size (row, col)
+            Hs = Vector{Union{Nothing, SMatrix{3, 3, Float64}}}(undef, n_bkgd)  # image→cm per prefill frame (dia + gating)
             coords = Vector{Union{Missing, RowCol}}(undef, n)
-            boxes = NTuple{4, Int}[]                                       # per-tag ROI search boxes
+            boxes = NTuple{4, Int}[]                       # per-tag ROI search boxes
             seeded = false
+            seedR = SMatrix{3, 3, Float64}(I)              # the seed frame's registration (start_location crosses it)
+            lastHinv = SMatrix{3, 3, Float64}(I)           # nearest known inv(registration), borrowed by tag-less slices
 
-            # fill the background stack, registering each frame to the shared reference. The run's
-            # `start` can be far from the calibration's extrinsic frame, so the (stationary) tags may
-            # sit anywhere in the first frame: locate them by a full-frame scan, NOT an ROI around
-            # their reference positions. Once found, subsequent frames use per-tag local search seeded
-            # from each tag's last box — a graceful fall back to full-frame when the drone jumps.
+            # fill the background stack: each frame enters raw, PLUS its registration in
+            # `warp.Hinvs`, which is what places it in reference space. The run's `start` can be far
+            # from the calibration's extrinsic frame, so the (stationary) tags may sit anywhere in
+            # the first frame: locate them by a full-frame scan, NOT an ROI around their reference
+            # positions. Once found, subsequent frames use per-tag local search seeded from each
+            # tag's last box — a graceful fall back to full-frame when the drone jumps. Frames
+            # missing any tag borrow the nearest known registration (pre-seed slices are backfilled
+            # with the seed's once it is found).
             for i in 1:n_bkgd
-                next!(vid); populate_slice!(stack, i, vid)
-                if !seeded
-                    tc = detect_tags(dets[1], vid.img, ids)                # whole-frame relocation
-                    if isnothing(tc)
-                        Hs[i] = nothing
-                    else
-                        boxes = [tag_box(c, sz) for c in tc]
-                        seeded = true
-                        Hs[i] = ground_homography(ref, reduce(vcat, tc))
-                    end
+                next!(vid)
+                populate_slice!(stack, i, vid)
+                tc = seeded ? detect_tags_roi!(dets, vid.img, ids, boxes, sz) :
+                              detect_tags(dets[1], vid.img, ids)             # whole-frame relocation
+                if isnothing(tc)
+                    Hs[i] = nothing
+                    seeded && (warp.Hinvs[i] = lastHinv)   # pre-seed slices are backfilled below
                 else
-                    tc = detect_tags_roi!(dets, vid.img, ids, boxes, sz)
-                    Hs[i] = isnothing(tc) ? nothing : ground_homography(ref, reduce(vcat, tc))
+                    R = register(ref, reduce(vcat, tc))
+                    lastHinv = inv(R)
+                    warp.Hinvs[i] = lastHinv
+                    Hs[i] = ref.M * R
+                    if !seeded
+                        boxes = [tag_box(c, sz) for c in tc]
+                        seedR = R
+                        for k in 1:i-1
+                            warp.Hinvs[k] = lastHinv
+                        end
+                        seeded = true
+                    end
                 end
             end
             !seeded && error("no frame in the background window held all $ntags AprilTags")
 
-            slice(k) = selectdim(parent(parent(stack)), 3, k)              # frame k's image (in the stack)
+            slice(k) = selectdim(parent(parent(stack)), 3, k)   # frame k's raw image (in the stack)
 
-            # track the already-read background-window frames (images are the stack slices)
+            # track the already-read background-window frames. Frames without a registration of
+            # their own are reported `missing` and skipped (their borrowed alignment is good enough
+            # for the background model, not for a measurement); the guess holds through them.
             level = Ref(0.0)
-            guess = get_guess(start_location, stack, vid, darker_target, target_width, initial_search_factor)
-            prev = missing
+            guess = apriltag_guess(start_location, stack, vid, darker_target, target_width, initial_search_factor, seedR)
             for i in 1:n_bkgd
                 H = Hs[i]
                 if isnothing(H)
                     coords[i] = missing
                 else
-                    if !ismissing(prev)
-                        guess = cm_to_img(H, prev)
-                    end
                     rc, guess = detect(guess, stack, i, tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, vid.scale, tr.bkgd_reduce, level)
-                    coords[i] = img_to_cm(H, rc)
-                    prev = coords[i]
+                    coords[i] = img_to_cm(ref.M, rc)       # rc is reference px; ref.M is the fixed metric map
                 end
                 dia(slice(i), coords[i], H)
             end
 
-            # rolling phase: read, detect, track
+            # rolling phase: read, register, roll into the stack, track
             for i in (n_bkgd + 1):n
                 next!(vid)
                 j = mod1(i, n_bkgd)
                 tc = detect_tags_roi!(dets, vid.img, ids, boxes, sz)
-                H = isnothing(tc) ? nothing : ground_homography(ref, reduce(vcat, tc))
-                if !isnothing(H) && !ismissing(prev)
-                    guess = cm_to_img(H, prev)
+                if isnothing(tc)
+                    H = nothing                            # slice borrows lastHinv below
+                else
+                    R = register(ref, reduce(vcat, tc))
+                    lastHinv = inv(R)
+                    H = ref.M * R
                 end
-                protect, keep = protect_target(stack, j, guess, tr.radii, vid.scale)
+                protect, keep = protect_target(stack, j, guess, tr.radii, canvas2raw(lastHinv, vid.scale), PROTECT_PAD)
                 populate_slice!(stack, j, vid)
+                warp.Hinvs[j] = lastHinv
                 if isnothing(H)
                     coords[i] = missing
                 else
                     rc, guess = detect(guess, stack, j, tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, vid.scale, tr.bkgd_reduce, level)
-                    coords[i] = img_to_cm(H, rc)
-                    prev = coords[i]
+                    coords[i] = img_to_cm(ref.M, rc)
                 end
                 dia(vid.img, coords[i], H)
                 restore_background!(stack, j, protect, keep)
