@@ -35,6 +35,7 @@ beetle03.mp4,afternoon
 | `fps` | video's frame rate | how many frames per second to track. Lower it for slow targets to speed things up. Cannot exceed the video's own frame rate. |
 | `initial_search_factor` | `4` | when no start location is known at all, the target is searched for in a window of size `min(width, height) / initial_search_factor` centered on the frame. Larger values → smaller initial search window. |
 | `scale` | `1` | spatial downsampling factor (0 < scale ≤ 1) applied before tracking; e.g. `0.5` tracks on half-resolution frames (faster). Returned coordinates are always in original-resolution pixels. The scaled target (`target_width × scale`) must remain at least 1 pixel wide. |
+| `background_length` | `250` | how many tracked frames form the rolling background model the target is detected against. Counted at the tracking `fps`, so the model spans `background_length / fps` seconds; memory scales with it. `0` disables background subtraction entirely — fine for clean, high-contrast scenes (and much lighter on memory), but static dark marks then compete with the target. Must be `0` or at least `25`. |
 | `run_id` | row number | identifies the run; only needed for multi-video runs (below). All-or-nothing: either every row has a `run_id`, or none does. |
 | `path` | `.` | folder containing `file`, relative to the location of the csv file. |
 | `comment` | — | free text, ignored. |

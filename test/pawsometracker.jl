@@ -51,6 +51,17 @@ const DATADIR = mktempdir()
         @test tracking_rmse(ij, seg_exp) < 1
     end
 
+    @testset "background_length: no subtraction (0) and a short window (30) both track" begin
+        # 0 ⇒ the DoG runs on the raw frame (the 2-slice stack only feeds detect the current
+        # frame); the clean synthetic scene must track just as well without a background model
+        _, ij = track(base_file; start_location = (55, 50), target_width = 10, background_length = 0)
+        @test length(ij) == 50
+        @test tracking_rmse(ij, base_exp) < 1
+        # a short window exercises the rolling phase (50 frames > 30-slice stack) with subtraction on
+        _, ij = track(base_file; start_location = (55, 50), target_width = 10, background_length = 30)
+        @test tracking_rmse(ij, base_exp) < 1
+    end
+
     @testset "a long-stationary target is not absorbed into the background" begin
         # the disc pauses for 17 s — far longer than the 250-frame rolling background window — which
         # used to absorb it into the per-pixel background model (the model's max saw only the disc

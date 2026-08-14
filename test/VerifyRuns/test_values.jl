@@ -37,6 +37,23 @@
         @test clean(check("v_sctw3.csv",   [runrow(target_width = "2", scale = "0.5")]))
     end
 
+    @testset "background_length is 0 (no subtraction) or at least 25" begin
+        # blank cell ⇒ the hardcoded default (mirrors PawsomeTracker's own)
+        @test only(check("v_bl_blank.csv", [runrow()])).source.background_length == 250
+        # 0 is a real mode: background subtraction off
+        runs = check("v_bl0.csv", [runrow(background_length = "0")])
+        @test clean(runs)
+        @test only(runs).source.background_length == 0
+        @test clean(check("v_bl25.csv", [runrow(background_length = "25")]))    # the boundary is allowed
+        # 1–24 and negatives are rejected by the same check
+        msg = "background_length must be 0 (disables background subtraction) or at least 25"
+        @test flagged(check("v_bl1.csv",   [runrow(background_length = "1")]),  1, msg)
+        @test flagged(check("v_bl24.csv",  [runrow(background_length = "24")]), 1, msg)
+        @test flagged(check("v_blneg.csv", [runrow(background_length = "-5")]), 1, msg)
+        # a non-integer cell fails at parse time, before the range check
+        @test flagged(check("v_blfmt.csv", [runrow(background_length = "2.5")]), 1, "wrong background_length format")
+    end
+
     @testset "the temporal window must contain at least one frame" begin
         # 0.05 s at 5 fps → round(5 × 0.05) = 0 frames
         @test flagged(check("v_nf0.csv", [runrow(stop = "0.05", fps = "5")]), 1, "too short to contain a single frame")

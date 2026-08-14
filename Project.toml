@@ -1,6 +1,6 @@
 name = "Fromage"
 uuid = "f7d2997e-1be8-4771-a487-05d70e6e0672"
-version = "0.1.2"
+version = "0.1.9"
 authors = ["Yakir Gagnon <12.yakir@gmail.com> and contributors"]
 
 [workspace]
@@ -54,7 +54,7 @@ DataStructures = "0.18, 0.19"
 Dates = "1"
 FFMPEG = "0.4.5"
 FileIO = "1.16"
-FixedPointNumbers = "0.8"
+FixedPointNumbers = "0.8, 0.9"
 FreeTypeAbstraction = "0.10"
 ImageCore = "0.10"
 ImageDraw = "0.1, 0.2"

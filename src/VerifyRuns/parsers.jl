@@ -26,6 +26,7 @@ const DEFAULTS = (;
     initial_search_factor = 4.0,
     white_point = 1.0,
     scale = 1.0,
+    background_length = PawsomeTracker.DEFAULT_BACKGROUND_LENGTH,
 )
 
 const DEFAULT_TYPES = (;
@@ -36,6 +37,7 @@ const DEFAULT_TYPES = (;
     initial_search_factor = Float64,
     white_point = Float64,
     scale = Float64,
+    background_length = Int,
 )
 
 resolve_defaults(overrides) = Parsing.resolve_defaults(overrides, DEFAULTS, DEFAULT_TYPES, "tracking")
@@ -60,6 +62,7 @@ function parse_run!(dict, row, defaults)
     parseto!(dict, row, :initial_search_factor, Float64, defaults.initial_search_factor)
     parseto!(dict, row, :white_point, Float64, defaults.white_point)
     parseto!(dict, row, :scale, Float64, defaults.scale)
+    parseto!(dict, row, :background_length, Int, defaults.background_length)
 end
 
 function parse_row(row, defaults = DEFAULTS)
