@@ -239,6 +239,30 @@ end
     @test length(pngs) == 1 && filesize(joinpath(idir, only(pngs))) > 0
 end
 
+@testset "reference_frame reports failures, and only the builder throws" begin
+    # reference_frame returns Union{ReferenceFrame, String}: every way a calibration can fail to
+    # yield a shared reference is a fact about the user's file, so it is reported, not thrown.
+    PT = Fromage.PawsomeTracker
+    dir = mktempdir()
+    vid, _, _, _ = make_apriltag_video(dir, "ref"; nframes = 20)
+    file = joinpath(dir, vid)
+    corrupt = joinpath(dir, "corrupt.mp4"); write(corrupt, rand(UInt8, 500))
+
+    @test PT.reference_frame(file, 0.2, 4, "tag36h11", 8)    isa PT.ReferenceFrame   # success
+    @test PT.reference_frame(file, 0.2, 99, "tag36h11", 8)   isa String              # too few tags
+    @test PT.reference_frame(file, 0.2, 4, "tag99x9", 8)     isa String              # unsupported family
+    @test PT.reference_frame(corrupt, 0.2, 4, "tag36h11", 8) isa String              # unreadable frame
+
+    # the verification hook is now a plain type test, with no catch of its own
+    @test PT.apriltag_extrinsic_issue(file, 0.2, 4, "tag36h11", 8)    === nothing
+    @test PT.apriltag_extrinsic_issue(file, 0.2, 99, "tag36h11", 8)   isa String
+    @test PT.apriltag_extrinsic_issue(corrupt, 0.2, 4, "tag36h11", 8) isa String
+
+    # ...while the rectification builder, which has nowhere to put a message, still throws
+    @test_throws ErrorException PT.ApriltagRectification(corrupt, 0.2, 4, "tag36h11", 8, missing, missing, 480, 480)
+    @test_throws ErrorException PT.ApriltagRectification(file, 0.2, 99, "tag36h11", 8, missing, missing, 480, 480)
+end
+
 @testset "diagnostic video: multi-run, mixed calibrations" begin
     # All three rectification kinds in one pipeline run: two only_scale rectifications on
     # different-sized source videos (which used to produce a broken mixed-resolution diagnostic —
