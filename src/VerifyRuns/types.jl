@@ -97,8 +97,6 @@ end
 # coalesce only skips `missing`, so a `nothing` would leak through to `track` as-is.
 frame_center(r::Run) = (round(Int, r.source.width * r.source.sar / 2), r.source.height ÷ 2)
 
-get_sigma(target_width) = target_width / 2sqrt(2log(2))
-
 function get_window(target_width, fps, m, duration)
     σ = get_sigma(target_width)
     ws1 = 4ceil(Int, σ) + 1 # calculates the default window size

@@ -10,7 +10,7 @@ using DataFramesMeta: DataFramesMeta, @groupby, @rtransform!, @transform!, Abstr
     ByRow, Cols, DataFrame, Not, allowmissing!, completecases, dropmissing, groupby,
     nonunique, nrow, passmissing, select, select!, subset
 using ..Parsing: Parsing, MyTemporal, parseto!
-using FFMPEG: ffprobe
+using ..Probing: probe_fields
 using MAT: MAT, matread
 using OhMyThreads: OhMyThreads, tmap
 using PrecompileTools: @setup_workload, @compile_workload

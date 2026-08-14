@@ -18,7 +18,6 @@ using OpenCV: OpenCV
 using CoordinateTransformations: LinearMap, Transformation
 using LinearAlgebra: I
 
-const DEFAULT_MAX_DURATION_SECONDS = 86399.999  # 24 hours minus 1 millisecond
 const RowCol = SVector{2, Float32}
 
 # Confidence gate for `detect`: when the window's peak DoG response falls below GATE_FRACTION of
@@ -67,17 +66,6 @@ function get_framerate(file)
 end
 
 get_sigma(target_width) = target_width / 2sqrt(2log(2))
-
-function get_window(target_width, fps, m, t)
-    σ = get_sigma(target_width)
-    ws1 = 4ceil(Int, σ) + 1 # calculates the default window size
-
-    speed = m/t # pixels per second
-    distance = speed / fps # distance traveled per frame
-    ws2 = round(Int, 2distance)
-
-    max(ws1, ws2)
-end
 
 function fix_window_size(wh::NTuple{2, Int}) 
     w, h = wh

@@ -10,13 +10,6 @@ An alias for a static vector of three, x, y, and z, indicating a real-world coor
 """
 const XYZ = SVector{3, <: Real}
 
-function _probe(file)
-    s = read(`$(FFMPEG.ffprobe()) -v error -select_streams v:0 -show_entries stream=width,height,field_order -of csv=p=0 $file`, String)
-    w, h, field_order = split(strip(s), ',')
-    yadif = field_order ∈ ("tt", "bb", "tb", "bt") ? true : missing
-    return (parse(Int, w), parse(Int, h), yadif)
-end
-
 # `yadif` marks interlaced footage: `true` ⇒ deinterlace, `false`/`missing` ⇒ progressive, leave as
 # is. `blur` is a gblur sigma; `missing` *and* `0` mean no blur (VerifyRectifications always sends a
 # number, with 0 as its "no blur", so a sigma-0 no-op filter must not be built). Returns the ffmpeg

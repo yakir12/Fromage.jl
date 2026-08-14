@@ -25,29 +25,15 @@ end
 
 # Probe one video file with a single ffprobe call: frame width/height (stored pixels), sample aspect
 # ratio, container duration and the (real) frame rate. Returns a NamedTuple, or an "issue reading..."
-# string for a corrupt/unreadable file. Uses the non-do-block `ffprobe()` (an env-baked Cmd; never
-# mutates the global ENV); stderr is dropped so ffmpeg's diagnostics don't leak into the output.
+# string for a corrupt/unreadable file. The spawn and its `key=value` output are handled by
+# ..Probing (shared with VerifyRectifications); what stays here is which entries this gateway asks
+# for and what it derives from them.
 function probe_video(file)
-    exe = ffprobe()   # env-baked Cmd; its env survives interpolation into the command below
-    # Only the spawn is fallible in a way worth catching: ffprobe exiting nonzero on an unreadable
-    # or corrupt file (ProcessFailedException), or the spawn/pipe itself failing (IOError,
-    # SystemError). Reading the output is not — that is handled below, without exceptions.
-    out = try
-        read(pipeline(`$exe -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate,sample_aspect_ratio:format=duration -of default=noprint_wrappers=1 $file`, stderr = devnull), String)
-    catch e
-        e isa ProcessFailedException || e isa Base.IOError || e isa SystemError || rethrow()
-        return "issue reading from video file: $(sprint(showerror, e))"
-    end
-    fields = Dict{String, String}()
-    for line in eachline(IOBuffer(out))
-        occursin('=', line) || continue        # a line without a separator would not destructure
-        k, v = split(line, '='; limit = 2)
-        fields[k] = v
-    end
+    fields = probe_fields(file, "stream=width,height,r_frame_rate,sample_aspect_ratio:format=duration")
+    fields isa String && return fields                 # unreadable file: pass the issue straight on
     # The four fields nothing downstream can proceed without (`fps` imputes the run's tracking rate
     # when the csv leaves it blank). `tryparse` reports an absent or unparseable one as `nothing`,
-    # which becomes a precise issue — where `parse` used to throw into the catch above and be
-    # reported as a read failure, which it is not.
+    # which becomes a precise issue rather than being misreported as a failed read.
     width    = tryparse(Int, get(fields, "width", ""))
     height   = tryparse(Int, get(fields, "height", ""))
     duration = tryparse(Float64, get(fields, "duration", ""))
