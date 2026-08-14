@@ -8,3 +8,12 @@ coverage:
       default:
         target: 90%
   range: "80...90" # Yellow within this range
+
+# The PrecompileTools workloads are build-time scaffolding, not runtime code: they execute during
+# precompilation, which the coverage run does not instrument, so their lines can never be hit by the
+# test suite however well the package is tested. Counting them drags patch coverage down whenever one
+# is touched and says nothing about how well-tested the change is. They live in their own files purely
+# so they can be excluded here — codecov ignores whole paths, not lines.
+ignore:
+  - "src/VerifyRectifications/precompile.jl"
+  - "src/VerifyRuns/precompile.jl"
