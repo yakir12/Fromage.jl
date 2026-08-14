@@ -1,10 +1,15 @@
-# Reduce ffprobe's "num/den" r_frame_rate to a Float64. A zero denominator (undefined rate) falls
-# back to the numerator so the value stays finite and the fps checks below behave sanely.
+# Reduce ffprobe's "num/den" r_frame_rate to a Float64, or `nothing` when the field is absent or
+# unparseable (tryparse semantics, so the caller reports it as malformed output rather than having
+# a `parse` throw out of the probe). A zero denominator (undefined rate) falls back to the
+# numerator so the value stays finite and the fps checks below behave sanely.
 function parse_framerate(s)
-    occursin('/', s) || return parse(Float64, s)
-    num, den = split(s, '/')
-    d = parse(Float64, den)
-    iszero(d) ? parse(Float64, num) : parse(Float64, num) / d
+    occursin('/', s) || return tryparse(Float64, s)
+    parts = split(s, '/')
+    length(parts) == 2 || return nothing
+    num = tryparse(Float64, parts[1])
+    den = tryparse(Float64, parts[2])
+    (isnothing(num) || isnothing(den)) && return nothing
+    return iszero(den) ? num : num / den
 end
 
 # ffprobe reports the sample (pixel) aspect ratio as "num:den"; "N/A" or "0:1" mean undefined and
@@ -23,23 +28,35 @@ end
 # string for a corrupt/unreadable file. Uses the non-do-block `ffprobe()` (an env-baked Cmd; never
 # mutates the global ENV); stderr is dropped so ffmpeg's diagnostics don't leak into the output.
 function probe_video(file)
-    try
-        exe = ffprobe()   # env-baked Cmd; its env survives interpolation into the command below
-        out = read(pipeline(`$exe -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate,sample_aspect_ratio:format=duration -of default=noprint_wrappers=1 $file`, stderr = devnull), String)
-        fields = Dict{String, String}()
-        for line in eachline(IOBuffer(out))
-            isempty(line) && continue
-            k, v = split(line, '='; limit = 2)
-            fields[k] = v
-        end
-        return (; width    = parse(Int, fields["width"]),
-                  height   = parse(Int, fields["height"]),
-                  duration = parse(Float64, fields["duration"]),
-                  fps      = parse_framerate(fields["r_frame_rate"]),
-                  sar      = parse_sar(get(fields, "sample_aspect_ratio", "1:1")))
+    exe = ffprobe()   # env-baked Cmd; its env survives interpolation into the command below
+    # Only the spawn is fallible in a way worth catching: ffprobe exiting nonzero on an unreadable
+    # or corrupt file (ProcessFailedException), or the spawn/pipe itself failing (IOError,
+    # SystemError). Reading the output is not — that is handled below, without exceptions.
+    out = try
+        read(pipeline(`$exe -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate,sample_aspect_ratio:format=duration -of default=noprint_wrappers=1 $file`, stderr = devnull), String)
     catch e
+        e isa ProcessFailedException || e isa Base.IOError || e isa SystemError || rethrow()
         return "issue reading from video file: $(sprint(showerror, e))"
     end
+    fields = Dict{String, String}()
+    for line in eachline(IOBuffer(out))
+        occursin('=', line) || continue        # a line without a separator would not destructure
+        k, v = split(line, '='; limit = 2)
+        fields[k] = v
+    end
+    # The four fields nothing downstream can proceed without (`fps` imputes the run's tracking rate
+    # when the csv leaves it blank). `tryparse` reports an absent or unparseable one as `nothing`,
+    # which becomes a precise issue — where `parse` used to throw into the catch above and be
+    # reported as a read failure, which it is not.
+    width    = tryparse(Int, get(fields, "width", ""))
+    height   = tryparse(Int, get(fields, "height", ""))
+    duration = tryparse(Float64, get(fields, "duration", ""))
+    fps      = parse_framerate(get(fields, "r_frame_rate", ""))
+    if isnothing(width) || isnothing(height) || isnothing(duration) || isnothing(fps)
+        return "malformed ffprobe output (missing or unparseable width/height/duration/frame rate)"
+    end
+    # sar has a documented square-pixel fallback, so a missing one is not an error.
+    return (; width, height, duration, fps, sar = parse_sar(get(fields, "sample_aspect_ratio", "1:1")))
 end
 
 # One ffprobe per physical video file fills the intermediate :dimension/:duration/:video_fps columns

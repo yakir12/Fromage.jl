@@ -107,6 +107,12 @@ function read_matlab(file)
     try
         matread(file)
     catch e
+        # MAT.jl signals essentially every corruption through a generic `error(...)`: a truncated
+        # file, a valid header followed by garbage, and an absent file all arrive as
+        # ErrorException, a directory as EOFError (all verified). ErrorException is therefore as
+        # narrow as this can honestly get — but it still excludes the MethodError/BoundsError that
+        # would mean a bug on our side, and the InterruptException a bare catch used to swallow.
+        e isa ErrorException || e isa EOFError || e isa SystemError || e isa Base.IOError || rethrow()
         return "error opening matlab file: $e"
     end
 end
@@ -200,23 +206,35 @@ end
 # env-baked Cmd; the deprecated do-block form mutates the global ENV, a race under the tmap that
 # calls this); stderr is dropped so ffmpeg's diagnostics don't leak into the program output.
 function probe_video(file)
-    try
-        exe = ffprobe()   # env-baked Cmd; its env survives interpolation into the command below
-        out = read(pipeline(`$exe -v error -select_streams v:0 -show_entries stream=width,height,sample_aspect_ratio,field_order:format=duration -of default=noprint_wrappers=1 $file`, stderr = devnull), String)
-        fields = Dict{String,String}()
-        for line in eachline(IOBuffer(out))
-            isempty(line) && continue
-            k, v = split(line, '='; limit = 2)
-            fields[k] = v
-        end
-        return (; width    = parse(Int, fields["width"]),
-                  height   = parse(Int, fields["height"]),
-                  duration = parse(Float64, fields["duration"]),
-                  aspect   = parse_sample_aspect(get(fields, "sample_aspect_ratio", "1:1")),
-                  yadif    = get(fields, "field_order", "progressive") in INTERLACED_FIELD_ORDERS)
+    exe = ffprobe()   # env-baked Cmd; its env survives interpolation into the command below
+    # Only the spawn is fallible in a way worth catching: ffprobe exiting nonzero on an unreadable
+    # or corrupt file (ProcessFailedException), or the spawn/pipe itself failing (IOError,
+    # SystemError). Reading the output is not — that is handled below, without exceptions.
+    out = try
+        read(pipeline(`$exe -v error -select_streams v:0 -show_entries stream=width,height,sample_aspect_ratio,field_order:format=duration -of default=noprint_wrappers=1 $file`, stderr = devnull), String)
     catch e
+        e isa ProcessFailedException || e isa Base.IOError || e isa SystemError || rethrow()
         return "issue reading from video file: $(sprint(showerror, e))"
     end
+    fields = Dict{String,String}()
+    for line in eachline(IOBuffer(out))
+        occursin('=', line) || continue        # a line without a separator would not destructure
+        k, v = split(line, '='; limit = 2)
+        fields[k] = v
+    end
+    # The three fields nothing downstream can proceed without. `tryparse` reports an absent or
+    # unparseable one as `nothing`, which becomes a precise issue — where `parse` used to throw
+    # into the catch above and be reported as a read failure, which it is not.
+    width    = tryparse(Int, get(fields, "width", ""))
+    height   = tryparse(Int, get(fields, "height", ""))
+    duration = tryparse(Float64, get(fields, "duration", ""))
+    if isnothing(width) || isnothing(height) || isnothing(duration)
+        return "malformed ffprobe output (missing or unparseable width/height/duration)"
+    end
+    # aspect and field order have documented fallbacks, so a missing one is not an error.
+    return (; width, height, duration,
+              aspect = parse_sample_aspect(get(fields, "sample_aspect_ratio", "1:1")),
+              yadif  = get(fields, "field_order", "progressive") in INTERLACED_FIELD_ORDERS)
 end
 
 function verify!(df::AbstractDataFrame, predicate, msg, args...)
