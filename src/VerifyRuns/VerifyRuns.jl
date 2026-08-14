@@ -98,7 +98,11 @@ end
         redirect_stdout(devnull) do
             try
                 load_runs(dir, csv; strict = false)
-            catch
+            catch e
+                # Deliberately broad: precompilation must not fail because the workload did. An
+                # interrupt is the exception — Ctrl-C during precompile should stop it, not be
+                # absorbed here.
+                e isa InterruptException && rethrow()
             end
         end
     end
