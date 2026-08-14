@@ -34,6 +34,14 @@ _cmd(file, t, ::Missing) = `$(FFMPEG.ffmpeg()) -hide_banner -loglevel error -ss 
 _cmd(file, t, vf) = `$(FFMPEG.ffmpeg()) -hide_banner -loglevel error -ss $t -i $file -frames:v 1 -vf $vf -f rawvideo -pix_fmt gray pipe:1`
 
 
+# The failures `_read_frame` retries, i.e. everything a flaky share can plausibly do to a frame
+# read: ffmpeg exiting nonzero (`ProcessFailedException` — how an EAGAIN against the share surfaces,
+# since it is ffmpeg itself that fails), and the Julia-side spawn/pipe failures (`IOError`,
+# `SystemError`). Everything else is not transient and retrying it is wrong: an `InterruptException`
+# above all — a bare `catch` ate Ctrl-C for the whole backoff sequence — but equally a caller's bug,
+# which should surface at once instead of after four attempts.
+_transient(e) = e isa ProcessFailedException || e isa Base.IOError || e isa SystemError
+
 # Read one frame, retrying transient failures. EAGAIN ("Resource temporarily unavailable") from
 # the CIFS share is transient by definition, so a few backoff retries ride out residual blips even
 # under the concurrency limit. A persistent failure still rethrows after the last try.
@@ -41,7 +49,8 @@ function _read_frame(cmd; tries = 4)
     for i in 1:(tries - 1)
         try
             return read(cmd)
-        catch
+        catch e
+            _transient(e) || rethrow()
             sleep(0.2 * 2^(i - 1))          # 0.2s, 0.4s, 0.8s backoff
         end
     end
