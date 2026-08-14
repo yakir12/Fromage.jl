@@ -70,10 +70,17 @@ function resolve_defaults(overrides, defaults, types, what)
     unknown = setdiff(keys(overrides), keys(defaults))
     isempty(unknown) || throw(ArgumentError("unknown $what default(s): $(join(unknown, ", ")) (settable: $(join(keys(defaults), ", ")))"))
     isempty(overrides) && return defaults
+    # `convert` has no non-throwing counterpart, so this failure stays a caught exception — but only
+    # the two it can actually be. Over every whitelisted target type (Float64, Int, Bool,
+    # NTuple{2,Int}, Union{Int,NTuple{2,Int}}) a rejected value fails as either a `MethodError` (no
+    # such conversion: "yes" -> Bool) or an `InexactError` (a conversion that would lose
+    # information: 1.5 -> Int, 2 -> Bool). Anything else is not a rejected default and must not be
+    # relabelled as one — it propagates.
     converted = NamedTuple{keys(overrides)}(map(keys(overrides)) do k
         try
             convert(types[k], overrides[k])
-        catch
+        catch e
+            e isa MethodError || e isa InexactError || rethrow()
             throw(ArgumentError("$what default $k must be convertible to $(types[k]), got $(repr(overrides[k]))"))
         end
     end)
