@@ -112,9 +112,13 @@ end
 # The gauge-pinned iteration still has convergence basins: which bootstrap tag lands in the good
 # basin is sensitive to sub-pixel corner noise (a 0.1 px difference flipped a real frame from 0.5 cm
 # to 35 cm), so we try EVERY tag as the bootstrap and keep the globally best result. On real footage
-# at least one bootstrap reaches sub-cm; `fail` throws if none does (non-coplanar / mis-detected
-# tags). Fit once per reference frame — the whole thing is a one-time few ms, not a per-frame cost.
-function fit_metric(tag_corners; canon = CANON, maxiter = 1000, tol = 1e-9, fail = 5.0)
+# at least one bootstrap reaches sub-cm. Fit once per reference frame — the whole thing is a
+# one-time few ms, not a per-frame cost.
+#
+# Returns `(M, worst_error)`: it computes, it does not decide. Whether that error is acceptable is
+# the caller's policy (see METRIC_FIT_TOLERANCE) — which is what lets `reference_frame` report a
+# non-converged fit as an issue string rather than having to catch a throw from in here.
+function fit_metric(tag_corners; canon = CANON, maxiter = 1000, tol = 1e-9)
     side = norm(canon[1] - canon[2])
     flat = reduce(vcat, tag_corners)
     bestM = homography_dlt(collect(tag_corners[1]), canon)
@@ -139,9 +143,14 @@ function fit_metric(tag_corners; canon = CANON, maxiter = 1000, tol = 1e-9, fail
             e = en
         end
     end
-    beste > fail && error("AprilTag metric fit did not converge (worst square error $(round(beste, digits=2)) > $fail; in the calibration's real units); tags may be non-coplanar or mis-detected")
-    return bestM
+    return bestM, beste
 end
+
+# Worst per-tag square error (in the calibration's real units) still accepted as a converged metric
+# fit; beyond it the tags are taken to be non-coplanar or mis-detected. The message lives here too,
+# so the throwing and the issue-string paths below word it identically.
+const METRIC_FIT_TOLERANCE = 5.0
+metric_fit_issue(err) = "AprilTag metric fit did not converge (worst square error $(round(err, digits = 2)) > $METRIC_FIT_TOLERANCE; in the calibration's real units); tags may be non-coplanar or mis-detected"
 
 # The reference frame: the tag ids (their order fixes the corner alignment used every frame), the
 # 16 reference-image corners, and the metric map `M : reference image → ground cm`.
@@ -151,8 +160,13 @@ struct ReferenceFrame
     M::SMatrix{3, 3, Float64}
 end
 
+# Direct construction from detected corners: this one throws on a non-converged fit, since a caller
+# building a reference frame by hand has nowhere to put an issue string. The pipeline entry point
+# (`reference_frame`) does the same check itself and returns the message instead.
 function ReferenceFrame(ids::AbstractVector{<:Integer}, tag_corners; kw...)
-    ReferenceFrame(collect(Int, ids), reduce(vcat, tag_corners), fit_metric(tag_corners; kw...))
+    M, err = fit_metric(tag_corners; kw...)
+    err > METRIC_FIT_TOLERANCE && error(metric_fit_issue(err))
+    ReferenceFrame(collect(Int, ids), reduce(vcat, tag_corners), M)
 end
 
 # ---- the shared reference as a rectification -------------------------------------------------
@@ -194,24 +208,43 @@ function read_frame_at(file, t)
 end
 
 # Establish the shared reference frame from the calibration's extrinsic frame: detect ≥ `ntags` tags
-# of `family`, take the `ntags` lowest ids, and fit the metric map from their known cell geometry
-# (`fit_metric` throws if the tags are not coplanar / were mis-detected).
+# of `family`, take the `ntags` lowest ids, and fit the metric map from their known cell geometry.
+#
+# Returns the `ReferenceFrame`, or a `String` describing why one could not be built — an unsupported
+# family, an unreadable frame, too few tags, corners that could not be re-read, or a metric fit that
+# did not converge. Every one of those is a fact about the calibration the user gave us, not an
+# exceptional condition, so it is reported rather than thrown: `apriltag_extrinsic_issue` can then
+# pass it straight to the gateway with no catch at all, while `ApriltagRectification` — which has
+# nowhere to put a message — turns it back into a throw.
 function reference_frame(file, extrinsic, ntags, family, checker_size)
+    valid_apriltag_family(family) ||
+        return "unknown AprilTag family \"$family\" (supported: $(join(APRIL_FAMILY_NAMES, ", ")))"
     # Serialize the WHOLE read + detect. Two separate hazards, both under the verification /
     # rectification-building `tmap` at high thread counts on a cold network share: the one-shot VideoIO
     # read (open+seek+read) races and returns garbled/wrong frames, and the AprilTag detector is not
     # reentrant. Reference building is one-time setup over a handful of calibs, so serializing it costs
     # essentially nothing. (Per-run tracking keeps concurrent decode; only its detection is serialized.)
     lock(APRILTAG_LOCK) do
-        img = read_frame_at(file, extrinsic)
+        # The only genuinely exceptional step: VideoIO reports an unreadable/corrupt file, and a
+        # seek past the end, as a plain ErrorException ("Could not open …: Invalid data found when
+        # processing input"), so that is as narrow as this gets — it still excludes the
+        # MethodError/BoundsError of a bug here and the InterruptException a bare catch would eat.
+        img = try
+            read_frame_at(file, extrinsic)
+        catch e
+            e isa ErrorException || e isa SystemError || e isa Base.IOError || rethrow()
+            return "could not read the extrinsic frame: $e"
+        end
         det = set_detector!(AprilTagDetector(april_family(family)))
         try
             tags = det(collect(img))                # already holding APRILTAG_LOCK
-            length(tags) ≥ ntags || error("only $(length(tags)) of $ntags AprilTags detected at the extrinsic frame")
+            length(tags) ≥ ntags || return "only $(length(tags)) of $ntags AprilTags detected at the extrinsic frame"
             ids = sort([t.id for t in tags])[1:ntags]
             tc = detect_tags(det, img, ids)         # re-enters the lock (re-entrant), fine
-            isnothing(tc) && error("could not read all $ntags AprilTag corners at the extrinsic frame")
-            ReferenceFrame(ids, tc; canon = canon_square(family, checker_size))
+            isnothing(tc) && return "could not read all $ntags AprilTag corners at the extrinsic frame"
+            M, err = fit_metric(tc; canon = canon_square(family, checker_size))
+            err > METRIC_FIT_TOLERANCE && return metric_fit_issue(err)
+            ReferenceFrame(collect(Int, ids), reduce(vcat, tc), M)
         finally
             freeDetector!(det)
         end
@@ -252,6 +285,10 @@ end
 # Build the AprilTag rectification from a verified `type = apriltag` calibs row.
 function ApriltagRectification(file, extrinsic, ntags, family, checker_size, center, north, width, height)
     ref = reference_frame(file, extrinsic, ntags, family, checker_size)
+    # Building a rectification has nowhere to put an issue string, so the report becomes a throw
+    # here. In the normal pipeline this is unreachable: VerifyRectifications ran
+    # apriltag_extrinsic_issue over the same arguments first and rejected the row.
+    ref isa String && error(ref)
     i2r = apriltag_image2real(ref.M, center, north, width, height)
     return ApriltagRectification(ref, april_family(family), i2r, reference_ratio(ref), width, height)
 end
@@ -262,15 +299,13 @@ const APRIL_FAMILY_NAMES = sort(collect(keys(APRIL_FAMILIES)))
 valid_apriltag_family(family) = haskey(APRIL_FAMILIES, family)
 
 # Does the extrinsic frame support a shared reference? Returns `nothing` on success or an issue
-# string (unreadable frame, too few tags, non-coplanar / mis-detected tags) — never throws, so it
-# composes with the gateway's other checks.
+# string (unreadable frame, too few tags, non-coplanar / mis-detected tags), so it composes with the
+# gateway's other checks. `reference_frame` already reports those as strings, so this is a plain
+# type test rather than a catch: what used to be exception-driven control flow is now the ordinary
+# return path, and a genuine error propagates instead of being reformatted as a calibration issue.
 function apriltag_extrinsic_issue(file, extrinsic, ntags, family, checker_size)
-    try
-        reference_frame(file, extrinsic, ntags, family, checker_size)
-        return nothing
-    catch e
-        return sprint(showerror, e)
-    end
+    ref = reference_frame(file, extrinsic, ntags, family, checker_size)
+    return ref isa String ? ref : nothing
 end
 
 # `register`: homography mapping the current frame's image to the reference image, from all 16

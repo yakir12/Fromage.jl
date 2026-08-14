@@ -10,7 +10,7 @@ using LinearAlgebra
 # the geometry is internal to the submodule; import the (non-exported) names directly
 using Fromage.PawsomeTracker: CANON, apply_h, homography_dlt, place_square, fit_metric,
     _worst_side, ReferenceFrame, register, ground_homography,
-    RegisteredWarp, build_stack, canvas2raw, Gray
+    RegisteredWarp, build_stack, canvas2raw, Gray, METRIC_FIT_TOLERANCE
 
 rot(θ) = SMatrix{2,2,Float64}(cos(θ), sin(θ), -sin(θ), cos(θ))    # proper 2D rotation
 
@@ -43,7 +43,8 @@ project(H) = [[apply_h(H, c) for c in tc] for tc in TAGS_CM]
     end
 
     @testset "fit_metric makes every tag a 96 cm square, jointly (not one tag)" begin
-        M = fit_metric(project(HMILD))
+        M, err = fit_metric(project(HMILD))
+        @test err < 1e-3                                             # converged
         @test _worst_side(M, project(HMILD)) < 1e-3                  # every tag metric
         # metric scale is correct: a known ground distance is recovered (gauge-invariant)
         a, b = CENTERS[1], CENTERS[3]
@@ -52,13 +53,16 @@ project(H) = [[apply_h(H, c) for c in tc] for tc in TAGS_CM]
     end
 
     @testset "robust under strong perspective (gauge-pinned consensus)" begin
-        @test _worst_side(fit_metric(project(HHARSH)), project(HHARSH)) < 0.1
+        @test _worst_side(first(fit_metric(project(HHARSH))), project(HHARSH)) < 0.1
     end
 
     @testset "non-coplanar / mis-detected tags fail loudly, not silently" begin
         bad = project(HMILD)                                         # tag 4 is a 150 cm square,
         bad[4] = [apply_h(HMILD, CENTERS[4] + rot(ANGLES[4]) * (c * 150/96)) for c in CANON]  # not 96
-        @test_throws ErrorException fit_metric(bad)
+        # fit_metric computes and reports; it no longer decides. The error it returns is well past
+        # the tolerance, and the direct constructor still turns that into a throw.
+        @test last(fit_metric(bad)) > METRIC_FIT_TOLERANCE
+        @test_throws ErrorException ReferenceFrame([0,1,2,3], bad)
     end
 
     @testset "registration is drone-motion invariant: one ground point, two frames" begin
