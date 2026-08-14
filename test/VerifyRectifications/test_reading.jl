@@ -38,6 +38,8 @@
         # a genuine .mat and a message otherwise. bad.mat ("this is not a mat file") fails the check.
         @test VRect.matlab_magic_issue(joinpath(DATADIR, ART.good_mat)) === nothing
         @test VRect.matlab_magic_issue(joinpath(DATADIR, ART.bad_mat))  isa String
+        # an unreadable path (here: absent) is a SystemError from `read`, reported as an issue
+        @test VRect.matlab_magic_issue(joinpath(DATADIR, "definitely_not_here.mat")) isa String
         # end-to-end: a non-mat file is flagged and has :matlab_file nulled (the source video :file is fine)
         df = check("r_mat_magic.csv", [matlabrow(matlab_file = ART.bad_mat)])
         @test flagged(df, 1, "missing \"MATLAB\" magic bytes")
@@ -95,6 +97,16 @@
                                        videorow(calibration_id = "v2", path = "./.", center = (9000, 9000))])
         @test flagged(df, 1, "center cannot be larger than the dimensions")
         @test flagged(df, 2, "center cannot be larger than the dimensions")
+    end
+
+    @testset "save_issue_frame is best-effort, but does not swallow interrupts" begin
+        # The frame reader is injected, so both failure kinds can be driven directly. A failed read
+        # must leave verification unharmed (nothing returned, nothing thrown)...
+        dir = joinpath(DATADIR, "issues_besteffort")
+        @test VRect.save_issue_frame(dir, "v.mp4", 1.0, () -> error("no frame")) === nothing
+        @test !isdir(dir)                       # nothing created when the frame never arrived
+        # ...while a Ctrl-C during the read propagates instead of being absorbed as a failed save.
+        @test_throws InterruptException VRect.save_issue_frame(dir, "v.mp4", 1.0, () -> throw(InterruptException()))
     end
 
     @testset "matlab without ImageSize is flagged" begin

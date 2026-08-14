@@ -84,9 +84,13 @@ const MATLAB_REQUIRED_KEYS = ("TranslationVectors", "RotationVectors", "RadialDi
 # opaque error. `read(file, 6)` opens the file and returns up to 6 bytes (fewer if the file is
 # shorter), so a too-short file simply fails the comparison.
 function matlab_magic_issue(file)
+    # Existence was already checked upstream, so what remains is a race or a permission problem:
+    # `read` reports both as SystemError/IOError. Anything else is not an unreadable file and is
+    # not this function's to describe.
     magic = try
         read(file, 6)
     catch e
+        e isa SystemError || e isa Base.IOError || rethrow()
         return "error reading matlab file: $e"
     end
     magic == codeunits("MATLAB") ? nothing : "file is not a matlab file (missing \"MATLAB\" magic bytes)"
@@ -259,7 +263,11 @@ function save_issue_frame(issues_dir, file, extrinsic, get_frame)
         path = joinpath(issues_dir, string(first(splitext(basename(file))), "_t", extrinsic, "s.png"))
         FileIO.save(path, image)
         return path
-    catch
+    catch e
+        # Deliberately broad: saving a diagnostic frame must never break verification, and the
+        # three steps above (frame read, mkpath, encode+write) fail in too many ways to enumerate
+        # usefully. An interrupt is not one of those failures — Ctrl-C must not be absorbed here.
+        e isa InterruptException && rethrow()
         return nothing
     end
 end
