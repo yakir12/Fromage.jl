@@ -236,21 +236,32 @@ end
 #     end
 # end
 
+# Errors raised inside a `tmap` come back wrapped in a TaskFailedException — but only when the
+# scheduler actually spawned a task, so the same failure arrives bare when the work ran inline (a
+# single-element batch, say). Both shapes have to be unwrapped to the original before classifying;
+# a narrowing that skipped this would silently stop catching under the threaded path.
+_unwrap_task(e) = e isa TaskFailedException ? _unwrap_task(e.task.result) :
+                  e isa CompositeException ? _unwrap_task(first(e.exceptions)) : e
+
+# What corner detection can legitimately fail with, as opposed to a bug here. Verified against the
+# real pipeline: the frame read raises ProcessFailedException/IOError/SystemError (see
+# Rectifications._read_frame, which already retried the transient ones); a seek that yields no frame
+# raises DimensionMismatch out of the reshape ("new dimensions … must be consistent with array
+# length 0"); and OpenCV reports every C++ error as a plain ErrorException. ErrorException is
+# therefore as narrow as this can honestly get — but it still excludes the MethodError/BoundsError
+# of a bug on our side, and the InterruptException a bare catch used to swallow.
+_detection_failure(e) = e isa ProcessFailedException || e isa Base.IOError || e isa SystemError ||
+                        e isa DimensionMismatch || e isa ErrorException
+
 function extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
-    mktempdir() do path
-        # to = CameraCalibrations.extract(extrinsic, file, path, blur)
-        # @show to
-        try
-            vf = _vf(yadif, blur)
-            res = get_corners(file, extrinsic, vf, width, height, n_corners)
-            if ismissing(res)
-                return "no corners detected"
-            else
-                return nothing
-            end
-        catch e
-            return "issue with corner detection: $e"
-        end
+    try
+        vf = _vf(yadif, blur)
+        res = get_corners(file, extrinsic, vf, width, height, n_corners)
+        return ismissing(res) ? "no corners detected" : nothing
+    catch e
+        err = _unwrap_task(e)
+        _detection_failure(err) || rethrow()
+        return "issue with corner detection: $err"
     end
 end
 
@@ -315,7 +326,11 @@ function intrinsic_issue(file, start, stop, temporal_step, yadif, blur, width, h
         end
         return "fewer than 3 frames with detectable corners in the calibs window"
     catch e
-        return "issue with corner detection in the calibs window: $e"
+        # the reads run under `tmap`, so unwrap before classifying (see _unwrap_task) — and report
+        # the original rather than a nested TaskFailedException dump
+        err = _unwrap_task(e)
+        _detection_failure(err) || rethrow()
+        return "issue with corner detection in the calibs window: $err"
     end
 end
 
@@ -453,9 +468,13 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = joinpath(
     verify!(df, f -> !PawsomeTracker.valid_apriltag_family(f), "family is not a supported AprilTag family (" * join(PawsomeTracker.APRIL_FAMILY_NAMES, ", ") * ")", :family)
     verify!(df, ∉(1:3), "radial_parameters must be 1, 2, or 3", :radial_parameters)
     verify!(df, <(0), "blur must be larger than or equal to zero", :blur)
-    # a checkerboard needs at least a 2×2 grid of inner corners: OpenCV's detector can't find a
-    # 1-wide pattern, and checker_size_pixel divides by 2·prod(n) − sum(n), which is 0 at (1, 1)
-    verify!(df, x -> any(<(2), x), "n_corners must all be at least 2", :n_corners)
+    # OpenCV's findChessboardCorners requires both pattern dimensions to be strictly bigger than 2
+    # ("(-211:One of the arguments' values is out of range) Both width and height of the pattern
+    # should have bigger than 2"), so the bound is ≥ 3. It was ≥ 2, which let an n_corners of
+    # (2, n) pass validation and then throw out of the detector below — a precondition worth
+    # checking here instead of catching there. (checker_size_pixel's 2·prod(n) − sum(n) divisor is
+    # also 0 at (1, 1), which this subsumes.)
+    verify!(df, x -> any(<(3), x), "n_corners must all be at least 3", :n_corners)
     verify!(df, <(0), "extrinsic must be larger than or equal to zero", :extrinsic)
     # strictly before: seeking at exactly the duration yields no frame at all
     verify!(df, (e, d) -> e ≥ d, "extrinsic must come before the video duration", :extrinsic, :duration)

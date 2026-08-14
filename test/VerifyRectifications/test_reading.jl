@@ -109,6 +109,33 @@
         @test_throws InterruptException VRect.save_issue_frame(dir, "v.mp4", 1.0, () -> throw(InterruptException()))
     end
 
+    @testset "corner-detection failures are classified, not caught blindly" begin
+        # What the real pipeline raises (see the _detection_failure comment): a seek yielding no
+        # frame, OpenCV's C++ errors, and the frame read itself.
+        @test VRect._detection_failure(DimensionMismatch("new dimensions"))
+        @test VRect._detection_failure(ErrorException("OpenCV(4.13.0) … findChessboardCorners"))
+        @test VRect._detection_failure(SystemError("open", 2))
+        # A bug here, or a Ctrl-C, is not a detection failure and must propagate.
+        @test !VRect._detection_failure(InterruptException())
+        @test !VRect._detection_failure(MethodError(identity, ()))
+        @test !VRect._detection_failure(BoundsError([1], 2))
+    end
+
+    @testset "task-wrapped failures are unwrapped before classifying" begin
+        # tmap wraps a failure in a TaskFailedException only when it actually spawned; the same
+        # error arrives bare when the work ran inline. Both shapes must reach the same verdict.
+        bare = ErrorException("boom")
+        wrapped = try fetch(Threads.@spawn error("boom")) catch e; e end
+        @test wrapped isa TaskFailedException
+        @test VRect._unwrap_task(wrapped) isa ErrorException
+        @test VRect._detection_failure(VRect._unwrap_task(wrapped))
+        @test VRect._unwrap_task(bare) === bare
+        @test VRect._unwrap_task(CompositeException([bare])) === bare
+        # an interrupt raised inside a task still refuses classification once unwrapped
+        interrupted = try fetch(Threads.@spawn throw(InterruptException())) catch e; e end
+        @test !VRect._detection_failure(VRect._unwrap_task(interrupted))
+    end
+
     @testset "matlab without ImageSize is flagged" begin
         # matlab_dimension guards findfirstkey(...) === nothing and returns the "does not contain any
         # image size" message instead of crashing when ImageSize is absent.
