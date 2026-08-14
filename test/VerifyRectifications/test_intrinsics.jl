@@ -21,6 +21,17 @@
         @test flagged(df, 1, "fewer than 3 frames with detectable corners")
     end
 
+    @testset "a throwing read is reported, not propagated" begin
+        # The gateway never reaches the window scan with an unreadable file — verify_intrinsics!
+        # skips rows already flagged, so the probe and extrinsic checks catch it first, which is
+        # exactly why this path has no end-to-end coverage. Call it directly: a throw out of
+        # get_corners must become an issue string rather than escape and kill the whole
+        # verification run. The reads run under tmap, so this exercises the unwrapping too.
+        issue = VRect.intrinsic_issue(joinpath(DATADIR, ART.corrupt), 0.0, 2.0, 1.0, missing, 0.0, 640, 480, (7, 10))
+        @test issue isa String
+        @test occursin("issue with corner detection in the calibs window", issue)
+    end
+
     @testset "rows that already failed the extrinsic check are not re-scanned" begin
         # video.mp4 has no corners anywhere: the extrinsic check flags it first, and the (expensive)
         # window scan must then skip the row instead of piling on a second issue.

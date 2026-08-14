@@ -38,11 +38,13 @@
         @test flagged(check("v_radial.csv", [videorow(radial_parameters = 4)]),   1, "radial_parameters must be 1, 2, or 3")
         @test flagged(check("v_radial0.csv",[videorow(radial_parameters = 0)]),   1, "radial_parameters must be 1, 2, or 3")
         @test flagged(check("v_blur.csv",   [videorow(blur = -1)]),               1, "blur must be larger than or equal to zero")
-        # a checkerboard needs at least 2×2 inner corners (a 1-wide pattern is undetectable and
-        # breaks the checker-size arithmetic), so the bound is ≥ 2, not merely > 0
-        @test flagged(check("v_ncorn.csv",  [videorow(n_corners = (0, 5))]),      1, "n_corners must all be at least 2")
-        @test flagged(check("v_ncorn1.csv", [videorow(n_corners = (1, 5))]),      1, "n_corners must all be at least 2")
-        @test flagged(check("v_ncorn11.csv",[videorow(n_corners = (1, 1))]),      1, "n_corners must all be at least 2")
+        # OpenCV's findChessboardCorners requires both pattern dimensions strictly bigger than 2, so
+        # the bound is ≥ 3. (2, n) used to pass validation and then throw out of the detector.
+        @test flagged(check("v_ncorn.csv",  [videorow(n_corners = (0, 5))]),      1, "n_corners must all be at least 3")
+        @test flagged(check("v_ncorn1.csv", [videorow(n_corners = (1, 5))]),      1, "n_corners must all be at least 3")
+        @test flagged(check("v_ncorn11.csv",[videorow(n_corners = (1, 1))]),      1, "n_corners must all be at least 3")
+        @test flagged(check("v_ncorn2.csv", [videorow(n_corners = (2, 5))]),      1, "n_corners must all be at least 3")
+        @test flagged(check("v_ncorn22.csv",[videorow(n_corners = (2, 2))]),      1, "n_corners must all be at least 3")
         @test flagged(check("v_step.csv",   [videorow(temporal_step = 0)]),       1, "temporal_step must be larger than zero")
         @test flagged(check("v_aspect0.csv",[videorow(aspect = 0)]),              1, "aspect must be larger than zero")
         @test flagged(check("v_aspectn.csv",[videorow(aspect = -1.2)]),           1, "aspect must be larger than zero")
