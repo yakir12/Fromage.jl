@@ -67,13 +67,16 @@ function matlab_dimension(dict)
         return "matlab file does not contain any image size; file might not be a calibration file"
     end
     imagesize = last(res)
-    try
-        length(imagesize) == 2 || return "matlab ImageSize is malformed (expected two values)"
-        height, width = imagesize
-        return (Int(width), Int(height))
-    catch
-        return "matlab ImageSize is malformed (expected two integers)"
-    end
+    # Every assumption about this `Any` is checked up front rather than by catching its failure:
+    # a two-element collection whose entries are exact integers (matlab stores them as Float64).
+    # The eltype guard is what makes `Int(width)` total — an InexactError on 1.5 was the throw the
+    # old catch existed for, and a two-character String would otherwise have destructured into
+    # character codepoints and returned a silently wrong dimension.
+    imagesize isa Union{AbstractArray, Tuple} || return "matlab ImageSize is malformed (expected two values)"
+    length(imagesize) == 2 || return "matlab ImageSize is malformed (expected two values)"
+    all(x -> x isa Real && isinteger(x), imagesize) || return "matlab ImageSize is malformed (expected two integers)"
+    height, width = imagesize
+    return (Int(width), Int(height))
 end
 
 # The fields CameraCalibrations.jl needs to build a calibration object from a matlab result file.
@@ -167,12 +170,11 @@ function matlab_extrinsic_count(dict)
     counts = Int[]
     for k in ("TranslationVectors", "RotationVectors")
         vecs = last(findfirstkey(dict, k))
-        n = try
-            size(vecs, 1)            # N×3 -> N poses
-        catch
-            return "matlab $k is malformed (expected an N×3 matrix)"
-        end
-        push!(counts, n)
+        # `size(vecs, 1)` is only meaningful for an array; a scalar, a string or a nested dict is a
+        # malformed field. Checking that up front is what the catch was standing in for — and it
+        # keeps the accepted shapes exactly as they were, since `size(v, 1)` worked for any array.
+        vecs isa AbstractArray || return "matlab $k is malformed (expected an N×3 matrix)"
+        push!(counts, size(vecs, 1))   # N×3 -> N poses
     end
     allequal(counts) || return "matlab TranslationVectors and RotationVectors disagree on the number of extrinsics"
     return first(counts)

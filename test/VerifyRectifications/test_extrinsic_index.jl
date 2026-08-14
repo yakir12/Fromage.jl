@@ -11,6 +11,21 @@
         @test VRect.matlab_extrinsic_count(MAT.matread(joinpath(DATADIR, ART.mismatch_mat))) isa String
     end
 
+    @testset "malformed pose vectors are flagged, never thrown" begin
+        # TranslationVectors/RotationVectors present but not an array at all: `size(v, 1)` has no
+        # meaning there, so the field is reported as malformed rather than throwing a MethodError.
+        for k in ("TranslationVectors", "RotationVectors")
+            p = joinpath(DATADIR, "badpose_$k.mat")
+            MAT.matwrite(p, merge(MATLAB_CALIB_FIELDS, Dict("ImageSize" => [480.0, 640.0], k => "nope")))
+            issue = VRect.matlab_extrinsic_count(MAT.matread(p))
+            @test issue isa String
+            @test occursin(k, issue)                 # names the offending field
+        end
+        # end-to-end: such a file is flagged and load_rectifications does not throw
+        @test flagged(check("ei_badpose.csv", [matlabrow(matlab_file = "badpose_TranslationVectors.mat")]),
+                      1, "expected an N×3 matrix")
+    end
+
     @testset "in-range index loads clean (both boundaries)" begin
         @test clean(check("ei_min.csv", [matlabrow(extrinsic_index = 1)]))                    # low boundary
         @test clean(check("ei_max.csv", [matlabrow(extrinsic_index = MATLAB_N_EXTRINSICS)]))  # high boundary (pins ≤ N)
