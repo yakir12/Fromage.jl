@@ -33,7 +33,7 @@ read_limit() = READ_SEM[].sem_size
 # interpolation into the surrounding `Cmd`. Unlike the deprecated `ffmpeg() do ... end` form it
 # never mutates the process-global `ENV`, so it composes safely under the nested `tmap`
 # concurrency — no snapshot, no `addenv`, no env race (which previously grew `LD_LIBRARY_PATH`
-# without bound until a spawn died with E2BIG). See `_cmd` / `_probe`.
+# without bound until a spawn died with E2BIG). See `_cmd`.
 
 function __init__()
     # Concurrency is bounded only by the share itself; benchmarks against the CIFS mount plateau

@@ -6,9 +6,9 @@ using DataFramesMeta: DataFramesMeta, @transform!, AbstractDataFrame, ByRow, Col
     DataFrame, Not, allowmissing!, dropmissing, groupby, nrow, passmissing, select!, subset
 using ..Parsing: Parsing, MyTemporal, parseto!
 import ..Parsing: mytryparse                # extended on MyWindow (a type this module owns)
-using FFMPEG: ffprobe
+using ..Probing: probe_fields
 using OhMyThreads: OhMyThreads, tmap
-using ..PawsomeTracker: PawsomeTracker, ApriltagRectification
+using ..PawsomeTracker: PawsomeTracker, ApriltagRectification, get_sigma
 import ..PawsomeTracker: track
 using PrecompileTools: @setup_workload, @compile_workload
 using ProgressMeter: ProgressMeter, @showprogress

@@ -1,5 +1,5 @@
 # Module-level state set up in __init__: the read-concurrency semaphore.
-# (The ffmpeg runtime env is no longer snapshotted — `_cmd`/`_probe` get it straight from the
+# (The ffmpeg runtime env is no longer snapshotted — `_cmd` gets it straight from the
 # env-baked `FFMPEG.ffmpeg()`/`ffprobe()` Cmds; see test_ffmpeg_cmd.jl.)
 
 @testset "module state" begin

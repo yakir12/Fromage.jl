@@ -66,12 +66,6 @@
         common = (extrinsic_t, start, stop, step, missing, missing, Wimg, Himg,
                   n_corners, checker_size, 1.0, 1)
 
-        @testset "_probe" begin
-            w, h, yadif = R._probe(vid)
-            @test (w, h) == (Wimg, Himg)
-            @test yadif === missing            # progressive clip ⇒ no deinterlace
-        end
-
         diag = mktempdir()
         # center = missing ⇒ defaults to the frame centre (the intended behaviour)
         rect = R.Rectification(vid, common..., missing, missing; diagnostic = diag)
