@@ -24,7 +24,20 @@ function make_checkerboard_video(path, png; duration = 5)
     path
 end
 
-make_corrupt_video(path) = (write(path, rand(UInt8, 500)); path)
+# A file ffprobe reliably refuses: the leading bytes of a real mp4, with the moov atom and all the
+# media data cut off. This used to be `rand(UInt8, 500)`, which made every corrupt-video test a dice
+# roll — roughly 1 random blob in 300 is recognised by ffprobe as some container, whereupon it exits
+# 0 and reports nothing usable rather than failing. That input is real and the code must handle it,
+# but it has no business arriving at random: it is now covered deliberately by the audio-only case
+# in test/probing.jl, while this fixture always exercises the outright-unreadable path.
+function make_corrupt_video(path)
+    mktempdir() do dir
+        whole = joinpath(dir, "whole.mp4")
+        make_video(whole; duration = 1, size = (64, 64), rate = 5)
+        write(path, read(whole)[1:500])
+    end
+    return path
+end
 
 # A disc whose display-space center follows x(N) = col − A·sin(0.5π·N/fps), y(N) = row (ffmpeg
 # 0-based coordinates, A = width/2.5), drawn by ffmpeg's geq expression at width×height square
