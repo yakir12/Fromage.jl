@@ -32,14 +32,19 @@ function probe_video(file)
     fields = probe_fields(file, "stream=width,height,r_frame_rate,sample_aspect_ratio:format=duration")
     fields isa String && return fields                 # unreadable file: pass the issue straight on
     # The four fields nothing downstream can proceed without (`fps` imputes the run's tracking rate
-    # when the csv leaves it blank). `tryparse` reports an absent or unparseable one as `nothing`,
-    # which becomes a precise issue rather than being misreported as a failed read.
+    # when the csv leaves it blank). `tryparse` reports an absent or unparseable one as `nothing`.
+    #
+    # Reaching here means ffprobe *succeeded* and still could not describe a video: it opened the
+    # file but `-select_streams v:0` matched nothing (an audio-only file), or it recognised some
+    # container in what is really junk. Both mean the same thing to the user — this is not a usable
+    # video — so it joins the "issue reading from video file" family rather than getting a message
+    # of its own, which would suggest our parsing broke rather than their file being bad.
     width    = tryparse(Int, get(fields, "width", ""))
     height   = tryparse(Int, get(fields, "height", ""))
     duration = tryparse(Float64, get(fields, "duration", ""))
     fps      = parse_framerate(get(fields, "r_frame_rate", ""))
     if isnothing(width) || isnothing(height) || isnothing(duration) || isnothing(fps)
-        return "malformed ffprobe output (missing or unparseable width/height/duration/frame rate)"
+        return "issue reading from video file: ffprobe reported no usable video stream (missing or unparseable width/height/duration/frame rate)"
     end
     # sar has a documented square-pixel fallback, so a missing one is not an error.
     return (; width, height, duration, fps, sar = parse_sar(get(fields, "sample_aspect_ratio", "1:1")))

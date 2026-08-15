@@ -209,12 +209,18 @@ function probe_video(file)
     fields = probe_fields(file, "stream=width,height,sample_aspect_ratio,field_order:format=duration")
     fields isa String && return fields                 # unreadable file: pass the issue straight on
     # The three fields nothing downstream can proceed without. `tryparse` reports an absent or
-    # unparseable one as `nothing`, which becomes a precise issue rather than a failed read.
+    # unparseable one as `nothing`.
+    #
+    # Reaching here means ffprobe *succeeded* and still could not describe a video: it opened the
+    # file but `-select_streams v:0` matched nothing (an audio-only file), or it recognised some
+    # container in what is really junk. Both mean the same thing to the user — this is not a usable
+    # video — so it joins the "issue reading from video file" family rather than getting a message
+    # of its own, which would suggest our parsing broke rather than their file being bad.
     width    = tryparse(Int, get(fields, "width", ""))
     height   = tryparse(Int, get(fields, "height", ""))
     duration = tryparse(Float64, get(fields, "duration", ""))
     if isnothing(width) || isnothing(height) || isnothing(duration)
-        return "malformed ffprobe output (missing or unparseable width/height/duration)"
+        return "issue reading from video file: ffprobe reported no usable video stream (missing or unparseable width/height/duration)"
     end
     # aspect and field order have documented fallbacks, so a missing one is not an error.
     return (; width, height, duration,

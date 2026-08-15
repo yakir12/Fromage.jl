@@ -13,8 +13,17 @@ const P = Fromage.Probing
     dir = mktempdir()
     vid = joinpath(dir, "v.mp4")
     FFMPEG.ffmpeg_exe(`-y -loglevel error -f lavfi -i testsrc=duration=1:size=320x240:rate=25 -pix_fmt yuv420p $vid`)
+    # Deterministically unreadable: a real mp4 with everything after the first 500 bytes cut off.
+    # (Random bytes were used here before — see make_corrupt_video in common.jl for why they are not.)
     corrupt = joinpath(dir, "c.mp4")
-    write(corrupt, rand(UInt8, 500))
+    whole = joinpath(dir, "whole.mp4")
+    FFMPEG.ffmpeg_exe(`-y -loglevel error -f lavfi -i testsrc=duration=1:size=64x64:rate=5 -pix_fmt yuv420p $whole`)
+    write(corrupt, read(whole)[1:500])
+
+    # Opens cleanly, but has no video stream at all: ffprobe exits 0 and reports only the container
+    # duration. This is the case that used to arrive by luck through a random fixture.
+    audio_only = joinpath(dir, "audio.m4a")
+    FFMPEG.ffmpeg_exe(`-y -loglevel error -f lavfi -i sine=frequency=440:duration=1 -c:a aac $audio_only`)
 
     @testset "a readable file yields its requested entries" begin
         f = P.probe_fields(vid, "stream=width,height:format=duration")
@@ -31,6 +40,22 @@ const P = Fromage.Probing
             issue = P.probe_fields(f, "stream=width")
             @test issue isa String
             @test startswith(issue, "issue reading from video file")   # the prefix both gateways flag on
+        end
+    end
+
+    @testset "a file with no video stream is reported, not mistaken for usable" begin
+        # ffprobe *succeeds* here — it opens the file and prints the container duration — so
+        # probe_fields correctly returns a dict, and it is the gateways that must notice no video
+        # stream was described. Both must say so in the same family as an outright failed read: to
+        # the user the file is simply not a usable video either way.
+        f = P.probe_fields(audio_only, "stream=width,height:format=duration")
+        @test f isa Dict{String, String}          # the probe itself did not fail...
+        @test !haskey(f, "width")                 # ...it just had no video stream to describe
+        for gateway in (Fromage.VerifyRectifications, Fromage.VerifyRuns)
+            issue = gateway.probe_video(audio_only)
+            @test issue isa String
+            @test startswith(issue, "issue reading from video file")
+            @test occursin("no usable video stream", issue)
         end
     end
 
