@@ -223,6 +223,46 @@ end
     @test maximum(abs((p - a)[1] * d[2] - (p - a)[2] * d[1]) for p in present) < 3
 end
 
+@testset "AprilTag: a segmented run, with one diagnostic spanning both segments" begin
+    # The vector `track` method's AprilTag branch had no coverage at all — every other AprilTag test
+    # drives the single-file method. That left the per-segment loop, the shared DiagnoseApriltag,
+    # `reduce(vcat, segs)` and the timestamp stitching untested; the field case is a long drone
+    # flight the camera split across files. Both segments are filmed over the same (stationary) tags,
+    # so one shared reference registers both, which is the premise of AprilTag mode.
+    dir = mktempdir()
+    vidA, groundA, slA, nA = make_apriltag_video(dir, "segA"; nframes = 40)
+    vidB, _, slB, nB = make_apriltag_video(dir, "segB"; nframes = 40)
+    fileA, fileB = joinpath(dir, vidA), joinpath(dir, vidB)
+    # the reference comes from segment A's extrinsic frame and serves both segments
+    rect = Fromage.PawsomeTracker.ApriltagRectification(fileA, 0.2, 4, "tag36h11", 8, missing, missing, 480, 480)
+
+    diag = joinpath(dir, "segmented.mp4")
+    sls = Vector{Union{Missing, NTuple{2, Int}}}([slA, slB])
+    ts, xy = Fromage.PawsomeTracker.track([fileA, fileB]; rectification = rect, start_location = sls,
+                                          target_width = 12, diagnostic_file = diag)
+
+    @test length(xy) == nA + nB                        # both segments, concatenated
+    @test length(ts) == length(xy)
+    # the stitched timestamps continue at the tracked rate across the join — the vector method
+    # rebuilds the range from the first segment's step, so a wrong step shows up only here
+    @test step(ts) ≈ 1 / 25 rtol = 1e-6
+    @test first(ts) == 0
+
+    # tags are visible throughout these fixtures, so every frame should have registered
+    @test count(ismissing, xy) == 0
+    # the coordinates are metric: the disc covers the same known ground distance in each segment,
+    # so both halves must span the same distance (checker_size = 8 ⇒ metric unit = ground px)
+    ground_disp = hypot((groundA[nA] .- groundA[1])...)
+    @test hypot((xy[nA] - xy[1])...) ≈ ground_disp rtol = 0.1
+    @test hypot((xy[end] - xy[nA + 1])...) ≈ ground_disp rtol = 0.1
+
+    # one diagnostic covers both segments and still plays at 2× real time over their combined
+    # duration — the contract that was never checked for a spanning diagnostic
+    @test isfile(diag) && filesize(diag) > 0
+    s = probe_stream(diag)
+    @test s.nframes / s.fps * 2 ≈ (nA + nB) / 25 rtol = 0.05
+end
+
 @testset "AprilTag calibration: failing extrinsic frame is dumped to the issues folder" begin
     # the video has four tags; asking for six fails detection at the extrinsic frame, and the frame
     # is dumped to the issues folder (pointed at a temp dir) for the user to inspect.
