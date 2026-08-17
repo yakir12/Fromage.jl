@@ -105,8 +105,6 @@ function get_guess(start_xy::NTuple{2, Int}, _, vid, _, _, _, _)
     return guess
 end
 
-# todo: when the scale is lower then the tracker fails
-
 function get_guess(::Missing, stack, vid, darker_target, target_width, initial_search_factor, subtract)
     # size the throwaway search Tracker from the stack itself, not the video: in AprilTag mode the
     # stack's canvas is the (scaled) reference viewport, which may differ from the run frame's
@@ -374,7 +372,8 @@ to the nearest rate reachable by skipping whole frames — `vid_fps / skip`; `ts
 rate actually used). Returns
 `(ts, coords)`: timestamps and the target's per-frame position. With a `rectification`, `coords`
 are **real-world** coordinates (the rectification's `image2real` applied); without one, they are
-raw `(row, col)` pixels in the original frame (`scale` only speeds tracking up; coordinates are
+raw `(row, col)` pixels in the original frame (`scale` trades precision for speed — see `scale` in
+the runs.csv docs; coordinates are
 always reported unscaled). An `ApriltagRectification` selects AprilTag mode (drone footage): every
 background-stack slice is lazily warped into the rectification's shared reference, so drone motion
 is removed at lookup time and tracking happens in a static scene; `coords` are metric ground

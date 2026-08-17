@@ -142,8 +142,17 @@ function verifications!(df::AbstractDataFrame, data_path)
     verify!(df, ≤(0), "scale must be larger than zero", :scale)
     # scale is a downsampling factor; > 1 would artificially enlarge the frames for no benefit.
     verify!(df, >(1), "scale cannot be larger than one", :scale)
-    # the tracker works in the scaled frame, so it is the *scaled* target width that must span at
+    # The tracker works in the scaled frame, so it is the *scaled* target width that must span at
     # least one pixel — each factor can be individually fine while their product is degenerate.
+    #
+    # This bound is what keeps a low `scale` from failing rather than merely coarsening. Measured on
+    # a clean synthetic disc (issue #24): accuracy decays smoothly as the scaled target shrinks —
+    # around 0.3% of target_width at scale 1, 0.7% at 0.25, 4% at 0.1 — and below a scaled width of
+    # roughly half a pixel the tracker stops finding the target at all, reporting positions hundreds
+    # of pixels away. It does NOT throw, so without this check the result would be a plausible-looking
+    # track of nothing. Note the check uses the *declared* target_width: over-declaring it permits a
+    # scale that is too small for the real target, which is one more reason target_width is the
+    # parameter worth measuring.
     verify!(df, (tw, sc) -> tw * sc < 1, "scaled target width (target_width × scale) is smaller than one pixel", :target_width, :scale)
     # 0 is a real mode (no background subtraction); 1–24 would make a background model too short
     # to model anything, and negatives are nonsense — the predicate covers both.
