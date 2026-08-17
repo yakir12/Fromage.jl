@@ -65,6 +65,15 @@ function get_framerate(file)
     parse(Rational{Int}, only(txt))
 end
 
+# The sampler advances whole frames, so the only rates it can deliver are `vid_fps / skip`; this is
+# the stride nearest a request, and the rate it therefore yields. Both the sampler (`Video`) and the
+# diagnostic writer derive from these — the writer declares a playback speed in terms of the rate its
+# frames actually arrive at, and computing that from the *requested* fps instead made the diagnostic
+# claim 2.67x real time at fps = 20 on 30 fps footage (#55). Keeping one definition is also what
+# stops the two drifting apart again.
+frame_skip(vid_fps, requested) = max(1, round(Int, vid_fps / min(requested, vid_fps)))
+effective_fps(vid_fps, requested) = vid_fps / frame_skip(vid_fps, requested)
+
 get_sigma(target_width) = target_width / 2sqrt(2log(2))
 
 function fix_window_size(wh::NTuple{2, Int}) 
@@ -129,7 +138,7 @@ struct Video
     function Video(file, fps, start, stop, scale)
         vid = open_gray_video(file)          # serialized open (openvideo isn't thread-safe); see OPENVIDEO_LOCK
         vid_fps = framerate(vid)
-        skip = max(1, round(Int, vid_fps / min(fps, vid_fps)))
+        skip = frame_skip(vid_fps, fps)
         fps = vid_fps / skip                 # the rate actually delivered; `fps` means this from here on
         img = read(vid)
         t₀ = gettime(vid)
@@ -401,12 +410,17 @@ function track(
     # `Missing` never reaches fix_window_size (which has no method for it).
     window_size = ismissing(window_size) ? round(Int, 2target_width) : window_size
 
+    # The diagnostic must declare the rate its frames actually arrive at, not the one requested: a
+    # non-divisor `fps` otherwise makes it claim the wrong playback speed (#55). The rate is only
+    # knowable from the video, hence the probe; `Video` derives the same stride from the same rule.
+    dia_fps = effective_fps(get_framerate(file), fps)
+
     # AprilTag mode (drone footage): the rectification carries the shared reference and detector
     # family; register out camera motion, track, and return metric ground coordinates with the
     # rectification's centre/north gauge applied. The DiagnoseApriltag (top-down rectified) is created
     # here and shared with track_apriltag.
     if rectification isa ApriltagRectification
-        dia = diagnose_apriltag(diagnostic_file, rectification.reference, darker_target, fps)
+        dia = diagnose_apriltag(diagnostic_file, rectification.reference, darker_target, dia_fps)
         ts, coords = try
             track_apriltag(file, start, stop, scale * target_width, start_location,
                 round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia,
@@ -419,7 +433,7 @@ function track(
         return (ts, _apply_image2real(rectification.image2real, coords))
     end
 
-    ts, coords = diagnose(diagnostic_file, darker_target, rectification, fps) do dia
+    ts, coords = diagnose(diagnostic_file, darker_target, rectification, dia_fps) do dia
         track_one(file, start, stop, scale*target_width, start_location, round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia, scale * initial_search_factor, white_point, scale, background_length)
     end
     # With a rectification, return the target in real-world coordinates (its `image2real` applied);
@@ -465,6 +479,13 @@ function track(
     # `missing` means "use the default", like a blank csv cell (see the single-file method).
     window_size = ismissing(window_size) ? round(Int, 2target_width) : window_size
 
+    # The diagnostic must declare the rate its frames actually arrive at, not the one requested: a
+    # non-divisor `fps` otherwise makes it claim the wrong playback speed (#55). The rate is only
+    # knowable from the video, hence the probe; `Video` derives the same stride from the same rule.
+    # Segments are assumed to share one native frame rate (see the note in runs.md), so the first
+    # one's is representative — as it already is for the `fps` default in this method's signature.
+    dia_fps = effective_fps(get_framerate(files[1]), fps)
+
     nfiles = length(files)
     tss = Vector{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}(undef, nfiles)
     args = zip(files, start, stop, start_location)
@@ -477,7 +498,7 @@ function track(
     # segments.
     if rectification isa ApriltagRectification
         segs = Vector{Vector{Union{Missing, RowCol}}}(undef, nfiles)
-        dia = diagnose_apriltag(diagnostic_file, rectification.reference, darker_target, fps)
+        dia = diagnose_apriltag(diagnostic_file, rectification.reference, darker_target, dia_fps)
         try
             for (i, (f, t_start, t_stop, loc)) in enumerate(args)
                 tss[i], segs[i] = track_apriltag(f, t_start, t_stop, scale * target_width, loc,
@@ -495,7 +516,7 @@ function track(
     end
 
     ijs = Vector{Vector{RowCol}}(undef, nfiles)
-    diagnose(diagnostic_file, darker_target, rectification, fps) do dia
+    diagnose(diagnostic_file, darker_target, rectification, dia_fps) do dia
         end_location = missing
         for (i, (f, t_start, t_stop, loc)) in enumerate(args)
             loc = coalesce(loc, end_location)

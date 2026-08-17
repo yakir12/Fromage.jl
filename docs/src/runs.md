@@ -65,6 +65,7 @@ long,afternoon,beetle03_b.mp4,0,00:01:03,
 ```
 
 - `file`, `start`, `stop`, and `start_location` are per segment; all other parameters (`target_width`, `fps`, `calibration_id`, …) must be identical across the segments of one run, and all segments must come from the same camera setup (same frame size).
+- The segments are assumed to have been **filmed at the same frame rate** — they are pieces of one continuous recording, so normally they are. This is not checked: if you give segments with different frame rates an explicit `fps`, each one is tracked at the nearest rate *its own* footage allows, and the diagnostic video's playback speed is derived from the first segment. Leave `fps` blank and mismatched segments are caught, because the rate is then read from each video and the segments must agree on it.
 - Leave `start_location` blank on the second segment onwards: tracking continues from where the previous segment ended.
 - `run_id` is all-or-nothing: as soon as one row has a `run_id`, every row needs one (rows with a `run_id` all of their own are ordinary single-video runs). If no row has one, each row is its own run.
 
