@@ -26,6 +26,14 @@ const DATADIR = mktempdir()
         @test tracking_rmse(ij, base_exp) < 1
     end
 
+    @testset "start_location's declared type is what is actually supported (#18)" begin
+        # CartesianIndex{2} sat in this union with no get_guess method behind it, so it type-checked
+        # at the call and then died with a MethodError once the video was open and the background
+        # stack built. Rejecting it at the keyword boundary names the expected type and costs nothing.
+        # If it is ever reinstated it needs a get_guess method — and this test to change with it.
+        @test_throws TypeError track(base_file; start_location = CartesianIndex(50, 55))
+    end
+
     @testset "defaults (frame-center start)" begin
         _, ij = track(base_file)
         @test tracking_rmse(ij, base_exp) < 1

@@ -43,7 +43,7 @@ beetle03.mp4,afternoon
 !!! note
     AprilTag drone tracking is configured entirely from `calibs.csv` — see [`type = apriltag`](calibs.md#Columns-for-type-apriltag) — so `runs.csv` has no `apriltags` column.
 
-!!! warning "Removed in v0.1.18"
+!!! warning "Removed in v0.1.19"
     The `white_point` column was accepted but never had any effect, so it has been removed. A `runs.csv` that still has the column is now rejected with `unrecognized column/s in runs file: [:white_point]` — delete the column and the file loads as before. Nothing about tracking changes, since the value was never read.
 
 !!! tip "The one parameter worth measuring: `target_width`"
