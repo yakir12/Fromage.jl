@@ -81,4 +81,34 @@
         @test df isa AbstractDataFrame
         @test flagged(df, 2, "file does not exist")
     end
+
+    @testset "imputing the start location leaves the run untouched (#23)" begin
+        # A `Run` describes what the csv said; tracking it must not rewrite it. The imputation used
+        # to assign into `r.start_locations` itself, so the first `track` baked its `center` into the
+        # run — and a later call with a *different* `center` then silently kept the first one, because
+        # the coalesce saw a non-missing first element.
+        # (`isequal`, not `==`: comparing vectors that contain `missing` yields `missing`.)
+        runs = check("seg_nomutate.csv", [runrow(run_id = "m", file = ART.a, start_location = missing),
+                                          runrow(run_id = "m", file = ART.b)])
+        r = only(runs)
+        @test r isa VR.MultiRun
+        before = copy(r.start_locations)
+        @test all(ismissing, before)                  # nothing to impute from the csv
+
+        sls = VR.impute_start_location(r, (7, 9))
+        @test sls[1] == (7, 9)                        # the caller gets the imputed vector...
+        @test ismissing(sls[2])                       # ...with later segments left alone
+        @test sls !== r.start_locations               # ...as a vector of its own
+        @test isequal(r.start_locations, before)      # and the run itself is unchanged
+
+        # so a second call is free to impute something else
+        sls2 = VR.impute_start_location(r, (11, 13))
+        @test sls2[1] == (11, 13)
+        @test isequal(r.start_locations, before)
+
+        # the frame-centre fallback (no centre given) must not write back either
+        sls3 = VR.impute_start_location(r, missing)
+        @test sls3[1] == VR.frame_center(r)
+        @test isequal(r.start_locations, before)
+    end
 end

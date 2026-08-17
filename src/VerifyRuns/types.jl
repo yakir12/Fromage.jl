@@ -129,9 +129,15 @@ function track(r::SingleRun; center = missing, rectification = nothing, kwargs..
     track(r.file; start = r.start, stop = r.stop, start_location, window_size = impute_window_size(r), shared_kw(r)..., rectification, kwargs...)
 end
 
+# The per-segment start locations with the first segment's fallbacks applied, as a vector `track` can
+# take. The `copy` is what makes this a query rather than an edit: assigning into `r.start_locations`
+# meant the first `track` wrote its `center` into the run, so a later call with a *different* `center`
+# silently kept the first one — the coalesce then saw a non-missing first element, and the
+# frame-centre fallback was unreachable too (#23). A `Run` describes what the csv said; tracking it
+# must leave it alone.
 function impute_start_location(r::MultiRun, center)
-    sls = r.start_locations
-    sls[1] = @coalesce r.start_locations[1] center frame_center(r)
+    sls = copy(r.start_locations)
+    sls[1] = @coalesce sls[1] center frame_center(r)
     return sls
 end
 
