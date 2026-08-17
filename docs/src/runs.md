@@ -41,7 +41,10 @@ beetle03.mp4,afternoon
 | `comment` | — | free text, ignored. |
 
 !!! note
-    The `white_point` column is accepted for compatibility but currently has **no effect**. AprilTag drone tracking is configured entirely from `calibs.csv` — see [`type = apriltag`](calibs.md#Columns-for-type-apriltag) — so `runs.csv` has no `apriltags` column.
+    AprilTag drone tracking is configured entirely from `calibs.csv` — see [`type = apriltag`](calibs.md#Columns-for-type-apriltag) — so `runs.csv` has no `apriltags` column.
+
+!!! warning "Removed in v0.1.18"
+    The `white_point` column was accepted but never had any effect, so it has been removed. A `runs.csv` that still has the column is now rejected with `unrecognized column/s in runs file: [:white_point]` — delete the column and the file loads as before. Nothing about tracking changes, since the value was never read.
 
 !!! tip "The one parameter worth measuring: `target_width`"
     Pause a run video on a frame where the animal is clearly visible, and measure how many pixels wide it is (many image viewers let you draw a selection box and read off its size). If the tracker keeps losing your animal, a wrong `target_width` is the first thing to check.

@@ -19,7 +19,7 @@ export load_runs
 # Every column maps onto a `PawsomeTracker.track` keyword, plus `run_id` (identity / segment grouping)
 # and `path` (path resolution). This is the full set of recognized CSV columns; anything else is
 # rejected as unrecognized.
-const COLUMNS = (:calibration_id, :comment, :run_id, :path, :file, :start, :stop, :target_width, :start_location, :window_size, :darker_target, :fps, :initial_search_factor, :white_point, :scale, :background_length)
+const COLUMNS = (:calibration_id, :comment, :run_id, :path, :file, :start, :stop, :target_width, :start_location, :window_size, :darker_target, :fps, :initial_search_factor, :scale, :background_length)
 
 include("types.jl")
 include("parsers.jl")

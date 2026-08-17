@@ -22,7 +22,6 @@ struct Source
     darker_target::Bool
     fps::Float64
     initial_search_factor::Float64
-    white_point::Float64
     scale::Float64
     background_length::Int
     width::Int
@@ -56,7 +55,7 @@ end
 function Source(g::AbstractDataFrame)
     width, height = g.dimension[1]
     Source(g.target_width[1], g.window_size[1], g.darker_target[1],
-        g.fps[1], g.initial_search_factor[1], g.white_point[1], g.scale[1],
+        g.fps[1], g.initial_search_factor[1], g.scale[1],
         g.background_length[1], width, height, g.sar[1])
 end
 
@@ -83,7 +82,7 @@ end
 # impute_window_size).
 function shared_kw(r::Run)
     s = r.source
-    (; s.target_width, s.darker_target, s.fps, s.initial_search_factor, s.white_point, s.scale, s.background_length)
+    (; s.target_width, s.darker_target, s.fps, s.initial_search_factor, s.scale, s.background_length)
 end
 
 # Drive `PawsomeTracker.track` from a verified run — the scalar method for a one-segment `SingleRun`,

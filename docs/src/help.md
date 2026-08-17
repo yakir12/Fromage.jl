@@ -60,7 +60,7 @@ main("path/to/data";
 ```
 
 - `rectification_defaults` may set: `checker_size`, `n_corners`, `temporal_step`, `radial_parameters`, `blur`, `yadif`.
-- `tracking_defaults` may set: `target_width`, `window_size`, `darker_target`, `fps`, `initial_search_factor`, `white_point`, `scale`.
+- `tracking_defaults` may set: `target_width`, `window_size`, `darker_target`, `fps`, `initial_search_factor`, `scale`, `background_length`.
 
 Anything else (identities, file names, timestamps, `start_location`/`center`/`north`) is per-row only, and an unrecognized or unconvertible entry is rejected with an error before anything runs. Global values pass through the same validation as csv cells — e.g. a global `fps` must still not exceed each video's own frame rate. `only_rectify` and `only_track` accept their respective keyword (`rectification_defaults` / `tracking_defaults`).
 

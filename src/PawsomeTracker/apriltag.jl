@@ -524,7 +524,7 @@ diagnose_apriltag(file::AbstractString, ref, darker_target, fps) = DiagnoseApril
 # reference frame's (rows, cols) — the run may have a different resolution. `dia` is a
 # `DiagnoseApriltag`/`Dont` created (and closed) by the caller — shared across a run's segments.
 function track_apriltag(file, start, stop, target_width, start_location, window_size, darker_target,
-                        fps, dia, ref::ReferenceFrame, family, ref_sz, initial_search_factor, white_point, scale, background_length)
+                        fps, dia, ref::ReferenceFrame, family, ref_sz, initial_search_factor, scale, background_length)
     ids = ref.ids
     ntags = length(ids)
     video(file, fps, start, stop, scale) do vid

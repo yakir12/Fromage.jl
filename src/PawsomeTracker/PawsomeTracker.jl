@@ -348,7 +348,7 @@ function track!(coords, stack, guess, tr, vid, dia)
     end
 end
 
-function track_one(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia, initial_search_factor, white_point, scale, background_length)
+function track_one(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia, initial_search_factor, scale, background_length)
     video(file, fps, start, stop, scale) do vid
         update_ratio!(dia, size(vid.img))
         subtract = background_length != 0
@@ -401,7 +401,6 @@ function track(
         diagnostic_file::Union{Nothing, AbstractString} = nothing,
         initial_search_factor::Real=4,
         scale::Real = 1,
-        white_point::Real = 1,
         background_length::Integer = DEFAULT_BACKGROUND_LENGTH,
         rectification = nothing # rectification object
     )
@@ -426,7 +425,7 @@ function track(
                 round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia,
                 rectification.reference, rectification.family,
                 (rectification.height, rectification.width), scale * initial_search_factor,
-                white_point, scale, background_length)
+                scale, background_length)
         finally
             close(dia)
         end
@@ -434,7 +433,7 @@ function track(
     end
 
     ts, coords = diagnose(diagnostic_file, darker_target, rectification, dia_fps) do dia
-        track_one(file, start, stop, scale*target_width, start_location, round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia, scale * initial_search_factor, white_point, scale, background_length)
+        track_one(file, start, stop, scale*target_width, start_location, round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia, scale * initial_search_factor, scale, background_length)
     end
     # With a rectification, return the target in real-world coordinates (its `image2real` applied);
     # without one, the raw pixel track.
@@ -469,7 +468,6 @@ function track(
         diagnostic_file::Union{Nothing, AbstractString} = nothing,
         initial_search_factor::Real = 4,
         scale::Real = 1,
-        white_point::Real = 1, # clamped linear rescaling
         background_length::Integer = DEFAULT_BACKGROUND_LENGTH,
         rectification = nothing
     )
@@ -505,7 +503,7 @@ function track(
                     round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia,
                     rectification.reference, rectification.family,
                     (rectification.height, rectification.width), scale * initial_search_factor,
-                    white_point, scale, background_length)
+                    scale, background_length)
             end
         finally
             close(dia)
@@ -520,7 +518,7 @@ function track(
         end_location = missing
         for (i, (f, t_start, t_stop, loc)) in enumerate(args)
             loc = coalesce(loc, end_location)
-            tss[i], ijs[i] = track_one(f, t_start, t_stop, scale*target_width, loc, round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia, scale * initial_search_factor, white_point, scale, background_length)
+            tss[i], ijs[i] = track_one(f, t_start, t_stop, scale*target_width, loc, round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia, scale * initial_search_factor, scale, background_length)
             end_location = ijs[i][end]
         end
     end
