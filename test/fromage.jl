@@ -148,6 +148,39 @@ end
     @test filesize(diag) > 0
 end
 
+@testset "an id filter that matches nothing is reported, not obeyed silently (#21)" begin
+    # Filtering by id is a convenience for iterating on one run; an id that matches nothing is a
+    # typo, not a request for less. Unchecked, a total miss emptied the pipeline and only failed at
+    # the very end, when ffmpeg's concat demuxer was handed a zero-entry list — reported as
+    # "Error opening input: Invalid data found when processing input", which points at the footage
+    # rather than the filter. A PARTIAL miss was worse: it silently tracked fewer runs than asked,
+    # with no error at all.
+    dir = mktempdir()
+    make_video(joinpath(dir, "cal.mp4"); size = (320, 240), duration = 2)
+    target, _ = make_target_video(dir, "idf")
+    open(joinpath(dir, "calibs.csv"), "w") do io
+        println(io, "calibration_id,type,file,extrinsic,scale")
+        println(io, "c1,only_scale,cal.mp4,1,2")
+    end
+    open(joinpath(dir, "runs.csv"), "w") do io
+        println(io, "run_id,calibration_id,file,start_location")
+        println(io, "r1,c1,$(only(target)),\"(55, 50)\"")
+    end
+    outdir = mktempdir()
+
+    # a total miss: named, and nothing about ffmpeg
+    @test_throws "r_typo" cd(() -> main(dir; run_ids = ["r_typo"]), outdir)
+    # a partial miss is an error too — strict, because a mistyped id is never intentional
+    @test_throws "r_typo" cd(() -> main(dir; run_ids = ["r1", "r_typo"]), outdir)
+    # the message says which ids exist, so the typo is obvious
+    @test_throws "r1" cd(() -> main(dir; run_ids = ["r_typo"]), outdir)
+    # both partial-pipeline helpers, which returned an empty vector with no error at all
+    @test_throws "r_typo" cd(() -> Fromage.only_track(dir; run_ids = ["r_typo"]), outdir)
+    @test_throws "c_typo" cd(() -> Fromage.only_rectify(dir; calibration_ids = ["c_typo"]), outdir)
+    # and a filter that does match still works
+    @test nrow(cd(() -> main(dir; run_ids = ["r1"], tracking_defaults = (target_width = 10,)), outdir)) == 1
+end
+
 @testset "Fromage end-to-end: AprilTag drone tracking" begin
     # The whole AprilTag path through `main`: a `type = apriltag` calibs row builds the shared
     # reference from the extrinsic frame; the run registers each frame to it (cancelling the drone
