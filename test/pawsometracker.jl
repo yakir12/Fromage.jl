@@ -115,6 +115,29 @@ const DATADIR = mktempdir()
         @test (s.width, s.height) == (640, 360)     # the fixed unrectified canvas
         @test s.nframes == 25
         @test s.fps ≈ 25
+        # the contract as a property of the file itself: playing it takes real_duration/SPEEDUP
+        @test s.nframes / s.fps * 2 ≈ 2 rtol = 0.01
+    end
+
+    @testset "diagnostic playback speed holds for a non-divisor fps (#55)" begin
+        # The check above only covers a divisor rate, where requested == effective and the bug is
+        # invisible. The diagnostic declares its framerate from the fps it is handed, so handing it
+        # the *requested* rate made it claim the wrong speed: measured on this fixture before the
+        # fix, fps = 20 declared 2.67× and fps = 12 declared 1.6×, against a contract of 2×.
+        v30, _ = make_target_video(DATADIR, "diag_fps30"; fps = 30, duration = 2)
+        f30 = joinpath(DATADIR, only(v30))
+        for requested in (30, 25, 20, 12)
+            df = joinpath(DATADIR, "diag_$requested.mp4")
+            track(f30; fps = requested, start_location = (55, 50), target_width = 10,
+                  diagnostic_file = df)
+            s = probe_stream(df)
+            @testset "fps = $requested" begin
+                @test s.nframes > 0
+                # playback duration × speedup == the real duration it covers, whatever rate the
+                # sampler actually delivered
+                @test s.nframes / s.fps * 2 ≈ 2 rtol = 0.01
+            end
+        end
     end
 end
 
