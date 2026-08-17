@@ -77,6 +77,20 @@
         @test tracking_rmse(ij, base_exp) < 1
     end
 
+    @testset "the smallest permitted scale still finds the target (#24)" begin
+        # The `target_width × scale ≥ 1` guard exists to stop a scale so low that the tracker loses
+        # the target silently — measured, it reports positions hundreds of pixels off without ever
+        # throwing. The rejection side is covered in test_values.jl; this is the guarantee the guard
+        # is *for*: right at the boundary the target is still found. base is a 10 px disc, so scale
+        # 0.1 is the smallest legal value (a 10×10 working frame). The tolerance is deliberately
+        # loose — precision at the boundary is inherently about 1/scale — so this asserts the track
+        # stays within the target's own radius, i.e. still on the disc rather than wandering.
+        runs = check("t_scale_min.csv", [runrow(file = only(base), target_width = "10", scale = "0.1")])
+        @test clean(runs)
+        _, ij = VR.track(only(runs))
+        @test tracking_rmse(ij, base_exp) < 5
+    end
+
     @testset "anamorphic (sar ≠ 1)" begin
         for (slug, label, files, exp) in (("sar05", "sar 1/2 (stored 200×100)", sar05, sar05_exp),
                                           ("sar2",  "sar 2 (stored 50×100)",    sar2,  sar2_exp))
