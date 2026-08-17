@@ -80,6 +80,21 @@
         @test !flagged(df, 1, "is not used by type")
     end
 
+    @testset "a filled comment is free text, not an irrelevant column" begin
+        # No type parser consumes `comment` — it is free text and data-folder.md promises it is
+        # ignored — so it looked exactly like a wrong-type column and made a filled comment a hard
+        # error under the default strict mode. It must be accepted on every type.
+        note = "measured the board twice; second run looked better"
+        @test clean(check("p_com_vid.csv", [videorow(comment = note)]))
+        @test clean(check("p_com_mat.csv", [matlabrow(comment = note)]))
+        @test clean(check("p_com_sc.csv",  [scalerow(comment = note)]))
+        # a comment on one row of a mixed-type file, blank on the others, is also fine
+        @test clean(check("p_com_mix.csv", [videorow(), matlabrow(comment = note), scalerow()]))
+        # and the check it was caught by still works — the exemption is for `comment` alone
+        @test flagged(check("p_com_still.csv", [videorow(comment = note, scale = 9.5)]),
+                      1, "scale is not used by type video")
+    end
+
     @testset "north without center" begin
         # verify_center2north is called from a separate branch of parse_row per type; assert all three
         # call sites, not just video (the matlab/only_scale wiring was the original 2.1 bug).
