@@ -96,7 +96,7 @@ end
 # missing) is true). All but `calibration_id` (run metadata) and `dimension`/`sar` (the ffprobe-read
 # pixel width/height and sample aspect ratio, not CSV columns) feed `track`.
 const SHARED_PARAMS = (:target_width, :window_size, :darker_target, :fps,
-    :initial_search_factor, :white_point, :scale, :background_length, :calibration_id, :dimension, :sar)
+    :initial_search_factor, :scale, :background_length, :calibration_id, :dimension, :sar)
 
 # A run may be split across several CSV rows (one per segment video) sharing a :run_id. Those rows
 # must agree on every run-level parameter — only file/start/stop/start_location may vary. Compared
@@ -139,7 +139,6 @@ function verifications!(df::AbstractDataFrame, data_path)
     # track downsamples via round(video_fps/fps) - 1, so a requested fps above the video's own rate is nonsensical.
     verify!(df, (f, vf) -> f > vf, "fps cannot exceed the video frame rate", :fps, :video_fps)
     verify!(df, ≤(0), "initial_search_factor must be larger than zero", :initial_search_factor)
-    verify!(df, ≤(0), "white_point must be larger than zero", :white_point)
     verify!(df, ≤(0), "scale must be larger than zero", :scale)
     # scale is a downsampling factor; > 1 would artificially enlarge the frames for no benefit.
     verify!(df, >(1), "scale cannot be larger than one", :scale)

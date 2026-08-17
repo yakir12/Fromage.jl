@@ -24,7 +24,6 @@ const DEFAULTS = (;
     darker_target = true,
     fps = missing,
     initial_search_factor = 4.0,
-    white_point = 1.0,
     scale = 1.0,
     background_length = PawsomeTracker.DEFAULT_BACKGROUND_LENGTH,
 )
@@ -35,7 +34,6 @@ const DEFAULT_TYPES = (;
     darker_target = Bool,
     fps = Float64,
     initial_search_factor = Float64,
-    white_point = Float64,
     scale = Float64,
     background_length = Int,
 )
@@ -60,7 +58,6 @@ function parse_run!(dict, row, defaults)
     parseto!(dict, row, :darker_target, Bool, defaults.darker_target)
     parseto!(dict, row, :fps, Float64, defaults.fps)             # imputed from video framerate when missing
     parseto!(dict, row, :initial_search_factor, Float64, defaults.initial_search_factor)
-    parseto!(dict, row, :white_point, Float64, defaults.white_point)
     parseto!(dict, row, :scale, Float64, defaults.scale)
     parseto!(dict, row, :background_length, Int, defaults.background_length)
 end

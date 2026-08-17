@@ -14,4 +14,14 @@
         csv = write_csv(joinpath(DATADIR, "badcol.csv"), [["x", "y"]]; header = ["run_id", "foo"])
         @test_throws "unrecognized column" VR.load_runs(DATADIR, csv)
     end
+
+    @testset "the removed white_point column is now rejected by name (#19)" begin
+        # It was accepted and validated but never read, so it was removed rather than implemented.
+        # A csv that still carries it is rejected up front, naming the column — the migration is
+        # deleting it, and nothing about tracking changes, since the value never reached the tracker.
+        csv = write_csv(joinpath(DATADIR, "wp_removed.csv"), [["c1", "a.mp4", "1.0"]];
+                        header = ["calibration_id", "file", "white_point"])
+        @test_throws "unrecognized column" VR.load_runs(DATADIR, csv)
+        @test_throws "white_point" VR.load_runs(DATADIR, csv)
+    end
 end

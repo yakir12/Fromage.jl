@@ -16,7 +16,6 @@
         @test flagged(check("v_win.csv",  [runrow(window_size = "0")]),             1, "window_size must be larger than zero")
         @test flagged(check("v_wint.csv", [runrow(window_size = "(0, 5)")]),        1, "window_size must be larger than zero")
         @test flagged(check("v_isf.csv",  [runrow(initial_search_factor = "0")]),   1, "initial_search_factor must be larger than zero")
-        @test flagged(check("v_wp.csv",   [runrow(white_point = "0")]),             1, "white_point must be larger than zero")
     end
 
     @testset "scale must be in (0, 1]" begin
