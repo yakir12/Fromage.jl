@@ -36,6 +36,24 @@ function save2csv(run_id, (ts, coords))
     end
 end
 
+# Keep only the entries whose `id` field was asked for, and reject any requested id that matched
+# nothing. Filtering by id is a convenience for iterating on one run or calibration, so an id that
+# matches nothing is a typo rather than a request for less — and left unchecked it failed in two
+# unhelpful ways (#21). A total miss emptied the pipeline and only surfaced at the very end, when
+# `concatenate` handed ffmpeg's concat demuxer a zero-entry list: reported as "Error opening input:
+# Invalid data found when processing input", which points at the footage rather than at the filter.
+# A PARTIAL miss was quieter and worse — it simply processed fewer runs than asked for, with no error
+# at all, so nothing prompted the user to look. Hence the strict rule: every requested id must match.
+function filter_ids!(xs, requested, id, what)
+    isnothing(requested) && return xs
+    available = [getfield(x, id) for x in xs]
+    unmatched = setdiff(requested, available)
+    if !isempty(unmatched)
+        error("unknown $id(s) in `$(what)`: $(sort(unmatched)). Available $(id)s: $(sort(available))")
+    end
+    return filter!(x -> getfield(x, id) ∈ requested, xs)
+end
+
 # `rectification_defaults`/`tracking_defaults` globally replace the hardcoded defaults of the
 # tuning parameters (e.g. `rectification_defaults = (n_corners = (5, 8), blur = 0)`,
 # `tracking_defaults = (target_width = 60,)`). The hierarchy is: csv cell → these kwargs → the
@@ -53,9 +71,7 @@ function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.c
     cs = load_rectifications(joinpath(data_path, calibs_file); defaults = rectification_defaults, issues_dir = joinpath(results_dir, "issues"))::Vector{RectificationMethod}
     rs = load_runs(joinpath(data_path, runs_file); defaults = tracking_defaults)::Vector{Run}
 
-    if !isnothing(run_ids)
-        filter!(r -> r.run_id ∈ run_ids, rs)
-    end
+    filter_ids!(rs, run_ids, :run_id, "run_ids")
 
     run_calib_ids = [r.calibration_id for r in rs]
     filter!(c -> c.calibration_id ∈ run_calib_ids, cs)
@@ -91,9 +107,7 @@ function only_track(data_path::String; runs_file = "runs.csv", tracking_defaults
 
     rs = load_runs(joinpath(data_path, runs_file); defaults = tracking_defaults)::Vector{Run}
 
-    if !isnothing(run_ids)
-        filter!(r -> r.run_id ∈ run_ids, rs)
-    end
+    filter_ids!(rs, run_ids, :run_id, "run_ids")
 
     runs = @showprogress desc = "Building runs" tmap((i, r) -> track(r; diagnostic_file = joinpath(results_dir, "$i.mp4")), 1:length(rs), rs)
 
@@ -105,9 +119,7 @@ function only_rectify(data_path::String; calibs_file = "calibs.csv", rectificati
 
     cs = load_rectifications(joinpath(data_path, calibs_file); defaults = rectification_defaults, issues_dir = joinpath(results_dir, "issues"))::Vector{RectificationMethod}
 
-    if !isnothing(calibration_ids)
-        filter!(c -> c.calibration_id ∈ calibration_ids, cs)
-    end
+    filter_ids!(cs, calibration_ids, :calibration_id, "calibration_ids")
 
     calibs = @showprogress desc = "Building rectifications" tmap(Rectification, cs)
 

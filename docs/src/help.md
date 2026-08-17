@@ -47,7 +47,7 @@ Fromage.only_rectify("path/to/data"; calibs_file = "calibs.csv", calibration_ids
 Fromage.only_track("path/to/data"; runs_file = "runs.csv", run_ids = ["run1", "long"])
 ```
 
-`main` itself also accepts `run_ids` to process only a subset of the runs (only the calibrations those runs reference are built).
+`main` itself also accepts `run_ids` to process only a subset of the runs (only the calibrations those runs reference are built). Every id you list must exist: if even one does not, the run stops with an error naming it and listing the ids that do exist, rather than quietly processing the ones that matched.
 
 ## Changing a default for all rows at once
 
