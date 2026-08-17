@@ -394,7 +394,13 @@ function track(
         start::Real = 0,
         stop::Real = get_duration(file),
         target_width::Real = 25,
-        start_location::Union{Missing, NTuple{2, Int}, CartesianIndex{2}} = missing,
+        # `CartesianIndex{2}` was in this union with no `get_guess` method behind it, so it
+        # type-checked at the call and then failed with a MethodError once the video was already
+        # open (#18). The union is now exactly what is supported. `RowCol` is absent on purpose
+        # despite having a method: that is the internal form a *later* segment's start takes in the
+        # vector method, carried over from the previous segment's last coordinate — not something a
+        # caller supplies here.
+        start_location::Union{Missing, NTuple{2, Int}} = missing,
         window_size::Union{Missing, Int, NTuple{2, Int}} = round(Int, 2target_width),
         darker_target::Bool = true,
         fps::Real = get_framerate(file),
