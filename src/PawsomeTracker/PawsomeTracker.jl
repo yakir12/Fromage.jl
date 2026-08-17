@@ -121,18 +121,30 @@ struct Video
     fps::Float64
     sar::Rational
 
+    # `fps` is a request, not a promise: the sampler advances whole frames, so the only rates it can
+    # deliver are `vid_fps / skip`. The sample count and every timestamp are derived from that
+    # EFFECTIVE rate, never from the request. Deriving them from the request instead is what made a
+    # non-divisor `fps` either overrun the video or label the track with times its frames were never
+    # taken at (issues #15 and #17).
     function Video(file, fps, start, stop, scale)
         vid = open_gray_video(file)          # serialized open (openvideo isn't thread-safe); see OPENVIDEO_LOCK
         vid_fps = framerate(vid)
-        fps = min(fps, vid_fps)
-        skip = round(Int, vid_fps / fps)
+        skip = max(1, round(Int, vid_fps / min(fps, vid_fps)))
+        fps = vid_fps / skip                 # the rate actually delivered; `fps` means this from here on
         img = read(vid)
         t₀ = gettime(vid)
         height, width = size(img)
         tform = LinearMap(1/scale)
         height, width = size(WarpedView(Array{Gray{Float32}}(undef, size(img)...), tform; fillvalue = zero(Gray{Float32})))
         seek(vid, start + t₀)
-        nframes = round.(Int, fps*(stop - start))
+        # Frames the window holds at the video's own rate, then how many of them the stride visits.
+        # Sample i reads raw frame (i-1)*skip, and `cld` is exactly the count keeping that index
+        # inside the window — cld(n, s) == fld(n - 1, s) + 1 — so the reads cannot run off the end.
+        # The epsilon absorbs a duration that computes to 59.999999996 rather than 60; the `max`
+        # keeps a window shorter than one frame period yielding the single frame `seek` lands on,
+        # as it did before.
+        navailable = max(1, floor(Int, (stop - start) * vid_fps + 1e-9))
+        nframes = cld(navailable, skip)
         sar = aspect_ratio(vid)
         new(vid, img, skip, nframes, scale, width, height, stop - start, fps, sar)
     end
@@ -336,7 +348,10 @@ function track_one(file, start, stop, target_width, start_location, window_size,
         coords = Vector{RowCol}(undef, vid.nframes)
         guess = get_guess(start_location, stack, vid, darker_target, target_width, initial_search_factor, subtract)
         track!(coords, stack, guess, tr, vid, dia)
-        return (range(start, stop, vid.nframes), coords)
+        # sample i is raw frame (i-1)*skip, i.e. start + (i-1)/effective_fps. Spreading the
+        # samples over [start, stop] instead pinned the last one to `stop`, stretching every
+        # timestamp by up to a frame period even when `fps` divided the rate evenly (#17).
+        return (range(start; step = 1 / vid.fps, length = vid.nframes), coords)
     end
 end
 
@@ -345,7 +360,9 @@ end
           darker_target, fps, diagnostic_file, rectification, scale, …)
 
 Use a Difference of Gaussian (DoG) filter to track a target in the video `file` between `start`
-and `stop` seconds, sampling `fps` frames per second (capped at the video's own rate). Returns
+and `stop` seconds, sampling `fps` frames per second (capped at the video's own rate, and rounded
+to the nearest rate reachable by skipping whole frames — `vid_fps / skip`; `ts` always describes the
+rate actually used). Returns
 `(ts, coords)`: timestamps and the target's per-frame position. With a `rectification`, `coords`
 are **real-world** coordinates (the rectification's `image2real` applied); without one, they are
 raw `(row, col)` pixels in the original frame (`scale` only speeds tracking up; coordinates are

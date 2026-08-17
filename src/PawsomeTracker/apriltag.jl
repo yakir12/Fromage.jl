@@ -623,7 +623,8 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
                 subtract && restore_background!(stack, j, protect, keep)
             end
 
-            return (range(start, stop, n), coords)
+            # labeled from the effective rate, as in track_one (see the Video constructor)
+            return (range(start; step = 1 / vid.fps, length = n), coords)
         finally
             foreach(freeDetector!, dets)
         end

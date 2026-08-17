@@ -37,6 +37,39 @@ const DATADIR = mktempdir()
         @test tracking_rmse(ij, base_exp; skip = 2) < 1
     end
 
+    @testset "timestamps are the true times of the sampled frames (#15, #17)" begin
+        # The sampler can only stride whole frames, so the rates it can actually deliver are
+        # vid_fps/k. A requested fps in between must still yield a self-consistent track: sample i
+        # is raw frame (i-1)*skip, so its timestamp must be start + (i-1)*skip/vid_fps — no more
+        # frames than the video holds, and no timestamp implying a frame that was never read.
+        v30, _ = make_target_video(DATADIR, "pt_fps30"; fps = 30, duration = 2)
+        f30 = joinpath(DATADIR, only(v30))
+        meta = probe_stream(f30)
+        @test meta.nframes == 60                      # the fixture the cases below assume
+        @test meta.fps == 30
+
+        for requested in (30, 25, 20, 17, 12)
+            skip = max(1, round(Int, meta.fps / requested))   # the stride the sampler can use
+            effective = meta.fps / skip                       # the rate it therefore delivers
+            ts, ij = track(f30; fps = requested, start_location = (55, 50), target_width = 10)
+
+            @testset "fps = $requested (skip $skip, effective $(round(effective, digits = 2)))" begin
+                # must not run off the end of the video: #15's fps = 20 threw "Could not scale
+                # frame". Sample i reads raw frame (i-1)*skip, so it is that index — not the
+                # product of the count and the stride — which has to stay inside the video.
+                @test (length(ij) - 1) * skip < meta.nframes
+                @test length(ts) == length(ij)
+                # each timestamp is the true time of the frame it labels — this is both issues:
+                # #15 (stride and count disagreeing) and #17 (the one-frame stretch from pinning
+                # the last sample to `stop`)
+                @test step(ts) ≈ 1 / effective rtol = 1e-9
+                @test last(ts) ≈ (length(ts) - 1) / effective rtol = 1e-9
+                # and nothing may be labeled at or past the end of the window
+                @test last(ts) < 2
+            end
+        end
+    end
+
     @testset "lighter target on dark background" begin
         _, ij = track(joinpath(DATADIR, only(light)); darker_target = false)
         @test tracking_rmse(ij, light_exp) < 1
