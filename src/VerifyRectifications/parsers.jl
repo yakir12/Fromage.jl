@@ -116,10 +116,16 @@ end
 # row is irrelevant to this type. Blank cells are fine: mixed-type CSVs share one header, so
 # irrelevant *columns* must be allowed to exist, just not filled. Must run before the COLUMNS
 # back-fill (which adds every column to `dict`).
+#
+# `type` and `comment` are exempt, for different reasons. `type` is what selects the parser, so it
+# is consumed by definition. `comment` is consumed by NO parser, by design — it is free text, and
+# the docs promise it is ignored — which made it look exactly like a wrong-type column and turned a
+# filled comment into a hard error under the default strict mode. It is the only column no type
+# reads, so this exemption closes that case completely.
 function verify_irrelevant(dict, row)
     ismissing(dict[:type]) && return          # wrong type: already reported, no field list to check
     for k in Tables.columnnames(row)
-        (haskey(dict, k) || k == :type) && continue
+        (haskey(dict, k) || k == :type || k == :comment) && continue
         v = row[k]
         (ismissing(v) || (v isa AbstractString && isempty(strip(v)))) && continue
         push!(dict[:issues], "$k is not used by type $(dict[:type])")
