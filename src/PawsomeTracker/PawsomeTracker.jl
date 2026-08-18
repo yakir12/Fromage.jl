@@ -17,8 +17,7 @@ using StaticArrays: SVector, SDiagonal
 using OpenCV: OpenCV
 using CoordinateTransformations: LinearMap, Transformation
 using LinearAlgebra: I
-
-const RowCol = SVector{2, Float32}
+using ..Rectifications: RowCol   # the one image-coordinate alias, defined where it is documented
 
 # Confidence gate for `detect`: when the window's peak DoG response falls below GATE_FRACTION of
 # the running response level, the frame is treated as "target not seen" (occlusion, glare,
@@ -71,23 +70,11 @@ effective_fps(vid_fps, requested) = vid_fps / frame_skip(vid_fps, requested)
 
 get_sigma(target_width) = target_width / 2sqrt(2log(2))
 
-function fix_window_size(wh::NTuple{2, Int}) 
-    w, h = wh
-    if !isodd(w)
-        w += 1
-    end
-    if !isodd(h)
-        h += 1
-    end
-    return (h, w)
-end
-
-function fix_window_size(l::Int) 
-    if !isodd(l)
-        l += 1
-    end
-    return (l, l)
-end
+# A window side must be odd (the detection kernels are centred on a pixel), so an even one is
+# rounded up. Note the transpose: the caller gives (width, height), the tracker wants (rows, cols).
+oddify(l::Int) = l + iseven(l)
+fix_window_size((w, h)::NTuple{2, Int}) = (oddify(h), oddify(w))
+fix_window_size(l::Int) = (oddify(l), oddify(l))
 
 function get_guess(start_index::RowCol, _, vid, _, _, _, _)
     guess = round.(Int, Tuple(vid.scale * start_index))
@@ -133,9 +120,10 @@ struct Video
         fps = vid_fps / skip                 # the rate actually delivered; `fps` means this from here on
         img = read(vid)
         t₀ = gettime(vid)
-        height, width = size(img)
-        tform = LinearMap(1/scale)
-        height, width = size(WarpedView(Array{Gray{Float32}}(undef, size(img)...), tform; fillvalue = zero(Gray{Float32})))
+        # The tracked frame is the scaled one, so :width/:height are the WARPED extent, not the
+        # video's. `WarpedView`'s axes depend only on `axes(img)` and the transform, so wrapping the
+        # frame we already hold measures it without decoding or allocating a second one.
+        height, width = size(WarpedView(img, LinearMap(1/scale); fillvalue = zero(eltype(img))))
         seek(vid, start + t₀)
         # Frames the window holds at the video's own rate, then how many of them the stride visits.
         # Sample i reads raw frame (i-1)*skip, and `cld` is exactly the count keeping that index
