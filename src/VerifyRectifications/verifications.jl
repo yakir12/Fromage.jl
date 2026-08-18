@@ -429,6 +429,11 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = joinpath(
     verify_unique_ids!(df)
     @transform! df :path = passmissing(joinpath).(data_path, :path)
 
+    # A path that names the video itself is the common slip, and `isdir` alone reported it as
+    # "does not exist" — which is false, and sends the user to check for a file that is
+    # plainly there (#33). This runs first; verify! nulls :path on failure, so the
+    # existence check below then skips the row rather than piling on the misleading message.
+    verify!(df, isfile, "path is a file, not a folder — it should be the folder holding the video, with the file name in the `file` column", :path)
     verify!(df, !isdir, "path does not exist", :path)
 
     verify!(df, (f, p) -> !isfile(joinpath(p, f)), "file does not exist", :file, :path)
