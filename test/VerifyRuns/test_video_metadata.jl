@@ -29,7 +29,7 @@
         @test VR.parse_framerate("25/1") == 25.0
         @test VR.parse_framerate("25/0") == 25.0        # undefined rate: fall back to the numerator
         # Anything unparseable is `nothing`, so probe_video reports malformed output rather than
-        # letting a `parse` throw into its catch. "N/A" is the case that used to throw: it contains
+        # letting a `parse` throw into its catch. "N/A" is the interesting case: it contains
         # a '/', so it took the fraction branch and split into ("N", "A").
         @test VR.parse_framerate("N/A") === nothing
         @test VR.parse_framerate("")    === nothing

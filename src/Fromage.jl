@@ -1,9 +1,9 @@
 module Fromage
 
 # The four packages of the tracking ecosystem, consolidated as submodules (one repo, one version,
-# one test suite; see the README). Order matters: Rectifications is used by VerifyRectifications,
-# PawsomeTracker by VerifyRuns, and Parsing (the shared CSV-cell machinery) and Probing (the shared
-# ffprobe plumbing) by both gateways.
+# one test suite; see the README). Include order matters: Rectifications is used by
+# VerifyRectifications, PawsomeTracker by VerifyRuns, and Parsing (the shared CSV-cell machinery)
+# and Probing (the shared ffprobe plumbing) by both gateways.
 include("Rectifications/Rectifications.jl")
 include("PawsomeTracker/PawsomeTracker.jl")
 include("parsing.jl")

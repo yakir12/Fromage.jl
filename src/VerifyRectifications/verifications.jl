@@ -4,12 +4,11 @@ function verify_unique_ids!(df::AbstractDataFrame)
     push!.(df.issues[tf], "calibration_id must not repeat")
 end
 
-# One ffprobe call per physical video file yields width, height, duration, sample (pixel) aspect ratio
-# and field order (interlacing). These fill the intermediate :duration/:dimension columns, set the
-# video :width/:height (always taken from the file — they are the frame size used to decode it) and
-# impute :aspect/:yadif. Grouping on the canonical resolved :file reads one physical file once, not
-# once per spelling. (Replaces the former pair of VideoIO opens — aspect, then duration+dimension —
-# and folds in the new ffprobe columns.)
+# One ffprobe call per physical video file yields width, height, duration, sample (pixel) aspect
+# ratio and field order (interlacing). These fill the intermediate :duration/:dimension columns, set
+# the video :width/:height (always taken from the file — they are the frame size used to decode it)
+# and impute :aspect/:yadif. Grouping on the canonical resolved :file reads one physical file once,
+# not once per spelling.
 function read_video_metadata!(df::AbstractDataFrame)
     # :width/:height have no CSV column (they are not user-supplied); create them here so the probe
     # can fill them, alongside the intermediate :duration/:dimension columns.
@@ -18,7 +17,7 @@ function read_video_metadata!(df::AbstractDataFrame)
         dropmissing([:file, :type], view = true)
         groupby([:file, :type])
     end
-    # Every type now carries a source video (:file), so every group is probed once: the read fills
+    # Every type carries a source video (:file), so every group is probed once: the read fills
     # :duration/:dimension/:width/:height for all, plus imputes :aspect (and :yadif for video).
     groups = collect(gs)
     metas = @showprogress desc = "Reading calibration videos..." tmap(g -> probe_video(g.file[1]), groups)
@@ -67,11 +66,10 @@ function matlab_dimension(dict)
         return "matlab file does not contain any image size; file might not be a calibration file"
     end
     imagesize = last(res)
-    # Every assumption about this `Any` is checked up front rather than by catching its failure:
-    # a two-element collection whose entries are exact integers (matlab stores them as Float64).
-    # The eltype guard is what makes `Int(width)` total — an InexactError on 1.5 was the throw the
-    # old catch existed for, and a two-character String would otherwise have destructured into
-    # character codepoints and returned a silently wrong dimension.
+    # Every assumption about this `Any` is checked up front rather than by catching its failure: a
+    # two-element collection whose entries are exact integers (matlab stores them as Float64). The
+    # eltype guard is what makes `Int(width)` total, and what stops a two-character String
+    # destructuring into character codepoints and returning a silently wrong dimension.
     imagesize isa Union{AbstractArray, Tuple} || return "matlab ImageSize is malformed (expected two values)"
     length(imagesize) == 2 || return "matlab ImageSize is malformed (expected two values)"
     all(x -> x isa Real && isinteger(x), imagesize) || return "matlab ImageSize is malformed (expected two integers)"
@@ -84,12 +82,11 @@ const MATLAB_REQUIRED_KEYS = ("TranslationVectors", "RotationVectors", "RadialDi
 
 # A genuine MAT-file (v5/v7) begins with the ASCII text "MATLAB" in its header. Reading just the
 # first 6 bytes is a cheap, specific guard: a non-mat file gets this clear issue instead of matread's
-# opaque error. `read(file, 6)` opens the file and returns up to 6 bytes (fewer if the file is
-# shorter), so a too-short file simply fails the comparison.
+# opaque error. `read(file, 6)` returns up to 6 bytes, so a too-short file simply fails the
+# comparison.
 function matlab_magic_issue(file)
-    # Existence was already checked upstream, so what remains is a race or a permission problem:
-    # `read` reports both as SystemError/IOError. Anything else is not an unreadable file and is
-    # not this function's to describe.
+    # Existence was checked upstream, so what remains is a race or a permission problem, both of
+    # which `read` reports as SystemError/IOError. Anything else is not an unreadable file.
     magic = try
         read(file, 6)
     catch e
@@ -108,10 +105,9 @@ function read_matlab(file)
         matread(file)
     catch e
         # MAT.jl signals essentially every corruption through a generic `error(...)`: a truncated
-        # file, a valid header followed by garbage, and an absent file all arrive as
-        # ErrorException, a directory as EOFError (all verified). ErrorException is therefore as
-        # narrow as this can honestly get — but it still excludes the MethodError/BoundsError that
-        # would mean a bug on our side, and the InterruptException a bare catch used to swallow.
+        # file, a valid header followed by garbage and an absent file all arrive as ErrorException,
+        # a directory as EOFError. ErrorException is therefore as narrow as this can honestly get,
+        # and it still excludes the MethodError/BoundsError of a bug on our side.
         e isa ErrorException || e isa EOFError || e isa SystemError || e isa Base.IOError || rethrow()
         return "error opening matlab file: $e"
     end
@@ -181,8 +177,7 @@ function matlab_extrinsic_count(dict)
     for k in ("TranslationVectors", "RotationVectors")
         vecs = last(findfirstkey(dict, k))
         # `size(vecs, 1)` is only meaningful for an array; a scalar, a string or a nested dict is a
-        # malformed field. Checking that up front is what the catch was standing in for — and it
-        # keeps the accepted shapes exactly as they were, since `size(v, 1)` worked for any array.
+        # malformed field, and is rejected up front rather than caught.
         vecs isa AbstractArray || return "matlab $k is malformed (expected an N×3 matrix)"
         push!(counts, size(vecs, 1))   # N×3 -> N poses
     end
@@ -208,14 +203,10 @@ end
 function probe_video(file)
     fields = probe_fields(file, "stream=width,height,sample_aspect_ratio,field_order:format=duration")
     fields isa String && return fields                 # unreadable file: pass the issue straight on
-    # The three fields nothing downstream can proceed without. `tryparse` reports an absent or
-    # unparseable one as `nothing`.
-    #
-    # Reaching here means ffprobe *succeeded* and still could not describe a video: it opened the
-    # file but `-select_streams v:0` matched nothing (an audio-only file), or it recognised some
-    # container in what is really junk. Both mean the same thing to the user — this is not a usable
-    # video — so it joins the "issue reading from video file" family rather than getting a message
-    # of its own, which would suggest our parsing broke rather than their file being bad.
+    # The three fields nothing downstream can proceed without; `tryparse` reports an absent or
+    # unparseable one as `nothing`. A miss here means ffprobe *succeeded* and still could not
+    # describe a video (an audio-only file, or junk it recognised a container in), which is not a
+    # usable video either — hence the same "issue reading from video file" wording.
     width    = tryparse(Int, get(fields, "width", ""))
     height   = tryparse(Int, get(fields, "height", ""))
     duration = tryparse(Float64, get(fields, "duration", ""))
@@ -237,42 +228,30 @@ function verify!(df::AbstractDataFrame, predicate, msg, args...)
     end
 end
 
-# function extract(extrinsic, file, to, blur)
-#     if blur == 0
-#         ffmpeg_exe(` -loglevel 8 -ss $extrinsic -i $file -vf yadif=1 -vframes 1 $to`)
-#     else
-#         ffmpeg_exe(` -loglevel 8 -ss $extrinsic -i $file -vf yadif=1,gblur=sigma=$blur -vframes 1 $to`)
-#     end
-# end
-
 # Errors raised inside a `tmap` come back wrapped in a TaskFailedException — but only when the
 # scheduler actually spawned a task, so the same failure arrives bare when the work ran inline (a
-# single-element batch, say). Both shapes have to be unwrapped to the original before classifying;
-# a narrowing that skipped this would silently stop catching under the threaded path.
+# single-element batch, say). Both shapes must be unwrapped before classifying, or the narrowing
+# silently stops catching under the threaded path.
 _unwrap_task(e) = e isa TaskFailedException ? _unwrap_task(e.task.result) :
                   e isa CompositeException ? _unwrap_task(first(e.exceptions)) : e
 
-# What corner detection can legitimately fail with, as opposed to a bug here. Verified against the
-# real pipeline: the frame read raises ProcessFailedException/IOError/SystemError (see
-# Rectifications._read_frame, which already retried the transient ones); a seek that yields no frame
-# raises DimensionMismatch out of the reshape ("new dimensions … must be consistent with array
-# length 0"); and OpenCV reports every C++ error as a plain ErrorException. ErrorException is
-# therefore as narrow as this can honestly get — but it still excludes the MethodError/BoundsError
-# of a bug on our side, and the InterruptException a bare catch used to swallow.
+# What corner detection can legitimately fail with, as opposed to a bug here: the frame read raises
+# ProcessFailedException/IOError/SystemError (see Rectifications._read_frame, which already retried
+# the transient ones); a seek that yields no frame raises DimensionMismatch out of the reshape; and
+# OpenCV reports every C++ error as a plain ErrorException. ErrorException is therefore as narrow as
+# this can honestly get, and it still excludes the MethodError/BoundsError of a bug on our side.
 _detection_failure(e) = e isa ProcessFailedException || e isa Base.IOError || e isa SystemError ||
                         e isa DimensionMismatch || e isa ErrorException
 
-# How to say it once classified. The frame read spawns ffmpeg, and `showerror` on a
-# ProcessFailedException prints the whole failed `Cmd` — the env-baked PATH and LD_LIBRARY_PATH
-# included, some 8 kB — which lands verbatim in the user-facing issues report and says nothing
-# anyone can act on. Same reasoning, and same trade, as `Probing.probe_failure`; the wording differs
-# only because the process here is ffmpeg reading a frame rather than ffprobe reading metadata. The
-# rest (an IOError, a DimensionMismatch out of an empty seek) already print short and stay verbatim.
+# How to say it once classified. `showerror` on a ProcessFailedException prints the whole failed
+# `Cmd` — env-baked PATH and LD_LIBRARY_PATH included, some 8 kB — which lands verbatim in the
+# user-facing issues report and says nothing anyone can act on (as in `Probing.probe_failure`; the
+# wording differs only because this process is ffmpeg reading a frame). The rest (an IOError, a
+# DimensionMismatch out of an empty seek) print short and stay verbatim.
 #
-# One method with a branch, rather than the more idiomatic pair of methods dispatching on the
-# exception type: a method whose whole body is a string literal is const-folded away, so its
-# instrumentation never runs and coverage reports the line as missed even though the tests below
-# exercise it. An expression body is measured normally.
+# One method with a branch, rather than a pair dispatching on the exception type: a method whose
+# whole body is a string literal is const-folded away, so its instrumentation never runs and
+# coverage reports the line as missed even though the tests exercise it.
 _failure_message(e) = e isa ProcessFailedException ?
     "ffmpeg could not read the frame (the file is corrupt, truncated, or not a video)" :
     sprint(showerror, e)
@@ -289,10 +268,9 @@ function extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
     end
 end
 
-# Save the frame that failed detection into `issues_dir` (created on demand) for the user to inspect,
-# named by the video and extrinsic timestamp — e.g. `board_t1.0s.png`. `get_frame` reads the frame
-# lazily; the whole thing is best effort (if the frame itself can't be re-read, e.g. a corrupt file,
-# saving is skipped and `nothing` is returned).
+# Save the frame that failed detection into `issues_dir` (created on demand) for the user to
+# inspect, named by the video and extrinsic timestamp — e.g. `board_t1.0s.png`. `get_frame` reads
+# the frame lazily; best effort throughout, returning `nothing` if anything goes wrong.
 function save_issue_frame(issues_dir, file, extrinsic, get_frame)
     try
         image = get_frame()
@@ -303,7 +281,7 @@ function save_issue_frame(issues_dir, file, extrinsic, get_frame)
     catch e
         # Deliberately broad: saving a diagnostic frame must never break verification, and the
         # three steps above (frame read, mkpath, encode+write) fail in too many ways to enumerate
-        # usefully. An interrupt is not one of those failures — Ctrl-C must not be absorbed here.
+        # usefully. Ctrl-C is not one of those failures.
         e isa InterruptException && rethrow()
         return nothing
     end
@@ -334,11 +312,11 @@ function verify_extrinsics!(df::AbstractDataFrame, issues_dir)
 end
 
 # The camera-model fit needs at least 3 frames with detectable corners sampled from the
-# [start, stop] window (the "temporal_step too short" check above only guarantees 3
-# *sampled* frames, not 3 *detectable* ones). Detection stops as soon as 3 frames succeed, so a
-# good window costs ~3 frame reads and only a genuinely bad one scans through to its end. Frames
-# are read in small parallel batches; the global read semaphore in Rectifications bounds the
-# concurrent opens exactly as in the real rectification.
+# [start, stop] window — the "temporal_step too short" check only guarantees 3 *sampled* frames, not
+# 3 *detectable* ones. Detection stops as soon as 3 succeed, so a good window costs ~3 frame reads
+# and only a genuinely bad one scans to the end. Frames are read in small parallel batches, with the
+# global read semaphore in Rectifications bounding the concurrent opens as in the real
+# rectification.
 function intrinsic_issue(file, start, stop, temporal_step, yadif, blur, width, height, n_corners)
     vf = _vf(yadif, blur)
     found = 0
@@ -376,10 +354,10 @@ function verify_intrinsics!(df::AbstractDataFrame)
     end
 end
 
-# The AprilTag analog of verify_extrinsics!: at the extrinsic frame, ≥ `apriltags` tags of `family`
-# must be detectable and their metric fit must converge (coplanar, not mis-detected). Reads real
-# frames, so it runs on the reduced set of otherwise-clean apriltag rows, grouped so a physical file
-# reached via different spellings is checked once per (extrinsic, apriltags, family, checker_size).
+# The AprilTag analogue of verify_extrinsics!: at the extrinsic frame, ≥ `apriltags` tags of
+# `family` must be detectable and their metric fit must converge (coplanar, not mis-detected). Reads
+# real frames, so it runs only on otherwise-clean apriltag rows, grouped so one physical file is
+# checked once per (extrinsic, apriltags, family, checker_size).
 function verify_apriltag_extrinsics!(df::AbstractDataFrame, issues_dir)
     gs = @chain df begin
         subset(:type => ByRow(passmissing(==("apriltag"))), view = true, skipmissing = true)
@@ -400,18 +378,18 @@ end
 function verify_unique_calibrations!(df::AbstractDataFrame)
     # What makes two rectifications "the same" is type-dependent, so partition by :type:
     #   * matlab / only_scale: identical on *every* field (calibration_id and issues aside).
-    #   * video: identical on the identity key below. The remaining parameters are NOT part of identity
-    #     (one video can carry several rectifications differing only in, say, blur), but two same-identity
-    #     rows still *should* agree on them — when they don't, the duplicate also gets a
-    #     conflicting-parameters issue.
-    # :file is already the canonical resolved path, so equivalent spellings / path splits compare equal
-    # with no per-call realpath. The throwaway :_row column carries each row's index in `df` so flags
+    #   * video: identical on the identity key below. The remaining parameters are NOT part of
+    #     identity (one video can carry several rectifications differing only in, say, blur), but
+    #     two same-identity rows still *should* agree on them — when they don't, the duplicate also
+    #     gets a conflicting-parameters issue.
+    # :file is already the canonical resolved path, so equivalent spellings compare equal with no
+    # per-call realpath. The throwaway :_row column carries each row's index in `df`, so flags
     # written through the type-partitioned views land on the right rows.
     cmp = select(df, Not(:calibration_id, :issues))
     cmp._row = collect(axes(cmp, 1))
-    # Compare only rows that are otherwise valid. A row that already failed an earlier check has had its
-    # offending field(s) nulled to `missing`, which can make two genuinely-distinct rows collapse into a
-    # spurious "duplicate" — and such rows are already reported, so there's nothing to gain by comparing them.
+    # Compare only rows that are otherwise valid: a row that failed an earlier check has had its
+    # offending field nulled to `missing`, which can collapse two genuinely distinct rows into a
+    # spurious "duplicate". Such rows are already reported anyway.
     ok = isempty.(df.issues)
     isvideo = ok .& coalesce.(cmp.type .== "video", false)
 
@@ -437,17 +415,16 @@ end
 
 function verifications!(df::AbstractDataFrame, data_path, issues_dir = joinpath("results_dir", "issues"))
 
-    # The issues folder is fully transient: it reflects only the current verification run, so wipe it
-    # up front (it is recreated lazily by save_issue_frame the first time a frame fails to detect).
+    # The issues folder is fully transient: it reflects only the current verification run, so it is
+    # wiped up front and recreated lazily by save_issue_frame.
     rm(issues_dir; recursive = true, force = true)
 
     verify_unique_ids!(df)
     @transform! df :path = passmissing(joinpath).(data_path, :path)
 
-    # A path that names the video itself is the common slip, and `isdir` alone reported it as
-    # "does not exist" — which is false, and sends the user to check for a file that is
-    # plainly there (#33). This runs first; verify! nulls :path on failure, so the
-    # existence check below then skips the row rather than piling on the misleading message.
+    # A path naming the video itself is the common slip, and it must be reported as such rather
+    # than as "does not exist" (#33). Runs first, and verify! nulls :path on failure, so the
+    # existence check below skips the row rather than piling on.
     verify!(df, isfile, "path is a file, not a folder — it should be the folder holding the video, with the file name in the `file` column", :path)
     verify!(df, !isdir, "path does not exist", :path)
 
@@ -457,12 +434,11 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = joinpath(
     # skips missing, so non-matlab rows (matlab_file === missing) are untouched.
     verify!(df, (f, p) -> !isfile(joinpath(p, f)), "matlab_file does not exist", :matlab_file, :path)
 
-    # Collapse data_path/path/file into one canonical absolute path stored in :file (and do the
-    # same for :matlab_file), then drop path — it has done its job (the isdir/isfile checks
-    # above) and the resolved paths now subsume it. The single resolved :file is the identity used by
-    # every later step (the read passes, duplicate detection) and :matlab_file groups the .mat reads.
-    # realpath is safe because non-existent paths were nulled just above; passmissing leaves those
-    # missing. (realpath, not bare joinpath, so "./x", "a/../x" and symlinks collapse to one key.)
+    # Collapse data_path/path/file into one canonical absolute path stored in :file (and the same
+    # for :matlab_file), then drop :path, whose job the isdir/isfile checks above have finished. The
+    # resolved :file is the identity used by every later step (the read passes, duplicate detection)
+    # and :matlab_file groups the .mat reads. realpath is safe because non-existent paths were nulled
+    # just above, and is what collapses "./x", "a/../x" and symlinks onto one key.
     @transform! df :file = passmissing(joinpath).(:path, :file)
     @transform! df :file = passmissing(realpath).(:file)
     @transform! df :matlab_file = passmissing(joinpath).(:path, :matlab_file)
@@ -470,10 +446,8 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = joinpath(
     select!(df, Not(:path))
 
     # One read per physical file: ffprobe on the source video (every type) and matread on the .mat
-    # (matlab). These fill the intermediate :duration/:dimension/:n_extrinsics columns, set the video
-    # :width/:height from the probe and impute :aspect (and :yadif for video). read_video_metadata!
-    # creates :duration/:dimension/:width/:height and sets the video frame size used to bounds-check
-    # center/north and to cross-check the matlab ImageSize, so it runs before read_matlab_metadata!.
+    # (matlab). read_video_metadata! must run first: it sets the frame size that bounds-checks
+    # center/north and cross-checks the matlab ImageSize.
     read_video_metadata!(df)
 
     read_matlab_metadata!(df)
@@ -497,19 +471,16 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = joinpath(
     verify!(df, f -> !PawsomeTracker.valid_apriltag_family(f), "family is not a supported AprilTag family (" * join(PawsomeTracker.APRIL_FAMILY_NAMES, ", ") * ")", :family)
     verify!(df, ∉(1:3), "radial_parameters must be 1, 2, or 3", :radial_parameters)
     verify!(df, <(0), "blur must be larger than or equal to zero", :blur)
-    # OpenCV's findChessboardCorners requires both pattern dimensions to be strictly bigger than 2
-    # ("(-211:One of the arguments' values is out of range) Both width and height of the pattern
-    # should have bigger than 2"), so the bound is ≥ 3. It was ≥ 2, which let an n_corners of
-    # (2, n) pass validation and then throw out of the detector below — a precondition worth
-    # checking here instead of catching there. (checker_size_pixel's 2·prod(n) − sum(n) divisor is
-    # also 0 at (1, 1), which this subsumes.)
+    # OpenCV's findChessboardCorners requires both pattern dimensions to be strictly bigger than 2,
+    # so the bound is ≥ 3 — a precondition worth checking here instead of catching out of the
+    # detector. (It also subsumes checker_size_pixel's 2·prod(n) − sum(n) divisor being 0 at (1, 1).)
     verify!(df, x -> any(<(3), x), "n_corners must all be at least 3", :n_corners)
     verify!(df, <(0), "extrinsic must be larger than or equal to zero", :extrinsic)
     # strictly before: seeking at exactly the duration yields no frame at all
     verify!(df, (e, d) -> e ≥ d, "extrinsic must come before the video duration", :extrinsic, :duration)
     # The intrinsic-calibration window must be sane and lie within the video. These run before the
-    # temporal_step checks and null start/stop on failure, so a bad window does not also
-    # trip the misleading "temporal_step too short" message (which is skipped once either bound is missing).
+    # temporal_step checks and null start/stop on failure, so a bad window does not also trip the
+    # misleading "temporal_step too short" message (skipped once either bound is missing).
     verify!(df, <(0), "start must be larger than or equal to zero", :start)
     verify!(df, (a, o) -> a ≥ o, "start must come before stop", :start, :stop)
     verify!(df, (o, d) -> o > d, "stop can not come after video duration", :stop, :duration)
@@ -517,7 +488,8 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = joinpath(
     verify!(df, ≤(0), "temporal_step must be larger than zero", :temporal_step)
     verify!(df, (t, a, o) -> (o - a) ÷ t + 1 < 3, "temporal_step too short (results in less than 3 intrinsic images)", :temporal_step, :start, :stop)
 
-    # verify that the extrinsic time stamp works (should only be done after extrinsic time-stamps have been verified
+    # the extrinsic time stamp must actually yield a detectable frame; only meaningful once the
+    # time stamp itself has been range-checked above
     verify_extrinsics!(df, issues_dir)
 
     # the calibs window must actually contain ≥ 3 detectable-corner frames; runs after

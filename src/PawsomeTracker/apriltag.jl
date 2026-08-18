@@ -1,18 +1,10 @@
-# AprilTag-based tracking for drone footage: register out drone motion and rectify the beetle
-# track into metric ground-plane coordinates (cm), in a single pass, using four coplanar tags as
-# landmarks. Built in phases, all present in this file: PHASE 1 the ground-plane geometry (pure
-# and unit-tested), PHASE 2 detection and the tracking loop, PHASE 4 the ROI local search.
-# Registration is folded into the background stack's lazy index pipe (RegisteredWarp), so the
-# tracker works in the shared reference frame — a static scene — rather than native image space.
-#
-# Geometry, verified against a real drone frame (1080×1920, four tag36h11 tags):
-#   * A homography from all 16 tag corners registers frames robustly; a single tag's homography
-#     leaves 3.5–13.4 cm of skew on distant tags (error grows with distance from the tag), so
-#     every fit uses all corners.
-#   * The metric map (image → cm) is fit from all four tags jointly, each contributing its known
-#     96 cm square; consensus drives the worst square error to < 1 cm (vs. 13 cm single-tag).
-#   * Our normalized-DLT homography is both more accurate (Float64 vs OpenCV's Float32 marshalling)
-#     and faster (~28 µs vs ~41 µs) than OpenCV.findHomography, so no OpenCV dependency is needed.
+# AprilTag-based tracking for drone footage: register out drone motion and rectify the beetle track
+# into metric ground-plane coordinates (cm), in a single pass, using four coplanar tags as
+# landmarks. This file holds the ground-plane geometry (pure and unit-tested), the detection and
+# tracking loop, and the ROI local search. Registration is folded into the background stack's lazy
+# index pipe (RegisteredWarp), so the tracker works in the shared reference frame — a static scene
+# — rather than in native image space. Every fit uses all 16 tag corners, and the metric map is fit
+# from all four tags jointly; see DESIGN-HISTORY.md for the measurements behind both.
 
 using StaticArrays: SVector, SMatrix
 using LinearAlgebra: svd, det, norm
@@ -104,20 +96,16 @@ function rigid_align(A, B)
 end
 
 # Fit the metric map `M : image → ground cm` from all tags jointly. Bootstrap from one tag's
-# corners, then alternate: place a true 96 cm square on each tag's current cm estimate (Procrustes),
-# pin the global gauge by rigidly mapping tag 1's square back onto the canonical square, and refit
-# `M` from all 16 corners to those pinned squares (DLT). The gauge pin is essential — without it the
-# iteration's cm frame drifts in scale/pose and diverges under strong perspective.
-#
-# The gauge-pinned iteration still has convergence basins: which bootstrap tag lands in the good
-# basin is sensitive to sub-pixel corner noise (a 0.1 px difference flipped a real frame from 0.5 cm
-# to 35 cm), so we try EVERY tag as the bootstrap and keep the globally best result. On real footage
-# at least one bootstrap reaches sub-cm. Fit once per reference frame — the whole thing is a
-# one-time few ms, not a per-frame cost.
+# corners, then alternate: place a true square on each tag's current cm estimate (Procrustes), pin
+# the global gauge by rigidly mapping tag 1's square back onto the canonical square, and refit `M`
+# from all 16 corners to those pinned squares (DLT). The gauge pin is essential; without it the
+# iteration diverges under strong perspective. EVERY tag is tried as the bootstrap and the globally
+# best result kept, since the convergence basin is sensitive to sub-pixel corner noise. Fit once per
+# reference frame — a one-time few ms, not a per-frame cost.
 #
 # Returns `(M, worst_error)`: it computes, it does not decide. Whether that error is acceptable is
-# the caller's policy (see METRIC_FIT_TOLERANCE) — which is what lets `reference_frame` report a
-# non-converged fit as an issue string rather than having to catch a throw from in here.
+# the caller's policy (see METRIC_FIT_TOLERANCE), which lets `reference_frame` report a
+# non-converged fit as an issue string rather than catch a throw from in here.
 function fit_metric(tag_corners; canon = CANON, maxiter = 1000, tol = 1e-9)
     side = norm(canon[1] - canon[2])
     flat = reduce(vcat, tag_corners)
@@ -213,22 +201,17 @@ end
 # Returns the `ReferenceFrame`, or a `String` describing why one could not be built — an unsupported
 # family, an unreadable frame, too few tags, corners that could not be re-read, or a metric fit that
 # did not converge. Every one of those is a fact about the calibration the user gave us, not an
-# exceptional condition, so it is reported rather than thrown: `apriltag_extrinsic_issue` can then
-# pass it straight to the gateway with no catch at all, while `ApriltagRectification` — which has
-# nowhere to put a message — turns it back into a throw.
+# exceptional condition, so it is reported rather than thrown.
 function reference_frame(file, extrinsic, ntags, family, checker_size)
     valid_apriltag_family(family) ||
         return "unknown AprilTag family \"$family\" (supported: $(join(APRIL_FAMILY_NAMES, ", ")))"
-    # Serialize the WHOLE read + detect. Two separate hazards, both under the verification /
-    # rectification-building `tmap` at high thread counts on a cold network share: the one-shot VideoIO
-    # read (open+seek+read) races and returns garbled/wrong frames, and the AprilTag detector is not
-    # reentrant. Reference building is one-time setup over a handful of calibs, so serializing it costs
-    # essentially nothing. (Per-run tracking keeps concurrent decode; only its detection is serialized.)
+    # Serialize the WHOLE read + detect: the one-shot VideoIO read races under the callers' `tmap`,
+    # and the AprilTag detector is not reentrant. Reference building is one-time setup over a handful
+    # of calibs, so this costs essentially nothing.
     lock(APRILTAG_LOCK) do
-        # The only genuinely exceptional step: VideoIO reports an unreadable/corrupt file, and a
-        # seek past the end, as a plain ErrorException ("Could not open …: Invalid data found when
-        # processing input"), so that is as narrow as this gets — it still excludes the
-        # MethodError/BoundsError of a bug here and the InterruptException a bare catch would eat.
+        # VideoIO reports an unreadable/corrupt file, and a seek past the end, as a plain
+        # ErrorException, so that is as narrow as this gets — it still excludes the
+        # MethodError/BoundsError of a bug here, and InterruptException.
         img = try
             read_frame_at(file, extrinsic)
         catch e
@@ -300,9 +283,8 @@ valid_apriltag_family(family) = haskey(APRIL_FAMILIES, family)
 
 # Does the extrinsic frame support a shared reference? Returns `nothing` on success or an issue
 # string (unreadable frame, too few tags, non-coplanar / mis-detected tags), so it composes with the
-# gateway's other checks. `reference_frame` already reports those as strings, so this is a plain
-# type test rather than a catch: what used to be exception-driven control flow is now the ordinary
-# return path, and a genuine error propagates instead of being reformatted as a calibration issue.
+# gateway's other checks. A plain type test, since `reference_frame` already reports those as
+# strings — a genuine error propagates rather than being reformatted as a calibration issue.
 function apriltag_extrinsic_issue(file, extrinsic, ntags, family, checker_size)
     ref = reference_frame(file, extrinsic, ntags, family, checker_size)
     return ref isa String ? ref : nothing
@@ -315,17 +297,17 @@ register(ref::ReferenceFrame, corners) = homography_dlt(corners, ref.corners)
 ground_homography(ref::ReferenceFrame, corners) = ref.M * register(ref, corners)
 
 # The lazy registration warp: the background stack's index transform, composing each slice's
-# registration with the tracker's inverse scaling, so every slice is sampled in the SHARED
-# REFERENCE frame's coordinates. Drone motion is thereby removed at lookup time — the per-pixel
-# max/min background model sees a static scene — at the cost of one homography apply per lookup.
-# `Hinvs[k]` maps reference (x, y) px → frame-k (x, y) px (i.e. `inv(register(...))`) and is
-# mutated in place as the rolling window replaces slices; the WarpedView holds this same vector,
-# so updates are visible immediately. Coordinate bridge: the stack works in scaled (row, col)
-# ("canvas"), the homographies in (x, y) = (col, row) stored px — hence the flips.
+# registration with the tracker's inverse scaling, so every slice is sampled in the SHARED REFERENCE
+# frame's coordinates. Drone motion is thereby removed at lookup time — the per-pixel max/min
+# background model sees a static scene — at the cost of one homography apply per lookup.
+# `Hinvs[k]` maps reference (x, y) px → frame-k (x, y) px (i.e. `inv(register(...))`) and is mutated
+# in place as the rolling window replaces slices; the WarpedView holds this same vector, so updates
+# are visible immediately. Coordinate bridge: the stack works in scaled (row, col) ("canvas"), the
+# homographies in (x, y) = (col, row) stored px — hence the flips.
 struct RegisteredWarp <: Transformation
     scale::Float64
-    # NB the length parameter: `SMatrix{3, 3, Float64}` (abstract) would box every per-lookup
-    # load and cost two orders of magnitude in detect's background reduce
+    # NB the length parameter: the abstract `SMatrix{3, 3, Float64}` boxes every per-lookup load,
+    # costing two orders of magnitude in detect's background reduce
     Hinvs::Vector{SMatrix{3, 3, Float64, 9}}
 end
 function (w::RegisteredWarp)(x::SVector{3})
@@ -357,11 +339,8 @@ function set_detector!(det; nthreads = 1)
     return det
 end
 
-# `apriltag_detector_detect` (the C detector) is NOT reentrant: it has global/static state that
-# concurrent calls corrupt — even distinct, per-thread detectors on distinct frames race (verified
-# three ways), and under enough pressure it segfaults. So EVERY detection call goes through this,
-# which serializes them process-wide via APRILTAG_LOCK. Reads/decode stay concurrent; only the
-# (comparatively cheap) detect is serial.
+# Every detection call goes through this, serializing them process-wide: the C detector is not
+# reentrant (see APRILTAG_LOCK).
 detect_locked(det, img) = lock(() -> det(img), APRILTAG_LOCK)
 
 # Detect and return the 16 corners grouped per tag, aligned to `ids` order (each tag's `.p` corners
@@ -393,10 +372,10 @@ end
 
 # ---- PHASE 4: local ROI search ----------------------------------------------------------------
 # AprilTag detection cost scales with pixels, so after the reference frame each tag is searched in a
-# small box around where it was last seen instead of over the whole 1080×1920 frame. Detecting on a
-# crop reproduces the full-frame corners to < 0.1 px (verified), so this is a pure speedup. The box
-# grows and re-searches until the tag is found or it spans the whole frame — a graceful fallback to
-# full-frame detection when the drone jumps, never worse than it.
+# small box around where it was last seen rather than over the whole frame. Detecting on a crop
+# reproduces the full-frame corners to better than 0.1 px, so this is a pure speedup. The box grows
+# and re-searches until the tag is found or spans the whole frame, degrading gracefully to
+# full-frame detection when the drone jumps.
 const ROI_MARGIN = 40      # px padded around a tag's corners to form its search box
 const ROI_GROW = 250       # px the box expands on each side when the tag isn't found
 
@@ -425,9 +404,8 @@ function find_tag_roi(det, img, id, box, sz)
 end
 
 # detect all tags by per-tag local search, updating `boxes` in place; corners aligned to `ids`
-# order, or `nothing` if any tag is not found anywhere in the frame. Detection is SEQUENTIAL: the
-# AprilTag C detector is not reentrant (see detect_locked), so every detect is serialized process-
-# wide anyway — spawning one task per tag would only contend on that lock, for no gain.
+# order, or `nothing` if any tag is not found anywhere in the frame. Sequential, because
+# `detect_locked` serializes every detect anyway — one task per tag would only contend on the lock.
 function detect_tags_roi!(dets, img, ids, boxes, sz)
     corners = Vector{Vector{SVector{2, Float64}}}(undef, length(ids))
     newboxes = similar(boxes)
@@ -507,9 +485,8 @@ function (d::DiagnoseApriltag)(frame, beetle, H)
         draw!(wimg, Path(d.trace), d.color)
     end
     out = parent(wimg)
-    # Stamp the run's name, as the other two writers do. `main` concatenates every run's diagnostic
-    # into one video, so without it no segment can be told from the next — and a dataset of drone
-    # runs is *all* AprilTag, so previously none of them carried a label at all (#22).
+    # Stamp the run's name, as the other two writers do: `main` concatenates every run's diagnostic
+    # into one video, so without it no segment can be told from the next (#22).
     renderstring!(out, d.label, d.face, d.font, d.font, d.font, halign = :hleft, valign = :vtop)
     write(d.writer, out)
     return nothing
@@ -518,21 +495,20 @@ diagnose_apriltag(::Nothing, _, _, _) = Dont()
 diagnose_apriltag(file::AbstractString, ref, darker_target, fps) = DiagnoseApriltag(file, ref, darker_target, fps)
 (::Dont)(_, _, _) = nothing                                     # 3-arg no-op for the apriltag callback
 
-# Track the beetle across drone footage in a single pass, in the REFERENCE frame's coordinates:
-# the background stack lazily warps every slice through that slice's own registration (a
-# RegisteredWarp composed into the same index pipe as the scaling), so drone motion is removed at
-# lookup time and the DoG tracker sees a static scene — a stable background model, and no
-# per-frame guess compensation (the guess simply persists, as in the plain tracker). Per frame:
-# detect the tags (on the raw `vid.img`), fit the registration, roll the raw frame plus its
-# registration into the stack, run the DoG detection in reference space, and map the result
-# through the FIXED metric map `ref.M` to ground cm. Frames missing any tag yield `missing`
-# (their true registration is unknown; the slice borrows the nearest known one — misaligned only
-# by that brief unknown drone motion, where the old native-space stack was misaligned by ALL
-# drone motion) and the tracker holds its last reference-space position. The reference is
-# established once, from the calibration's extrinsic frame (the tags are stationary across every
-# run), and shared here; `family` is the detector family it was built with; `ref_sz` is the
-# reference frame's (rows, cols) — the run may have a different resolution. `dia` is a
-# `DiagnoseApriltag`/`Dont` created (and closed) by the caller — shared across a run's segments.
+# Track the beetle across drone footage in a single pass, in the REFERENCE frame's coordinates: the
+# background stack lazily warps every slice through that slice's own registration (a RegisteredWarp
+# composed into the same index pipe as the scaling), so drone motion is removed at lookup time and
+# the DoG tracker sees a static scene — a stable background model, and no per-frame guess
+# compensation. Per frame: detect the tags (on the raw `vid.img`), fit the registration, roll the
+# raw frame plus its registration into the stack, run the DoG detection in reference space, and map
+# the result through the FIXED metric map `ref.M` to ground cm. Frames missing any tag yield
+# `missing` — their true registration is unknown, so the slice borrows the nearest known one and the
+# tracker holds its last reference-space position.
+#
+# The reference is established once, from the calibration's extrinsic frame, and shared here;
+# `family` is the detector family it was built with; `ref_sz` is the reference frame's (rows, cols),
+# which the run's own resolution may differ from. `dia` is a `DiagnoseApriltag`/`Dont` created and
+# closed by the caller, shared across a run's segments.
 function track_apriltag(file, start, stop, target_width, start_location, window_size, darker_target,
                         fps, dia, ref::ReferenceFrame, family, ref_sz, initial_search_factor, scale, background_length)
     ids = ref.ids
@@ -555,14 +531,13 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
             seedR = SMatrix{3, 3, Float64}(I)              # the seed frame's registration (start_location crosses it)
             lastHinv = SMatrix{3, 3, Float64}(I)           # nearest known inv(registration), borrowed by tag-less slices
 
-            # fill the background stack: each frame enters raw, PLUS its registration in
+            # Fill the background stack: each frame enters raw, PLUS its registration in
             # `warp.Hinvs`, which is what places it in reference space. The run's `start` can be far
             # from the calibration's extrinsic frame, so the (stationary) tags may sit anywhere in
             # the first frame: locate them by a full-frame scan, NOT an ROI around their reference
-            # positions. Once found, subsequent frames use per-tag local search seeded from each
-            # tag's last box — a graceful fall back to full-frame when the drone jumps. Frames
-            # missing any tag borrow the nearest known registration (pre-seed slices are backfilled
-            # with the seed's once it is found).
+            # positions. Subsequent frames then use per-tag local search seeded from each tag's last
+            # box. Frames missing any tag borrow the nearest known registration (pre-seed slices are
+            # backfilled with the seed's once it is found).
             for i in 1:n_bkgd
                 next!(vid)
                 populate_slice!(stack, i, vid)

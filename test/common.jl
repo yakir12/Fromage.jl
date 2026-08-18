@@ -25,11 +25,9 @@ function make_checkerboard_video(path, png; duration = 5)
 end
 
 # A file ffprobe reliably refuses: the leading bytes of a real mp4, with the moov atom and all the
-# media data cut off. This used to be `rand(UInt8, 500)`, which made every corrupt-video test a dice
-# roll — roughly 1 random blob in 300 is recognised by ffprobe as some container, whereupon it exits
-# 0 and reports nothing usable rather than failing. That input is real and the code must handle it,
-# but it has no business arriving at random: it is now covered deliberately by the audio-only case
-# in test/probing.jl, while this fixture always exercises the outright-unreadable path.
+# media data cut off. Deterministic on purpose — the "ffprobe exits 0 but reports nothing usable"
+# case is covered deliberately by the audio-only fixture in test/probing.jl, so this one always
+# exercises the outright-unreadable path.
 function make_corrupt_video(path)
     mktempdir() do dir
         whole = joinpath(dir, "whole.mp4")
@@ -44,10 +42,9 @@ end
 # pixels, then squeezed to (width/sar)×height stored pixels with setsar=sar — a genuinely
 # anamorphic file when sar ≠ 1. `nsegments > 1` splits the same trajectory into several files on
 # forced keyframes (a segmented run). `pause = (t1, t2)` freezes the trajectory between those
-# seconds (the disc sits perfectly still, then resumes where it left off) — the long-stationary
-# target that used to be absorbed into the tracker's background model. Writes into `dir`; returns
-# the basename(s) and the ground-truth closure `expected(i; skip, offset)`: the stored-frame
-# 1-based (row, col) of the disc center at sample i, where sample i reads global frame
+# seconds — a long-stationary target, which the background model must not absorb. Writes into
+# `dir`; returns the basename(s) and the ground-truth closure `expected(i; skip, offset)`: the
+# stored-frame 1-based (row, col) of the disc center at sample i, where sample i reads global frame
 # `offset + (i − 1)·skip` (skip = video fps ÷ requested fps).
 function make_target_video(dir, name; width = 100, height = 100, sar = 1//1, fps = 25, duration = 2,
         target_width = 10, darker_target = true, row = 50, col = 55, nsegments = 1, pause = nothing)
@@ -103,7 +100,7 @@ function write_csv(path, rows, header)
     path
 end
 
-# A kwarg not in `header` would otherwise be dropped silently, quietly testing nothing.
+# A kwarg not in `header` would be dropped silently, quietly testing nothing.
 function buildrow(header; kw...)
     unknown = setdiff(string.(keys(kw)), header)
     @assert isempty(unknown) "unknown CSV column/s in test row: $unknown"

@@ -8,7 +8,6 @@ function i2r_northing(image2real, centering, n)
     fc = centering ∘ image2real
     p = fc(n)
     LinearMap(Angle2d(π - atan(p[2], p[1])))
-    # LinearMap(Angle2d(π/2 - atan(p[2], p[1])))
 end
 
 function i2r_centering_northing(image2real, c, n)

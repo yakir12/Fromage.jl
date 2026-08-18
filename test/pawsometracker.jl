@@ -1,9 +1,7 @@
-# Direct PawsomeTracker coverage. The former package's test files were dev scratch (they
-# referenced a local dataset folder and a hard-coded mounted video), so this compact suite
-# replaces them, using the shared synthetic-trajectory generator (test/common.jl): ffmpeg's geq
-# renders a disc following a known sine, encoded losslessly so the analytic ground truth is
-# exact. (VerifyRuns' test_tracking.jl additionally exercises track through the gateway,
-# including anamorphic and scaled variants.)
+# Direct PawsomeTracker coverage, over the shared synthetic-trajectory generator (test/common.jl):
+# ffmpeg's geq renders a disc following a known sine, encoded losslessly so the analytic ground
+# truth is exact. VerifyRuns' test_tracking.jl additionally exercises track through the gateway,
+# including anamorphic and scaled variants.
 module PawsomeTrackerTests
 
 using Test
@@ -29,17 +27,16 @@ const DATADIR = mktempdir()
     end
 
     @testset "start_location's declared type is what is actually supported (#18)" begin
-        # CartesianIndex{2} sat in this union with no get_guess method behind it, so it type-checked
-        # at the call and then died with a MethodError once the video was open and the background
-        # stack built. Rejecting it at the keyword boundary names the expected type and costs nothing.
-        # If it is ever reinstated it needs a get_guess method — and this test to change with it.
+        # The union names only what has a get_guess method behind it, so an unsupported type is
+        # rejected at the keyword boundary rather than dying with a MethodError once the video is
+        # open. Reinstating CartesianIndex{2} needs a get_guess method, and this test to change.
         @test_throws TypeError track(base_file; start_location = CartesianIndex(50, 55))
     end
 
     @testset "the background stack stores frames at their decoded width (#27)" begin
         # The stack is the largest allocation in the program — a 1080p frame at background_length
         # 250 is ~494 MB as N0f8 against ~1978 MB as Float32 — and its values come from an N0f8
-        # decode, so the wider type buys no precision. Nothing else in the suite would catch a
+        # decode, so the wider type buys no precision. Nothing else in the suite catches a
         # regression here: tracking accuracy is identical either way, which is the whole point.
         vid = PT.Video(base_file, 25, 0, 2, 1.0)
         try
@@ -47,10 +44,10 @@ const DATADIR = mktempdir()
             @test eltype(stack) == PT.Gray{PT.N0f8}
             @test eltype(parent(parent(stack))) == PT.Gray{PT.N0f8}
 
-            # ...while the buffer receiving the BACKGROUND-SUBTRACTED frame stays Float32, because
-            # that difference is negative for a darker target and N0f8 wraps silently rather than
-            # erroring (0.2 - 0.5 == 0.702). The tracking assertions elsewhere in this file are what
-            # fail if the widening in `detect` is dropped — the DoG then chases inverted noise.
+            # ...while the buffer receiving the BACKGROUND-SUBTRACTED frame stays Float32: that
+            # difference is negative for a darker target, and N0f8 wraps silently rather than
+            # erroring (0.2 - 0.5 == 0.702). Drop the widening in `detect` and the DoG chases
+            # inverted noise — which the tracking assertions elsewhere in this file catch.
             tr = PT.Tracker(vid, true, 10, (21, 21), (vid.height, vid.width), true)
             @test eltype(tr.img) == PT.Gray{Float32}
         finally
@@ -128,9 +125,9 @@ const DATADIR = mktempdir()
     end
 
     @testset "a long-stationary target is not absorbed into the background" begin
-        # the disc pauses for 17 s — far longer than the 250-frame rolling background window — which
-        # used to absorb it into the per-pixel background model (the model's max saw only the disc
-        # at those pixels), erase it from the subtracted image, and set the tracker wandering
+        # the disc pauses for 17 s, far longer than the 250-frame rolling background window: without
+        # protect_target the model absorbs it, erases it from the subtracted image, and the tracker
+        # wanders off
         paused, paused_exp = make_target_video(DATADIR, "pt_pause"; duration = 30, pause = (8, 25))
         _, ij = track(joinpath(DATADIR, only(paused)); start_location = (55, 50), target_width = 10)
         @test length(ij) == 750

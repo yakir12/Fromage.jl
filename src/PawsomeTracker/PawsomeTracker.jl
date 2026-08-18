@@ -37,22 +37,19 @@ const DEFAULT_BACKGROUND_LENGTH = 250
 
 export track, ApriltagRectification
 
-# VideoIO.openvideo (libav's demuxer/codec open) is not thread-safe: concurrent opens race — badly so
-# on a cold network share, where the open path is slow enough to widen the window (it silently yields
-# garbled/wrong frames, not an error). Decoding independent streams IS safe, so we serialize only the
-# open and let every seek/read/decode run concurrently. This guards both the extrinsic-frame reads
-# (`read_frame_at`, run under `tmap` in verification and rectification building) and the per-run
-# tracking opens (the `Video` constructor); the open is fast, so serializing it costs essentially
-# nothing against the decode that follows.
+# VideoIO.openvideo (libav's demuxer/codec open) is not thread-safe: concurrent opens race, and
+# yield garbled or simply wrong frames rather than an error. Decoding independent streams IS safe,
+# so only the open is serialized — every seek/read/decode stays concurrent. Guards both the
+# extrinsic-frame reads (`read_frame_at`, run under `tmap`) and the per-run tracking opens (the
+# `Video` constructor).
 const OPENVIDEO_LOCK = ReentrantLock()
 open_gray_video(file) = lock(() -> openvideo(file; target_format = AV_PIX_FMT_GRAY8), OPENVIDEO_LOCK)
 
 # The AprilTag C detector (`apriltag_detector_detect`) is not reentrant: it has global/static state
-# that concurrent calls corrupt — even distinct, per-thread detectors on distinct frames race
-# (verified: fresh-per-task, pre-created-per-frame, and pooled-per-thread all fail concurrently while
-# serial detection is clean), and under enough pressure it segfaults. So every detection call is
-# serialized process-wide through this lock (see `detect_locked`); this covers both the calibration
-# reference building AND per-run tracking. Reads/decode stay concurrent — only the detect is serial.
+# that concurrent calls corrupt, even across distinct per-thread detectors on distinct frames, and
+# under enough pressure it segfaults. Every detection call is therefore serialized process-wide
+# through this lock (see `detect_locked`), covering both calibration reference building and per-run
+# tracking. Reads and decoding stay concurrent — only the detect is serial.
 const APRILTAG_LOCK = ReentrantLock()
 
 include("diagnose.jl")
@@ -66,11 +63,9 @@ function get_framerate(file)
 end
 
 # The sampler advances whole frames, so the only rates it can deliver are `vid_fps / skip`; this is
-# the stride nearest a request, and the rate it therefore yields. Both the sampler (`Video`) and the
-# diagnostic writer derive from these — the writer declares a playback speed in terms of the rate its
-# frames actually arrive at, and computing that from the *requested* fps instead made the diagnostic
-# claim 2.67x real time at fps = 20 on 30 fps footage (#55). Keeping one definition is also what
-# stops the two drifting apart again.
+# the stride nearest a request, and the rate it therefore yields. The single definition both the
+# sampler (`Video`) and the diagnostic writer derive from — the writer must declare a playback speed
+# in terms of the rate its frames actually arrive at, not the rate that was requested (#55).
 frame_skip(vid_fps, requested) = max(1, round(Int, vid_fps / min(requested, vid_fps)))
 effective_fps(vid_fps, requested) = vid_fps / frame_skip(vid_fps, requested)
 
@@ -130,9 +125,7 @@ struct Video
 
     # `fps` is a request, not a promise: the sampler advances whole frames, so the only rates it can
     # deliver are `vid_fps / skip`. The sample count and every timestamp are derived from that
-    # EFFECTIVE rate, never from the request. Deriving them from the request instead is what made a
-    # non-divisor `fps` either overrun the video or label the track with times its frames were never
-    # taken at (issues #15 and #17).
+    # EFFECTIVE rate, never from the request (#15, #17).
     function Video(file, fps, start, stop, scale)
         vid = open_gray_video(file)          # serialized open (openvideo isn't thread-safe); see OPENVIDEO_LOCK
         vid_fps = framerate(vid)
@@ -148,8 +141,7 @@ struct Video
         # Sample i reads raw frame (i-1)*skip, and `cld` is exactly the count keeping that index
         # inside the window — cld(n, s) == fld(n - 1, s) + 1 — so the reads cannot run off the end.
         # The epsilon absorbs a duration that computes to 59.999999996 rather than 60; the `max`
-        # keeps a window shorter than one frame period yielding the single frame `seek` lands on,
-        # as it did before.
+        # makes a window shorter than one frame period yield the single frame `seek` lands on.
         navailable = max(1, floor(Int, (stop - start) * vid_fps + 1e-9))
         nframes = cld(navailable, skip)
         sar = aspect_ratio(vid)
@@ -209,11 +201,10 @@ struct Tracker
     end
 end
 
-# The stack stores raw frames exactly as they were decoded — `Gray{N0f8}`, which is what libav
-# hands us — rather than widening them to Float32. That is a 4x saving on the largest allocation in
-# the program (a 1080p frame at background_length = 250 is ~494 MB rather than ~1978 MB) and loses
-# nothing, since the values came from N0f8 in the first place. The SIGNED buffer is `Tracker.img`,
-# which receives the background-subtracted frame; see the widening in `detect` (#27).
+# The stack stores raw frames as decoded, `Gray{N0f8}`, rather than widening them to Float32: a 4x
+# saving on the largest allocation in the program (a 1080p frame at background_length = 250 is
+# ~494 MB rather than ~1978 MB), losing nothing, since the values came from N0f8 to begin with. The
+# SIGNED buffer is `Tracker.img`, which receives the background-subtracted frame — see `detect` (#27).
 function build_stack(scale, sz, n_bkgd, pad_indices)
     tform = LinearMap(SDiagonal(SVector{3, Float64}(1/scale, 1/scale, 1)))
     PaddedView(zero(Gray{N0f8}), WarpedView(Array{Gray{N0f8}}(undef, sz..., n_bkgd), tform; fillvalue = zero(Gray{N0f8})), pad_indices)
@@ -251,10 +242,8 @@ populate_slice!(stack, i, vid) = copy!(selectdim(parent(parent(stack)), 3, i), v
 # AFTER detection: the frame enters the stack whole (detect must see the target), and once the
 # position is known the target's search window (the same guess ± radii rectangle detect scans) in
 # that slice is restored to the pre-target background the evicted frame held there. By induction
-# the history never contains the target — a target that sits still for longer than the rolling
-# window would otherwise be absorbed by the per-pixel max/min, erased from the subtracted image,
-# and the tracker set wandering. (The prefill in collect_stack is unprotected: absorption needs
-# the stationary spell to exceed the whole background window within the rolling phase.)
+# the history never contains the target. (The prefill in collect_stack is unprotected: absorption
+# needs the stationary spell to exceed the whole background window within the rolling phase.)
 function protect_target(stack, j, guess, radii, scale)
     slice = selectdim(parent(parent(stack)), 3, j)
     protect = CartesianIndices(UnitRange.(round.(Int, (guess .- radii) ./ scale),
@@ -263,11 +252,11 @@ function protect_target(stack, j, guess, radii, scale)
 end
 
 # Registered variant (AprilTag mode): the search window lives in canvas (reference-space)
-# coordinates, so its four corners cross `canvas2raw` — the slice's registration composed with
-# the inverse scaling — before the protected region is taken as their bounding box in the raw
-# frame. `pad` (raw px) absorbs the scheme's approximations: the box is computed under the
-# INCOMING frame's registration while `keep` holds the EVICTED frame's raw values at those same
-# indices, each off by up to one frame of drone motion. Padding only widens the protected area.
+# coordinates, so its four corners cross `canvas2raw` — the slice's registration composed with the
+# inverse scaling — before the protected region is taken as their bounding box in the raw frame.
+# `pad` (raw px) absorbs the approximation: the box is computed under the INCOMING frame's
+# registration while `keep` holds the EVICTED frame's raw values at those indices, each off by up
+# to one frame of drone motion. Padding only widens the protected area.
 function protect_target(stack, j, guess, radii, canvas2raw::Function, pad::Int)
     slice = selectdim(parent(parent(stack)), 3, j)
     corners = (canvas2raw(guess .- radii), canvas2raw(guess .+ radii),
@@ -285,8 +274,7 @@ function restore_background!(stack, j, protect, keep)
 end
 
 # Sequential on purpose: next!(vid) decodes into the single shared vid.img buffer, so copying
-# slice i must complete before the next read — a spawned copy raced the following next! and
-# nondeterministically corrupted background slices with (parts of) the wrong frame.
+# slice i must complete before the next read.
 function collect_stack(vid, sz, h, n_bkgd)
     stack = get_stack(vid, sz, h, n_bkgd)
     for i in axes(stack, 3)
@@ -306,10 +294,9 @@ function detect(guess, stack, j, h, img, radii, buff, kernel, sz, scale, bkgd_re
     if isnothing(bkgd_reduce)      # subtraction off: the DoG runs on the raw slice
         img.data[bkgd_indices] .= slice[bkgd_indices]
     else
-        # Widen BEFORE subtracting. A darker target makes this difference negative, and the stack is
-        # `N0f8` — unsigned, and it wraps silently rather than erroring
-        # (Gray{N0f8}(0.2) - Gray{N0f8}(0.5) == Gray{N0f8}(0.702)), which would leave a
-        # background-matching pixel at 0 and a pixel one quantum darker near 1.0, i.e. the DoG
+        # Widen BEFORE subtracting. A darker target makes this difference negative, and the stack's
+        # `N0f8` is unsigned and wraps silently rather than erroring
+        # (Gray{N0f8}(0.2) - Gray{N0f8}(0.5) == Gray{N0f8}(0.702)), which would leave the DoG
         # chasing inverted noise. `img` is Float32 precisely to hold the signed result.
         img.data[bkgd_indices] .= Gray{Float32}.(slice[bkgd_indices]) .- Gray{Float32}.(bkgd_reduce(stack[bkgd_indices, :], dims = 3))
     end
@@ -329,9 +316,7 @@ function detect(guess, stack, j, h, img, radii, buff, kernel, sz, scale, bkgd_re
     if any(isnan, coord)
         return RowCol(guess) / scale, guess
     end
-    # coord = min.(max.(coord, (1, 1)), sz)
     guess = Tuple(round.(Int, coord))
-    # return scaleit(coord, scale), guess
     return coord / scale, guess
 end
 
@@ -365,9 +350,7 @@ function track_one(file, start, stop, target_width, start_location, window_size,
         coords = Vector{RowCol}(undef, vid.nframes)
         guess = get_guess(start_location, stack, vid, darker_target, target_width, initial_search_factor, subtract)
         track!(coords, stack, guess, tr, vid, dia)
-        # sample i is raw frame (i-1)*skip, i.e. start + (i-1)/effective_fps. Spreading the
-        # samples over [start, stop] instead pinned the last one to `stop`, stretching every
-        # timestamp by up to a frame period even when `fps` divided the rate evenly (#17).
+        # sample i is raw frame (i-1)*skip, i.e. start + (i-1)/effective_fps (#17)
         return (range(start; step = 1 / vid.fps, length = vid.nframes), coords)
     end
 end
@@ -403,12 +386,9 @@ function track(
         start::Real = 0,
         stop::Real = get_duration(file),
         target_width::Real = 25,
-        # `CartesianIndex{2}` was in this union with no `get_guess` method behind it, so it
-        # type-checked at the call and then failed with a MethodError once the video was already
-        # open (#18). The union is now exactly what is supported. `RowCol` is absent on purpose
-        # despite having a method: that is the internal form a *later* segment's start takes in the
-        # vector method, carried over from the previous segment's last coordinate — not something a
-        # caller supplies here.
+        # The union is exactly what is supported (#18). `RowCol` is absent on purpose despite having
+        # a method: that is the internal form a *later* segment's start takes in the vector method,
+        # carried over from the previous segment's last coordinate, not something a caller supplies.
         start_location::Union{Missing, NTuple{2, Int}} = missing,
         window_size::Union{Missing, Int, NTuple{2, Int}} = round(Int, 2target_width),
         darker_target::Bool = true,
@@ -424,9 +404,8 @@ function track(
     # `Missing` never reaches fix_window_size (which has no method for it).
     window_size = ismissing(window_size) ? round(Int, 2target_width) : window_size
 
-    # The diagnostic must declare the rate its frames actually arrive at, not the one requested: a
-    # non-divisor `fps` otherwise makes it claim the wrong playback speed (#55). The rate is only
-    # knowable from the video, hence the probe; `Video` derives the same stride from the same rule.
+    # The diagnostic declares the rate its frames actually arrive at, which is knowable only from
+    # the video — hence the probe; `Video` derives the same stride from the same rule (#55).
     dia_fps = effective_fps(get_framerate(file), fps)
 
     # AprilTag mode (drone footage): the rectification carries the shared reference and detector
@@ -492,11 +471,8 @@ function track(
     # `missing` means "use the default", like a blank csv cell (see the single-file method).
     window_size = ismissing(window_size) ? round(Int, 2target_width) : window_size
 
-    # The diagnostic must declare the rate its frames actually arrive at, not the one requested: a
-    # non-divisor `fps` otherwise makes it claim the wrong playback speed (#55). The rate is only
-    # knowable from the video, hence the probe; `Video` derives the same stride from the same rule.
-    # Segments are assumed to share one native frame rate (see the note in runs.md), so the first
-    # one's is representative — as it already is for the `fps` default in this method's signature.
+    # As in the single-file method (#55). Segments are assumed to share one native frame rate (see
+    # runs.md), so the first one's is representative — as it is for the `fps` default above.
     dia_fps = effective_fps(get_framerate(files[1]), fps)
 
     nfiles = length(files)
@@ -504,11 +480,9 @@ function track(
     args = zip(files, start, stop, start_location)
 
     # AprilTag mode: every segment registers to the SAME shared reference (the tags are stationary
-    # across the whole run). Segments are tracked independently — each uses its own start_location
-    # (a missing one falls back to the frame-centre search; now that tracking happens in shared
-    # reference space, chaining a segment's metric end position into the next segment's guess via
-    # `inv(ref.M)` would be possible, but is deliberately not done yet). One diagnostic spans all
-    # segments.
+    # across the whole run) and is tracked independently from its own start_location, a missing one
+    # falling back to the frame-centre search. Segments do not chain (see DESIGN-HISTORY.md). One
+    # diagnostic spans all of them.
     if rectification isa ApriltagRectification
         segs = Vector{Vector{Union{Missing, RowCol}}}(undef, nfiles)
         dia = diagnose_apriltag(diagnostic_file, rectification.reference, darker_target, dia_fps)

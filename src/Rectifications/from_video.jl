@@ -10,12 +10,11 @@ An alias for a static vector of three, x, y, and z, indicating a real-world coor
 """
 const XYZ = SVector{3, <: Real}
 
-# `yadif` marks interlaced footage: `true` ⇒ deinterlace, `false`/`missing` ⇒ progressive, leave as
-# is. `blur` is a gblur sigma; `missing` *and* `0` mean no blur (VerifyRectifications always sends a
-# number, with 0 as its "no blur", so a sigma-0 no-op filter must not be built). Returns the ffmpeg
-# `-vf` filter string, or `missing` when no filtering is needed. `missing` (not `nothing`) is the
-# absent-value sentinel for every optional here, matching the structs VerifyRectifications feeds into
-# `Rectification`.
+# The ffmpeg `-vf` filter string, or `missing` when no filtering is needed. `yadif` marks interlaced
+# footage: `true` ⇒ deinterlace, `false`/`missing` ⇒ progressive, leave as is. `blur` is a gblur
+# sigma, where `missing` *and* `0` mean no blur (VerifyRectifications always sends a number, using 0
+# as its "no blur", and a sigma-0 no-op filter must not be built). `missing` rather than `nothing`
+# is the absent-value sentinel throughout, matching the structs fed into `Rectification`.
 function _vf(yadif, blur)
     filters = String[]
     coalesce(yadif, false) && push!(filters, "yadif=1")
@@ -27,12 +26,10 @@ _cmd(file, t, ::Missing) = `$(FFMPEG.ffmpeg()) -hide_banner -loglevel error -ss 
 _cmd(file, t, vf) = `$(FFMPEG.ffmpeg()) -hide_banner -loglevel error -ss $t -i $file -frames:v 1 -vf $vf -f rawvideo -pix_fmt gray pipe:1`
 
 
-# The failures `_read_frame` retries, i.e. everything a flaky share can plausibly do to a frame
-# read: ffmpeg exiting nonzero (`ProcessFailedException` — how an EAGAIN against the share surfaces,
-# since it is ffmpeg itself that fails), and the Julia-side spawn/pipe failures (`IOError`,
-# `SystemError`). Everything else is not transient and retrying it is wrong: an `InterruptException`
-# above all — a bare `catch` ate Ctrl-C for the whole backoff sequence — but equally a caller's bug,
-# which should surface at once instead of after four attempts.
+# What `_read_frame` retries: everything a flaky share can plausibly do to a frame read. ffmpeg
+# exiting nonzero (`ProcessFailedException` — how an EAGAIN against the share surfaces, since it is
+# ffmpeg itself that fails), and the Julia-side spawn/pipe failures (`IOError`, `SystemError`).
+# Everything else is not transient, and must surface at once rather than after four attempts.
 _transient(e) = e isa ProcessFailedException || e isa Base.IOError || e isa SystemError
 
 # Read one frame, retrying transient failures. EAGAIN ("Resource temporarily unavailable") from
@@ -47,7 +44,7 @@ function _read_frame(cmd; tries = 4)
             sleep(0.2 * 2^(i - 1))          # 0.2s, 0.4s, 0.8s backoff
         end
     end
-    return read(cmd)   # last attempt outside the try: the real error propagates, and the
+    return read(cmd)   # last attempt outside the try, so the real error propagates and the
 end                    # function provably never returns `nothing`
 
 function _frame_at(file, t, vf, w, h)
@@ -99,9 +96,10 @@ Lens distortion for up to 3 radial coefficients.
 """
 lens_distortion(v, k) = v * lens_distortion_factor(norm(v), k)
 
-# End of the invertible (monotone) branch of the forward radial map g(r) = r·f(r): the smallest positive `r` where
-# g'(r) = 1 + 3k₁r² + 5k₂r⁴ + 7k₃r⁶ = 0 (beyond it the distortion "folds" and the inverse is ill-posed). `Inf` if
-# g is monotone everywhere (e.g. pincushion). Depends only on `k`, so compute once per calibration.
+# End of the invertible (monotone) branch of the forward radial map g(r) = r·f(r): the smallest
+# positive `r` where g'(r) = 1 + 3k₁r² + 5k₂r⁴ + 7k₃r⁶ = 0 — beyond it the distortion "folds" and
+# the inverse is ill-posed. `Inf` if g is monotone everywhere (e.g. pincushion). Depends only on
+# `k`, so it is computed once per calibration.
 function _first_critical(k)
     h = Polynomial([1.0; [(2i + 1) * ki for (i, ki) in enumerate(k)]])   # in s = r²
     ss = roots(h)
@@ -175,10 +173,10 @@ function checker_size_pixel(extrinsic_corners::AbstractMatrix, n_corners)
     return s
 end
 
-# Rectification assumes that the pixel coodrinates it rectifies have a `aspect` aspect-ratio. 
-# `center` and `north` are assumed to have been manually retrieved (from some GUI like Gimp or Photoshop) and as such:
+# The pixel coordinates being rectified have an `aspect` aspect-ratio. `center` and `north`,
+# however, are read off a GUI (Gimp, Photoshop) by hand, so they are:
 # 1. pixel coordinates with width first and height second, (w, h)
-# 2. their aspect ratio is 1, regardless of the aspect ratio specified by `aspect`
+# 2. at an aspect ratio of 1, whatever `aspect` says
 function Rectification(file, extrinsic, start, stop, temporal_step, yadif, blur, width, height, n_corners, checker_size, aspect, radial_parameters, center, north; diagnostic = nothing)
     vf = _vf(yadif, blur)
     intrinsic_task = Threads.@spawn extract_intrinsics(file, start, stop, temporal_step, vf, width, height, n_corners)
@@ -195,20 +193,11 @@ Extrinsics-only rectification: no intrinsic-calibration window exists, so the ca
 focal length) are fit from the single extrinsic frame with every lens-distortion coefficient fixed
 at zero — the map is effectively the board-plane homography, disregarding lens aberrations.
 
-# Design note: selected by the absence of the calibs window, never flagged
-
-Which constructor a rectification gets is decided *solely* by whether the CSV row has a calibs
-window: both `start` and `stop` blank ⇒ this single-frame fit. A row that omits the
-window but still fills the intrinsic-window parameters (`temporal_step`, `radial_parameters`) is
-NOT flagged as inconsistent — those two parameters are silently ignored (they only make sense when
-a window of frames is sampled; everything else — `yadif`, `blur`, `n_corners`, `checker_size`,
-`aspect`, `center`, `north` — is honored as usual).
-
-We chose this simplification deliberately. Leaving *both* window time stamps out of a row is too
-large an "action" to plausibly happen by mistake — the user must have intended an extrinsics-only
-rectification — so stray leftover parameters shouldn't override that intent with an error (unlike a
-filled column that belongs to a different `type`, which VerifyRectifications does flag). Filling only
-one of the two bounds is still rejected upstream ("both present or both missing").
+Selected *solely* by the CSV row having no calibs window (both `start` and `stop` blank). Such a
+row may still carry `temporal_step`/`radial_parameters`, which are then silently ignored rather
+than flagged; everything else (`yadif`, `blur`, `n_corners`, `checker_size`, `aspect`, `center`,
+`north`) is honoured as usual. Filling only one of the two bounds is rejected upstream. See
+DESIGN-HISTORY.md for why this asymmetry is deliberate.
 """
 function Rectification(file, extrinsic, yadif, blur, width, height, n_corners, checker_size, aspect, center, north; diagnostic = nothing)
     vf = _vf(yadif, blur)

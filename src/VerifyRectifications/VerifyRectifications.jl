@@ -74,8 +74,8 @@ function load_rectifications(data_path, file; strict = true, defaults = (;), iss
         end
     end
 
-    # The comprehension pins the element type to the abstract `Vector{RectificationMethod}`
-    # (mirrors load_runs), so the clean-path return type doesn't vary with the mix of kinds.
+    # The comprehension pins the element type to the abstract `Vector{RectificationMethod}` (as in
+    # load_runs), so the clean-path return type doesn't vary with the mix of kinds.
     return RectificationMethod[RectificationMethod(r) for r in eachrow(df)]
 end
 

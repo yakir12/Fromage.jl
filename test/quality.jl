@@ -1,5 +1,4 @@
-# Code-quality checks for the consolidated package, replacing the per-package Aqua /
-# ExplicitImports tests the former packages carried.
+# Package-wide Aqua / ExplicitImports checks.
 module QualityTests
 
 using Test
@@ -10,7 +9,7 @@ using Fromage
 @testset "quality" begin
     @testset "Aqua" begin
         # ambiguities are skipped: the heavy image/OpenCV dependency stack reports ambiguities in
-        # methods this package doesn't own (the former packages skipped them too).
+        # methods this package doesn't own.
         Aqua.test_all(Fromage; ambiguities = false)
     end
 

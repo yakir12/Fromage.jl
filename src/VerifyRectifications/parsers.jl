@@ -2,14 +2,12 @@
 # live in the shared ..Parsing module; this file holds what is gateway-specific — the defaults
 # whitelist and the per-type row parsers and row-level checks.
 
-# The globally overridable defaults: exactly the video-type tuning parameters — not identities
-# or anchors (`calibration_id`/`file`/`extrinsic`/`matlab_file`/`extrinsic_index`/`path`), not the
-# scene points (`center`/`north`), not `aspect`, not the intrinsic window (`start`/`stop`), and
-# not only_scale's `scale` (a global pixels-per-unit makes no sense), which are all inherently
-# per-row. The caller replaces any of these via `load_rectifications`' `defaults` kwarg (in
-# Fromage: `main`'s `rectification_defaults`); a csv cell always wins over the replaced default
-# (see parseto!). `yadif = missing` means "imputed from the probed video", so a caller-supplied
-# yadif beats the probe on every row whose cell is blank.
+# The globally overridable defaults: exactly the video-type tuning parameters. Everything else —
+# identities and anchors, the scene points, `aspect`, the intrinsic window, only_scale's `scale` —
+# is inherently per-row. The caller replaces any of these via `load_rectifications`' `defaults`
+# kwarg (in Fromage: `main`'s `rectification_defaults`), and a csv cell always wins over the
+# replaced default (see parseto!). `yadif = missing` means "imputed from the probed video", so a
+# caller-supplied yadif beats the probe on every row whose cell is blank.
 const DEFAULTS = (;
     checker_size = 4.0,
     n_corners = (7, 10),
@@ -110,18 +108,15 @@ function verify_center2north(dict)
     end
 end
 
-# A filled cell in a column the row's type never reads would otherwise be silently ignored — and
-# usually means the `type` itself is wrong (e.g. a `scale` on a video row). The type-specific
-# parser has already put every column it consumed into `dict`, so anything non-blank left in the
-# row is irrelevant to this type. Blank cells are fine: mixed-type CSVs share one header, so
-# irrelevant *columns* must be allowed to exist, just not filled. Must run before the COLUMNS
-# back-fill (which adds every column to `dict`).
+# A filled cell in a column the row's type never reads is flagged: it would otherwise be silently
+# ignored, and it usually means the `type` itself is wrong (e.g. a `scale` on a video row). The
+# type-specific parser has already put every column it consumed into `dict`, so anything non-blank
+# left in the row is irrelevant to this type. Blank cells are fine — mixed-type CSVs share one
+# header, so irrelevant *columns* must be allowed to exist, just not filled. Must run before the
+# COLUMNS back-fill, which adds every column to `dict`.
 #
-# `type` and `comment` are exempt, for different reasons. `type` is what selects the parser, so it
-# is consumed by definition. `comment` is consumed by NO parser, by design — it is free text, and
-# the docs promise it is ignored — which made it look exactly like a wrong-type column and turned a
-# filled comment into a hard error under the default strict mode. It is the only column no type
-# reads, so this exemption closes that case completely.
+# `type` is exempt because it selects the parser, and so is consumed by definition; `comment` is
+# exempt because it is free text that no parser reads by design (#16).
 function verify_irrelevant(dict, row)
     ismissing(dict[:type]) && return          # wrong type: already reported, no field list to check
     for k in Tables.columnnames(row)
@@ -134,7 +129,7 @@ end
 
 function parse_row(row, defaults = DEFAULTS)
     dict = Dict{Symbol, Any}(:issues => String[])
-    # trim whitespace (as for the other string fields) and treat a now-empty cell as the default.
+    # trim whitespace (as for the other string fields); a now-empty cell takes the default
     type = String(strip(coalesce(get(row, :type, "video"), "video")))
     isempty(type) && (type = "video")
     dict[:type] = type

@@ -21,7 +21,7 @@ const P = Fromage.Probing
     write(corrupt, read(whole)[1:500])
 
     # Opens cleanly, but has no video stream at all: ffprobe exits 0 and reports only the container
-    # duration. This is the case that used to arrive by luck through a random fixture.
+    # duration — the case the deterministic corrupt fixture deliberately does not cover.
     audio_only = joinpath(dir, "audio.m4a")
     FFMPEG.ffmpeg_exe(`-y -loglevel error -f lavfi -i sine=frequency=440:duration=1 -c:a aac $audio_only`)
 

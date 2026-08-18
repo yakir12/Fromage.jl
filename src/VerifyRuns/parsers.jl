@@ -12,12 +12,11 @@ function mytryparse(::Type{MyWindow}, s)
     return mytryparse(NTuple{2, Int}, s)
 end
 
-# The globally overridable defaults: exactly the tracking tuning parameters — not identities
-# (`run_id`/`calibration_id`/`file`/`path`) and not the temporal window (`start`/`stop`/
-# `start_location`), which are inherently per-row. The caller replaces any of these via
-# `load_runs`' `defaults` kwarg (in Fromage: `main`'s `tracking_defaults`); a csv cell always
-# wins over the replaced default (see parseto!). `fps = missing` means "imputed from the probed
-# video", so a caller-supplied fps beats the probe on every row whose cell is blank.
+# The globally overridable defaults: exactly the tracking tuning parameters. Identities and the
+# temporal window are inherently per-row. The caller replaces any of these via `load_runs`'
+# `defaults` kwarg (in Fromage: `main`'s `tracking_defaults`), and a csv cell always wins over the
+# replaced default (see parseto!). `fps = missing` means "imputed from the probed video", so a
+# caller-supplied fps beats the probe on every row whose cell is blank.
 const DEFAULTS = (;
     target_width = 25.0,
     window_size = missing,
@@ -40,11 +39,10 @@ const DEFAULT_TYPES = (;
 
 resolve_defaults(overrides) = Parsing.resolve_defaults(overrides, DEFAULTS, DEFAULT_TYPES, "tracking")
 
-# Every column maps to one `track` keyword (plus `run_id`/`path` for identity & path resolution).
-# The hardcoded defaults (see DEFAULTS) mirror `PawsomeTracker.track`'s own so a blank cell behaves
-# exactly as omitting the argument would. `stop`/`fps` are left missing here and imputed from the
-# probed video (duration / framerate); `window_size`/`start_location` stay missing and are simply
-# omitted from the `track` call.
+# Every column maps to one `track` keyword (plus `run_id`/`path` for identity and path resolution).
+# The hardcoded defaults mirror `PawsomeTracker.track`'s own, so a blank cell behaves exactly as
+# omitting the argument would. `stop`/`fps` are left missing here and imputed from the probed video;
+# `window_size`/`start_location` stay missing and are omitted from the `track` call.
 function parse_run!(dict, row, defaults)
     parseto!(dict, row, :run_id, String, missing)               # all-or-nothing: blank only allowed when every row is blank (then imputed from the row number); see resolve_run_ids!
     parseto!(dict, row, :calibration_id, String)                # required: Fromage joins runs to rectifications on it
@@ -71,12 +69,11 @@ function parse_row(row, defaults = DEFAULTS)
     return dict
 end
 
-# run_id is all-or-nothing: either every row names its run (enabling multi-segment runs), or no
-# row does (column absent, or present with every cell blank) and each row becomes its own
-# single-segment run, identified by its 1-based row number. A mixed file is rejected — under
-# partial numbering a blank row's auto-generated id could silently merge with an explicit one
-# (e.g. "3") into a bogus multi-segment run, so there is no safe way to honor it. In the mixed
-# case the blanks stay missing: Run construction only happens on the issue-free path, and
+# run_id is all-or-nothing: either every row names its run (enabling multi-segment runs), or no row
+# does (column absent, or present with every cell blank) and each row becomes its own single-segment
+# run identified by its 1-based row number. A mixed file is rejected, since a blank row's
+# auto-generated id could silently merge with an explicit one into a bogus multi-segment run. In
+# that case the blanks stay missing: Run construction only happens on the issue-free path, and
 # verify_run_consistency! skips missing-id groups.
 function resolve_run_ids!(df)
     if all(ismissing, df.run_id)

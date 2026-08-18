@@ -7,8 +7,6 @@ function _detect_corners(img, n_corners)
     corners = Matrix{RowCol}(undef, n_corners)
     ret, _ = OpenCV.findChessboardCorners(gry, OpenCV.Size{Int32}(n_corners...), OpenCV.Mat(reshape(reinterpret(Float32, corners), 2, 1, prod(n_corners))), OpenCV.CALIB_CB_ADAPTIVE_THRESH + OpenCV.CALIB_CB_NORMALIZE_IMAGE + OpenCV.CALIB_CB_FAST_CHECK)
     return ret ? corners : missing
-    # ref_corners = OpenCV.cornerSubPix(gry, cv_corners, OpenCV.Size{Int32}(11,11), OpenCV.Size{Int32}(-1,-1), CRITERIA)
-    # corners = reshape(RowCol.(eachslice(ref_corners, dims = 3)), n_corners)
 end
 
 """
@@ -25,7 +23,6 @@ function fit_model(sz, objpoints, imgpointss, n_corners, radial_parameters, aspe
     # radial_parameters = 0 fixes ALL radial coefficients at zero (distortionless fit, used by the
     # extrinsics-only Rectification): setdiff(1:3, 1:0) selects every CALIB_FIX_K.
     CALIB_FIX_K = sum([OpenCV.CALIB_FIX_K1, OpenCV.CALIB_FIX_K2, OpenCV.CALIB_FIX_K3][setdiff(1:3, 1:radial_parameters)])
-    # @show Int(CALIB_FIX_K)
     flags = OpenCV.CALIB_ZERO_TANGENT_DIST + CALIB_FIX_K + OpenCV.CALIB_FIX_ASPECT_RATIO
     # a single planar view leaves focal + principal point + pose underdetermined by one DOF; fixing
     # the principal point (at the image centre, OpenCV's default without an intrinsic guess) makes

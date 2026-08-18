@@ -34,7 +34,7 @@
         @test flagged(df, 2, "either every row has a run_id or none does")
         @test !flagged(df, 3, "either every row has a run_id or none does")
 
-        # the collision this rule forecloses: an explicit "3" plus a blank row can no longer merge
+        # the collision this rule forecloses: an explicit "3" plus a blank row must not merge
         # into a bogus multi-segment run — the mixed file is rejected outright
         df2 = check("p_id_collide.csv", [runrow(run_id = "3", file = ART.a),
                                          runrow(run_id = missing, file = ART.b)])

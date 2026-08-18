@@ -1,13 +1,11 @@
-# Build-time precompilation scaffolding, kept in its own file so it can be excluded from coverage
-# (see codecov.yml): these lines run during precompilation, which the coverage run does not
-# instrument, so they can never be hit by the test suite no matter how well the package is tested.
+# Build-time precompilation scaffolding, in its own file so it can be excluded from coverage (see
+# codecov.yml): it runs during precompilation, which the coverage run does not instrument.
 
-# Precompile the parse → verify → report pipeline at build time. The bulk of first-call latency is the
-# DataFrames/DataFramesMeta/Chain macro machinery (column-typed `@transform!`/`@chain`/`subset`/`verify!`
-# specializations), which a single `load_rectifications` run compiles. The workload CSV points at
-# nonexistent files (one row per type), so the run exercises the full pipeline for all three types but
-# bails before any ffprobe/matread/corner detection — no bundled media needed, fast deterministic
-# precompile. (The video-read/corner-detection paths are left to compile on first real use.)
+# Precompile the parse → verify → report pipeline. The bulk of first-call latency is the
+# DataFrames/DataFramesMeta/Chain macro machinery (column-typed
+# `@transform!`/`@chain`/`subset`/`verify!` specializations) a single `load_rectifications` run
+# compiles. The workload CSV points at nonexistent files, one row per type, so the run exercises the
+# full pipeline for every type but bails before any ffprobe/matread/corner detection.
 @setup_workload begin
     dir = mktempdir()
     csv = joinpath(dir, "precompile.csv")
@@ -25,9 +23,8 @@
             try
                 load_rectifications(dir, csv; strict = false)
             catch e
-                # Deliberately broad: precompilation must not fail because the workload did. An
-                # interrupt is the exception — Ctrl-C during precompile should stop it, not be
-                # absorbed here.
+                # Deliberately broad: precompilation must not fail because the workload did. Ctrl-C
+                # during precompile should still stop it.
                 e isa InterruptException && rethrow()
             end
         end
