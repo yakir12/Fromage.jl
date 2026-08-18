@@ -33,6 +33,17 @@ main("path/to/my experiment"; calibs_file = "meta/my_calibs.csv", runs_file = "m
 
 And the video files can live in other folders via the `path` column in either csv file. Paths are relative to the folder the csv file itself is in; absolute paths work too.
 
+!!! warning "`path` is a folder, `file` is the file name"
+    `path` names the **folder** the video sits in — never the video itself. The file name always goes in `file`. For `my experiment/videos/beetle01.mp4`:
+
+    | `file` | `path` | |
+    | --- | --- | --- |
+    | `beetle01.mp4` | `videos` | ✔ the folder, with the file name kept separate |
+    | `videos/beetle01.mp4` | *(blank)* | ✔ also fine — `path` defaults to the csv's own folder |
+    | `beetle01.mp4` | `videos/beetle01.mp4` | ✘ `path` must not repeat the file name |
+
+    Putting the video in `path` is reported as *"path is a file, not a folder"*.
+
 ## Editing csv files
 
 A csv file is just a table saved as plain text — you can edit it in Excel, Google Sheets, LibreOffice, or any text editor. Just make sure it's saved as **.csv**, not .xlsx. Template files to copy from live in [`examples/`](https://github.com/yakir12/Fromage.jl/tree/main/examples).

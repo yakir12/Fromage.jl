@@ -44,7 +44,7 @@ Optional:
 | `north` | — | `"(x, y)"` pixel coordinate of a point lying due north of `center`. Rotates the real-world coordinates so that north is consistent across calibrations. Requires `center`. |
 | `blur` | `1` | Gaussian blur (sigma, in pixels) applied to frames before corner detection; helps with noisy/sharpened footage. `0` disables. |
 | `radial_parameters` | `1` | number of radial lens-distortion coefficients to fit (1–3). More isn't automatically better — use 2–3 only for strongly distorting (e.g. fisheye) lenses. Ignored without a calibration window. |
-| `path` | `.` | folder containing `file`, relative to the location of the csv file. |
+| `path` | `.` | the **folder** containing `file`, relative to the location of the csv file. Just the folder — the file name belongs in `file`, not here. |
 | `aspect` | read from video | pixel aspect ratio; only override for anamorphic footage that misreports it. |
 | `yadif` | read from video | `true` to deinterlace interlaced footage; detected automatically, override to force. |
 | `type` | `video` | see above. |
@@ -84,7 +84,7 @@ Required: `calibration_id`, `file` (the drone footage — a video where the tags
 | `checker_size` | `12` | the real-world size of a single tag **cell** (e.g. cm). The black-border square is `cells × checker_size`, where `cells` is 8 for `tag36h11`, 7 for `tag25h9`, 6 for `tag16h5`. **Track coordinates come out in this unit.** |
 | `center` | — | `"(x, y)"` pixel of the arena's origin **in the `extrinsic` frame**. Becomes the origin of the real-world coordinates. |
 | `north` | — | `"(x, y)"` pixel due north of `center` in the `extrinsic` frame; rotates the coordinates so north is consistent. Requires `center`. |
-| `path` | `.` | folder containing `file`, relative to the csv file. |
+| `path` | `.` | the **folder** containing `file`, relative to the csv file. Just the folder — the file name belongs in `file`, not here. |
 
 The tags are stationary across the whole experiment, so the reference is established once here and shared by every run — `runs.csv` therefore has no `apriltags` column (and, for an apriltag run, a run's own `start` frame is where its target search begins, not the calibration's `center`).
 
