@@ -497,6 +497,34 @@ The same principle runs through the pure unit tests: they assert invariants (`im
 `real2image` are mutual inverses; a north point lands on the negative x-axis; a regular grid
 measures its own spacing) rather than hard-coded matrices.
 
+### Tests assert behaviour, not mechanism (#68)
+
+Four tests used to state their subject in terms of the implementation that happened to satisfy it,
+and were removed or rewritten for that reason:
+
+- `test_module_state.jl` round-tripped `set_read_limit!` against `read_limit()`. That is a getter
+  and a setter agreeing with each other; it could not fail while the code compiled.
+- `test_concurrency.jl` acquired `READ_SEM[]` from sixty-four nested tasks and asserted the peak
+  count never exceeded the limit. That is a test of `Base.Semaphore`, not of this package. What
+  actually needs protecting is that concurrent reads come back *correct*, which is now asserted in
+  `test_frame_reads.jl` by reading the same frame from sixty-four tasks and requiring every one to
+  equal the frame a lone reader gets. The limiter is still exercised — the reads run at limit 1 and
+  at the configured default — but nothing asserts how the bound is implemented, so replacing the
+  semaphore does not turn the suite red.
+- `test_ffmpeg_cmd.jl` walked `Cmd.exec` asserting that `-ss`, `-frames:v` and `rawvideo` were
+  present and `-vf` was not. Any reordering or reformulation of the command broke it, while a
+  command that was well-formed and wrong still passed. The observable claims — the frame has the
+  frame's shape, the timestamp is honoured, a `gblur` actually smooths the image, building the
+  command does not mutate global `ENV` — moved to `test_frame_reads.jl`. `_vf` itself stayed a
+  direct unit test (`test_vf.jl`): it is pure, and the two absent-value conventions it reconciles
+  are worth pinning exactly.
+- `eltype(parent(parent(stack)))` pinned how many view layers wrap the background stack. #27 is
+  about the storage being 8-bit, not about the depth of the pipe, so the tests now recurse on
+  `parent` to the fixpoint and check the array they land on.
+
+The rule this leaves behind: a test may reach for an internal function, but what it asserts about
+it has to be something a caller could observe.
+
 ### Each suite runs in its own wrapper module
 
 Their helper constants — `DATADIR`, `ART`, `HEADER`, `make_video` — would otherwise collide.

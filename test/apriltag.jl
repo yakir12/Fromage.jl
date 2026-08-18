@@ -14,6 +14,12 @@ using Fromage.PawsomeTracker: CANON, apply_h, homography_dlt, place_square, fit_
 
 rot(θ) = SMatrix{2,2,Float64}(cos(θ), sin(θ), -sin(θ), cos(θ))    # proper 2D rotation
 
+# The background stack is a lazily-indexed view over the array that actually holds the frames, and
+# how many layers of view sit in between is nobody's business but `build_stack`'s. Unwrap to the
+# storage rather than naming a depth, so a change in the pipe doesn't read as a test failure.
+storage(a) = parent(a) === a ? a : storage(parent(a))
+
+
 # a realistic near-nadir drone view (mild perspective, like the real footage), and a deliberately
 # harsh one (strong perspective) for the robustness check
 const HMILD  = SMatrix{3,3,Float64}(1.5, -0.03, 5e-6, 0.05, 1.5, 3e-6, 960.0, 540.0, 1.0)
@@ -96,7 +102,7 @@ project(H) = [[apply_h(H, c) for c in tc] for tc in TAGS_CM]
         Hinv(o) = SMatrix{3,3,Float64}(1, 0, 0, 0, 1, 0, -o[2], -o[1], 1)  # ref (x,y) → frame (x,y)
         w = RegisteredWarp(1.0, [Hinv(o) for o in offs])
         stack = build_stack(w, (Hc, Wc), (Hc, Wc), 3, (1:Hc, 1:Wc, 1:3))
-        raw = parent(parent(stack))
+        raw = storage(stack)
         for (k, (oy, ox)) in enumerate(offs)
             raw[:, :, k] .= ground[oy+1:oy+Hc, ox+1:ox+Wc]
         end
@@ -112,7 +118,7 @@ project(H) = [[apply_h(H, c) for c in tc] for tc in TAGS_CM]
         w2 = RegisteredWarp(0.5, [Hinv(offs[2]), Hinv(offs[3])])
         stack2 = build_stack(w2, (Hc ÷ 2, Wc ÷ 2), (Hc, Wc), 2, (1:Hc÷2, 1:Wc÷2, 1:2))
         for (k, (oy, ox)) in enumerate((offs[2], offs[3]))
-            parent(parent(stack2))[:, :, k] .= ground[oy+1:oy+Hc, ox+1:ox+Wc]
+            storage(stack2)[:, :, k] .= ground[oy+1:oy+Hc, ox+1:ox+Wc]
         end
         @test Float32(stack2[10, 12, 1]) ≈ Float32(ground[20, 24]) atol = 1e-6
         @test Float32(stack2[10, 12, 2]) ≈ Float32(ground[20, 24]) atol = 1e-6
