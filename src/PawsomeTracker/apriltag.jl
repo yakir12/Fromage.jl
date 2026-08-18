@@ -447,6 +447,7 @@ end
 # judge both rectification quality and tracking at a glance. The canvas covers the reference tags'
 # cm bounding box (plus a margin) at a fixed pixel size, with square pixels.
 struct DiagnoseApriltag <: Diagnosis
+    label::String
     writer::VideoWriter
     m::Int
     xc::Float64                                   # canvas ↔ cm: centre (cm) …
@@ -457,8 +458,11 @@ struct DiagnoseApriltag <: Diagnosis
     state::Ref{Int}
     skip::Int
     radius::Int
+    font::Int
+    face::FTFont                                  # private per writer; see the FONT note in diagnose.jl
 
     function DiagnoseApriltag(file::AbstractString, ref, darker_target, fps)
+        label = first(splitext(basename(file)))
         m = DIAGNOSTIC_SIZE
         cm = [apply_h(ref.M, p) for p in ref.corners]           # tag corners in ground cm
         xs = getindex.(cm, 1)
@@ -472,8 +476,9 @@ struct DiagnoseApriltag <: Diagnosis
         buffer = Matrix{Gray{N0f8}}(undef, m, m)
         writer = open_video_out(file, buffer; framerate = diagnostic_framerate(fps, skip),
             encoder_private_options = DIAGNOSTIC_ENCODER)
-        new(writer, m, xc, yc, ppc, darker_target ? Gray{N0f8}(1) : Gray{N0f8}(0),
-            CircularBuffer{CartesianIndex{2}}(TRACE_BUFFER_SIZE), Ref(0), skip, max(2, m ÷ 60))
+        new(label, writer, m, xc, yc, ppc, darker_target ? Gray{N0f8}(1) : Gray{N0f8}(0),
+            CircularBuffer{CartesianIndex{2}}(TRACE_BUFFER_SIZE), Ref(0), skip, max(2, m ÷ 60),
+            m ÷ 16, FTFont(String(FONT)))
     end
 end
 
@@ -501,7 +506,12 @@ function (d::DiagnoseApriltag)(frame, beetle, H)
         draw!(wimg, CirclePointRadius(ij, d.radius; thickness = max(1, d.radius ÷ 2), fill = false), d.color)
         draw!(wimg, Path(d.trace), d.color)
     end
-    write(d.writer, parent(wimg))
+    out = parent(wimg)
+    # Stamp the run's name, as the other two writers do. `main` concatenates every run's diagnostic
+    # into one video, so without it no segment can be told from the next — and a dataset of drone
+    # runs is *all* AprilTag, so previously none of them carried a label at all (#22).
+    renderstring!(out, d.label, d.face, d.font, d.font, d.font, halign = :hleft, valign = :vtop)
+    write(d.writer, out)
     return nothing
 end
 diagnose_apriltag(::Nothing, _, _, _) = Dont()

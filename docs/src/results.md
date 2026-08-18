@@ -20,7 +20,7 @@ The coordinates are already fully converted — lens distortion, perspective, an
 
 ## The diagnostic video
 
-`main` also writes `results_dir/diagnostic.mp4`: every run rendered top-down through its calibration into a fixed 540×540 canvas, with a circle around the tracked position, a trailing trace, and the video's file name as a label — one run after the other, playing at 2× real time (≈24 fps regardless of the tracking fps).
+`main` also writes `results_dir/diagnostic.mp4`: every run rendered top-down through its calibration into a fixed 540×540 canvas, with a circle around the tracked position, a trailing trace, and the run's `run_id` as a label — one run after the other, playing at 2× real time (≈24 fps regardless of the tracking fps).
 
 This is what a healthy run looks like — the circle sits on the animal for the whole run, and the trace grows behind it from the centre of the arena to the edge (one complete run, looping):
 

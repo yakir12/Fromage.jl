@@ -296,6 +296,32 @@ end
     @test s.nframes / s.fps * 2 ≈ (nA + nB) / 25 rtol = 0.05
 end
 
+@testset "the AprilTag diagnostic carries the run's label (#22)" begin
+    # `main` concatenates every run's diagnostic into one video, and a dataset of drone footage is
+    # entirely AprilTag — so with no label, no segment of the combined video could be attributed to
+    # a run, which is exactly what results.md tells the user to do with it.
+    dir = mktempdir()
+    vid, _, sl, _ = make_apriltag_video(dir, "lbl"; nframes = 40)
+    file = joinpath(dir, vid)
+    PT = Fromage.PawsomeTracker
+    rect = PT.ApriltagRectification(file, 0.2, 4, "tag36h11", 8, missing, missing, 480, 480)
+
+    # the label is the diagnostic file's name — which `main` sets to the run_id
+    dia = PT.DiagnoseApriltag(joinpath(dir, "run7.mp4"), rect.reference, true, 25)
+    @test dia.label == "run7"
+    close(dia)
+
+    # and it reaches the *pixels*: two diagnostics differing only in file name must differ in
+    # content. The encoder is deterministic, so before the label they came out byte-identical.
+    outs = map(("aaaa", "wwww")) do name
+        d = joinpath(dir, "$name.mp4")
+        PT.track(file; rectification = rect, start_location = sl, target_width = 12,
+                 diagnostic_file = d)
+        read(d)
+    end
+    @test outs[1] != outs[2]
+end
+
 @testset "AprilTag calibration: failing extrinsic frame is dumped to the issues folder" begin
     # the video has four tags; asking for six fails detection at the extrinsic frame, and the frame
     # is dumped to the issues folder (pointed at a temp dir) for the user to inspect.
