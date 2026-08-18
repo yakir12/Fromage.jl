@@ -63,10 +63,7 @@ end
 function parse_row(row, defaults = DEFAULTS)
     dict = Dict{Symbol, Any}(:issues => String[])
     parse_run!(dict, row, defaults)
-    for col in COLUMNS
-        haskey(dict, col) || (dict[col] = missing)
-    end
-    return dict
+    return backfill!(dict, COLUMNS)
 end
 
 # run_id is all-or-nothing: either every row names its run (enabling multi-segment runs), or no row

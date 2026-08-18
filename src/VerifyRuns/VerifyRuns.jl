@@ -1,12 +1,11 @@
 module VerifyRuns
 
-using CSV: CSV
-using Chain: Chain, @chain
-using DataFramesMeta: DataFramesMeta, @transform!, AbstractDataFrame, ByRow, Cols,
-    DataFrame, Not, allowmissing!, dropmissing, groupby, nrow, passmissing, select!, subset
+using DataFramesMeta: DataFramesMeta, @transform!, AbstractDataFrame, DataFrame,
+    allowmissing!, groupby, nrow
+using ..Gateway: backfill!, read_per_file!, read_rows, report_issues, resolve_paths!, verify!
 using ..Parsing: Parsing, MyTemporal, parseto!
 import ..Parsing: mytryparse                # extended on MyWindow (a type this module owns)
-using ..Probing: probe_fields
+using ..Probing: frame_geometry, no_video_stream, parse_framerate, parse_sar, probe_fields
 using OhMyThreads: OhMyThreads, tmap
 using ..PawsomeTracker: PawsomeTracker, ApriltagRectification, get_sigma
 import ..PawsomeTracker: track
@@ -33,23 +32,7 @@ end
 # (see DEFAULTS in parsers.jl); the hierarchy is csv cell → `defaults` → hardcoded/probed value.
 function load_runs(data_path, file; strict = true, defaults = (;))
     defaults = resolve_defaults(defaults)   # fail fast on unknown keys / unconvertible values
-    # verify csv file exists
-    if !isfile(file)
-        error("runs `.csv` file missing")
-    end
-    csvrows = CSV.Rows(file)
-
-    # verify csv file has rows in it
-    if isempty(Tables.rows(csvrows))
-        error("csv file is empty")
-    end
-
-    # verify all the columns are expected
-    sch = Tables.schema(csvrows)
-    unrecognized = setdiff(sch.names, COLUMNS)
-    if !isempty(unrecognized)
-        error("unrecognized column/s in runs file: $unrecognized")
-    end
+    csvrows = read_rows(file, COLUMNS, "runs")
 
     # parse each row to a Dict of parsed values + an :issues accumulator
     cs = @showprogress desc = "Parsing runs.csv..." tmap(r -> parse_row(r, defaults), collect(csvrows))
@@ -63,17 +46,11 @@ function load_runs(data_path, file; strict = true, defaults = (;))
 
     verifications!(df, data_path)
 
-    if any(!isempty, df.issues)
-        # a run_id that is missing (mixed numbering) or equal to the row number (auto-assigned)
-        # adds nothing over "row $i", so it is only mentioned when the csv named the run itself
-        msg = join([string(ismissing(rid) || rid == string(i) ? "row $i" : "row $i (run_id: $rid)", ": ", join(issues, ", "))
-                    for (i, (rid, issues)) in enumerate(zip(df.run_id, df.issues)) if !isempty(issues)], '\n')
-        println('\n' * "The following are issues with the runs.csv file:\n" * msg)
-        if strict
-            error("there were issues with the runs (see above)")
-        else
-            return df
-        end
+    # a run_id that is missing (mixed numbering) or equal to the row number (auto-assigned) adds
+    # nothing over "row $i", so it is only mentioned when the csv named the run itself
+    if report_issues(df, :run_id, "runs.csv", "runs", strict;
+                     mention = (i, rid) -> !ismissing(rid) && rid != string(i))
+        return df
     end
 
     # Clean: group the rows by :run_id, each group materialized into its concrete run type

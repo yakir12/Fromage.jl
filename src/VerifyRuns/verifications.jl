@@ -1,66 +1,26 @@
-# Reduce ffprobe's "num/den" r_frame_rate to a Float64, or `nothing` when the field is absent or
-# unparseable (tryparse semantics, so the caller reports it as malformed output rather than a
-# `parse` throwing out of the probe). A zero denominator (undefined rate) falls back to the
-# numerator, keeping the value finite for the fps checks below.
-function parse_framerate(s)
-    occursin('/', s) || return tryparse(Float64, s)
-    parts = split(s, '/')
-    length(parts) == 2 || return nothing
-    num = tryparse(Float64, parts[1])
-    den = tryparse(Float64, parts[2])
-    (isnothing(num) || isnothing(den)) && return nothing
-    return iszero(den) ? num : num / den
-end
-
-# ffprobe reports the sample (pixel) aspect ratio as "num:den"; "N/A" or "0:1" mean undefined and
-# fall back to square pixels. The display-space width of a frame is width × sar.
-function parse_sar(s)
-    parts = split(s, ':')
-    length(parts) == 2 || return 1//1
-    num = tryparse(Int, parts[1])
-    den = tryparse(Int, parts[2])
-    (isnothing(num) || isnothing(den) || num ≤ 0 || den ≤ 0) && return 1//1
-    return num // den
-end
-
 # Probe one video file with a single ffprobe call: frame width/height (stored pixels), sample aspect
 # ratio, container duration and the (real) frame rate. Returns a NamedTuple, or an "issue reading..."
-# string for a corrupt/unreadable file. The spawn and its `key=value` output are handled by
-# ..Probing (shared with VerifyRectifications); what stays here is which entries this gateway asks
-# for and what it derives from them.
+# string for a corrupt/unreadable file. The spawn, its `key=value` output and the per-field parsers
+# are shared with VerifyRectifications in ..Probing; what stays here is which entries this gateway
+# asks for and which of them it cannot proceed without. `fps` is one of those — it imputes the run's
+# tracking rate when the csv leaves it blank. `sar` has a documented square-pixel fallback, so a
+# missing one is not an error.
 function probe_video(file)
     fields = probe_fields(file, "stream=width,height,r_frame_rate,sample_aspect_ratio:format=duration")
     fields isa String && return fields                 # unreadable file: pass the issue straight on
-    # The four fields nothing downstream can proceed without (`fps` imputes the run's tracking rate
-    # when the csv leaves it blank); `tryparse` reports an absent or unparseable one as `nothing`. A
-    # miss here means ffprobe *succeeded* and still could not describe a video (an audio-only file,
-    # or junk it recognised a container in), which is not a usable video either — hence the same
-    # "issue reading from video file" wording.
-    width    = tryparse(Int, get(fields, "width", ""))
-    height   = tryparse(Int, get(fields, "height", ""))
-    duration = tryparse(Float64, get(fields, "duration", ""))
-    fps      = parse_framerate(get(fields, "r_frame_rate", ""))
-    if isnothing(width) || isnothing(height) || isnothing(duration) || isnothing(fps)
-        return "issue reading from video file: ffprobe reported no usable video stream (missing or unparseable width/height/duration/frame rate)"
+    geometry = frame_geometry(fields)
+    fps = parse_framerate(get(fields, "r_frame_rate", ""))
+    if isnothing(geometry) || isnothing(fps)
+        return no_video_stream("width/height/duration/frame rate")
     end
-    # sar has a documented square-pixel fallback, so a missing one is not an error.
-    return (; width, height, duration, fps, sar = parse_sar(get(fields, "sample_aspect_ratio", "1:1")))
+    return (; geometry..., fps, sar = parse_sar(get(fields, "sample_aspect_ratio", "1:1")))
 end
 
 # One ffprobe per physical video file fills the intermediate :dimension/:duration/:video_fps columns
 # and imputes the two blank-able run parameters: :stop (← duration) and :fps (← video frame rate).
-# Grouping on the canonical resolved :file reads one physical file once, not once per spelling.
 function read_video_metadata!(df::AbstractDataFrame)
     @transform! df :dimension = missing :duration = missing :video_fps = missing :sar = missing
-    gs = @chain df begin
-        dropmissing([:file], view = true)
-        groupby(:file)
-    end
-    groups = collect(gs)
-    metas = @showprogress desc = "Reading runs videos..." tmap(g -> probe_video(g.file[1]), groups)
-    for (g, meta) in zip(groups, metas)
-        apply_video_metadata!(g, meta)
-    end
+    read_per_file!(df, :file, [:file], "Reading runs videos...", probe_video, apply_video_metadata!)
 end
 
 apply_video_metadata!(g, issue::String) = @transform! g :issues = push!.(:issues, issue)
@@ -75,17 +35,6 @@ end
 
 # window_size is either an Int side length or an (w, h) tuple; "non-positive" covers both shapes.
 window_nonpositive(x) = x isa Tuple ? any(≤(0), x) : x ≤ 0
-
-# Subset the rows whose `args` trip `predicate`, null the offending field (first of `args`) so later
-# checks skip them, and record `msg`. `passmissing`/`skipmissing` leave already-missing fields alone.
-function verify!(df::AbstractDataFrame, predicate, msg, args...)
-    field = first(args)
-    cols = Cols(args...)
-    @chain df begin
-        subset(cols => ByRow(passmissing(predicate)), view = true, skipmissing = true)
-        @transform! $field = missing :issues = push!.(:issues, msg)
-    end
-end
 
 # Run-level fields, as opposed to the per-segment file/start/stop/start_location: the whole run
 # shares one value (they end up in the run's `Source`), so segments of one run must agree on them —
@@ -108,19 +57,9 @@ function verify_run_consistency!(df::AbstractDataFrame)
 end
 
 function verifications!(df::AbstractDataFrame, data_path)
-    # Resolve path against data_path, check existence, then collapse path/file into one canonical
-    # absolute :file (the identity used for per-file reads and segment grouping) and drop path.
-    # realpath is safe because non-existent paths were nulled to missing just above.
-    @transform! df :path = passmissing(joinpath).(data_path, :path)
-    # A path naming the video itself is the common slip, and must be reported as such rather than as
-    # "does not exist" (#33). Runs first, and verify! nulls :path on failure, so the existence check
-    # below skips the row rather than piling on.
-    verify!(df, isfile, "path is a file, not a folder — it should be the folder holding the video, with the file name in the `file` column", :path)
-    verify!(df, !isdir, "path does not exist", :path)
-    verify!(df, (f, p) -> !isfile(joinpath(p, f)), "file does not exist", :file, :path)
-    @transform! df :file = passmissing(joinpath).(:path, :file)
-    @transform! df :file = passmissing(realpath).(:file)
-    select!(df, Not(:path))
+    # :file becomes the canonical absolute path — the identity used for per-file reads and segment
+    # grouping.
+    resolve_paths!(df, data_path, :file)
 
     # One ffprobe per file: fills :dimension/:duration/:video_fps and imputes :stop/:fps.
     read_video_metadata!(df)

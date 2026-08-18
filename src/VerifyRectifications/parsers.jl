@@ -147,11 +147,7 @@ function parse_row(row, defaults = DEFAULTS)
         push!(dict[:issues], "wrong type")
     end
     verify_irrelevant(dict, row)
-    for col in COLUMNS
-        if !haskey(dict, col)
-            dict[col] = missing
-        end
-    end
+    backfill!(dict, COLUMNS)
     verify_center2north(dict)
     return dict
 end
