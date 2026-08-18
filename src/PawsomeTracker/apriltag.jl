@@ -407,81 +407,55 @@ function detect_tags_roi!(dets, img, ids, boxes, sz)
     return corners
 end
 
-# Diagnostic for AprilTag mode: a top-down rectified video. Each frame is warped into a fixed cm
-# canvas through that frame's own image→cm homography, so a correct rectification renders the ground
-# plane stationary (the tags stop moving) while the beetle dot follows the target — letting the user
-# judge both rectification quality and tracking at a glance. The canvas covers the reference tags'
-# cm bounding box (plus a margin) at a fixed pixel size, with square pixels.
-struct DiagnoseApriltag <: Diagnosis
-    label::String
-    writer::VideoWriter
+# Diagnostic scene for AprilTag mode: a top-down rectified video. Each frame is warped into a fixed
+# cm canvas through that frame's own image→cm homography, so a correct rectification renders the
+# ground plane stationary (the tags stop moving) while the beetle dot follows the target — letting
+# the user judge both rectification quality and tracking at a glance. The canvas covers the
+# reference tags' cm bounding box (plus a margin) at a fixed pixel size, with square pixels.
+struct ApriltagScene
     m::Int
     xc::Float64                                   # canvas ↔ cm: centre (cm) …
     yc::Float64
     ppc::Float64                                  # … and pixels-per-cm
-    color::Gray{N0f8}
-    trace::CircularBuffer{CartesianIndex{2}}
-    state::Ref{Int}
-    skip::Int
-    radius::Int
-    font::Int
-    face::FTFont                                  # private per writer; see the FONT note in diagnose.jl
-
-    function DiagnoseApriltag(file::AbstractString, ref, darker_target, fps)
-        label = first(splitext(basename(file)))
-        m = DIAGNOSTIC_SIZE
-        cm = [apply_h(ref.M, p) for p in ref.corners]           # tag corners in ground cm
-        xs = getindex.(cm, 1)
-        ys = getindex.(cm, 2)
-        margin = 0.15 * max(maximum(xs) - minimum(xs), maximum(ys) - minimum(ys))
-        xc = (minimum(xs) + maximum(xs)) / 2
-        yc = (minimum(ys) + maximum(ys)) / 2
-        span = max(maximum(xs) - minimum(xs), maximum(ys) - minimum(ys)) + 2margin
-        ppc = m / span
-        skip = diagnostic_stride(fps)
-        buffer = Matrix{Gray{N0f8}}(undef, m, m)
-        writer = open_video_out(file, buffer; framerate = diagnostic_framerate(fps, skip),
-            encoder_private_options = DIAGNOSTIC_ENCODER)
-        new(label, writer, m, xc, yc, ppc, darker_target ? Gray{N0f8}(1) : Gray{N0f8}(0),
-            CircularBuffer{CartesianIndex{2}}(TRACE_BUFFER_SIZE), Ref(0), skip, max(2, m ÷ 60),
-            m ÷ 16, FTFont(String(FONT)))
-    end
 end
 
-# canvas pixel (row i, col j) ↔ ground cm (x, y), square pixels centred on (xc, yc)
-_canvas_to_cm(d::DiagnoseApriltag, i, j) = SVector(d.xc + (j - d.m/2)/d.ppc, d.yc + (i - d.m/2)/d.ppc)
-_cm_to_canvas(d::DiagnoseApriltag, cm) = CartesianIndex(round(Int, (cm[2]-d.yc)*d.ppc + d.m/2),
-                                                        round(Int, (cm[1]-d.xc)*d.ppc + d.m/2))
+function ApriltagScene(ref)
+    m = DIAGNOSTIC_SIZE
+    cm = [apply_h(ref.M, p) for p in ref.corners]           # tag corners in ground cm
+    xs = getindex.(cm, 1)
+    ys = getindex.(cm, 2)
+    extent = max(maximum(xs) - minimum(xs), maximum(ys) - minimum(ys))
+    span = extent + 2 * 0.15 * extent                       # the tags' bounding box, plus a margin
+    return ApriltagScene(m, (minimum(xs) + maximum(xs)) / 2, (minimum(ys) + maximum(ys)) / 2, m / span)
+end
 
-# per-frame: warp `frame` into the cm canvas via this frame's image→cm homography `H`, draw the
-# beetle (in cm) and its trace. `beetle` is `missing` on frames without a full tag set.
-function (d::DiagnoseApriltag)(frame, beetle, H)
-    d.state[] += 1
-    rem(d.state[], d.skip) == 0 || return nothing
+canvas_prototype(s::ApriltagScene) = Matrix{Gray{N0f8}}(undef, s.m, s.m)
+update_ratio!(::ApriltagScene, _) = nothing
+
+# canvas pixel (row i, col j) ↔ ground cm (x, y), square pixels centred on (xc, yc)
+_canvas_to_cm(s::ApriltagScene, i, j) = SVector(s.xc + (j - s.m/2)/s.ppc, s.yc + (i - s.m/2)/s.ppc)
+_cm_to_canvas(s::ApriltagScene, cm) = CartesianIndex(round(Int, (cm[2]-s.yc)*s.ppc + s.m/2),
+                                                     round(Int, (cm[1]-s.xc)*s.ppc + s.m/2))
+
+# Warp `frame` into the cm canvas via this frame's image→cm homography `H`. `beetle` is `missing` on
+# frames without a full tag set, and `H` is `nothing` when there is no map at all — then every canvas
+# pixel reads out of bounds and the frame comes out filled.
+function (s::ApriltagScene)(frame, beetle, H)
     Hinv = isnothing(H) ? nothing : inv(H)
     # output canvas (i,j) → source image (row,col): canvas→cm→image (cm→image is inv(H))
     tf = idx -> begin
         isnothing(Hinv) && return SVector(-1.0, -1.0)           # no map → fill (out of bounds)
-        c = _canvas_to_cm(d, idx[1], idx[2]); v = Hinv * SVector(c[1], c[2], 1.0)
+        c = _canvas_to_cm(s, idx[1], idx[2]); v = Hinv * SVector(c[1], c[2], 1.0)
         SVector(v[2]/v[3], v[1]/v[3])                           # (row, col) = (img_y, img_x)
     end
-    wimg = warp(Gray{N0f8}.(frame), tf, (1:d.m, 1:d.m); fillvalue = zero(Gray{N0f8}))
-    if !ismissing(beetle)
-        ij = _cm_to_canvas(d, beetle)
-        push!(d.trace, ij)
-        draw!(wimg, CirclePointRadius(ij, d.radius; thickness = max(1, d.radius ÷ 2), fill = false), d.color)
-        draw!(wimg, Path(d.trace), d.color)
-    end
-    out = parent(wimg)
-    # Stamp the run's name, as the other two writers do: `main` concatenates every run's diagnostic
-    # into one video, so without it no segment can be told from the next (#22).
-    renderstring!(out, d.label, d.face, d.font, d.font, d.font, halign = :hleft, valign = :vtop)
-    write(d.writer, out)
-    return nothing
+    wimg = warp(Gray{N0f8}.(frame), tf, (1:s.m, 1:s.m); fillvalue = zero(Gray{N0f8}))
+    return wimg, ismissing(beetle) ? missing : _cm_to_canvas(s, beetle)
 end
+
 diagnose_apriltag(::Nothing, _, _, _) = Dont()
-diagnose_apriltag(file::AbstractString, ref, darker_target, fps) = DiagnoseApriltag(file, ref, darker_target, fps)
-(::Dont)(_, _, _) = nothing                                     # 3-arg no-op for the apriltag callback
+diagnose_apriltag(file::AbstractString, ref, darker_target, fps) =
+    Diagnostic(file, darker_target, fps, ApriltagScene(ref);
+               radius = max(2, DIAGNOSTIC_SIZE ÷ 60), font = DIAGNOSTIC_SIZE ÷ 16)
 
 # Track the beetle across drone footage in a single pass, in the REFERENCE frame's coordinates: the
 # background stack lazily warps every slice through that slice's own registration (a RegisteredWarp
@@ -495,7 +469,7 @@ diagnose_apriltag(file::AbstractString, ref, darker_target, fps) = DiagnoseApril
 #
 # The reference is established once, from the calibration's extrinsic frame, and shared here;
 # `family` is the detector family it was built with; `ref_sz` is the reference frame's (rows, cols),
-# which the run's own resolution may differ from. `dia` is a `DiagnoseApriltag`/`Dont` created and
+# which the run's own resolution may differ from. `dia` is an AprilTag `Diagnostic`/`Dont` created and
 # closed by the caller, shared across a run's segments.
 function track_apriltag(file, start, stop, target_width, start_location, window_size, darker_target,
                         fps, dia, ref::ReferenceFrame, family, ref_sz, initial_search_factor, scale, background_length)
