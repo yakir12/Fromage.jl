@@ -398,7 +398,7 @@ function track(
 
     # AprilTag mode (drone footage): the rectification carries the shared reference and detector
     # family; register out camera motion, track, and return metric ground coordinates with the
-    # rectification's centre/north gauge applied. The DiagnoseApriltag (top-down rectified) is created
+    # rectification's centre/north gauge applied. The AprilTag diagnostic (top-down rectified) is created
     # here and shared with track_apriltag.
     if rectification isa ApriltagRectification
         dia = diagnose_apriltag(diagnostic_file, rectification.reference, darker_target, dia_fps)

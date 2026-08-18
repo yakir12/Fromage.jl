@@ -233,6 +233,28 @@ otherwise an anamorphic (sar < 1) target fills its own search window. `start_loc
 rectification's `center`/`north` are likewise display-pixel conventions and are bounds-checked
 against the display width, `width × sar`.
 
+### One diagnostic writer, three scenes (#68)
+
+`Diagnose`, `DiagnoseRectified` and `DiagnoseApriltag` were three structs carrying the same fields
+and repeating the same body: bump the counter, skip unless this is the `skip`-th frame, place the
+marker, push the trace, draw the circle and the path, stamp the label, write.
+
+Only two things ever differed — how the raw frame becomes a canvas, and where the tracked point
+lands on that canvas — so those two are now a *scene*: a callable
+`(frame, point, extra...) -> (canvas, ij)` plus a `canvas_prototype` that gives the writer its frame
+size. Everything else lives once, in `Diagnostic`. A fourth diagnostic mode is a scene, not a struct.
+
+The marker radius and label size stay per-mode (they scale with the canvas), and the circle's
+thickness is `max(1, radius ÷ 2)`, which reproduces all three of the old hardcoded values exactly.
+`ij` may come back `missing` — the AprilTag scene cannot locate the target on a frame without a full
+tag set — in which case the frame is still written, just unmarked, as before.
+
+One rendering detail changed. The unrectified writer used to stamp the label *before* drawing the
+marker, so a target that happened to sit under the text was drawn on top of it; the other two
+stamped the label last. All three now stamp last, which is the order that keeps the label legible —
+and the label exists precisely to be read (#22). The two orders only differ where marker and text
+overlap, in the top-left corner of the frame.
+
 ### Diagnostic label fonts are per-writer
 
 FreeType faces are stateful (one glyph slot per face) and FreeTypeAbstraction's per-face lock is

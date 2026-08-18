@@ -305,7 +305,7 @@ end
     rect = PT.ApriltagRectification(file, 0.2, 4, "tag36h11", 8, missing, missing, 480, 480)
 
     # the label is the diagnostic file's name — which `main` sets to the run_id
-    dia = PT.DiagnoseApriltag(joinpath(dir, "run7.mp4"), rect.reference, true, 25)
+    dia = PT.diagnose_apriltag(joinpath(dir, "run7.mp4"), rect.reference, true, 25)
     @test dia.label == "run7"
     close(dia)
 
