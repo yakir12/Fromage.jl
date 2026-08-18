@@ -8,7 +8,7 @@
         @test R._vf(true, missing) == "yadif=1"                          # deinterlace only
         @test R._vf(true, 2.0) == "yadif=1,gblur=sigma=2.0"              # both, in order
         # yadif = false means progressive footage: it must NOT deinterlace (VerifyRectifications
-        # probes yadif as a Bool, so false is the common case — it used to hit the yadif branch)
+        # probes yadif as a Bool, so false is the common case)
         @test R._vf(false, missing) === missing
         @test R._vf(false, 2.0) == "gblur=sigma=2.0"
         # blur = 0 means no blur (VerifyRectifications' convention): no sigma-0 no-op filter
@@ -38,8 +38,8 @@
 
     @testset "_cmd bakes ffmpeg env without mutating global ENV" begin
         # The non-do-block `FFMPEG.ffmpeg()` bakes PATH/LD_LIBRARY_PATH into the Cmd via setenv and
-        # never touches the process-global ENV — this is what makes the builders race-free under the
-        # nested tmap concurrency (replacing the old snapshot/addenv machinery).
+        # never touches the process-global ENV, which is what makes the builders race-free under the
+        # nested tmap concurrency.
         keys_before = Set(keys(ENV))
         ldpath_before = get(ENV, "LD_LIBRARY_PATH", nothing)
         c = R._cmd("video.mp4", 1.5, missing)

@@ -57,15 +57,14 @@ function load_runs(data_path, file; strict = true, defaults = (;))
     df = DataFrame(Tables.dictrowtable(cs))
     allowmissing!(df)
 
-    # run_id is all-or-nothing (see resolve_run_ids!): all blank ⇒ every row is its own
-    # single-segment run, numbered by row; all named ⇒ used as-is; mixed ⇒ the blank rows are
-    # flagged. Done before verification/grouping so :run_id is concrete on the clean path.
+    # run_id is all-or-nothing (see resolve_run_ids!). Done before verification and grouping, so
+    # :run_id is concrete on the clean path.
     resolve_run_ids!(df)
 
     verifications!(df, data_path)
 
     if any(!isempty, df.issues)
-        # a run_id that is missing (mixed-numbering case) or equal to the row number (auto-assigned)
+        # a run_id that is missing (mixed numbering) or equal to the row number (auto-assigned)
         # adds nothing over "row $i", so it is only mentioned when the csv named the run itself
         msg = join([string(ismissing(rid) || rid == string(i) ? "row $i" : "row $i (run_id: $rid)", ": ", join(issues, ", "))
                     for (i, (rid, issues)) in enumerate(zip(df.run_id, df.issues)) if !isempty(issues)], '\n')

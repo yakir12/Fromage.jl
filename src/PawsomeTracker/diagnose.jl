@@ -7,15 +7,13 @@ const DIAGNOSTIC_VIDEO_SIZE = (360, 640)
 const DIAGNOSTIC_SIZE = 540
 const TRACE_BUFFER_SIZE = 100
 # Diagnostic videos play back at DIAGNOSTIC_SPEEDUP × real time, decimated to roughly
-# DIAGNOSTIC_FPS frames per second of playback — so long runs skim quickly and a high tracking
-# fps no longer slows playback down (the writer's framerate used to be left at VideoIO's default
-# 24 while every tracked frame was written, playing a 50 fps track at 0.48× speed).
+# DIAGNOSTIC_FPS frames per second of playback, so long runs skim quickly and a high tracking fps
+# doesn't slow playback down.
 const DIAGNOSTIC_SPEEDUP = 2
 const DIAGNOSTIC_FPS = 24
 # FreeType faces are stateful (one glyph slot per face) and FreeTypeAbstraction's per-face lock is
-# not held across load → read → copy, so concurrently tracked runs sharing one global face can
-# swap each other's label glyphs (a run briefly labeled with another run's id). Each writer
-# therefore loads its own private face from this font file.
+# not held across load → read → copy, so concurrently tracked runs sharing one global face swap
+# each other's label glyphs. Each writer loads its own private face from this font file.
 const FONT = @path joinpath(@__DIR__, "assets", "TeXGyreHerosMakie-Regular.otf")
 
 # Write every `skip`-th tracked frame, and declare the playback framerate that makes the segment
@@ -23,9 +21,7 @@ const FONT = @path joinpath(@__DIR__, "assets", "TeXGyreHerosMakie-Regular.otf")
 diagnostic_stride(fps) = max(1, round(Int, DIAGNOSTIC_SPEEDUP * fps / DIAGNOSTIC_FPS))
 diagnostic_framerate(fps, skip) = DIAGNOSTIC_SPEEDUP * fps / skip
 # Constant-quality H.264 encoding. Diagnostic files must be .mp4: that container's default codec
-# is H.264, whose crf option these settings configure (the old .ts segments defaulted to MPEG-2
-# at libavcodec's default *average bitrate* — constant bits per second that turned into mush as
-# the tracking fps rose).
+# is H.264, whose crf option these settings configure.
 const DIAGNOSTIC_ENCODER = (crf = 23, preset = "veryfast")
 
 abstract type Diagnosis end
@@ -94,7 +90,6 @@ end
 
 struct DiagnoseRectified <: Diagnosis
     label::String
-    # buffer::OffsetMatrix{Gray{N0f8}, Matrix{Gray{N0f8}}}
     indices
     color::Gray{N0f8}
     writer::VideoWriter
@@ -109,10 +104,8 @@ struct DiagnoseRectified <: Diagnosis
 
     function DiagnoseRectified(file::AbstractString, darker_target, rect, fps)
         label = first(splitext(basename(file)))
-        # Fixed canvas: the zoom adapts so the frame's smaller dimension always spans the canvas.
-        # For a 1080p source this is exactly the former half-resolution view (the old
-        # m = min(w, h) ÷ 2 with a hardcoded 2× zoom is the special case m = DIAGNOSTIC_SIZE when
-        # min(w, h) = 1080) — detail stays discernible while every segment is the same size.
+        # Fixed canvas, with the zoom adapting so the frame's smaller dimension always spans it:
+        # detail stays discernible while every segment comes out the same size.
         m = DIAGNOSTIC_SIZE
         D = LinearMap(SDiagonal{2}((min(rect.width, rect.height) / m) * rect.ratio * I))
         real2image = rect.real2image ∘ D

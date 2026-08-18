@@ -54,7 +54,7 @@
         @test only(runs) isa VR.MultiRun
         @test only(runs).calibration_id == "cal_1"
 
-        # omitting it is no longer allowed: every such segment row is flagged at parse time
+        # omitting it is not allowed: every such segment row is flagged at parse time
         df0 = check("seg_cal_none.csv", [runrow(run_id = "s", file = ART.a, calibration_id = missing),
                                          runrow(run_id = "s", file = ART.b, calibration_id = missing)])
         @test flagged(df0, 1, "calibration_id is missing")

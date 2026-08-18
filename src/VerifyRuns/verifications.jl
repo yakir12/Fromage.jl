@@ -1,7 +1,7 @@
 # Reduce ffprobe's "num/den" r_frame_rate to a Float64, or `nothing` when the field is absent or
-# unparseable (tryparse semantics, so the caller reports it as malformed output rather than having
-# a `parse` throw out of the probe). A zero denominator (undefined rate) falls back to the
-# numerator so the value stays finite and the fps checks below behave sanely.
+# unparseable (tryparse semantics, so the caller reports it as malformed output rather than a
+# `parse` throwing out of the probe). A zero denominator (undefined rate) falls back to the
+# numerator, keeping the value finite for the fps checks below.
 function parse_framerate(s)
     occursin('/', s) || return tryparse(Float64, s)
     parts = split(s, '/')
@@ -32,13 +32,10 @@ function probe_video(file)
     fields = probe_fields(file, "stream=width,height,r_frame_rate,sample_aspect_ratio:format=duration")
     fields isa String && return fields                 # unreadable file: pass the issue straight on
     # The four fields nothing downstream can proceed without (`fps` imputes the run's tracking rate
-    # when the csv leaves it blank). `tryparse` reports an absent or unparseable one as `nothing`.
-    #
-    # Reaching here means ffprobe *succeeded* and still could not describe a video: it opened the
-    # file but `-select_streams v:0` matched nothing (an audio-only file), or it recognised some
-    # container in what is really junk. Both mean the same thing to the user — this is not a usable
-    # video — so it joins the "issue reading from video file" family rather than getting a message
-    # of its own, which would suggest our parsing broke rather than their file being bad.
+    # when the csv leaves it blank); `tryparse` reports an absent or unparseable one as `nothing`. A
+    # miss here means ffprobe *succeeded* and still could not describe a video (an audio-only file,
+    # or junk it recognised a container in), which is not a usable video either — hence the same
+    # "issue reading from video file" wording.
     width    = tryparse(Int, get(fields, "width", ""))
     height   = tryparse(Int, get(fields, "height", ""))
     duration = tryparse(Float64, get(fields, "duration", ""))
@@ -90,18 +87,17 @@ function verify!(df::AbstractDataFrame, predicate, msg, args...)
     end
 end
 
-# Run-level fields, as opposed to the per-segment file/start/stop/start_location: the whole run shares
-# one value (they end up in the run's `Source`), so segments of one run must agree on them (checked by
-# verify_run_consistency! via `allequal`, which treats all-missing as agreeing — isequal(missing,
-# missing) is true). All but `calibration_id` (run metadata) and `dimension`/`sar` (the ffprobe-read
-# pixel width/height and sample aspect ratio, not CSV columns) feed `track`.
+# Run-level fields, as opposed to the per-segment file/start/stop/start_location: the whole run
+# shares one value (they end up in the run's `Source`), so segments of one run must agree on them —
+# checked by verify_run_consistency! via `allequal`, which treats all-missing as agreeing. All but
+# `calibration_id` and `dimension`/`sar` (ffprobe-read, not CSV columns) feed `track`.
 const SHARED_PARAMS = (:target_width, :window_size, :darker_target, :fps,
     :initial_search_factor, :scale, :background_length, :calibration_id, :dimension, :sar)
 
 # A run may be split across several CSV rows (one per segment video) sharing a :run_id. Those rows
-# must agree on every run-level parameter — only file/start/stop/start_location may vary. Compared
-# only among otherwise-clean rows: a field nulled by an earlier failed check would read as a spurious
-# disagreement, and that row is already reported.
+# must agree on every run-level parameter; only file/start/stop/start_location may vary. Compared
+# only among otherwise-clean rows, since a field nulled by an earlier failed check would read as a
+# spurious disagreement.
 function verify_run_consistency!(df::AbstractDataFrame)
     for g in groupby(df, :run_id)
         (nrow(g) > 1 && !ismissing(g.run_id[1]) && all(isempty, g.issues)) || continue
@@ -112,14 +108,13 @@ function verify_run_consistency!(df::AbstractDataFrame)
 end
 
 function verifications!(df::AbstractDataFrame, data_path)
-    # Resolve path against data_path, check existence, then collapse path/file into one
-    # canonical absolute :file (the identity used for per-file reads and segment grouping) and drop
-    # path. realpath is safe because non-existent paths were nulled to missing just above.
+    # Resolve path against data_path, check existence, then collapse path/file into one canonical
+    # absolute :file (the identity used for per-file reads and segment grouping) and drop path.
+    # realpath is safe because non-existent paths were nulled to missing just above.
     @transform! df :path = passmissing(joinpath).(data_path, :path)
-    # A path that names the video itself is the common slip, and `isdir` alone reported it as
-    # "does not exist" — which is false, and sends the user to check for a file that is
-    # plainly there (#33). This runs first; verify! nulls :path on failure, so the
-    # existence check below then skips the row rather than piling on the misleading message.
+    # A path naming the video itself is the common slip, and must be reported as such rather than as
+    # "does not exist" (#33). Runs first, and verify! nulls :path on failure, so the existence check
+    # below skips the row rather than piling on.
     verify!(df, isfile, "path is a file, not a folder — it should be the folder holding the video, with the file name in the `file` column", :path)
     verify!(df, !isdir, "path does not exist", :path)
     verify!(df, (f, p) -> !isfile(joinpath(p, f)), "file does not exist", :file, :path)
@@ -131,9 +126,9 @@ function verifications!(df::AbstractDataFrame, data_path)
     read_video_metadata!(df)
 
     # start_location is optional (missing rows skipped). It is (x, y) = (horizontal, vertical) in
-    # *display* pixels — like a rectification's center/north — while ffprobe's width is in stored
-    # pixels, so x is bounds-checked against the display width, width × sar (they only differ for
-    # anamorphic videos); y against height, which sar does not affect.
+    # *display* pixels, like a rectification's center/north, while ffprobe's width is in stored
+    # pixels — so x is bounds-checked against the display width, width × sar, and y against height,
+    # which sar does not affect.
     verify!(df, x -> any(<(1), x), "start_location cannot be smaller than 1", :start_location)
     verify!(df, (sl, dim, sar) -> sl[1] > dim[1] * sar || sl[2] > dim[2], "start_location is outside the frame", :start_location, :dimension, :sar)
 
@@ -149,28 +144,23 @@ function verifications!(df::AbstractDataFrame, data_path)
     verify!(df, >(1), "scale cannot be larger than one", :scale)
     # The tracker works in the scaled frame, so it is the *scaled* target width that must span at
     # least one pixel — each factor can be individually fine while their product is degenerate.
-    #
-    # This bound is what keeps a low `scale` from failing rather than merely coarsening. Measured on
-    # a clean synthetic disc (issue #24): accuracy decays smoothly as the scaled target shrinks —
-    # around 0.3% of target_width at scale 1, 0.7% at 0.25, 4% at 0.1 — and below a scaled width of
-    # roughly half a pixel the tracker stops finding the target at all, reporting positions hundreds
-    # of pixels away. It does NOT throw, so without this check the result would be a plausible-looking
-    # track of nothing. Note the check uses the *declared* target_width: over-declaring it permits a
-    # scale that is too small for the real target, which is one more reason target_width is the
-    # parameter worth measuring.
+    # Below roughly half a pixel the tracker stops finding the target at all, and does NOT throw, so
+    # without this check the result is a plausible-looking track of nothing (#24). The check uses
+    # the *declared* target_width, so over-declaring it permits a scale too small for the real
+    # target.
     verify!(df, (tw, sc) -> tw * sc < 1, "scaled target width (target_width × scale) is smaller than one pixel", :target_width, :scale)
-    # 0 is a real mode (no background subtraction); 1–24 would make a background model too short
-    # to model anything, and negatives are nonsense — the predicate covers both.
+    # 0 is a real mode (no background subtraction); 1–24 is a background model too short to model
+    # anything, and negatives are nonsense — the predicate covers both.
     verify!(df, b -> b != 0 && b < 25, "background_length must be 0 (disables background subtraction) or at least 25", :background_length)
 
-    # Temporal window must be sane and lie within the video. start ≥ 0 runs first and nulls :start on
-    # failure, so a negative start does not also trip the "start must come before stop" message.
+    # Temporal window must be sane and lie within the video. start ≥ 0 runs first and nulls :start
+    # on failure, so a negative start does not also trip "start must come before stop".
     verify!(df, <(0), "start must be larger than or equal to zero", :start)
     verify!(df, (a, o) -> a ≥ o, "start must come before stop", :start, :stop)
     verify!(df, (o, d) -> o > d, "stop can not come after video duration", :stop, :duration)
     verify!(df, (a, d) -> a > d, "start can not come after video duration", :start, :duration)
     # PawsomeTracker reads round(Int, fps × (stop − start)) frames, so a window shorter than half a
-    # frame period reads none at all (and a zero-frame segment crashes the multi-segment track).
+    # frame period reads none at all, and a zero-frame segment crashes the multi-segment track.
     verify!(df, (o, a, f) -> round(Int, f * (o - a)) < 1, "temporal window is too short to contain a single frame at this fps", :stop, :start, :fps)
 
     # Cross-row: segments of one run (shared :run_id) must agree on the run-level parameters.

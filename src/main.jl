@@ -1,9 +1,7 @@
 const results_dir = "results_dir"
 
 # Every segment shares one resolution, codec and quality (see diagnose.jl), so a single ffmpeg
-# concat-demuxer call stream-copies them into the final video. The demuxer rewrites timestamps
-# monotonically by design — unlike the former pairwise "concat:"-protocol tree, which leaned on
-# per-join discontinuity heuristics with every warning hidden at -loglevel 8.
+# concat-demuxer call stream-copies them into the final video, rewriting timestamps monotonically.
 function concatenate(path, files)
     list = joinpath(path, "list.txt")
     open(list, "w") do io
@@ -13,15 +11,13 @@ function concatenate(path, files)
     ffmpeg_exe(` -y -loglevel error -f concat -safe 0 -i $list -c copy $out`)
 end
 
-# Save one run's track to results_dir/<run_id>.csv: one row per detected coordinate, with the
-# `time` stamp (seconds into the video) and the `x`/`y` real-world coordinates. `track` already
-# returns real-world coordinates: it applied the run's rectification's `image2real` — for the video
-# kinds a pixel→real map, for AprilTag a metric ground map carrying the same centre/north gauge — so
-# the origin is at `center`, north-aligned when `north` was given, in `checker_size`/`scale` units.
-# Axis orientation follows the image — x rightward, y downward — as
-# `(y-direction, x-direction)`, so we unpack `y, x`. AprilTag tracking reports `missing` for a frame
-# whose target couldn't be localized (e.g. a tag was momentarily lost); such a row keeps its `time`
-# with empty `x`/`y`, so the time axis stays intact and the gaps are explicit.
+# Save one run's track to results_dir/<run_id>.csv: one row per coordinate, with the `time` stamp
+# (seconds into the video) and the `x`/`y` real-world coordinates. `track` returns coordinates the
+# rectification's `image2real` has already been applied to, so the origin is at `center`,
+# north-aligned when `north` was given, in `checker_size`/`scale` units. Axis orientation follows
+# the image — x rightward, y downward — as `(y-direction, x-direction)`, hence the `y, x` unpack.
+# A `missing` coordinate (AprilTag tracking, where a frame's target couldn't be localized) keeps its
+# `time` with empty `x`/`y`, so the time axis stays intact and the gaps are explicit.
 function save2csv(run_id, (ts, coords))
     open(joinpath(results_dir, string(run_id, ".csv")), "w") do io
         println(io, "time,x,y")
@@ -38,12 +34,7 @@ end
 
 # Keep only the entries whose `id` field was asked for, and reject any requested id that matched
 # nothing. Filtering by id is a convenience for iterating on one run or calibration, so an id that
-# matches nothing is a typo rather than a request for less — and left unchecked it failed in two
-# unhelpful ways (#21). A total miss emptied the pipeline and only surfaced at the very end, when
-# `concatenate` handed ffmpeg's concat demuxer a zero-entry list: reported as "Error opening input:
-# Invalid data found when processing input", which points at the footage rather than at the filter.
-# A PARTIAL miss was quieter and worse — it simply processed fewer runs than asked for, with no error
-# at all, so nothing prompted the user to look. Hence the strict rule: every requested id must match.
+# matches nothing is a typo rather than a request for less: every requested id must match (#21).
 function filter_ids!(xs, requested, id, what)
     isnothing(requested) && return xs
     available = [getfield(x, id) for x in xs]
@@ -65,9 +56,9 @@ function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.c
 
     mkpath(results_dir)
 
-    # The loaders return the annotated DataFrame instead only under `strict = false`; on the
-    # default strict path they provably return the run/rectification vectors — assert it so the
-    # union doesn't leak downstream (JET flags e.g. `length(::DataFrame)` otherwise).
+    # The loaders return the annotated DataFrame only under `strict = false`; on the default strict
+    # path they return the run/rectification vectors — asserted so the union doesn't leak
+    # downstream (JET flags e.g. `length(::DataFrame)` otherwise).
     cs = load_rectifications(joinpath(data_path, calibs_file); defaults = rectification_defaults, issues_dir = joinpath(results_dir, "issues"))::Vector{RectificationMethod}
     rs = load_runs(joinpath(data_path, runs_file); defaults = tracking_defaults)::Vector{Run}
 

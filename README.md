@@ -28,6 +28,11 @@ pkg> add https://github.com/yakir12/Fromage.jl
 
 ## Development
 
+Comments in `src/` and `test/` describe what the code does now. The reasoning behind the
+non-obvious choices — the alternatives that were tried, and the bugs that ruled them out — lives in
+[DESIGN-HISTORY.md](DESIGN-HISTORY.md). Read it before changing anything that looks gratuitously
+complicated; it is usually load-bearing.
+
 Releases are automatic: every push to `main` that passes CI is patch-bumped, tagged, and
 released, and the stable docs advance with it. Put `#minor` or `#major` in the commit message
 to bump more than a patch. There is nothing to do manually — see [RELEASING.md](RELEASING.md)

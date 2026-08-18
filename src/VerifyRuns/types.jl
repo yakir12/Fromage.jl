@@ -1,19 +1,19 @@
 # A verified run: everything `PawsomeTracker.track` needs, guaranteed not to error. A run's arity —
-# a single video, or several segment videos sharing a `run_id` — is materialized in the *type* so
-# `track` dispatches on it with no runtime branch, and grouping yields a `Vector{Run}` of the right
-# concrete types directly. Identity lives on the concrete run types themselves (the convention
-# shared with VerifyRectifications, whose method types carry `calibration_id`): `run_id` names the
-# run, and `calibration_id` names the rectification this run uses (Fromage joins runs to
-# rectifications on it — so a run without one has nothing to rectify against); neither is
-# forwarded to `track`. The run-level *values* shared by both arities live in `Source`: the
-# `track` parameters (`target_width`…`scale`) and the video's stored-pixel `width`/`height` plus
-# sample aspect ratio `sar` as probed by ffprobe (segments of a multi-segment run are verified to
-# agree on them; display width = `width × sar`). The per-segment fields stay in the concrete run
-# types: `SingleRun` carries scalars; `MultiRun` carries aligned per-segment vectors (one entry
-# per segment, in CSV order), where a non-first segment's `start_location` may be `missing` (the
-# target continues from where the previous segment ended). `stop`/`fps` are concrete (imputed from
-# the probed video); `window_size` stays `missing` when the CSV omitted it, and `track(::Run)`
-# imputes it (impute_window_size) from `target_width`/`fps`/duration.
+# a single video, or several segment videos sharing a `run_id` — is materialized in the *type*, so
+# `track` dispatches on it with no runtime branch and grouping yields a `Vector{Run}` of concrete
+# types directly.
+#
+# `run_id` names the run and `calibration_id` names the rectification it uses (Fromage joins the two
+# on it, so a run without one has nothing to rectify against); neither is forwarded to `track`. The
+# run-level values shared by both arities live in `Source`: the `track` parameters
+# (`target_width`…`scale`) plus the video's stored-pixel `width`/`height` and sample aspect ratio
+# `sar` as probed by ffprobe, which segments of a multi-segment run are verified to agree on
+# (display width = `width × sar`). The per-segment fields stay in the concrete types: `SingleRun`
+# carries scalars, `MultiRun` aligned per-segment vectors in CSV order, where a non-first segment's
+# `start_location` may be `missing` (the target continues from where the previous one ended).
+#
+# `stop`/`fps` are concrete, imputed from the probed video. `window_size` stays `missing` when the
+# CSV omitted it, and `track(::Run)` imputes it from `target_width`/`fps`/duration.
 abstract type Run end
 
 struct Source
@@ -59,12 +59,11 @@ function Source(g::AbstractDataFrame)
         g.background_length[1], width, height, g.sar[1])
 end
 
-# Build the typed run for one `run_id` group (rows in CSV order): one row → `SingleRun` (scalar
-# fields), several → `MultiRun` (aligned per-segment vectors). The type is decided here, once, from
-# the group size. The identity columns are read off the first row (verify_run_consistency!
-# guaranteed the segments agree on :calibration_id). The `collect(T, …)` narrows the per-segment
-# columns from the `allowmissing!`-widened `Union{Missing, T}` back to `T` — safe because only
-# issue-free rows reach here — and materializes the group's column views into owned vectors.
+# Build the typed run for one `run_id` group (rows in CSV order): one row → `SingleRun`, several →
+# `MultiRun`. The identity columns are read off the first row, which verify_run_consistency!
+# guaranteed the segments agree on. The `collect(T, …)` narrows the per-segment columns from the
+# `allowmissing!`-widened `Union{Missing, T}` back to `T` — safe because only issue-free rows reach
+# here — and materializes the group's column views into owned vectors.
 function Run(g::AbstractDataFrame)
     source = Source(g)
     if nrow(g) == 1
@@ -85,15 +84,16 @@ function shared_kw(r::Run)
     (; s.target_width, s.darker_target, s.fps, s.initial_search_factor, s.scale, s.background_length)
 end
 
-# Drive `PawsomeTracker.track` from a verified run — the scalar method for a one-segment `SingleRun`,
-# the vector method for a multi-segment `MultiRun`. Concrete-type dispatch, no runtime length check.
-# The returned coordinates are (row, col) in *stored*-frame pixels of the original (unscaled) video;
-# for an anamorphic video the display-space x is col × sar.
-# The run's (or first segment's) start_location falls back to `center` (e.g. the rectification's scene
-# center) and then to the frame's center — (x, y) in *display* pixels, matching start_location's
-# convention, so x is half the display width, width × sar (`track` maps x back to stored columns) —
-# so `track` always gets a concrete starting point. `center` defaults to `missing` (not `nothing`):
-# coalesce only skips `missing`, so a `nothing` would leak through to `track` as-is.
+# Drive `PawsomeTracker.track` from a verified run — the scalar method for a one-segment
+# `SingleRun`, the vector method for a multi-segment `MultiRun`. The returned coordinates are
+# (row, col) in *stored*-frame pixels of the original (unscaled) video; for an anamorphic video the
+# display-space x is col × sar.
+#
+# The run's (or first segment's) start_location falls back to `center` (e.g. the rectification's
+# scene centre) and then to the frame's centre, so `track` always gets a concrete starting point.
+# Both are (x, y) in *display* pixels, matching start_location's convention, so x is half of
+# width × sar and `track` maps it back to stored columns. `center` defaults to `missing` rather than
+# `nothing` because coalesce only skips `missing`.
 frame_center(r::Run) = (round(Int, r.source.width * r.source.sar / 2), r.source.height ÷ 2)
 
 function get_window(target_width, fps, m, duration)
@@ -116,9 +116,9 @@ function impute_window_size(r)
 end
 
 # For an AprilTag run the calibration's `center` is a pixel in the (moved) extrinsic frame, not the
-# run frame, so it can't seed the tracker's start: fall straight back to the run's own start_location
-# (a missing one becomes the frame-centre search inside `track`). Every other rectification shares the
-# run frame, so its centre is a valid start fallback.
+# run frame, so it can't seed the tracker's start: fall straight back to the run's own
+# start_location, a missing one becoming the frame-centre search inside `track`. Every other
+# rectification shares the run frame, so its centre is a valid fallback.
 function track(r::SingleRun; center = missing, rectification = nothing, kwargs...)
     start_location = if rectification isa ApriltagRectification
         r.start_location
@@ -128,12 +128,9 @@ function track(r::SingleRun; center = missing, rectification = nothing, kwargs..
     track(r.file; start = r.start, stop = r.stop, start_location, window_size = impute_window_size(r), shared_kw(r)..., rectification, kwargs...)
 end
 
-# The per-segment start locations with the first segment's fallbacks applied, as a vector `track` can
-# take. The `copy` is what makes this a query rather than an edit: assigning into `r.start_locations`
-# meant the first `track` wrote its `center` into the run, so a later call with a *different* `center`
-# silently kept the first one — the coalesce then saw a non-missing first element, and the
-# frame-centre fallback was unreachable too (#23). A `Run` describes what the csv said; tracking it
-# must leave it alone.
+# The per-segment start locations with the first segment's fallbacks applied, as a vector `track`
+# can take. The `copy` is what makes this a query rather than an edit: a `Run` describes what the
+# csv said, and tracking it must leave it alone (#23).
 function impute_start_location(r::MultiRun, center)
     sls = copy(r.start_locations)
     sls[1] = @coalesce sls[1] center frame_center(r)

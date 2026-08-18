@@ -71,10 +71,9 @@ Rectification(c::Video; kwargs...) = Rectification(c.source.file, c.source.extri
 
 # A Video without a calibs window (both bounds blank ⇒ Video{Missing}) is an extrinsics-only
 # rectification: the pose and focal length come from the single extrinsic frame and lens aberrations
-# are disregarded (zero distortion) — temporal_step/radial_parameters play no role and are
-# deliberately NOT flagged when filled anyway (omitting both window bounds is too large an action
-# to be a mistake, so it expresses intent; see the extrinsics-only Rectification docstring in
-# Rectifications for the full rationale). Only one bound filled is still an error (verify_pair).
+# are disregarded. temporal_step/radial_parameters play no role and are deliberately NOT flagged
+# when filled anyway (see the extrinsics-only Rectification docstring); only one bound filled is
+# still an error (verify_pair).
 Rectification(c::Video{Missing}; kwargs...) = Rectification(c.source.file, c.source.extrinsic, c.yadif, c.blur, c.source.width, c.source.height, c.n_corners, c.checker_size, c.source.aspect, c.source.center, c.source.north; kwargs...)
 
 # A MATLAB rectification reads the camera model (intrinsics, distortion, and the pose picked by
@@ -85,7 +84,7 @@ Rectification(c::MATLAB; kwargs...) = Rectification(c.source.file, c.source.extr
 Rectification(c::Scale; kwargs...) = Rectification(c.source.file, c.source.extrinsic, c.scale, c.source.aspect, c.source.center, c.source.north, c.source.width, c.source.height; kwargs...)
 
 # An AprilTag rectification builds its shared reference from the extrinsic frame (detecting the tags
-# and fitting the metric map) and carries the centre/north gauge; there is no diagnostic image to
-# render at build time (the top-down diagnostic is produced per-run during tracking), so `kwargs`
+# and fitting the metric map) and carries the centre/north gauge. There is no diagnostic image to
+# render at build time — the top-down diagnostic is produced per-run during tracking — so `kwargs`
 # (e.g. `diagnostic`) are ignored.
 Rectification(c::Apriltag; kwargs...) = ApriltagRectification(c.source.file, c.source.extrinsic, c.apriltags, c.family, c.checker_size, c.source.center, c.source.north, c.source.width, c.source.height)

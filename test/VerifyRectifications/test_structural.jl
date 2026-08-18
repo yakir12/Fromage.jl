@@ -103,7 +103,7 @@
 
     @testset "no false duplicate from rows nulled by earlier checks" begin
         # two DISTINCT matlab rows (different centers) that are both out of bounds: each center gets
-        # nulled by the bounds check, which would otherwise make the rows look identical. Uniqueness
+        # nulled by the bounds check, which would make the rows look identical. Uniqueness
         # skips rows that already carry issues, so neither gets a spurious "duplicate rectification".
         df = check("s_nodup_nulled.csv", [matlabrow(calibration_id = "a", center = (600, 600), north = missing),
                                           matlabrow(calibration_id = "b", center = (700, 700), north = missing)])

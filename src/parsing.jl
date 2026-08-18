@@ -6,16 +6,16 @@ module Parsing
 
 using Dates: Dates, Second, Time, TimePeriod
 
-# Local parse helper mirroring Base.tryparse semantics (returns the parsed value or `nothing` on
-# failure). Defining our own avoids type piracy on Base.tryparse for types we don't own (String,
-# NTuple). The generic fallback delegates to Base for the standard types (Int, Float64, Bool, ...).
+# Local parse helper mirroring Base.tryparse semantics (the parsed value, or `nothing` on failure).
+# Ours, rather than Base.tryparse, to avoid type piracy on types we don't own (String, NTuple); the
+# generic fallback delegates to Base for the standard types (Int, Float64, Bool, ...).
 mytryparse(::Type{T}, x) where {T} = tryparse(T, x)
 
 function mytryparse(::Type{NTuple{2, Int}}, s)
     m = match(r"^\s*[\(\[]?\s*(-?\d+)\s*,\s*(-?\d+)\s*[\)\]]?\s*$", s)
     isnothing(m) && return nothing
-    a = tryparse(Int, m.captures[1])      # tryparse (not parse): a > Int64 value overflows ->
-    b = tryparse(Int, m.captures[2])      # nothing -> "wrong format" issue, not an uncaught throw
+    a = tryparse(Int, m.captures[1])      # tryparse, not parse: an over-Int64 value becomes
+    b = tryparse(Int, m.captures[2])      # `nothing` (a "wrong format" issue), not a throw
     (isnothing(a) || isnothing(b)) && return nothing
     return (a, b)
 end
@@ -33,10 +33,9 @@ function mytryparse(::Type{MyTemporal}, x)
     return nothing
 end
 
-# Trim surrounding whitespace from hand-edited CSV cells: a stray space must not turn " file.mp4"
-# into a missing file, or "id " vs "id" into a missed duplicate. (The numeric and tuple/time
-# parsers already tolerate surrounding whitespace.) `String(...)` (not just `strip`) because strip
-# returns a SubString and the struct fields are typed `::String`, which won't accept a SubString.
+# Trim surrounding whitespace from hand-edited CSV cells; the numeric and tuple/time parsers
+# tolerate it already. `String(...)` and not just `strip`, whose SubString the `::String` fields
+# won't accept.
 mytryparse(::Type{String}, x) = String(strip(string(x)))
 
 function set!(dict, y, k, _)
@@ -50,9 +49,8 @@ end
 
 function parseto!(dict, row, k, ::Type{T}, default = nothing) where {T}
     raw = haskey(row, k) ? row[k] : missing
-    # A present-but-blank cell (whitespace only) is treated exactly like an absent one: a required
-    # field then reports "is missing" instead of silently becoming an empty string, and an optional
-    # field falls back to its default.
+    # A present-but-blank cell (whitespace only) counts as absent: a required field reports "is
+    # missing" rather than becoming an empty string, and an optional one takes its default.
     if !ismissing(raw) && !(raw isa AbstractString && isempty(strip(raw)))
         y = mytryparse(T, raw)
         set!(dict, y, k, "wrong $k format")
@@ -64,18 +62,15 @@ end
 # Validate and normalize caller-supplied global defaults against a gateway's whitelist: only keys
 # of `defaults` may be set, each value must convert to its column's type (`types`), and `what`
 # names the kwarg in the error message ("rectification"/"tracking"). Fails fast, before any
-# parsing; values are otherwise not pre-checked — an out-of-range default flows into the normal
+# parsing. Values are not otherwise pre-checked: an out-of-range default flows into the normal
 # verifications and is flagged on every row that used it.
 function resolve_defaults(overrides, defaults, types, what)
     unknown = setdiff(keys(overrides), keys(defaults))
     isempty(unknown) || throw(ArgumentError("unknown $what default(s): $(join(unknown, ", ")) (settable: $(join(keys(defaults), ", ")))"))
     isempty(overrides) && return defaults
-    # `convert` has no non-throwing counterpart, so this failure stays a caught exception — but only
-    # the two it can actually be. Over every whitelisted target type (Float64, Int, Bool,
-    # NTuple{2,Int}, Union{Int,NTuple{2,Int}}) a rejected value fails as either a `MethodError` (no
-    # such conversion: "yes" -> Bool) or an `InexactError` (a conversion that would lose
-    # information: 1.5 -> Int, 2 -> Bool). Anything else is not a rejected default and must not be
-    # relabelled as one — it propagates.
+    # `convert` has no non-throwing counterpart, so this stays a caught exception — but only the two
+    # a rejected value can raise over the whitelisted types: `MethodError` (no such conversion:
+    # "yes" -> Bool) or `InexactError` (a lossy one: 1.5 -> Int). Anything else propagates.
     converted = NamedTuple{keys(overrides)}(map(keys(overrides)) do k
         try
             convert(types[k], overrides[k])

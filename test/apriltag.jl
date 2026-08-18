@@ -59,7 +59,7 @@ project(H) = [[apply_h(H, c) for c in tc] for tc in TAGS_CM]
     @testset "non-coplanar / mis-detected tags fail loudly, not silently" begin
         bad = project(HMILD)                                         # tag 4 is a 150 cm square,
         bad[4] = [apply_h(HMILD, CENTERS[4] + rot(ANGLES[4]) * (c * 150/96)) for c in CANON]  # not 96
-        # fit_metric computes and reports; it no longer decides. The error it returns is well past
+        # fit_metric computes and reports; it does not decide. The error it returns is well past
         # the tolerance, and the direct constructor still turns that into a throw.
         @test last(fit_metric(bad)) > METRIC_FIT_TOLERANCE
         @test_throws ErrorException ReferenceFrame([0,1,2,3], bad)

@@ -48,7 +48,7 @@
 
     @testset "unreadable only_scale file is now always opened (no lazy skip)" begin
         # Every row now reads its source video to fill the shared Source width/height/aspect, so a
-        # corrupt only_scale video is flagged even when center/north are absent (the former lazy-skip
+        # corrupt only_scale video is flagged even when center/north are absent (a lazy skip
         # optimization is gone).
         df = check("r_corrupt_skip.csv", [scalerow(file = ART.corrupt, center = missing, north = missing)])
         @test flagged(df, 1, "issue reading from video file")
@@ -144,7 +144,7 @@
 
     @testset "single-type CSV (no per-type fillers) loads" begin
         # parse_row back-fills every COLUMNS entry with missing, so a video-only CSV (which never
-        # creates the :scale column) no longer makes verifications! throw `column :scale not found`.
+        # creates the :scale column) must not make verifications! throw `column :scale not found`.
         csv = write_csv(joinpath(DATADIR, "videoonly.csv"), [videorow()])   # no fillers
         @test (VRect.load_rectifications(DATADIR, csv; strict = false); true)
     end

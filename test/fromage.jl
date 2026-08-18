@@ -150,11 +150,9 @@ end
 
 @testset "an id filter that matches nothing is reported, not obeyed silently (#21)" begin
     # Filtering by id is a convenience for iterating on one run; an id that matches nothing is a
-    # typo, not a request for less. Unchecked, a total miss emptied the pipeline and only failed at
-    # the very end, when ffmpeg's concat demuxer was handed a zero-entry list — reported as
-    # "Error opening input: Invalid data found when processing input", which points at the footage
-    # rather than the filter. A PARTIAL miss was worse: it silently tracked fewer runs than asked,
-    # with no error at all.
+    # typo, not a request for less. Both the total miss (which would fail late and unhelpfully out
+    # of ffmpeg) and the partial one (which would silently track fewer runs than asked) must be
+    # reported here instead.
     dir = mktempdir()
     make_video(joinpath(dir, "cal.mp4"); size = (320, 240), duration = 2)
     target, _ = make_target_video(dir, "idf")
@@ -232,11 +230,11 @@ end
 @testset "AprilTag: registered stack survives a large pan, the rolling phase, and tag loss" begin
     # A harder synthetic flight than the e2e above, aimed at the registered background stack: a
     # large pan amplitude (the crop window sweeps nearly the whole canvas margin), more frames than
-    # the background window (so the rolling phase actually runs — the e2e above fits entirely in
-    # the prefill), and the first tag occluded both BEFORE the first full tag set (exercising the
+    # the background window (so the rolling phase runs at all — the e2e above fits entirely in the
+    # prefill), and the first tag occluded both BEFORE the first full tag set (exercising the
     # backfilled pre-seed registrations) and inside the rolling phase (the borrowed ones). Driven
-    # through `track` directly (no CSVs) with a start_location, which must cross the seed frame's
-    # registration to land on the (reference-space) stack.
+    # through `track` directly, with a start_location that must cross the seed frame's registration
+    # to land on the reference-space stack.
     dir = mktempdir()
     occluded = vcat(1:3, 260:264)
     vid, groundpath, sl, nframes = make_apriltag_video(dir, "bigpan"; nframes = 300, amp = 55, occlude = occluded)
@@ -364,9 +362,8 @@ end
 
 @testset "diagnostic video: multi-run, mixed calibrations" begin
     # All three rectification kinds in one pipeline run: two only_scale rectifications on
-    # different-sized source videos (which used to produce a broken mixed-resolution diagnostic —
-    # the fixed canvas makes every segment identical, and the concat-demuxer keeps timestamps
-    # strictly monotonic) plus a matlab rectification read from a .mat file.
+    # different-sized source videos — the case the fixed canvas exists for, since a mixed-resolution
+    # diagnostic cannot be stream-copied — plus a matlab rectification read from a .mat file.
     dir = mktempdir()
     make_video(joinpath(dir, "cal_big.mp4"); size = (640, 480))
     make_video(joinpath(dir, "cal_small.mp4"); size = (320, 240))

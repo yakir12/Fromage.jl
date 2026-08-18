@@ -1,12 +1,10 @@
-# Build-time precompilation scaffolding, kept in its own file so it can be excluded from coverage
-# (see codecov.yml): these lines run during precompilation, which the coverage run does not
-# instrument, so they can never be hit by the test suite no matter how well the package is tested.
+# Build-time precompilation scaffolding, in its own file so it can be excluded from coverage (see
+# codecov.yml): it runs during precompilation, which the coverage run does not instrument.
 
-# Precompile the parse → verify → report pipeline at build time. The bulk of first-call latency is the
+# Precompile the parse → verify → report pipeline. The bulk of first-call latency is the
 # DataFrames/DataFramesMeta/Chain macro machinery a single `load_runs` run compiles. The workload CSV
-# points at a nonexistent file, so the run exercises the full parse + verification path but bails (file
-# does not exist) before any ffprobe — no bundled media needed, fast and deterministic. (The video-read
-# path is left to compile on first real use.)
+# points at a nonexistent file, so the run exercises the full parse + verification path but bails
+# before any ffprobe — no bundled media, fast and deterministic.
 @setup_workload begin
     dir = mktempdir()
     csv = joinpath(dir, "precompile.csv")
@@ -19,9 +17,8 @@
             try
                 load_runs(dir, csv; strict = false)
             catch e
-                # Deliberately broad: precompilation must not fail because the workload did. An
-                # interrupt is the exception — Ctrl-C during precompile should stop it, not be
-                # absorbed here.
+                # Deliberately broad: precompilation must not fail because the workload did. Ctrl-C
+                # during precompile should still stop it.
                 e isa InterruptException && rethrow()
             end
         end

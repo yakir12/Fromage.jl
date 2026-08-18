@@ -8,9 +8,8 @@
     end
 
     @testset "a path naming the video itself says so (#33)" begin
-        # Putting the video in `path` used to be reported as "path does not exist" — false, and it
-        # sends the user looking for a file that is plainly there. The targeted message runs first
-        # and nulls :path, so the existence check does not also fire with the misleading one.
+        # The targeted message runs first and nulls :path, so the existence check does not also
+        # fire with the misleading "path does not exist".
         df = check("fs_pathisfile.csv", [runrow(path = ART.a)])
         @test flagged(df, 1, "path is a file, not a folder")
         @test !flagged(df, 1, "path does not exist")

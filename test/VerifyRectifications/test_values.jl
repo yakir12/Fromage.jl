@@ -38,8 +38,8 @@
         @test flagged(check("v_radial.csv", [videorow(radial_parameters = 4)]),   1, "radial_parameters must be 1, 2, or 3")
         @test flagged(check("v_radial0.csv",[videorow(radial_parameters = 0)]),   1, "radial_parameters must be 1, 2, or 3")
         @test flagged(check("v_blur.csv",   [videorow(blur = -1)]),               1, "blur must be larger than or equal to zero")
-        # OpenCV's findChessboardCorners requires both pattern dimensions strictly bigger than 2, so
-        # the bound is ≥ 3. (2, n) used to pass validation and then throw out of the detector.
+        # OpenCV's findChessboardCorners requires both pattern dimensions strictly bigger than 2,
+        # so the bound is ≥ 3 — checked here rather than caught out of the detector.
         @test flagged(check("v_ncorn.csv",  [videorow(n_corners = (0, 5))]),      1, "n_corners must all be at least 3")
         @test flagged(check("v_ncorn1.csv", [videorow(n_corners = (1, 5))]),      1, "n_corners must all be at least 3")
         @test flagged(check("v_ncorn11.csv",[videorow(n_corners = (1, 1))]),      1, "n_corners must all be at least 3")
@@ -69,7 +69,7 @@
                       1, "start must be larger than or equal to zero")
         @test flagged(check("v_winv.csv", [videorow(start = "00:00:04", stop = "00:00:01")]),
                       1, "start must come before stop")
-        # a window that runs past the end of the video is caught (was silently accepted before)
+        # a window that runs past the end of the video is caught
         @test flagged(check("v_wdur.csv", [videorow(start = "00:00:01", stop = "00:10:00")]),
                       1, "stop can not come after video duration")
         # an inverted window must NOT also emit the misleading "temporal_step too short"
