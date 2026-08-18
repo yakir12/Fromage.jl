@@ -19,6 +19,21 @@
         # extrinsic_issue throws; the catch turns that into an issue instead of aborting the load.
         df = check("e_corrupt.csv", [videorow(file = ART.corrupt)])
         @test flagged(df, 1, "issue with corner detection")
+        # ...and it says what happened, in one sentence. Interpolating the raw exception dumped the
+        # entire failed ffmpeg `Cmd` — environment block and all, ~8 kB of it — straight into the
+        # user-facing issues report (same reasoning as Probing.probe_failure).
+        @test flagged(df, 1, "ffmpeg could not read the frame")
+        @test !flagged(df, 1, "LD_LIBRARY_PATH")
+        @test length(only(filter(contains("corner detection"), df.issues[1]))) < 200
+    end
+
+    @testset "failures that are not a process dump are still shown in full" begin
+        # Only the ProcessFailedException is replaced, and only because printing it means printing
+        # the whole `Cmd`. The others say something specific about this file — a DimensionMismatch
+        # is what an empty seek reshapes into — so they must keep reaching the user verbatim.
+        e = DimensionMismatch("new dimensions (640, 480) must be consistent with array length 0")
+        @test VRect._failure_message(e) == sprint(showerror, e)
+        @test occursin("array length 0", VRect._failure_message(e))
     end
 
     @testset "a failing extrinsic frame is dumped to the issues folder" begin

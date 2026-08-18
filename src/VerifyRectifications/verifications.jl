@@ -262,6 +262,21 @@ _unwrap_task(e) = e isa TaskFailedException ? _unwrap_task(e.task.result) :
 _detection_failure(e) = e isa ProcessFailedException || e isa Base.IOError || e isa SystemError ||
                         e isa DimensionMismatch || e isa ErrorException
 
+# How to say it once classified. The frame read spawns ffmpeg, and `showerror` on a
+# ProcessFailedException prints the whole failed `Cmd` — the env-baked PATH and LD_LIBRARY_PATH
+# included, some 8 kB — which lands verbatim in the user-facing issues report and says nothing
+# anyone can act on. Same reasoning, and same trade, as `Probing.probe_failure`; the wording differs
+# only because the process here is ffmpeg reading a frame rather than ffprobe reading metadata. The
+# rest (an IOError, a DimensionMismatch out of an empty seek) already print short and stay verbatim.
+#
+# One method with a branch, rather than the more idiomatic pair of methods dispatching on the
+# exception type: a method whose whole body is a string literal is const-folded away, so its
+# instrumentation never runs and coverage reports the line as missed even though the tests below
+# exercise it. An expression body is measured normally.
+_failure_message(e) = e isa ProcessFailedException ?
+    "ffmpeg could not read the frame (the file is corrupt, truncated, or not a video)" :
+    sprint(showerror, e)
+
 function extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
     try
         vf = _vf(yadif, blur)
@@ -270,7 +285,7 @@ function extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
     catch e
         err = _unwrap_task(e)
         _detection_failure(err) || rethrow()
-        return "issue with corner detection: $err"
+        return "issue with corner detection: $(_failure_message(err))"
     end
 end
 
@@ -339,7 +354,7 @@ function intrinsic_issue(file, start, stop, temporal_step, yadif, blur, width, h
         # the original rather than a nested TaskFailedException dump
         err = _unwrap_task(e)
         _detection_failure(err) || rethrow()
-        return "issue with corner detection in the calibs window: $err"
+        return "issue with corner detection in the calibs window: $(_failure_message(err))"
     end
 end
 
