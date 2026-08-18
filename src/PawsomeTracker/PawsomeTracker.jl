@@ -209,9 +209,14 @@ struct Tracker
     end
 end
 
+# The stack stores raw frames exactly as they were decoded — `Gray{N0f8}`, which is what libav
+# hands us — rather than widening them to Float32. That is a 4x saving on the largest allocation in
+# the program (a 1080p frame at background_length = 250 is ~494 MB rather than ~1978 MB) and loses
+# nothing, since the values came from N0f8 in the first place. The SIGNED buffer is `Tracker.img`,
+# which receives the background-subtracted frame; see the widening in `detect` (#27).
 function build_stack(scale, sz, n_bkgd, pad_indices)
     tform = LinearMap(SDiagonal(SVector{3, Float64}(1/scale, 1/scale, 1)))
-    PaddedView(zero(Gray{Float32}), WarpedView(Array{Gray{Float32}}(undef, sz..., n_bkgd), tform; fillvalue = zero(Gray{Float32})), pad_indices)
+    PaddedView(zero(Gray{N0f8}), WarpedView(Array{Gray{N0f8}}(undef, sz..., n_bkgd), tform; fillvalue = zero(Gray{N0f8})), pad_indices)
 end
 
 # Registered variant (AprilTag mode): `tform` composes each slice's registration with the inverse
@@ -220,7 +225,7 @@ end
 # `inv` for WarpedView's autorange.
 function build_stack(tform::Transformation, canvas_sz, raw_sz, n_bkgd, pad_indices)
     inds = (Base.OneTo.(canvas_sz)..., Base.OneTo(n_bkgd))
-    PaddedView(zero(Gray{Float32}), WarpedView(Array{Gray{Float32}}(undef, raw_sz..., n_bkgd), tform, inds; fillvalue = zero(Gray{Float32})), pad_indices)
+    PaddedView(zero(Gray{N0f8}), WarpedView(Array{Gray{N0f8}}(undef, raw_sz..., n_bkgd), tform, inds; fillvalue = zero(Gray{N0f8})), pad_indices)
 end
 
 # `background_length = 0` turns background subtraction off, but the stack itself stays (it doubles
@@ -301,7 +306,12 @@ function detect(guess, stack, j, h, img, radii, buff, kernel, sz, scale, bkgd_re
     if isnothing(bkgd_reduce)      # subtraction off: the DoG runs on the raw slice
         img.data[bkgd_indices] .= slice[bkgd_indices]
     else
-        img.data[bkgd_indices] .= slice[bkgd_indices] .- bkgd_reduce(stack[bkgd_indices, :], dims = 3)
+        # Widen BEFORE subtracting. A darker target makes this difference negative, and the stack is
+        # `N0f8` — unsigned, and it wraps silently rather than erroring
+        # (Gray{N0f8}(0.2) - Gray{N0f8}(0.5) == Gray{N0f8}(0.702)), which would leave a
+        # background-matching pixel at 0 and a pixel one quantum darker near 1.0, i.e. the DoG
+        # chasing inverted noise. `img` is Float32 precisely to hold the signed result.
+        img.data[bkgd_indices] .= Gray{Float32}.(slice[bkgd_indices]) .- Gray{Float32}.(bkgd_reduce(stack[bkgd_indices, :], dims = 3))
     end
     window_indices = UnitRange.(guess .- radii, guess .+ radii)
     imfilter!(CPUThreads(Algorithm.FIR()), buff, img, kernel, NoPad(), window_indices)
