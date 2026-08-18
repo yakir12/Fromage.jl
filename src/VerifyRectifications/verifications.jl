@@ -268,8 +268,14 @@ _detection_failure(e) = e isa ProcessFailedException || e isa Base.IOError || e 
 # anyone can act on. Same reasoning, and same trade, as `Probing.probe_failure`; the wording differs
 # only because the process here is ffmpeg reading a frame rather than ffprobe reading metadata. The
 # rest (an IOError, a DimensionMismatch out of an empty seek) already print short and stay verbatim.
-_failure_message(::ProcessFailedException) = "ffmpeg could not read the frame (the file is corrupt, truncated, or not a video)"
-_failure_message(e) = sprint(showerror, e)
+#
+# One method with a branch, rather than the more idiomatic pair of methods dispatching on the
+# exception type: a method whose whole body is a string literal is const-folded away, so its
+# instrumentation never runs and coverage reports the line as missed even though the tests below
+# exercise it. An expression body is measured normally.
+_failure_message(e) = e isa ProcessFailedException ?
+    "ffmpeg could not read the frame (the file is corrupt, truncated, or not a video)" :
+    sprint(showerror, e)
 
 function extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
     try
