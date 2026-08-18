@@ -11,6 +11,11 @@ const PT = PawsomeTracker
 
 include("common.jl")
 
+# The background stack is a lazily-indexed view over the array that actually holds the frames, and
+# how many layers of view sit in between is nobody's business but `build_stack`'s. Unwrap to the
+# storage rather than naming a depth, so a change in the pipe doesn't read as a test failure.
+storage(a) = parent(a) === a ? a : storage(parent(a))
+
 const DATADIR = mktempdir()
 
 @testset "PawsomeTracker" begin
@@ -42,7 +47,7 @@ const DATADIR = mktempdir()
         try
             stack = PT.get_stack(vid, (vid.height, vid.width), (10, 10), 10)
             @test eltype(stack) == PT.Gray{PT.N0f8}
-            @test eltype(parent(parent(stack))) == PT.Gray{PT.N0f8}
+            @test eltype(storage(stack)) == PT.Gray{PT.N0f8}   # ...and so is the array underneath
 
             # ...while the buffer receiving the BACKGROUND-SUBTRACTED frame stays Float32: that
             # difference is negative for a darker target, and N0f8 wraps silently rather than
