@@ -60,40 +60,28 @@ function homography_dlt(src, dst)
     H / H[3, 3]
 end
 
-# Rigid Procrustes: place the canonical square `canon` (no scaling — its size is known exactly) onto
-# four measured cm points, giving the best-fit true square at that pose. This is how each tag's
-# known metric geometry is imposed during the consensus fit.
-function place_square(D, canon = CANON)
-    mc = sum(canon) / 4
-    md = sum(D) / 4
-    H = sum((D[i] - md) * (canon[i] - mc)' for i in 1:4)      # 2×2 cross-covariance
-    F = svd(H)
-    R = F.U * F.Vt
-    if det(R) < 0                                             # reflection guard
-        R = F.U * SMatrix{2, 2, Float64}(1, 0, 0, -1) * F.Vt
-    end
-    [R * (c - mc) + md for c in canon]
-end
-
 # worst deviation (real units) of any tag edge from the true side length `side`, under an
 # image→cm homography `M`
 _worst_side(M, tag_corners, side = TAG_SIZE_CM) =
     maximum(abs(norm(apply_h(M, tc[i]) - apply_h(M, tc[mod1(i+1, 4)])) - side)
             for tc in tag_corners for i in 1:4)
 
-# best-fit rigid transform (rotation + translation, no scale) mapping point set `A` onto `B`,
-# returned as a function — used to pin the metric fit's global gauge each iteration.
+# Rigid Procrustes (Kabsch): the best-fit rotation + translation, no scale, mapping point set `A`
+# onto `B`, returned as a function. Used to pin the metric fit's global gauge each iteration.
 function rigid_align(A, B)
     ma = sum(A) / length(A)
     mb = sum(B) / length(B)
-    H = sum((B[i] - mb) * (A[i] - ma)' for i in eachindex(A))
+    H = sum((B[i] - mb) * (A[i] - ma)' for i in eachindex(A))  # 2×2 cross-covariance
     F = svd(H)
     R = F.U * F.Vt
-    if det(R) < 0                                             # reflection guard
-        R = F.U * SMatrix{2, 2, Float64}(1, 0, 0, -1) * F.Vt
-    end
-    p -> R * (p - ma) + mb
+    det(R) < 0 && (R = F.U * SMatrix{2, 2, Float64}(1, 0, 0, -1) * F.Vt)   # reflection guard
+    return p -> R * (p - ma) + mb
 end
+
+# Place the canonical square `canon` (no scaling — its size is known exactly) onto four measured cm
+# points, giving the best-fit true square at that pose. This is how each tag's known metric geometry
+# is imposed during the consensus fit: the same Kabsch solve as above, evaluated at `canon` itself.
+place_square(D, canon = CANON) = map(rigid_align(canon, D), canon)
 
 # Fit the metric map `M : image → ground cm` from all tags jointly. Bootstrap from one tag's
 # corners, then alternate: place a true square on each tag's current cm estimate (Procrustes), pin
