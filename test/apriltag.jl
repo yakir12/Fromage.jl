@@ -10,7 +10,7 @@ using LinearAlgebra
 # the geometry is internal to the submodule; import the (non-exported) names directly
 using Fromage.PawsomeTracker: CANON, apply_h, homography_dlt, place_square, fit_metric,
     _worst_side, ReferenceFrame, register, ground_homography,
-    RegisteredWarp, build_stack, canvas2raw, Gray, METRIC_FIT_TOLERANCE
+    RegisteredWarp, build_stack, canvas2raw, Gray, N0f8, METRIC_FIT_TOLERANCE
 
 rot(θ) = SMatrix{2,2,Float64}(cos(θ), sin(θ), -sin(θ), cos(θ))    # proper 2D rotation
 
@@ -86,7 +86,11 @@ project(H) = [[apply_h(H, c) for c in tc] for tc in TAGS_CM]
         # same canvas index, and so must the per-pixel reduction over slices (the background model)
         # — the property the registered stack exists for. Integer translations keep the
         # interpolation exact, so the comparisons are to machine precision.
-        ground = Gray{Float32}.(rand(Float32, 100, 120))
+        # N0f8, matching what the stack actually holds: frames arrive already 8-bit from the
+        # decoder, so nothing is quantised in production. Float32-precision ground data would be
+        # rounded on write and the exactness assertions below would measure that rounding rather
+        # than the registration they are here to test (#27).
+        ground = rand(Gray{N0f8}, 100, 120)
         offs = [(0, 0), (5, 7), (10, 3)]                                   # (row, col) crop offsets
         Hc, Wc = 60, 70
         Hinv(o) = SMatrix{3,3,Float64}(1, 0, 0, 0, 1, 0, -o[2], -o[1], 1)  # ref (x,y) → frame (x,y)

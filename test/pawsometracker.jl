@@ -8,6 +8,8 @@ module PawsomeTrackerTests
 
 using Test
 using Fromage.PawsomeTracker: track
+using Fromage: PawsomeTracker
+const PT = PawsomeTracker
 
 include("common.jl")
 
@@ -32,6 +34,28 @@ const DATADIR = mktempdir()
         # stack built. Rejecting it at the keyword boundary names the expected type and costs nothing.
         # If it is ever reinstated it needs a get_guess method — and this test to change with it.
         @test_throws TypeError track(base_file; start_location = CartesianIndex(50, 55))
+    end
+
+    @testset "the background stack stores frames at their decoded width (#27)" begin
+        # The stack is the largest allocation in the program — a 1080p frame at background_length
+        # 250 is ~494 MB as N0f8 against ~1978 MB as Float32 — and its values come from an N0f8
+        # decode, so the wider type buys no precision. Nothing else in the suite would catch a
+        # regression here: tracking accuracy is identical either way, which is the whole point.
+        vid = PT.Video(base_file, 25, 0, 2, 1.0)
+        try
+            stack = PT.get_stack(vid, (vid.height, vid.width), (10, 10), 10)
+            @test eltype(stack) == PT.Gray{PT.N0f8}
+            @test eltype(parent(parent(stack))) == PT.Gray{PT.N0f8}
+
+            # ...while the buffer receiving the BACKGROUND-SUBTRACTED frame stays Float32, because
+            # that difference is negative for a darker target and N0f8 wraps silently rather than
+            # erroring (0.2 - 0.5 == 0.702). The tracking assertions elsewhere in this file are what
+            # fail if the widening in `detect` is dropped — the DoG then chases inverted noise.
+            tr = PT.Tracker(vid, true, 10, (21, 21), (vid.height, vid.width), true)
+            @test eltype(tr.img) == PT.Gray{Float32}
+        finally
+            close(vid.vid)
+        end
     end
 
     @testset "defaults (frame-center start)" begin
