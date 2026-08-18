@@ -13,17 +13,9 @@ function read_video_metadata!(df::AbstractDataFrame)
     # :width/:height have no CSV column (they are not user-supplied); create them here so the probe
     # can fill them, alongside the intermediate :duration/:dimension columns.
     @transform! df :duration = missing :dimension = missing :width = missing :height = missing
-    gs = @chain df begin
-        dropmissing([:file, :type], view = true)
-        groupby([:file, :type])
-    end
     # Every type carries a source video (:file), so every group is probed once: the read fills
     # :duration/:dimension/:width/:height for all, plus imputes :aspect (and :yadif for video).
-    groups = collect(gs)
-    metas = @showprogress desc = "Reading calibration videos..." tmap(g -> probe_video(g.file[1]), groups)
-    for (g, meta) in zip(groups, metas)
-        apply_video_metadata!(g, meta)
-    end
+    read_per_file!(df, :file, [:file, :type], "Reading calibration videos...", probe_video, apply_video_metadata!)
 end
 
 apply_video_metadata!(g, issue::String) = @transform! g :duration = missing :dimension = missing :issues = push!.(:issues, issue)
@@ -128,15 +120,9 @@ end
 # by read_video_metadata!, so the cross-check runs here against it.
 function read_matlab_metadata!(df::AbstractDataFrame)
     @transform! df :n_extrinsics = missing
-    gs = @chain df begin
-        dropmissing([:matlab_file], view = true)   # matlab_file is set for matlab rows only
-        groupby(:matlab_file)
-    end
-    mats = collect(gs)
-    metas = @showprogress desc = "Reading matlab calibration files..." tmap(g -> matlab_metadata(g.matlab_file[1]), mats)
-    for (g, meta) in zip(mats, metas)
-        apply_matlab_metadata!(g, meta)
-    end
+    # matlab_file is set for matlab rows only, so non-matlab rows form no group and are untouched.
+    read_per_file!(df, :matlab_file, [:matlab_file], "Reading matlab calibration files...",
+                   matlab_metadata, apply_matlab_metadata!)
 end
 
 # Pure read+derive: one matread, then structure/extrinsic-count/dimension off the same dict. A bad
@@ -185,47 +171,20 @@ function matlab_extrinsic_count(dict)
     return first(counts)
 end
 
-const INTERLACED_FIELD_ORDERS = ("tt", "bb", "tb", "bt")
-
-# Reduce ffprobe's "num:den" sample aspect ratio to a Float64, mirroring VideoIO.aspect_ratio's
-# fallback: an undefined / zero / nonsensical ratio defaults to 1.0.
-function parse_sample_aspect(s)
-    occursin(':', s) || return 1.0
-    num, den = tryparse.(Int, split(s, ':'))
-    (num === nothing || den === nothing || den == 0 || num == 0) ? 1.0 : num / den
-end
-
 # Probe one video file with a single ffprobe call: frame width/height, container duration, sample
 # (pixel) aspect ratio and field order (interlacing). Returns a NamedTuple, or an "issue reading..."
-# string for a corrupt/unreadable file. The spawn and its `key=value` output are handled by
-# ..Probing (shared with VerifyRuns); what stays here is which entries this gateway asks for and
-# what it derives from them.
+# string for a corrupt/unreadable file. The spawn, its `key=value` output and the parsing of each
+# field are handled by ..Probing (shared with VerifyRuns); what stays here is which entries this
+# gateway asks for and what it derives from them.
 function probe_video(file)
     fields = probe_fields(file, "stream=width,height,sample_aspect_ratio,field_order:format=duration")
     fields isa String && return fields                 # unreadable file: pass the issue straight on
-    # The three fields nothing downstream can proceed without; `tryparse` reports an absent or
-    # unparseable one as `nothing`. A miss here means ffprobe *succeeded* and still could not
-    # describe a video (an audio-only file, or junk it recognised a container in), which is not a
-    # usable video either — hence the same "issue reading from video file" wording.
-    width    = tryparse(Int, get(fields, "width", ""))
-    height   = tryparse(Int, get(fields, "height", ""))
-    duration = tryparse(Float64, get(fields, "duration", ""))
-    if isnothing(width) || isnothing(height) || isnothing(duration)
-        return "issue reading from video file: ffprobe reported no usable video stream (missing or unparseable width/height/duration)"
-    end
+    geometry = frame_geometry(fields)
+    isnothing(geometry) && return no_video_stream("width/height/duration")
     # aspect and field order have documented fallbacks, so a missing one is not an error.
-    return (; width, height, duration,
+    return (; geometry...,
               aspect = parse_sample_aspect(get(fields, "sample_aspect_ratio", "1:1")),
-              yadif  = get(fields, "field_order", "progressive") in INTERLACED_FIELD_ORDERS)
-end
-
-function verify!(df::AbstractDataFrame, predicate, msg, args...)
-    field = first(args)
-    cols = Cols(args...)
-    @chain df begin
-        subset(cols => ByRow(passmissing(predicate)), view = true, skipmissing = true)
-        @transform! $field = missing :issues = push!.(:issues, msg)
-    end
+              yadif  = is_interlaced(fields))
 end
 
 # Errors raised inside a `tmap` come back wrapped in a TaskFailedException — but only when the
@@ -420,30 +379,10 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = joinpath(
     rm(issues_dir; recursive = true, force = true)
 
     verify_unique_ids!(df)
-    @transform! df :path = passmissing(joinpath).(data_path, :path)
 
-    # A path naming the video itself is the common slip, and it must be reported as such rather
-    # than as "does not exist" (#33). Runs first, and verify! nulls :path on failure, so the
-    # existence check below skips the row rather than piling on.
-    verify!(df, isfile, "path is a file, not a folder — it should be the folder holding the video, with the file name in the `file` column", :path)
-    verify!(df, !isdir, "path does not exist", :path)
-
-    verify!(df, (f, p) -> !isfile(joinpath(p, f)), "file does not exist", :file, :path)
-
-    # matlab_file (the .mat, matlab rows only) is resolved against path just like :file. verify!
-    # skips missing, so non-matlab rows (matlab_file === missing) are untouched.
-    verify!(df, (f, p) -> !isfile(joinpath(p, f)), "matlab_file does not exist", :matlab_file, :path)
-
-    # Collapse data_path/path/file into one canonical absolute path stored in :file (and the same
-    # for :matlab_file), then drop :path, whose job the isdir/isfile checks above have finished. The
-    # resolved :file is the identity used by every later step (the read passes, duplicate detection)
-    # and :matlab_file groups the .mat reads. realpath is safe because non-existent paths were nulled
-    # just above, and is what collapses "./x", "a/../x" and symlinks onto one key.
-    @transform! df :file = passmissing(joinpath).(:path, :file)
-    @transform! df :file = passmissing(realpath).(:file)
-    @transform! df :matlab_file = passmissing(joinpath).(:path, :matlab_file)
-    @transform! df :matlab_file = passmissing(realpath).(:matlab_file)
-    select!(df, Not(:path))
+    # The resolved :file is the identity every later step uses (the read passes, duplicate
+    # detection); :matlab_file (the .mat, matlab rows only) groups the .mat reads.
+    resolve_paths!(df, data_path, :file, :matlab_file)
 
     # One read per physical file: ffprobe on the source video (every type) and matread on the .mat
     # (matlab). read_video_metadata! must run first: it sets the frame size that bounds-checks

@@ -315,6 +315,32 @@ a pixel in the (moved) extrinsic frame, not in the run frame.
 
 ## The gateways
 
+### The two gateways share their plumbing, not their rules (#68)
+
+`VerifyRectifications` and `VerifyRuns` are the same pipeline over different columns: read and
+screen the CSV, back-fill the columns a row type does not use, resolve paths against the data
+folder, read each physical file once, null a field when a check trips, print what was wrong. That
+sequence had been written out twice, close enough that a fix to one copy was routinely not applied
+to the other.
+
+It now lives once, in `src/gateway.jl` (`read_rows`, `backfill!`, `verify!`, `resolve_paths!`,
+`read_per_file!`, `report_issues`), and the parsing of ffprobe's output moved alongside it into
+`src/probing.jl` (`frame_geometry`, `parse_framerate`, `parse_sar`, `parse_sample_aspect`,
+`is_interlaced`). `Gateway` knows nothing about either domain: every message it emits is either
+passed in by the caller or built from a column name, which is what keeps `"file does not exist"`
+and `"matlab_file does not exist"` — or `"(run_id: …)"` and `"(calibration_id: …)"` — one line of
+code instead of two.
+
+What deliberately stayed duplicated is what actually differs: each gateway's `COLUMNS`, its
+`DEFAULTS`, its row parsers, its `probe_video` (they ask ffprobe for different entries and derive
+different things from them), and its list of `verify!` calls — that list is the domain, and its
+ordering is load-bearing (see below).
+
+One behaviour was unified rather than preserved: `VerifyRectifications.parse_sample_aspect` used to
+return a negative `Float64` for a negative numerator, where `VerifyRuns.parse_sar` returned the
+square-pixel fallback. Both now take the fallback. No caller could use a negative aspect ratio, and
+every case either suite pins was already agreed on by both.
+
 ### Failures are reported, not thrown
 
 A calibration whose extrinsic frame yields no corners, a `.mat` missing a required field, an
