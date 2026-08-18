@@ -30,6 +30,11 @@
         issue = VRect.intrinsic_issue(joinpath(DATADIR, ART.corrupt), 0.0, 2.0, 1.0, missing, 0.0, 640, 480, (7, 10))
         @test issue isa String
         @test occursin("issue with corner detection in the calibs window", issue)
+        # and it stays readable: the raw ProcessFailedException printed the whole ffmpeg `Cmd`,
+        # environment included, into the report
+        @test occursin("ffmpeg could not read the frame", issue)
+        @test !occursin("LD_LIBRARY_PATH", issue)
+        @test length(issue) < 200
     end
 
     @testset "rows that already failed the extrinsic check are not re-scanned" begin
