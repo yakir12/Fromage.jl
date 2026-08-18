@@ -16,20 +16,19 @@ const R = Rectifications
     # Tier 1 — pure, deterministic functions (no ffmpeg / OpenCV / I/O).
     include("Rectifications/test_lens_distortion.jl")
     include("Rectifications/test_geometry.jl")
-    include("Rectifications/test_ffmpeg_cmd.jl")
+    include("Rectifications/test_vf.jl")
     include("Rectifications/test_read_frame.jl")
-    include("Rectifications/test_module_state.jl")
     include("Rectifications/test_from_scale.jl")
     include("Rectifications/test_from_matlab.jl")
 
     # Tier 2 — OpenCV-backed corner detection & camera-model fit (synthetic data, no video).
     include("Rectifications/test_calibration.jl")
 
-    # Tier 3 — full pipeline over a synthesized checkerboard video (bundled ffmpeg + OpenCV).
-    include("Rectifications/test_rectification.jl")
+    # Tier 3 — reading frames from a real clip, alone and under nested concurrency.
+    include("Rectifications/test_frame_reads.jl")
 
-    # Tier 4 — concurrency regression: the global read semaphore bounds simultaneous reads.
-    include("Rectifications/test_concurrency.jl")
+    # Tier 4 — full pipeline over a synthesized checkerboard video (bundled ffmpeg + OpenCV).
+    include("Rectifications/test_rectification.jl")
 end
 
 end
