@@ -83,6 +83,31 @@ transient by definition and a few retries ride out residual blips even under the
 `tmap(...; ntasks = n)` and can go away — but measure against the real share, not the test
 suite.**
 
+### The innermost parallel layer is gone (#68)
+
+`detect` filtered its search window with `imfilter!(CPUThreads(Algorithm.FIR()), …)` — the
+innermost of five nested layers of parallelism, threading a 21×21 output window against a 29×29
+kernel. It is `CPU1` now.
+
+The benchmark harness priced it first: 281.6 µs threaded against 284.2 µs serial **on 32 threads**
+— within 1%, because there is not enough work in one window to pay for the split. End to end, over
+100 interleaved samples per arm, `track` on the shared fixture came out at min 108.8 / p25 111.4 ms
+threaded against min 108.4 / p25 111.7 ms serial: indistinguishable. (Sequential A-then-B runs made
+the serial arm look 21% slower; interleaving the rounds showed that was load on the machine, not
+the change. Identical minima with divergent upper quantiles is what that always looks like.)
+
+The results are **bitwise identical**, not merely close: `CPU1(FIR)` and `CPUThreads(FIR)` produce
+the same `Float64`s from the same window, and 200 tracked coordinates across four scenarios —
+explicit start, frame-centre search, `background_length = 0`, and a three-segment run — compare
+equal bit for bit against the previous revision.
+
+The resource argument cannot simply be dropped: `imfilter!` has no method taking `inds` without
+one, so `ComputationalResources` remains a dependency.
+
+This removes one layer. The other four — `tmap` over runs, `Threads.@spawn` for intrinsics, `tmap`
+over intrinsic timestamps, and the `tmap` pairs in verification — still nest, and `READ_SEM` still
+exists because of them. Those need the real share to judge.
+
 ### ffmpeg commands bake their environment into the `Cmd`
 
 Commands interpolate the *called* `FFMPEG.ffmpeg()` / `FFMPEG.ffprobe()` (the non-do-block form),
@@ -902,6 +927,7 @@ in the way. End-to-end throughput is covered by the `"macro"` group.
 
 The first run answered the question it was built for. On 32 threads, `CPUThreads` and `CPU1` come
 out within 1% of each other (282 μs against 284 μs): the innermost layer of parallelism buys
-nothing at this window size. The same run priced the other open question — the bisection inverse
+nothing at this window size, and has since been removed. Both are still benchmarked, because that
+comparison is the evidence for the choice. The same run priced the other open question — the bisection inverse
 costs 274 μs per 640 pixels against 3.3 μs for the forward map, about 428 ns a pixel, which is the
 budget a polynomial root has to beat.
