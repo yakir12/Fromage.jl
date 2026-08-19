@@ -55,8 +55,14 @@ function check(name, rows; strict = false, header = HEADER, defaults = (;))
     VR.load_runs(DATADIR, csv; strict, defaults)
 end
 
+# Each scenario is loaded as its own csv, so the name only has to be unique within DATADIR — the
+# suite generates it. Name one explicitly only when the test is about the file itself.
+const CASE = Ref(0)
+check(rows; kw...) = check("case_$(CASE[] += 1).csv", rows; kw...)
+
 "Like `check`, but also capture what the load prints to stdout. Returns (result, output)."
 load_capturing(name, rows; kw...) = capturing(() -> check(name, rows; kw...))
+load_capturing(rows; kw...) = capturing(() -> check(rows; kw...))
 
 # A clean load returns Vector{Run}; a load with issues returns a DataFrame carrying :issues.
 clean(x) = x isa Vector{VR.Run}

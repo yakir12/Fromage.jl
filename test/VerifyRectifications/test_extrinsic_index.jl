@@ -22,27 +22,27 @@
             @test occursin(k, issue)                 # names the offending field
         end
         # end-to-end: such a file is flagged and load_rectifications does not throw
-        @test flagged(check("ei_badpose.csv", [matlabrow(matlab_file = "badpose_TranslationVectors.mat")]),
+        @test flagged(check([matlabrow(matlab_file = "badpose_TranslationVectors.mat")]),
                       1, "expected an N×3 matrix")
     end
 
     @testset "in-range index loads clean (both boundaries)" begin
-        @test clean(check("ei_min.csv", [matlabrow(extrinsic_index = 1)]))                    # low boundary
-        @test clean(check("ei_max.csv", [matlabrow(extrinsic_index = MATLAB_N_EXTRINSICS)]))  # high boundary (pins ≤ N)
+        @test clean(check([matlabrow(extrinsic_index = 1)]))                    # low boundary
+        @test clean(check([matlabrow(extrinsic_index = MATLAB_N_EXTRINSICS)]))  # high boundary (pins ≤ N)
     end
 
     @testset "index must be larger than zero" begin
-        @test flagged(check("ei_zero.csv", [matlabrow(extrinsic_index = 0)]),  1, "extrinsic_index must be larger than zero")
-        @test flagged(check("ei_neg.csv",  [matlabrow(extrinsic_index = -1)]), 1, "extrinsic_index must be larger than zero")
+        @test flagged(check([matlabrow(extrinsic_index = 0)]),  1, "extrinsic_index must be larger than zero")
+        @test flagged(check([matlabrow(extrinsic_index = -1)]), 1, "extrinsic_index must be larger than zero")
     end
 
     @testset "index past the number of poses is flagged" begin
-        df = check("ei_big.csv", [matlabrow(extrinsic_index = MATLAB_N_EXTRINSICS + 1)])
+        df = check([matlabrow(extrinsic_index = MATLAB_N_EXTRINSICS + 1)])
         @test flagged(df, 1, "exceeds the number of extrinsics")
     end
 
     @testset "translation/rotation pose-count mismatch is flagged" begin
-        df = check("ei_mismatch.csv", [matlabrow(matlab_file = ART.mismatch_mat)])
+        df = check([matlabrow(matlab_file = ART.mismatch_mat)])
         @test flagged(df, 1, "disagree on the number of extrinsics")
     end
 end

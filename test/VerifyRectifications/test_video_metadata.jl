@@ -26,7 +26,7 @@
     @testset "missing yadif/width/height are imputed onto the Video struct" begin
         # A clean load returns Vector{Video}; with the columns left blank they are filled from the probe.
         probed = VRect.probe_video(joinpath(DATADIR, ART.board))
-        result = check("vm_impute.csv", [videorow()])
+        result = check([videorow()])
         @test result isa Vector
         v = first(result)
         @test v.yadif == false                       # board is progressive (yadif stays on Video)
@@ -39,7 +39,7 @@
         # board is progressive, but an explicit yadif cell must be kept verbatim, not overwritten.
         # width/height have no CSV column, so they always come from the probe (the real frame size).
         probed = VRect.probe_video(joinpath(DATADIR, ART.board))
-        result = check("vm_provided.csv", [videorow(yadif = true)])
+        result = check([videorow(yadif = true)])
         @test result isa Vector
         v = first(result)
         @test v.yadif == true                         # provided, not the probed false
@@ -48,12 +48,12 @@
     end
 
     @testset "a non-boolean yadif is a parse issue, never thrown" begin
-        @test flagged(check("vm_yadif_bad.csv", [videorow(yadif = "maybe")]), 1, "wrong yadif format")
+        @test flagged(check([videorow(yadif = "maybe")]), 1, "wrong yadif format")
     end
 
     @testset "a CSV-supplied aspect wins over the probe" begin
         # board.mp4 has square pixels (probe aspect 1.0); an explicit CSV aspect must be kept verbatim.
-        result = check("vm_aspect_provided.csv", [videorow(aspect = 2.0)])
+        result = check([videorow(aspect = 2.0)])
         @test result isa Vector
         @test first(result).source.aspect == 2.0
     end
@@ -64,11 +64,13 @@
         # structs, so inspect c[1].source.width/height.
         probed = VRect.probe_video(joinpath(DATADIR, ART.video))   # video.mp4: 640×480
         for (name, r) in (("scale", scalerow()), ("matlab", matlabrow()))
-            c = check("vm_$name.csv", [r])
-            @test c isa Vector
-            @test c[1].source.width  == probed.width
-            @test c[1].source.height == probed.height
-            @test !hasproperty(c[1], :yadif)                     # yadif is only on the Video struct
+            @testset "$name" begin
+                c = check([r])
+                @test c isa Vector
+                @test c[1].source.width  == probed.width
+                @test c[1].source.height == probed.height
+                @test !hasproperty(c[1], :yadif)                 # yadif is only on the Video struct
+            end
         end
     end
 end
