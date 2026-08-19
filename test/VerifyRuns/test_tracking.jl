@@ -14,7 +14,7 @@
     seg2,  seg2_exp  = make_target_video("t_seg2"; sar = 2//1, nsegments = 3)
 
     @testset "defaults: imputed stop/fps/window, frame-center start" begin
-        runs = check("t_base.csv", [runrow(file = only(base))])
+        runs = check([runrow(file = only(base))])
         @test clean(runs)
         _, ij = VR.track(only(runs))
         @test length(ij) == 50                       # stop imputed from the full 2 s at 25 fps
@@ -23,37 +23,37 @@
 
     @testset "start_location sources" begin
         # explicit CSV cell
-        runs = check("t_sl_csv.csv", [runrow(file = only(base), start_location = "(55, 50)")])
+        runs = check([runrow(file = only(base), start_location = "(55, 50)")])
         @test clean(runs)
         _, ij = VR.track(only(runs))
         @test tracking_rmse(ij, base_exp) < 1
         # the `center` keyword (what Fromage passes from the rectification)
-        runs = check("t_sl_ctr.csv", [runrow(file = only(base))])
+        runs = check([runrow(file = only(base))])
         @test clean(runs)
         _, ij = VR.track(only(runs); center = (55, 50))
         @test tracking_rmse(ij, base_exp) < 1
     end
 
     @testset "window_size sources" begin
-        runs = check("t_win_i.csv", [runrow(file = only(base), window_size = "31")])
+        runs = check([runrow(file = only(base), window_size = "31")])
         @test clean(runs)
         _, ij = VR.track(only(runs))
         @test tracking_rmse(ij, base_exp) < 1
-        runs = check("t_win_t.csv", [runrow(file = only(base), window_size = "(31, 21)")])
+        runs = check([runrow(file = only(base), window_size = "(31, 21)")])
         @test clean(runs)
         _, ij = VR.track(only(runs))
         @test tracking_rmse(ij, base_exp) < 1
     end
 
     @testset "lighter target on dark background" begin
-        runs = check("t_light.csv", [runrow(file = only(light), darker_target = "false")])
+        runs = check([runrow(file = only(light), darker_target = "false")])
         @test clean(runs)
         _, ij = VR.track(only(runs))
         @test tracking_rmse(ij, light_exp) < 1
     end
 
     @testset "requested fps below the video's rate" begin
-        runs = check("t_fps.csv", [runrow(file = only(base), fps = "12.5")])
+        runs = check([runrow(file = only(base), fps = "12.5")])
         @test clean(runs)
         _, ij = VR.track(only(runs))
         @test length(ij) == 25                       # every other frame
@@ -62,7 +62,7 @@
 
     @testset "start/stop sub-window" begin
         # the start_location must be where the target is at t = start (frame 10), not at t = 0
-        runs = check("t_sub.csv", [runrow(file = only(base), start = "0.4", stop = "1.6", start_location = "(32, 50)")])
+        runs = check([runrow(file = only(base), start = "0.4", stop = "1.6", start_location = "(32, 50)")])
         @test clean(runs)
         _, ij = VR.track(only(runs))
         @test length(ij) == 30
@@ -71,7 +71,7 @@
 
     @testset "downscaled tracking (scale = 0.5)" begin
         # coordinates come back in the *original* stored-frame pixels regardless of scale
-        runs = check("t_scale.csv", [runrow(file = only(base), scale = "0.5")])
+        runs = check([runrow(file = only(base), scale = "0.5")])
         @test clean(runs)
         _, ij = VR.track(only(runs))
         @test tracking_rmse(ij, base_exp) < 1
@@ -83,24 +83,24 @@
         # is a 10 px disc, so scale 0.1 is the smallest legal value (a 10×10 working frame). The
         # tolerance is loose because precision at the boundary is inherently about 1/scale — the
         # assertion is that the track stays within the target's own radius rather than wandering.
-        runs = check("t_scale_min.csv", [runrow(file = only(base), target_width = "10", scale = "0.1")])
+        runs = check([runrow(file = only(base), target_width = "10", scale = "0.1")])
         @test clean(runs)
         _, ij = VR.track(only(runs))
         @test tracking_rmse(ij, base_exp) < 5
     end
 
     @testset "anamorphic (sar ≠ 1)" begin
-        for (slug, label, files, exp) in (("sar05", "sar 1/2 (stored 200×100)", sar05, sar05_exp),
-                                          ("sar2",  "sar 2 (stored 50×100)",    sar2,  sar2_exp))
+        for (label, files, exp) in (("sar 1/2 (stored 200×100)", sar05, sar05_exp),
+                                    ("sar 2 (stored 50×100)",    sar2,  sar2_exp))
             @testset "$label" begin
                 # explicit display-space start_location; for sar 2 its x (55) exceeds the *stored*
                 # width (50) — valid, because bounds are display-space (width × sar)
-                runs = check("t_$slug.csv", [runrow(file = only(files), start_location = "(55, 50)")])
+                runs = check([runrow(file = only(files), start_location = "(55, 50)")])
                 @test clean(runs)
                 _, ij = VR.track(only(runs))
                 @test tracking_rmse(ij, exp) < 1
                 # frame-center default must be the *display* center, sar-corrected
-                runs = check("t_$(slug)_c.csv", [runrow(file = only(files))])
+                runs = check([runrow(file = only(files))])
                 @test clean(runs)
                 _, ij = VR.track(only(runs))
                 @test tracking_rmse(ij, exp) < 1
@@ -108,10 +108,10 @@
         end
         # display-space bounds, both directions: the sar-1/2 video stores 200×100 but displays
         # 100×100, so x = 150 is out; the sar-2 video stores 50×100 but displays 100×100, so x = 80 is in
-        @test flagged(check("t_sar_oob.csv", [runrow(file = only(sar05), start_location = "(150, 50)")]), 1, "start_location is outside the frame")
-        @test clean(check("t_sar_inb.csv",   [runrow(file = only(sar2),  start_location = "(80, 50)")]))
+        @test flagged(check([runrow(file = only(sar05), start_location = "(150, 50)")]), 1, "start_location is outside the frame")
+        @test clean(check([runrow(file = only(sar2),  start_location = "(80, 50)")]))
         # anamorphic and downscaled at once
-        runs = check("t_sar_sc.csv", [runrow(file = only(sar2), start_location = "(55, 50)", scale = "0.5")])
+        runs = check([runrow(file = only(sar2), start_location = "(55, 50)", scale = "0.5")])
         @test clean(runs)
         _, ij = VR.track(only(runs))
         @test tracking_rmse(ij, sar2_exp) < 1
@@ -122,7 +122,7 @@
         # from where the previous segment ended (keyframe-aligned 17 + 17 + 16 frames)
         rows = [runrow(run_id = "s", file = f, start_location = i == 1 ? "(55, 50)" : missing)
                 for (i, f) in enumerate(seg)]
-        runs = check("t_seg.csv", rows)
+        runs = check(rows)
         @test clean(runs)
         r = only(runs)
         @test length(r.files) == 3
@@ -130,7 +130,7 @@
         @test length(ij) == 50
         @test tracking_rmse(ij, seg_exp) < 1
         # anamorphic segmented run, frame-center start
-        runs = check("t_seg2.csv", [runrow(run_id = "s2", file = f) for f in seg2])
+        runs = check([runrow(run_id = "s2", file = f) for f in seg2])
         @test clean(runs)
         _, ij = VR.track(only(runs))
         @test tracking_rmse(ij, seg2_exp) < 1.5

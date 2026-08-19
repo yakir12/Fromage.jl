@@ -24,12 +24,12 @@
         # probe_video's catch returns the message string; assert it directly, then end-to-end through
         # load_rectifications for both types (both reach probe_video via read_video_metadata!).
         @test VRect.probe_video(joinpath(DATADIR, ART.corrupt)) isa String
-        @test flagged(check("r_corrupt.csv",  [videorow(file = ART.corrupt)]), 1, "issue reading from video file")
-        @test flagged(check("r_corrupts.csv", [scalerow(file = ART.corrupt)]), 1, "issue reading from video file")
+        @test flagged(check([videorow(file = ART.corrupt)]), 1, "issue reading from video file")
+        @test flagged(check([scalerow(file = ART.corrupt)]), 1, "issue reading from video file")
     end
 
     @testset "non-mat file is flagged" begin
-        df = check("r_badmat.csv", [matlabrow(matlab_file = ART.bad_mat)])
+        df = check([matlabrow(matlab_file = ART.bad_mat)])
         @test flagged(df, 1, "missing \"MATLAB\" magic bytes")
     end
 
@@ -41,7 +41,7 @@
         # an unreadable path (here: absent) is a SystemError from `read`, reported as an issue
         @test VRect.matlab_magic_issue(joinpath(DATADIR, "definitely_not_here.mat")) isa String
         # end-to-end: a non-mat file is flagged and has :matlab_file nulled (the source video :file is fine)
-        df = check("r_mat_magic.csv", [matlabrow(matlab_file = ART.bad_mat)])
+        df = check([matlabrow(matlab_file = ART.bad_mat)])
         @test flagged(df, 1, "missing \"MATLAB\" magic bytes")
         @test ismissing(df.matlab_file[1])
     end
@@ -50,7 +50,7 @@
         # Every row now reads its source video to fill the shared Source width/height/aspect, so a
         # corrupt only_scale video is flagged even when center/north are absent (a lazy skip
         # optimization is gone).
-        df = check("r_corrupt_skip.csv", [scalerow(file = ART.corrupt, center = missing, north = missing)])
+        df = check([scalerow(file = ART.corrupt, center = missing, north = missing)])
         @test flagged(df, 1, "issue reading from video file")
     end
 
@@ -64,11 +64,11 @@
         @test VRect.read_matlab(joinpath(DATADIR, ART.bad_mat))                          isa String  # unreadable / not a mat
 
         # end-to-end: a structurally-complete matlab row loads clean...
-        @test clean(check("r_mat_ok.csv", [matlabrow()]))                 # good.mat has all fields
-        @test clean(check("r_mat_nested.csv", [matlabrow(matlab_file = ART.nested_mat)]))
+        @test clean(check([matlabrow()]))                 # good.mat has all fields
+        @test clean(check([matlabrow(matlab_file = ART.nested_mat)]))
 
         # ...while a file missing required fields is flagged, names the missing fields, and has :matlab_file nulled.
-        df = check("r_mat_partial.csv", [matlabrow(matlab_file = ART.partial_mat)])
+        df = check([matlabrow(matlab_file = ART.partial_mat)])
         @test flagged(df, 1, "missing required calibration field(s)")
         @test flagged(df, 1, "TranslationVectors")
         @test flagged(df, 1, "RotationVectors")
@@ -78,7 +78,7 @@
     @testset "matlab ImageSize must match the source video dimensions" begin
         # good.mat ImageSize is (640,480); pairing it with board.mp4 (500×376) as the source video
         # makes the cross-check fail. (matlabrow's default source video.mp4 is 640×480 and passes.)
-        df = check("r_mat_dimmismatch.csv", [matlabrow(file = ART.board)])
+        df = check([matlabrow(file = ART.board)])
         @test flagged(df, 1, "does not match the source video dimensions")
     end
 
@@ -86,15 +86,15 @@
         # "." and "./." resolve to the same dir, so both rows point at one physical .mat. The reading
         # passes group on the canonical (realpath) matlab_file, so the file is read once and the result
         # is applied to every spelling — here a structure failure is reported on both rows.
-        df = check("r_canon_mat.csv", [matlabrow(calibration_id = "c1", path = ".",   matlab_file = ART.partial_mat, center = missing, north = missing),
-                                       matlabrow(calibration_id = "c2", path = "./.", matlab_file = ART.partial_mat, center = missing, north = missing)])
+        df = check([matlabrow(calibration_id = "c1", path = ".",   matlab_file = ART.partial_mat, center = missing, north = missing),
+                    matlabrow(calibration_id = "c2", path = "./.", matlab_file = ART.partial_mat, center = missing, north = missing)])
         @test flagged(df, 1, "missing required calibration field(s)")
         @test flagged(df, 2, "missing required calibration field(s)")
 
         # likewise a video read (dimension) applied across spellings: an out-of-bounds center is caught
         # on both rows from the one read.
-        df = check("r_canon_vid.csv", [videorow(calibration_id = "v1", path = ".",   center = (9000, 9000)),
-                                       videorow(calibration_id = "v2", path = "./.", center = (9000, 9000))])
+        df = check([videorow(calibration_id = "v1", path = ".",   center = (9000, 9000)),
+                    videorow(calibration_id = "v2", path = "./.", center = (9000, 9000))])
         @test flagged(df, 1, "center cannot be larger than the dimensions")
         @test flagged(df, 2, "center cannot be larger than the dimensions")
     end
@@ -161,6 +161,6 @@
             @test VRect.matlab_dimension(MAT.matread(p)) isa String
         end
         # end-to-end: such a file is flagged, and load_rectifications does not throw
-        @test flagged(check("r_badimsize.csv", [matlabrow(matlab_file = "badimsize_three_elem.mat")]), 1, "ImageSize is malformed")
+        @test flagged(check([matlabrow(matlab_file = "badimsize_three_elem.mat")]), 1, "ImageSize is malformed")
     end
 end

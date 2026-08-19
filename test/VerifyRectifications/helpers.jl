@@ -141,8 +141,14 @@ function check(name, rows; strict = false, header = HEADER, defaults = (;), issu
     VRect.load_rectifications(DATADIR, csv; strict, defaults, issues_dir)
 end
 
+# Each scenario is loaded as its own csv, so the name only has to be unique within DATADIR — the
+# suite generates it. Name one explicitly only when the test is about the file itself.
+const CASE = Ref(0)
+check(rows; kw...) = check("case_$(CASE[] += 1).csv", rows; kw...)
+
 "Like `check`, but also capture what the load prints to stdout. Returns (result, output)."
 load_capturing(name, rows; kw...) = capturing(() -> check(name, rows; kw...))
+load_capturing(rows; kw...) = capturing(() -> check(rows; kw...))
 
 # A clean load returns Vector{RectificationMethod}; a load with issues keeps the df's :issues.
 clean(df) = !hasproperty(df, :issues) || all(isempty, df.issues)

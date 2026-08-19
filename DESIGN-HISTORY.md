@@ -793,6 +793,29 @@ already built. Timed, the entire generator set costs about 2.5 s — against `qu
 ExplicitImports) at 71 s, `PawsomeTracker` at 56 s and `Rectifications` at 26 s. A fixture cache
 would have added machinery to save well under 1% of the run, so the duplicate encodes stay.
 
+### Scenario csv names are generated, not invented (#68)
+
+Every gateway scenario is loaded as its own csv, so each of 255 `check` calls used to open with a
+hand-invented filename: `v_ncorn11.csv`, `p_center_ovf.csv`, `s_dupyadif.csv`, `t_sar2_c.csv`. The
+name encoded nothing the row beside it did not already say, it had to be unique within `DATADIR`,
+and inventing one was a step between having a case and writing it.
+
+`check(rows; …)` now generates `case_N.csv` from a counter. The two-argument form stays for a test
+that is about the file itself. What each line says is now only the thing being tested:
+
+```julia
+@test flagged(check([videorow(n_corners = (1, 1))]), 1, "n_corners must all be at least 3")
+```
+
+What this deliberately is *not* is a table driver. Turning these into `(override, message)` rows
+would swallow the per-case comments — which are load-bearing arithmetic, not archaeology, and were
+kept for that reason when the test comments were trimmed — and would report a failure against the
+loop rather than the case. The shape was already a table; it just had a redundant column.
+
+Three loops that built their names by interpolation (`"vm_$name.csv"`) gained a `@testset "$name"`
+instead: the variable existed only to name a file, and two of the three loops had no per-iteration
+testset at all, so a failure did not say which case produced it.
+
 ### JET runs only on the pinned Julia minor
 
 JET couples to compiler internals, so a new Julia release must not be able to break the suite

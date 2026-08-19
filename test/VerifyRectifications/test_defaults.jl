@@ -2,33 +2,33 @@
     # The hierarchy under test: csv cell → defaults kwarg → hardcoded/probed value.
 
     @testset "kwarg fills a blank cell; a csv cell wins" begin
-        cs = check("d_check.csv", [videorow(checker_size = missing)]; defaults = (checker_size = 7.5,))
+        cs = check([videorow(checker_size = missing)]; defaults = (checker_size = 7.5,))
         @test cs isa Vector
         @test only(cs).checker_size == 7.5
-        cs = check("d_check2.csv", [videorow(checker_size = 4)]; defaults = (checker_size = 7.5,))
+        cs = check([videorow(checker_size = 4)]; defaults = (checker_size = 7.5,))
         @test only(cs).checker_size == 4.0
         # n_corners: the hardcoded default (7, 10) would fail detection on the 5×8 board — a clean
         # load proves the kwarg (not the hardcoded value) filled the blank cell
-        cs = check("d_nc.csv", [videorow(n_corners = missing)]; defaults = (n_corners = (5, 8),))
+        cs = check([videorow(n_corners = missing)]; defaults = (n_corners = (5, 8),))
         @test cs isa Vector
         @test only(cs).n_corners == (5, 8)
     end
 
     @testset "yadif kwarg beats the probe" begin
         # board.mp4 is progressive (the probe would impute false); a global yadif wins when blank
-        cs = check("d_yadif.csv", [videorow(yadif = missing)]; defaults = (yadif = true,))
+        cs = check([videorow(yadif = missing)]; defaults = (yadif = true,))
         @test cs isa Vector
         @test only(cs).yadif == true
     end
 
     @testset "bad overrides fail fast; bad values are verified per row" begin
         # non-whitelisted keys: the intrinsic window and only_scale's scale are per-row only
-        @test_throws ArgumentError check("d_unknown.csv", [videorow()]; defaults = (start = 0,))
-        @test_throws ArgumentError check("d_scale.csv", [scalerow()]; defaults = (scale = 9.5,))
+        @test_throws ArgumentError check([videorow()]; defaults = (start = 0,))
+        @test_throws ArgumentError check([scalerow()]; defaults = (scale = 9.5,))
         # unconvertible value
-        @test_throws ArgumentError check("d_badtype.csv", [videorow()]; defaults = (n_corners = "5x8",))
+        @test_throws ArgumentError check([videorow()]; defaults = (n_corners = "5x8",))
         # a convertible but nonsensical value flows into the normal verification
-        @test flagged(check("d_range.csv", [videorow(checker_size = missing)]; defaults = (checker_size = -1,)),
+        @test flagged(check([videorow(checker_size = missing)]; defaults = (checker_size = -1,)),
                       1, "checker_size must be larger than zero")
     end
 end

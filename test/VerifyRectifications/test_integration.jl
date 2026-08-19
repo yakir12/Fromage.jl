@@ -9,31 +9,35 @@ using StaticArrays: SVector
 
     @testset "only_scale, with and without center/north" begin
         for (name, r) in (("cn", scalerow()), ("nocn", scalerow(center = missing, north = missing)))
-            cs = check("int_scale_$name.csv", [r])
-            @test cs isa Vector                          # clean load ⇒ structs, not an issues df
-            rect = Rectification(only(cs))
-            p = [100.0, 120.0]
-            @test rect.real2image(rect.image2real(p)) ≈ p    # the maps invert each other
-            @test rect.ratio == 9.5                          # only_scale carries the scale through
-            @test (rect.width, rect.height) == (640, 480)    # probed source-video frame size
+            @testset "$name" begin
+                cs = check([r])
+                @test cs isa Vector                          # clean load ⇒ structs, not an issues df
+                rect = Rectification(only(cs))
+                p = [100.0, 120.0]
+                @test rect.real2image(rect.image2real(p)) ≈ p    # the maps invert each other
+                @test rect.ratio == 9.5                          # only_scale carries the scale through
+                @test (rect.width, rect.height) == (640, 480)    # probed source-video frame size
+            end
         end
     end
 
     @testset "video, with and without center/north" begin
         for (name, r) in (("cn", videorow()), ("nocn", videorow(center = missing, north = missing)))
-            cs = check("int_video_$name.csv", [r])
-            @test cs isa Vector
-            rect = Rectification(only(cs))               # full pipeline: reads, detects, fits
-            @test rect.image2real isa Function
-            @test rect.real2image isa Function
-            @test (rect.width, rect.height) == (500, 376)
+            @testset "$name" begin
+                cs = check([r])
+                @test cs isa Vector
+                rect = Rectification(only(cs))           # full pipeline: reads, detects, fits
+                @test rect.image2real isa Function
+                @test rect.real2image isa Function
+                @test (rect.width, rect.height) == (500, 376)
+            end
         end
     end
 
     @testset "matlab ⇒ rectification read from the .mat parameters" begin
         # consistent.mat is a fronto-parallel pinhole (see make_matlab_consistent): pose 1 sits at
         # Z = 100 with f = 500, so one pixel spans Z/f = 0.2 of the .mat's world units.
-        cs = check("int_matlab.csv", [matlabrow(matlab_file = ART.consistent_mat)])
+        cs = check([matlabrow(matlab_file = ART.consistent_mat)])
         @test cs isa Vector
         @test only(cs) isa VRect.MATLAB
         rect = Rectification(only(cs))
@@ -47,7 +51,7 @@ using StaticArrays: SVector
         # both window bounds blank is a valid, supported configuration: it selects the
         # Video{Missing} variant, whose Rectification fits pose + focal from the single extrinsic
         # frame and disregards lens aberrations (zero distortion).
-        cs = check("int_video_extonly.csv", [videorow(start = missing, stop = missing)])
+        cs = check([videorow(start = missing, stop = missing)])
         @test cs isa Vector
         c = only(cs)
         @test c isa VRect.Video{Missing}
