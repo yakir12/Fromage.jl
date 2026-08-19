@@ -173,9 +173,42 @@ the smallest positive root of `g'`, and the inverse is solved by bracketed bisec
 point beyond the fold (the peripheral "donut" region) has no physical preimage, so its radius is
 clamped to the fold with a warning.
 
-`inv_lens_distortion` runs per pixel, inside the warp of every diagnostic frame — which is why it
-is a bisection rather than a general root solve, despite the equation being a degree-7 polynomial
-that `Polynomials` could root directly. If that is ever revisited, benchmark it.
+### Rooting the polynomial was measured and declined (#68)
+
+The claim that used to stand here — that `inv_lens_distortion` "runs per pixel, inside the warp of
+every diagnostic frame" — is **wrong**, and it is worth stating plainly because it is what made
+this candidate look urgent. Every `warp` in the package composes `real2image`, which uses the
+*forward* `distort`. The inverse is reached only through `image2real`, and that is applied once per
+tracked coordinate (`map(rectification.image2real, ij)`), once per written diagnostic frame for the
+marker, and a handful of times when a rectification is built. For a 30-minute run at 25 fps that is
+45,000 calls, not 300,000 per frame.
+
+The equation is a degree-7 polynomial and `Polynomials` is already a dependency, so the
+companion-matrix version was written and measured against the bisection solver over the same sweep
+of frame sizes, fields of view and distortion regimes:
+
+| | bisection | polynomial root |
+|---|---|---|
+| worst residual over the sweep | 1.3e-11 px | **8.8e-13 px** |
+| 640 inversions | **286 µs** | 3,573 µs |
+| allocations | **3** | 21,763 |
+
+The root solver is 15× more accurate and 12.5× slower. Both numbers are real, and the accuracy one
+does not matter: 1.3e-11 pixels is ten orders of magnitude finer than the ~1 pixel RMSE of the
+tracking it feeds, so the extra digits buy nothing a caller could observe. The cost does show up —
+about 250 ms rather than 20 ms per long run, and 34 allocations per call inside `tmap`-parallel
+tracking. Declined.
+
+The fallback the candidate suggested does not survive either. Dropping the bracket-doubling branch
+is unsafe: it runs when `rstar` is `Inf`, and `g(r) < r` there whenever a coefficient is negative,
+so `rd` is not always an upper bound. Cutting the 200-iteration cap changes nothing — the
+`b - a < 1e-14` exit fires after about 47 halvings, so the cap never binds.
+
+What did come out of this is a test. `test_lens_distortion.jl` now sweeps observed pixels across
+frames from 100×100 to 2000×2000 at two fields of view and five distortion regimes, requiring each
+recovered point to map back onto the pixel it came from to within 1e-9 **pixels** — the unit the
+accuracy has to be judged in, since the solver works in normalized coordinates and the error a
+caller feels is scaled by the focal length. Any future replacement has to clear that bar.
 
 ### `n_corners` must be at least 3 in both dimensions
 
