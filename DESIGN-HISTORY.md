@@ -258,12 +258,40 @@ stack built. The union now names only what works. `RowCol` is absent on purpose 
 method: that is the internal form a *later* segment's start takes in the vector method, carried
 over from the previous segment's last coordinate, not something a caller supplies.
 
-### A `MultiRun`'s imputed start location must not mutate the run (#23)
+### A run's arity is data, not a type (#68)
+
+`Run` used to be abstract over `SingleRun` (scalar `file`/`start`/`stop`/`start_location`) and
+`MultiRun` (the same as aligned vectors). The split cost two `track` methods, two `get_duration`s,
+a separate `impute_start_location`, and a constructor branching on `nrow(g) == 1`.
+
+The comment above it said the arity was "materialized in the *type*, so `track` dispatches on it
+with no runtime branch". **That was wrong.** `load_runs` returns `Run[Run(g) for g in …]` — a
+`Vector{Run}` whose element type was *abstract*, so every `track(r)` from `main` was a dynamic
+dispatch anyway. Collapsing to one concrete struct is what actually delivers the static call:
+`isconcretetype(Run)` is now true, and so is the vector's element type.
+
+Routing a one-segment run through the vector `PawsomeTracker.track` was checked to be equivalent
+before the change, not after: identical timestamps (same values *and* same
+`StepRangeLen{Float64, TwicePrecision…}` type), identical coordinates and type, and a diagnostic
+video of the same dimensions, frame count and rate. The encoded bytes differ, but a control of two
+identical *scalar* runs differs too — H.264 here is not byte-reproducible, so that comparison
+proves nothing either way. Cost: within noise on wall clock, +16 allocations out of ~1000,
+identical peak memory.
+
+What it gives up: a single run's video is `only(r.files)` rather than `r.file`, and the type no
+longer states "exactly one segment". Two call sites in `src/`, so the price is small — but it is a
+price, and `verify_run_consistency!` is now the only thing asserting the shape.
+
+### A run's imputed start location must not mutate the run (#23)
 
 Assigning the resolved first-segment location back into `r.start_locations` meant the first
 `track` call wrote its `center` into the run, so a later call with a *different* `center` silently
 kept the first one — and the frame-centre fallback became unreachable too. A `Run` describes what
 the CSV said; tracking it leaves it alone.
+
+This used to be structurally impossible for a one-segment run, whose `start_location` was an
+immutable scalar field. Since the arity collapse it is a one-element vector taking the same
+imputation path, so the guarantee is asserted at both arities.
 
 ### Anamorphic video
 

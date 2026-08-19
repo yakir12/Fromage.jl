@@ -6,8 +6,7 @@
         @test clean(runs)
         @test length(runs) == 1
         r = only(runs)
-        @test r isa VR.MultiRun                # two segments ⇒ vector-field run type
-        @test length(r.files) == 2
+        @test length(r.files) == 2             # two csv rows ⇒ two segments
         @test basename.(r.files) == ["a.mp4", "b.mp4"]
         @test r.starts == [0.0, 1.0]
         @test r.stops  == [4.0, 7.0]
@@ -20,7 +19,7 @@
                                           runrow(run_id = "y", file = ART.b)])
         @test clean(runs)
         @test length(runs) == 2
-        @test all(r -> r isa VR.SingleRun, runs)
+        @test all(r -> length(r.files) == 1, runs)
         @test [r.run_id for r in runs] == ["x", "y"]
     end
 
@@ -46,12 +45,12 @@
         @test flagged(df, 2, "run segments disagree on dimension")
     end
 
-    @testset "a MultiRun's segments must agree on calibration_id (required on every row)" begin
-        # all segments share the same calibration_id ⇒ clean, carried onto the MultiRun
+    @testset "a run's segments must agree on calibration_id (required on every row)" begin
+        # all segments share the same calibration_id ⇒ clean, carried onto the run
         runs = check("seg_cal_same.csv", [runrow(run_id = "s", file = ART.a, calibration_id = "cal_1"),
                                           runrow(run_id = "s", file = ART.b, calibration_id = "cal_1")])
         @test clean(runs)
-        @test only(runs) isa VR.MultiRun
+        @test length(only(runs).files) == 2
         @test only(runs).calibration_id == "cal_1"
 
         # omitting it is not allowed: every such segment row is flagged at parse time
@@ -91,7 +90,7 @@
         runs = check("seg_nomutate.csv", [runrow(run_id = "m", file = ART.a, start_location = missing),
                                           runrow(run_id = "m", file = ART.b)])
         r = only(runs)
-        @test r isa VR.MultiRun
+        @test length(r.files) == 2
         before = copy(r.start_locations)
         @test all(ismissing, before)                  # nothing to impute from the csv
 
@@ -110,5 +109,19 @@
         sls3 = VR.impute_start_location(r, missing)
         @test sls3[1] == VR.frame_center(r)
         @test isequal(r.start_locations, before)
+    end
+
+    @testset "...including a one-segment run (#23, #68)" begin
+        # A single-video run used to carry its start_location as an immutable scalar field, so this
+        # could not go wrong at arity 1. It is a one-element vector now, and every run takes the
+        # same imputation path, so the guarantee has to be asserted here too.
+        r = only(check("seg_nomutate_one.csv", [runrow(run_id = "o", start_location = missing)]))
+        @test length(r.files) == 1
+        @test all(ismissing, r.start_locations)
+        sls = VR.impute_start_location(r, (7, 9))
+        @test sls == [(7, 9)]
+        @test sls !== r.start_locations
+        @test all(ismissing, r.start_locations)          # the run itself is untouched
+        @test VR.impute_start_location(r, (11, 13)) == [(11, 13)]   # so a second call is free
     end
 end

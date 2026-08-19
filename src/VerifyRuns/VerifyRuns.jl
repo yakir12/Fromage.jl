@@ -53,8 +53,8 @@ function load_runs(data_path, file; strict = true, defaults = (;))
         return df
     end
 
-    # Clean: group the rows by :run_id, each group materialized into its concrete run type
-    # (SingleRun / MultiRun). The comprehension pins the element type to the abstract `Vector{Run}`.
+    # Clean: group the rows by :run_id, each group materialized into one `Run`. `Run` is concrete,
+    # so this vector's element type is too, and `track(r)` is statically dispatched.
     return Run[Run(g) for g in groupby(df, :run_id)]
 end
 
