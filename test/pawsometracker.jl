@@ -1,4 +1,4 @@
-# Direct PawsomeTracker coverage, over the shared synthetic-trajectory generator (test/common.jl):
+# Direct PawsomeTracker coverage, over the shared synthetic-trajectory generator (test/fixtures.jl):
 # ffmpeg's geq renders a disc following a known sine, encoded losslessly so the analytic ground
 # truth is exact. VerifyRuns' test_tracking.jl additionally exercises track through the gateway,
 # including anamorphic and scaled variants.
@@ -9,7 +9,7 @@ using Fromage.PawsomeTracker: track
 using Fromage: PawsomeTracker
 const PT = PawsomeTracker
 
-include("common.jl")
+using ..Fixtures
 
 # The background stack is a lazily-indexed view over the array that actually holds the frames, and
 # how many layers of view sit in between is nobody's business but `build_stack`'s. Unwrap to the

@@ -1,12 +1,15 @@
-# Test infrastructure shared by the suites, `include`d into each suite's wrapper module — the
-# things that genuinely differ per suite (DATADIR, HEADER, the baseline rows, `check`, `clean`)
-# stay module-local, while these definitions are written once. Functions that reference a
-# module-local name (`row` in `_merge`, `check` in `load_capturing`, `write_csv`'s per-suite
-# HEADER default) resolve it in the including module at call time.
+# The synthetic media every suite runs against — ffmpeg-encoded videos and the analytic ground
+# truth that comes with them — plus the ffprobe readers used to assert on produced videos.
+#
+# A module rather than an `include`d file: the four suites share one compiled copy, and generators
+# here can be shared without any of them reaching into another's scope.
+module Fixtures
 
-using DataFrames: AbstractDataFrame
 using FFMPEG: FFMPEG
 using Statistics: mean
+
+export make_video, make_checkerboard_video, make_corrupt_video, make_target_video,
+    tracking_rmse, probe_stream, probe_frames
 
 # ---------------------------------------------------------------------------
 # Video artifacts.
@@ -81,54 +84,6 @@ function tracking_rmse(ij, expected; skip = 1, offset = 0)
 end
 
 # ---------------------------------------------------------------------------
-# CSV building against the including module's HEADER.
-# ---------------------------------------------------------------------------
-
-csvcell(::Missing) = ""
-function csvcell(x)
-    s = x isa AbstractString ? String(x) : string(x)
-    (occursin(',', s) || occursin('"', s)) ? string('"', replace(s, '"' => "\"\""), '"') : s
-end
-
-function write_csv(path, rows, header)
-    open(path, "w") do io
-        println(io, join(header, ","))
-        for r in rows
-            println(io, join(csvcell.(r), ","))
-        end
-    end
-    path
-end
-
-# A kwarg not in `header` would be dropped silently, quietly testing nothing.
-function buildrow(header; kw...)
-    unknown = setdiff(string.(keys(kw)), header)
-    @assert isempty(unknown) "unknown CSV column/s in test row: $unknown"
-    return [get(kw, Symbol(c), missing) for c in header]
-end
-
-# Baseline-row merging: `row` is each suite's `buildrow(HEADER; ...)` wrapper.
-_merge(base; kw...) = row(; merge(base, values(kw))...)
-
-# ---------------------------------------------------------------------------
-# Run + assert.
-# ---------------------------------------------------------------------------
-
-"Like `check`, but also capture what the load prints to stdout. Returns (result, output). Routed
-through a temp file because redirect_stdout needs a real file descriptor, not an IOBuffer."
-function load_capturing(name, rows; strict = false)
-    mktemp() do path, io
-        result = redirect_stdout(() -> check(name, rows; strict), io)
-        flush(io)
-        result, read(path, String)
-    end
-end
-
-# A load with issues returns a DataFrame carrying :issues (non-strict); a clean one returns the
-# built objects, so anything that isn't a DataFrame is unflagged by definition.
-flagged(x, r, sub) = x isa AbstractDataFrame && any(m -> occursin(sub, m), x.issues[r])
-
-# ---------------------------------------------------------------------------
 # Video probing (ffprobe) — for asserting on produced (diagnostic) videos.
 # ---------------------------------------------------------------------------
 
@@ -167,4 +122,6 @@ function probe_frames(file)
         push!(dts, parse(Int, parts[2]))
     end
     return sizes, pts, dts
+end
+
 end

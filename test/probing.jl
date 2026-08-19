@@ -6,19 +6,14 @@ module ProbingTests
 using Test
 using Fromage: Fromage
 using FFMPEG: FFMPEG
+using ..Fixtures
 
 const P = Fromage.Probing
 
 @testset "Probing (shared ffprobe plumbing)" begin
     dir = mktempdir()
-    vid = joinpath(dir, "v.mp4")
-    FFMPEG.ffmpeg_exe(`-y -loglevel error -f lavfi -i testsrc=duration=1:size=320x240:rate=25 -pix_fmt yuv420p $vid`)
-    # Deterministically unreadable: a real mp4 with everything after the first 500 bytes cut off.
-    # (Random bytes were used here before — see make_corrupt_video in common.jl for why they are not.)
-    corrupt = joinpath(dir, "c.mp4")
-    whole = joinpath(dir, "whole.mp4")
-    FFMPEG.ffmpeg_exe(`-y -loglevel error -f lavfi -i testsrc=duration=1:size=64x64:rate=5 -pix_fmt yuv420p $whole`)
-    write(corrupt, read(whole)[1:500])
+    vid = make_video(joinpath(dir, "v.mp4"); duration = 1, size = (320, 240), rate = 25)
+    corrupt = make_corrupt_video(joinpath(dir, "c.mp4"))
 
     # Opens cleanly, but has no video stream at all: ffprobe exits 0 and reports only the container
     # duration — the case the deterministic corrupt fixture deliberately does not cover.

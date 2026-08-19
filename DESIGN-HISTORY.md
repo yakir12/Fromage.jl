@@ -533,7 +533,9 @@ It used to be `rand(UInt8, 500)`, which made every corrupt-video test a dice rol
 random blob in 300 is recognised by ffprobe as some container, whereupon it exits 0 and reports
 nothing usable rather than failing. That input is real and the code must handle it, but it has no
 business arriving at random — it is now covered deliberately by the audio-only case in
-`test/probing.jl`, while the fixture always exercises the outright-unreadable path.
+`test/probing.jl`, while the fixture always exercises the outright-unreadable path. Every corrupt
+fixture now comes from that one generator; `test/probing.jl` and the AprilTag tests in
+`test/fromage.jl` each used to build their own.
 
 ### Ground truth is analytic
 
@@ -575,9 +577,38 @@ it has to be something a caller could observe.
 
 ### Each suite runs in its own wrapper module
 
-Their helper constants — `DATADIR`, `ART`, `HEADER`, `make_video` — would otherwise collide.
+Their suite-specific names — `DATADIR`, `ART`, `HEADER`, `check` — would otherwise collide.
 Testsets nest fine across module boundaries, since they use the task's dynamic scope rather than
 lexical scope.
+
+### Shared test code is a module, not an `include` (#68)
+
+`test/common.jl` was textually included into all four suite modules, which meant four compiled
+copies and, worse, three of its definitions resolved a name belonging to whichever module included
+them: `_merge` called that module's `row`, `load_capturing` called its `check`, and `write_csv`
+took its `HEADER` as a default. Reading `common.jl` did not tell you what those calls did.
+
+It is now two modules, split by who needs them. `test/fixtures.jl` holds the synthetic media — the
+ffmpeg generators and the analytic ground truth that comes with them — plus the ffprobe readers,
+and all four suites use it. `test/harness.jl` holds the CSV plumbing: `csvcell`, `write_csv`,
+`buildrow`, `flagged`, and `capturing`, which now takes the thunk instead of reaching for `check`.
+Only the two gateway suites use it; the tracker and end-to-end suites no longer compile it at all.
+Each suite declares its `DATADIR` before including its `helpers.jl`, so artifacts and entry points
+read top to bottom with nothing resolved late.
+
+What did *not* move is the per-suite half. The plan had been to parameterise one harness by
+(loader, header, artifacts) so both gateways shared their entry points. Written out, the factory
+plus the unpacking each suite needs came to more lines than the five each suite spends now on
+`row`, `write_csv`, `check`, `load_capturing` and `clean` — and it hid which loader a given `check`
+reaches. Two short explicit definitions beat one shared indirect one here.
+
+### Fixture encoding is not what makes the suite slow
+
+Encoding each shared video once and copying it, rather than re-encoding the same content per suite,
+was on the table: roughly 19 of the ~45 ffmpeg invocations produce content another suite has
+already built. Timed, the entire generator set costs about 2.5 s — against `quality` (Aqua and
+ExplicitImports) at 71 s, `PawsomeTracker` at 56 s and `Rectifications` at 26 s. A fixture cache
+would have added machinery to save well under 1% of the run, so the duplicate encodes stay.
 
 ### JET runs only on the pinned Julia minor
 
