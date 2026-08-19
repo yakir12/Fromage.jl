@@ -45,6 +45,25 @@ function filter_ids!(xs, requested, id, what)
     return filter!(x -> getfield(x, id) ∈ requested, xs)
 end
 
+# The three entry points open the same way: make the results directory, load the csv the caller
+# named, and drop everything the caller did not ask for. The loaders return the annotated DataFrame
+# only under `strict = false`; on the default strict path they return the run/rectification vectors
+# — asserted so the union doesn't leak downstream (JET flags e.g. `length(::DataFrame)` otherwise).
+function gather_rectifications(data_path, calibs_file, defaults, calibration_ids = nothing)
+    mkpath(results_dir)
+    cs = load_rectifications(joinpath(data_path, calibs_file); defaults,
+        issues_dir = joinpath(results_dir, "issues"))::Vector{RectificationMethod}
+    return filter_ids!(cs, calibration_ids, :calibration_id, "calibration_ids")
+end
+
+function gather_runs(data_path, runs_file, defaults, run_ids = nothing)
+    mkpath(results_dir)
+    rs = load_runs(joinpath(data_path, runs_file); defaults)::Vector{Run}
+    return filter_ids!(rs, run_ids, :run_id, "run_ids")
+end
+
+build_rectifications(cs) = @showprogress desc = "Building rectifications" tmap(Rectification, cs)
+
 # `rectification_defaults`/`tracking_defaults` globally replace the hardcoded defaults of the
 # tuning parameters (e.g. `rectification_defaults = (n_corners = (5, 8), blur = 0)`,
 # `tracking_defaults = (target_width = 60,)`). The hierarchy is: csv cell → these kwargs → the
@@ -53,16 +72,8 @@ end
 # the named runs (only the rectifications those runs reference are built).
 function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.csv",
         rectification_defaults = (;), tracking_defaults = (;), run_ids = nothing)
-
-    mkpath(results_dir)
-
-    # The loaders return the annotated DataFrame only under `strict = false`; on the default strict
-    # path they return the run/rectification vectors — asserted so the union doesn't leak
-    # downstream (JET flags e.g. `length(::DataFrame)` otherwise).
-    cs = load_rectifications(joinpath(data_path, calibs_file); defaults = rectification_defaults, issues_dir = joinpath(results_dir, "issues"))::Vector{RectificationMethod}
-    rs = load_runs(joinpath(data_path, runs_file); defaults = tracking_defaults)::Vector{Run}
-
-    filter_ids!(rs, run_ids, :run_id, "run_ids")
+    cs = gather_rectifications(data_path, calibs_file, rectification_defaults)
+    rs = gather_runs(data_path, runs_file, tracking_defaults, run_ids)
 
     run_calib_ids = [r.calibration_id for r in rs]
     filter!(c -> c.calibration_id ∈ run_calib_ids, cs)
@@ -74,7 +85,7 @@ function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.c
 
     calibs = DataFrame(calibration_id = calib_ids, c = cs)
 
-    calibs.rectification .= @showprogress desc = "Building rectifications" tmap(Rectification, calibs.c)
+    calibs.rectification .= build_rectifications(calibs.c)
 
     runs = DataFrame(calibration_id = [r.calibration_id for r in rs], run_id = [r.run_id for r in rs], r = rs)
     leftjoin!(runs, calibs, on = :calibration_id)
@@ -89,29 +100,18 @@ function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.c
     tforeach(save2csv, runs.run_id, runs.run)
 
     return runs
-
 end
 
+# Each diagnostic is named by its run's `run_id`, as in `main` — which is the row number when the
+# csv names no runs, and the run's own name when it does. Numbering by position instead would
+# rename every file as soon as `run_ids` filtered one out.
 function only_track(data_path::String; runs_file = "runs.csv", tracking_defaults = (;), run_ids = nothing)
-
-    mkpath(results_dir)
-
-    rs = load_runs(joinpath(data_path, runs_file); defaults = tracking_defaults)::Vector{Run}
-
-    filter_ids!(rs, run_ids, :run_id, "run_ids")
-
-    runs = @showprogress desc = "Building runs" tmap((i, r) -> track(r; diagnostic_file = joinpath(results_dir, "$i.mp4")), 1:length(rs), rs)
-
-    return runs
+    rs = gather_runs(data_path, runs_file, tracking_defaults, run_ids)
+    return @showprogress desc = "Building runs" tmap(
+        r -> track(r; diagnostic_file = joinpath(results_dir, string(r.run_id, ".mp4"))), rs)
 end
 
 function only_rectify(data_path::String; calibs_file = "calibs.csv", rectification_defaults = (;), calibration_ids = nothing)
-    mkpath(results_dir)
-
-    cs = load_rectifications(joinpath(data_path, calibs_file); defaults = rectification_defaults, issues_dir = joinpath(results_dir, "issues"))::Vector{RectificationMethod}
-
-    filter_ids!(cs, calibration_ids, :calibration_id, "calibration_ids")
-
-    calibs = @showprogress desc = "Building rectifications" tmap(Rectification, cs)
-
+    cs = gather_rectifications(data_path, calibs_file, rectification_defaults, calibration_ids)
+    return build_rectifications(cs)
 end
