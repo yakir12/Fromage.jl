@@ -57,22 +57,38 @@ const P = Fromage.Probing
     @testset "a failed ffprobe reports briefly, not by dumping the command" begin
         # `showerror` on a ProcessFailedException prints the entire env-baked Cmd — the full PATH
         # and LD_LIBRARY_PATH, some 7 kB — and this message lands in the user-facing issues report.
-        # The exit status carries nothing a user can act on, so it is replaced by what happened.
+        # The exit status carries nothing a user can act on, so it is replaced by what happened —
+        # and "what happened" is ffprobe's own account, not a guess about the file. This fixture
+        # really is truncated, and ffprobe says exactly that.
         issue = P.probe_fields(corrupt, "stream=width")
         @test length(issue) < 200
         @test !occursin("LD_LIBRARY_PATH", issue)
-        @test occursin("corrupt, truncated, or not a video", issue)
+        @test occursin("moov atom not found", issue)
     end
 
-    @testset "probe_failure: brief for a failed process, verbatim otherwise" begin
-        # The two arms directly: a failed ffprobe is summarized (the Cmd dump is the whole problem),
-        # while any other failure — rare, and not something we can paraphrase usefully — is printed
-        # in full. Driving probe_fields only ever produces the first arm, hence the direct test.
+    @testset "probe_failure: ffprobe's own words for a failed process, verbatim otherwise" begin
+        # The two arms directly: a failed ffprobe reports its first stderr line (the Cmd dump is the
+        # whole problem), while any other failure — rare, and not something we can paraphrase
+        # usefully — is printed in full. Driving probe_fields only ever produces the first arm,
+        # hence the direct test.
         pfe = try read(`false`) catch e; e end
         @test pfe isa ProcessFailedException
-        @test occursin("corrupt, truncated, or not a video", P.probe_failure(pfe))
-        @test P.probe_failure(ErrorException("boom")) == "boom"
-        @test occursin("nope", P.probe_failure(SystemError("nope", 2)))
+        @test P.probe_failure(ErrorException("boom"), "") == "boom"
+        @test occursin("nope", P.probe_failure(SystemError("nope", 2), ""))
+
+        # The distinction this exists to preserve. Both used to render as "the file is corrupt,
+        # truncated, or not a video"; only one of them is about the file at all. ffmpeg's
+        # "[component @ 0xADDR]" prefix and its restating follow-up lines are dropped.
+        broken = P.probe_failure(pfe, "[in#0 @ 0x8755b40] moov atom not found\nError opening input file /a/b.MP4.\n")
+        share  = P.probe_failure(pfe, "[in#0 @ 0x1bc6a800] Error opening input: Resource temporarily unavailable\n")
+        @test occursin("moov atom not found", broken)
+        @test occursin("Resource temporarily unavailable", share)
+        @test broken != share
+        @test !occursin("0x", broken)
+        @test !occursin("/a/b.MP4", broken)
+
+        # A process that fails silently must still say something.
+        @test occursin("said nothing about why", P.probe_failure(pfe, "   \n "))
     end
 end
 

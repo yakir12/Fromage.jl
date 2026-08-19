@@ -82,6 +82,15 @@
         @test t < 0.2
     end
 
+    @testset "a killed reader names its signal" begin
+        # `exit -1` is what a signalled process reports, and it is uninformative. 137 (SIGKILL, the
+        # OOM killer's signature) must be legible: 48 concurrent decoders against 27 GiB files is
+        # exactly the shape that would provoke it, and it must never be confused with the share.
+        e = grab(() -> R._read_frame(`sh -c 'kill -9 $$'`, "f.mp4", 1.0; tries = 1))
+        @test e isa R.FrameReadError
+        @test occursin("killed by signal 9", sprint(showerror, e))
+    end
+
     @testset "a successful read returns the bytes" begin
         @test R._read_frame(`echo hi`, "f.mp4", 1.0) == codeunits("hi\n")
     end

@@ -77,7 +77,14 @@ function _capture(cmd, file, t)
     wait(proc)
     bytes = fetch(frame)
     proc.exitcode == 0 && proc.termsignal == 0 && return bytes
-    throw(FrameReadError(string(file), float(t), Int(proc.exitcode), _clean_stderr(fetch(message))))
+    # A killed ffmpeg reports exitcode -1, which says nothing; the signal is the whole story (137
+    # would be the OOM killer, which 48 concurrent decoders against 27 GiB files could plausibly
+    # provoke). Name it, so that failure is never mistaken for the share's.
+    said = _clean_stderr(fetch(message))
+    why = proc.termsignal == 0 ? said :
+          isempty(said) ? "killed by signal $(proc.termsignal)" :
+                          "killed by signal $(proc.termsignal): $said"
+    throw(FrameReadError(string(file), float(t), Int(proc.exitcode), why))
 end
 
 # What `_read_frame` retries: everything a flaky share can plausibly do to a frame read. ffmpeg

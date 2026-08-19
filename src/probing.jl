@@ -13,18 +13,24 @@ using FFMPEG: ffprobe
 # as a `key => value` dict — or an issue string if the file could not be read.
 #
 # Only the spawn is fallible in a way worth catching: ffprobe exiting nonzero on an unreadable or
-# corrupt file (ProcessFailedException), or the spawn/pipe itself failing (IOError, SystemError).
-# Anything else is not an unreadable video and propagates. The non-do-block `ffprobe()` gives an
-# env-baked Cmd, safe to interpolate under the callers' nested tmaps; stderr is dropped so ffmpeg's
-# diagnostics don't leak into the program output.
+# corrupt file, or the spawn/pipe itself failing (IOError, SystemError). Anything else is not an
+# unreadable video and propagates. The non-do-block `ffprobe()` gives an env-baked Cmd, safe to
+# interpolate under the callers' nested tmaps.
+#
+# stderr is CAPTURED rather than dropped. It used to go to devnull, which left a failure describable
+# only by its exception type, and it was described as a corrupt file — the same mistake made on the
+# frame-read path (see Rectifications.FrameReadError). Against the lab share the usual cause is not
+# corruption at all but EAGAIN from an open() caught in a reconnect, and this stage has no retry, so
+# one of them aborts the whole run while blaming the user's data. See WHY-FRAMES-FAIL.md.
 function probe_fields(file, entries)
     exe = ffprobe()
+    cmd = `$exe -v error -select_streams v:0 -show_entries $entries -of default=noprint_wrappers=1 $file`
+    err = IOBuffer()
     out = try
-        read(pipeline(`$exe -v error -select_streams v:0 -show_entries $entries -of default=noprint_wrappers=1 $file`,
-                      stderr = devnull), String)
+        read(pipeline(cmd; stderr = err), String)
     catch e
         e isa ProcessFailedException || e isa Base.IOError || e isa SystemError || rethrow()
-        return "issue reading from video file: $(probe_failure(e))"
+        return "issue reading from video file: $(probe_failure(e, String(take!(err))))"
     end
     fields = Dict{String, String}()
     for line in eachline(IOBuffer(out))
@@ -37,10 +43,27 @@ end
 
 # These messages go straight into the user-facing issues report, and `showerror` on a
 # ProcessFailedException prints the whole failed `Cmd` — env-baked PATH and LD_LIBRARY_PATH
-# included, some 7 kB of it — with an exit status nobody can act on. Say what happened instead.
-# Other failures are rare and worth printing in full.
-probe_failure(::ProcessFailedException) = "ffprobe could not read it (the file is corrupt, truncated, or not a video)"
-probe_failure(e) = sprint(showerror, e)
+# included, some 7 kB of it — with an exit status nobody can act on. So ffprobe's own first line is
+# reported instead: short, and actually about this file. It distinguishes the two cases that used to
+# read identically — "moov atom not found" for a file that really is truncated, "Resource
+# temporarily unavailable" for a share that reconnected under the open. Other failures are rare and
+# worth printing in full.
+#
+# `_first_line` is deliberately a copy of `Rectifications._clean_stderr` rather than a shared
+# helper: this module depends on nothing but FFMPEG on purpose, and six lines of regex is a cheaper
+# thing to repeat than a dependency between two modules that otherwise never meet.
+function _first_line(s)
+    for line in eachsplit(s, '\n')
+        cleaned = strip(replace(line, r"^\[[^\]]*@ 0x[0-9a-f]+\]\s*" => ""))
+        isempty(cleaned) || return String(cleaned)
+    end
+    return ""
+end
+
+probe_failure(::ProcessFailedException, stderr) =
+    isempty(strip(stderr)) ? "ffprobe could not read it, and said nothing about why" :
+                             "ffprobe could not read it: $(_first_line(stderr))"
+probe_failure(e, _) = sprint(showerror, e)
 
 # The frame size and duration, which no gateway can proceed without, or `nothing` if ffprobe
 # described none of them. A miss means ffprobe *succeeded* and still could not describe a video (an
