@@ -11,7 +11,7 @@ using ColorTypes: Gray
 using FixedPointNumbers: N0f8
 using ImageTransformations: imresize!, warp, WarpedView
 using RelocatableFolders: @path
-using ComputationalResources: CPUThreads
+using ComputationalResources: CPU1
 using DataStructures: CircularBuffer
 using StaticArrays: SVector, SDiagonal
 using OpenCV: OpenCV
@@ -289,7 +289,11 @@ function detect(guess, stack, j, h, img, radii, buff, kernel, sz, scale, bkgd_re
         img.data[bkgd_indices] .= Gray{Float32}.(slice[bkgd_indices]) .- Gray{Float32}.(bkgd_reduce(stack[bkgd_indices, :], dims = 3))
     end
     window_indices = UnitRange.(guess .- radii, guess .+ radii)
-    imfilter!(CPUThreads(Algorithm.FIR()), buff, img, kernel, NoPad(), window_indices)
+    # Serial on purpose. This is the innermost of five nested layers of parallelism, and on a
+    # 21×21 window with a 29×29 kernel the threaded resource is worth nothing measurable — see
+    # DESIGN-HISTORY.md. `CPU1(FIR)` is bitwise identical to `CPUThreads(FIR)`, and the resource
+    # argument cannot simply be dropped: `imfilter!` has no method taking `inds` without one.
+    imfilter!(CPU1(Algorithm.FIR()), buff, img, kernel, NoPad(), window_indices)
     v = view(buff, window_indices...)
     clamp!(v, 0, Inf)
     # the confidence gate (see GATE_FRACTION above): hold the last position when the response
