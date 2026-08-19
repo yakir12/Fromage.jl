@@ -136,7 +136,8 @@ end
     p = SVector(7.0, 11.0)
     @test rect.real2image(rect.image2real(p)) ≈ p   # the two maps are inverses
 
-    # no rectification involved: raw pixel coordinates, one raw-view diagnostic per run (numbered)
+    # no rectification involved: raw pixel coordinates, one raw-view diagnostic per run, named by
+    # run_id — which this csv does not set, so it is the imputed row number
     runs = cd(() -> Fromage.only_track(dir; tracking_defaults = (target_width = 10,)), outdir)
     @test length(runs) == 1
     _, ij = only(runs)
@@ -145,6 +146,20 @@ end
     diag = joinpath(outdir, "results_dir", "1.mp4")
     @test isfile(diag)
     @test filesize(diag) > 0
+
+    # When the csv does name its runs, the diagnostic carries that name — and keeps it when a
+    # filter drops an earlier run. Numbering by position instead would name this file "1.mp4",
+    # which matches no row in the csv the user is looking at.
+    open(joinpath(dir, "named.csv"), "w") do io
+        println(io, "run_id,calibration_id,file,start_location,background_length")
+        println(io, "solo_a,c1,$(only(target)),\"(55, 50)\",0")
+        println(io, "solo_b,c1,$(only(target)),\"(55, 50)\",0")
+    end
+    named_out = mktempdir()
+    cd(() -> Fromage.only_track(dir; runs_file = "named.csv", run_ids = ["solo_b"],
+                                tracking_defaults = (target_width = 10,)), named_out)
+    @test isfile(joinpath(named_out, "results_dir", "solo_b.mp4"))
+    @test !isfile(joinpath(named_out, "results_dir", "1.mp4"))
 end
 
 @testset "an id filter that matches nothing is reported, not obeyed silently (#21)" begin
