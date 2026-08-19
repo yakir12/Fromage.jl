@@ -2,8 +2,8 @@
 # codecov.yml): it runs during precompilation, which the coverage run does not instrument.
 
 # Precompile the parse → verify → report pipeline. The bulk of first-call latency is the
-# DataFrames/DataFramesMeta/Chain macro machinery (column-typed
-# `@transform!`/`@chain`/`subset`/`verify!` specializations) a single `load_rectifications` run
+# DataFrames machinery (column-typed `subset`/`groupby`/`verify!`
+# specializations) a single `load_rectifications` run
 # compiles. The workload CSV points at nonexistent files, one row per type, so the run exercises the
 # full pipeline for every type but bails before any ffprobe/matread/corner detection.
 @setup_workload begin

@@ -19,14 +19,17 @@ end
 # One ffprobe per physical video file fills the intermediate :dimension/:duration/:video_fps columns
 # and imputes the two blank-able run parameters: :stop (← duration) and :fps (← video frame rate).
 function read_video_metadata!(df::AbstractDataFrame)
-    @transform! df :dimension = missing :duration = missing :video_fps = missing :sar = missing
+    blank!(df, :dimension, :duration, :video_fps, :sar)
     read_per_file!(df, :file, [:file], "Reading runs videos...", probe_video, apply_video_metadata!)
 end
 
-apply_video_metadata!(g, issue::String) = @transform! g :issues = push!.(:issues, issue)
+apply_video_metadata!(g, issue::String) = push!.(g.issues, issue)
 
 function apply_video_metadata!(g, m::NamedTuple)
-    @transform! g :dimension = (m.width, m.height) :duration = m.duration :video_fps = m.fps :sar = m.sar
+    g.dimension .= Ref((m.width, m.height))   # Ref, or the tuple broadcasts one element per row
+    g.duration  .= m.duration
+    g.video_fps .= m.fps
+    g.sar       .= m.sar
     # impute the blank-able parameters from the video itself (a CSV-supplied value wins via coalesce)
     g.stop .= coalesce.(g.stop, m.duration)
     g.fps  .= coalesce.(g.fps,  m.fps)

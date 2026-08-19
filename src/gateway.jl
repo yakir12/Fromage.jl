@@ -8,9 +8,8 @@
 module Gateway
 
 using CSV: CSV
-using Chain: Chain, @chain
-using DataFramesMeta: DataFramesMeta, @transform!, AbstractDataFrame, ByRow, Cols, Not,
-    dropmissing, groupby, passmissing, select!, subset
+using DataFrames: AbstractDataFrame, ByRow, Cols, Not, dropmissing, groupby, passmissing,
+    select!, subset
 using OhMyThreads: OhMyThreads, tmap
 using ProgressMeter: ProgressMeter, @showprogress
 using Tables: Tables
@@ -36,15 +35,25 @@ function backfill!(dict, columns)
     return dict
 end
 
+# Create (or blank) the intermediate columns a later step fills. They must exist up front: the
+# per-file read writes into groups, which are views, and a view cannot add a column of its own.
+# `[!, col]` rather than `[:, col]` so an existing concrete-typed column widens to hold `missing`.
+function blank!(df::AbstractDataFrame, cols...)
+    for col in cols
+        df[!, col] .= missing
+    end
+    return df
+end
+
 # Subset the rows whose `args` trip `predicate`, null the offending field (first of `args`) so later
 # checks skip them, and record `msg`. `passmissing`/`skipmissing` leave already-missing fields alone.
 function verify!(df::AbstractDataFrame, predicate, msg, args...)
-    field = first(args)
-    cols = Cols(args...)
-    @chain df begin
-        subset(cols => ByRow(passmissing(predicate)), view = true, skipmissing = true)
-        @transform! $field = missing :issues = push!.(:issues, msg)
-    end
+    bad = subset(df, Cols(args...) => ByRow(passmissing(predicate)); view = true, skipmissing = true)
+    # `[!, col]` and not `[:, col]`: the field being nulled may still be a concrete-typed column, and
+    # only `!` lets the assignment widen it to hold `missing`.
+    bad[!, first(args)] .= missing
+    push!.(bad.issues, msg)      # the vectors are the parent's; push! needs no assignment back
+    return df
 end
 
 # Resolve `:path` against the data folder, check it is a folder holding each of `filecols`, then
@@ -56,15 +65,15 @@ end
 # non-existent paths were nulled just above — and is what collapses "./x", "a/../x" and symlinks
 # onto the one key that later steps group physical files by.
 function resolve_paths!(df::AbstractDataFrame, data_path, filecols...)
-    @transform! df :path = passmissing(joinpath).(data_path, :path)
+    df.path .= passmissing(joinpath).(data_path, df.path)
     verify!(df, isfile, "path is a file, not a folder — it should be the folder holding the video, with the file name in the `file` column", :path)
     verify!(df, !isdir, "path does not exist", :path)
     for col in filecols
         # `verify!` skips missing, so a column only some row types carry (VerifyRectifications'
         # :matlab_file) leaves the rest untouched.
         verify!(df, (f, p) -> !isfile(joinpath(p, f)), "$col does not exist", col, :path)
-        @transform! df $col = passmissing(joinpath).(:path, $col)
-        @transform! df $col = passmissing(realpath).($col)
+        df[!, col] .= passmissing(joinpath).(df.path, df[!, col])
+        df[!, col] .= passmissing(realpath).(df[!, col])
     end
     select!(df, Not(:path))
     return df
@@ -75,11 +84,7 @@ end
 # path (see `resolve_paths!`) reads a file reached through several spellings once, not once per
 # spelling. `read` returns either the metadata or an issue string, and `apply!` dispatches on which.
 function read_per_file!(df::AbstractDataFrame, filecol, groupcols, desc, read, apply!)
-    groups = @chain df begin
-        dropmissing(groupcols, view = true)
-        groupby(groupcols)
-        collect
-    end
+    groups = collect(groupby(dropmissing(df, groupcols; view = true), groupcols))
     metas = @showprogress desc = desc tmap(g -> read(g[1, filecol]), groups)
     for (g, meta) in zip(groups, metas)
         apply!(g, meta)

@@ -403,6 +403,64 @@ return a negative `Float64` for a negative numerator, where `VerifyRuns.parse_sa
 square-pixel fallback. Both now take the fallback. No caller could use a negative aspect ratio, and
 every case either suite pins was already agreed on by both.
 
+### Plain DataFrames, not DataFramesMeta macros (#68)
+
+Both gateways ran their columns through `@transform!`, `@chain`, `@groupby` and `@rtransform!` —
+26 macro invocations, and two dependencies (`DataFramesMeta`, `Chain`) to supply them. Nearly all
+of it was column assignment wearing a macro: `@transform! df :duration = missing` is
+`df.duration .= missing`.
+
+Three forms were on the table. Measured on a 200-row frame:
+
+| form | median | allocations |
+|---|---|---|
+| `@transform!(d, :out = f.(:a))` | 16.0 µs | 90 |
+| `transform!(d, :a => ByRow(f) => :out)` | 13.1 µs | 73 |
+| `d.out .= f.(d.a)` | **3.2 µs** | **12** |
+
+and for the dominant shape here, constant assignment, `@transform!(d, :out = missing)` is 15.5 µs
+against 1.0 µs for `d.out .= missing`.
+
+The rule this settled on: **broadcast for assigning a column, DataFrames' own functions for
+operating on a table.** `subset`, `groupby`, `dropmissing`, `select!` and the `:col => ByRow(pred)`
+predicate stayed exactly as they were — that minilanguage is doing real work in `verify!`, where
+`skipmissing` and a view are the point. What it was not doing is earning a DSL layer for
+`df.x .= y`. `@chain` blocks became sequential named locals, which also gave each intermediate
+a name (`videos`, `clean`, `usable`) instead of a position in a pipeline.
+
+Two traps the broadcast form has, both now in the code with comments:
+
+- **`Ref` around a tuple.** `g.dimension .= (m.width, m.height)` broadcasts *elementwise* — one
+  element per row. `g.dimension .= Ref((m.width, m.height))` is the macro's behaviour, verified
+  column-for-column against it.
+- **`[!, col]` and not `[:, col]`.** Nulling a field on a view has to widen the parent column to
+  hold `missing`; `[:, col]` assigns in place and throws `MethodError: Cannot convert Missing`.
+
+One redundancy fell out: `@transform! g :issues = push!.(:issues, msg)` assigned the result of
+`push!` back into the column it had just mutated. `push!.(g.issues, msg)` says the same thing —
+the vectors belong to the parent either way.
+
+### What the change actually bought
+
+Measured against `main` at the same DataFrames version (1.8.2), with the same benchmark file:
+
+| | main | after | |
+|---|---|---|---|
+| `load_rectifications`, allocations | 12,272 | 7,251 | **−41%** |
+| `load_runs` (200 rows), allocations | 40,644 | 37,147 | −8.6% |
+| `load_rectifications`, wall clock | 17.8 ms | 16.9 ms | −5.4% |
+| `load_runs` (200 rows), wall clock | 51.1 ms | 49.1 ms | −3.8% |
+| `using Fromage` | 11.3 s | 11.5 s | no change |
+| Fromage precompile | 3.9 s | 3.9 s | no change |
+| Manifest packages | 294 | 289 | −5 |
+
+The allocation drop is concentrated in the rectification gateway because that is where the macros
+were densest. **The TTFX improvement the candidate was partly filed on did not materialise**: load
+time and precompile time are unchanged, and first-call latency moves 2–3%, consistently but
+marginally. The precompile workloads still earn their keep — they warm the DataFrames column-typing
+that remains — but the comment claiming `DataFramesMeta`/`Chain` macro machinery was the bulk of
+first-call latency was wrong, and has been corrected.
+
 ### Failures are reported, not thrown
 
 A calibration whose extrinsic frame yields no corners, a `.mat` missing a required field, an
