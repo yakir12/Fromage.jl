@@ -621,3 +621,48 @@ They run during precompilation, which the coverage run does not instrument, so t
 hit by the test suite no matter how well the package is tested. Both workloads point at
 nonexistent files, so they exercise the full parse + verification path but bail before any
 ffprobe, `matread` or corner detection — no bundled media, fast and deterministic.
+
+## Benchmarks
+
+### Two tiers, because one sampling strategy cannot serve both (#68)
+
+`benchmark/benchmarks.jl` defines a single BenchmarkTools `SUITE`, which is the only thing the
+runner has to agree on — AirspeedVelocity (`benchpkg Fromage --rev=main,my-branch`) and
+PkgBenchmarks both read it, so the choice stays reversible. It is deliberately not wired into CI:
+the suite already runs a full ffmpeg workload on every PR, and benchmark numbers from a shared
+runner would be noise presented as data.
+
+The `"micro"` group is pure, in-memory and deterministic — lens distortion forward and inverse,
+the rectification's coordinate maps, the AprilTag ground geometry, and the detection filter.
+BenchmarkTools samples these properly and the numbers mean what they say, so this is the tier that
+can settle a design question.
+
+The `"macro"` group is whole pipelines: `track` over the shared disc fixture, the same with a
+diagnostic video, and `main` over a one-calibration, one-run data folder. These decode video,
+spawn ffprobe and encode an `.mp4`, so a sampled statistic would be measuring the filesystem and
+the scheduler rather than the code. Each runs once (`samples = 1, evals = 1`) and reports wall
+clock and allocations — a regression tripwire, not a measurement.
+
+Fixtures come from `test/fixtures.jl`, so a benchmark and a test measure the same synthetic media.
+
+### What the benchmarks cannot tell you
+
+Nothing in `benchmark/` touches a network filesystem. The threading shape in `track` and `main`
+exists to survive EAGAIN on a CIFS share under concurrent ffmpeg reads — a contention failure
+against a network filesystem, not a throughput number. No local benchmark reproduces it, so the
+threading work has to be measured by a hand-run against the real data.
+
+### `detect` is measured through `imfilter!`, not directly
+
+Benchmarking `detect` itself would mean reconstructing a `Tracker`, a background stack and an open
+`Video` from package internals — and would need rewriting by exactly the change it exists to
+judge. What the threading question actually turns on is one call: `imfilter!` over a search window
+a few tens of pixels wide. That is benchmarked directly, against the serial algorithm on the same
+window and kernel, with the tracker's own shapes (a 10 px target, a 21×21 window) and no internals
+in the way. End-to-end throughput is covered by the `"macro"` group.
+
+The first run answered the question it was built for. On 32 threads, `CPUThreads` and `CPU1` come
+out within 1% of each other (282 μs against 284 μs): the innermost layer of parallelism buys
+nothing at this window size. The same run priced the other open question — the bisection inverse
+costs 274 μs per 640 pixels against 3.3 μs for the forward map, about 428 ns a pixel, which is the
+budget a polynomial root has to beat.
