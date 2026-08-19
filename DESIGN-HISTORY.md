@@ -117,6 +117,34 @@ negligible.
 
 ## Rectifications
 
+### Rectification builders take keywords, and are chosen by type (#68)
+
+`Rectification(c::Video)` used to unpack its struct into **fifteen positional arguments**, and the
+extrinsics-only variant into eleven — two methods of one function, told apart by nothing but how
+many arguments arrived. The receiving signatures were bare names in a fixed order:
+
+```julia
+Rectification(file, extrinsic, start, stop, temporal_step, yadif, blur, width, height,
+              n_corners, checker_size, aspect, radial_parameters, center, north)
+```
+
+`width`/`height` are both `Int`; `start`/`stop`, both `Float64`; `center`/`north`, both the same
+optional pair. Transposing any of those pairs compiles, runs, and returns a wrong map — the failure
+mode is a subtly rotated or mirrored arena, not an error. The test suite showed the cost directly:
+one call read `R.Rectification(vid, extrinsic_t, missing, missing, Wimg, Himg, …)` with nothing to
+say which `missing` was `yadif` and which was `blur`.
+
+The four builders are now keyword-only and named for what they build — `from_video`,
+`from_extrinsic`, `from_matlab`, `from_scale`, matching the files they already lived in — plus
+`PawsomeTracker.ApriltagRectification`. Arity no longer selects anything; the calibration's type
+does, in `VerifyRectifications/types.jl`, which is the only module that can see both
+`Rectifications` and `PawsomeTracker`. The seven facts every builder needs about the source video
+travel together as `_source(c.source)`.
+
+`Rectifications` declares `function Rectification end` and exports it, but every method lives in
+`VerifyRectifications`: this module owns the concept and the builders, the gateway owns the types
+the dispatch is on.
+
 ### The extrinsics-only rectification is selected by absence, and never flagged
 
 Which constructor a rectification gets is decided *solely* by whether the calibs row has an

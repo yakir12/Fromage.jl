@@ -254,7 +254,8 @@ end
     vid, groundpath, sl, nframes = make_apriltag_video(dir, "bigpan"; nframes = 300, amp = 55, occlude = occluded)
     file = joinpath(dir, vid)
     # extrinsic at t = 0.2 s (frame 6): the frames around t = 0 have the occluded tag
-    rect = Fromage.PawsomeTracker.ApriltagRectification(file, 0.2, 4, "tag36h11", 8, missing, missing, 480, 480)
+    rect = Fromage.PawsomeTracker.ApriltagRectification(; file = file, extrinsic = 0.2, ntags = 4, family = "tag36h11",
+        checker_size = 8, center = missing, north = missing, width = 480, height = 480)
     ts, xy = Fromage.PawsomeTracker.track(file; rectification = rect, start_location = sl, target_width = 12)
     @test length(xy) == nframes
     @test findall(ismissing, xy) == occluded            # a lost tag ⇒ missing, exactly there
@@ -279,7 +280,8 @@ end
     vidB, _, slB, nB = make_apriltag_video(dir, "segB"; nframes = 40)
     fileA, fileB = joinpath(dir, vidA), joinpath(dir, vidB)
     # the reference comes from segment A's extrinsic frame and serves both segments
-    rect = Fromage.PawsomeTracker.ApriltagRectification(fileA, 0.2, 4, "tag36h11", 8, missing, missing, 480, 480)
+    rect = Fromage.PawsomeTracker.ApriltagRectification(; file = fileA, extrinsic = 0.2, ntags = 4, family = "tag36h11",
+        checker_size = 8, center = missing, north = missing, width = 480, height = 480)
 
     diag = joinpath(dir, "segmented.mp4")
     sls = Vector{Union{Missing, NTuple{2, Int}}}([slA, slB])
@@ -316,7 +318,8 @@ end
     vid, _, sl, _ = make_apriltag_video(dir, "lbl"; nframes = 40)
     file = joinpath(dir, vid)
     PT = Fromage.PawsomeTracker
-    rect = PT.ApriltagRectification(file, 0.2, 4, "tag36h11", 8, missing, missing, 480, 480)
+    rect = PT.ApriltagRectification(; file = file, extrinsic = 0.2, ntags = 4, family = "tag36h11",
+        checker_size = 8, center = missing, north = missing, width = 480, height = 480)
 
     # the label is the diagnostic file's name — which `main` sets to the run_id
     dia = PT.diagnose_apriltag(joinpath(dir, "run7.mp4"), rect.reference, true, 25)
@@ -370,8 +373,10 @@ end
     @test PT.apriltag_extrinsic_issue(corrupt, 0.2, 4, "tag36h11", 8) isa String
 
     # ...while the rectification builder, which has nowhere to put a message, still throws
-    @test_throws ErrorException PT.ApriltagRectification(corrupt, 0.2, 4, "tag36h11", 8, missing, missing, 480, 480)
-    @test_throws ErrorException PT.ApriltagRectification(file, 0.2, 99, "tag36h11", 8, missing, missing, 480, 480)
+    @test_throws ErrorException PT.ApriltagRectification(; file = corrupt, extrinsic = 0.2, ntags = 4, family = "tag36h11",
+        checker_size = 8, center = missing, north = missing, width = 480, height = 480)
+    @test_throws ErrorException PT.ApriltagRectification(; file = file, extrinsic = 0.2, ntags = 99, family = "tag36h11",
+        checker_size = 8, center = missing, north = missing, width = 480, height = 480)
 end
 
 @testset "diagnostic video: multi-run, mixed calibrations" begin

@@ -45,6 +45,17 @@ include("from_video.jl")
 include("from_matlab.jl")
 include("plotting.jl")
 
+"""
+    Rectification(c; diagnostic = nothing)
+
+The image ↔ real map pair for one verified calibration `c`, chosen by `c`'s type. The methods live
+in `VerifyRectifications`, which owns those types; each reads `c`'s fields and calls one of the
+builders here — `from_video`, `from_extrinsic`, `from_matlab`, `from_scale` — or
+`PawsomeTracker.ApriltagRectification`, by keyword. Declared here because this module owns the
+concept and `Fromage` reaches for the name through it.
+"""
+function Rectification end
+
 export Rectification
 
 end
