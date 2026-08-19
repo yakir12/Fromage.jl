@@ -16,3 +16,4 @@ benchmark/*.json
 coverage
 env
 node_modules
+/benchmark/Manifest.toml
