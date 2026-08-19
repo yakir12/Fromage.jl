@@ -342,6 +342,19 @@ function verify_apriltag_extrinsics!(df::AbstractDataFrame, issues_dir)
     end
 end
 
+# Within one group of rectifications that count as the same, the first row in csv order stands and
+# every later one is rejected: its :calibration_id is nulled so nothing downstream can join a run
+# onto a rejected rectification. `parentindices` recovers each row's position in `df` — the group is
+# a view all the way down to it — so the flags land on the right rows with no bookkeeping column.
+# Returns the rejected rows, empty when the group holds only one.
+function reject_duplicates!(df::AbstractDataFrame, g::AbstractDataFrame)
+    nrow(g) > 1 || return Int[]
+    dups = parentindices(g)[1][2:end]
+    df[dups, :calibration_id] .= missing
+    push!.(df[dups, :issues], "duplicate rectification")
+    return dups
+end
+
 function verify_unique_calibrations!(df::AbstractDataFrame)
     # What makes two rectifications "the same" is type-dependent, so partition by :type:
     #   * matlab / only_scale: identical on *every* field (calibration_id and issues aside).
@@ -350,32 +363,26 @@ function verify_unique_calibrations!(df::AbstractDataFrame)
     #     two same-identity rows still *should* agree on them — when they don't, the duplicate also
     #     gets a conflicting-parameters issue.
     # :file is already the canonical resolved path, so equivalent spellings compare equal with no
-    # per-call realpath. The throwaway :_row column carries each row's index in `df`, so flags
-    # written through the type-partitioned views land on the right rows.
-    cmp = select(df, Not(:calibration_id, :issues))
-    cmp._row = collect(axes(cmp, 1))
-    # Compare only rows that are otherwise valid: a row that failed an earlier check has had its
+    # per-call realpath.
+    #
+    # Only rows that are otherwise valid take part: a row that failed an earlier check has had its
     # offending field nulled to `missing`, which can collapse two genuinely distinct rows into a
     # spurious "duplicate". Such rows are already reported anyway.
-    ok = isempty.(df.issues)
-    isvideo = ok .& coalesce.(cmp.type .== "video", false)
+    candidates = @view df[isempty.(df.issues), :]
+    isvideo = coalesce.(candidates.type .== "video", false)
 
-    # matlab / only_scale: nonunique keeps the first occurrence, flags the rest.
-    nonvideo = @view cmp[ok .& .!coalesce.(cmp.type .== "video", false), :]
-    nv_dups = nonvideo._row[nonunique(nonvideo, Not(:_row))]
-    df[nv_dups, :calibration_id] .= missing
-    push!.(df[nv_dups, :issues], "duplicate rectification")
+    # matlab / only_scale: same iff every compared field matches, so the grouping key is every
+    # column that is not :calibration_id or :issues. :type is among them, so the two kinds never
+    # group together.
+    for g in groupby(@view(candidates[.!isvideo, :]), Not(:calibration_id, :issues))
+        reject_duplicates!(df, g)
+    end
 
-    # video: group by identity; within each group keep the first occurrence and reject the rest.
-    identity = [:file, :start, :stop, :extrinsic, :center, :north]
     other = [:checker_size, :n_corners, :temporal_step, :radial_parameters, :blur, :yadif, :aspect]
-    for g in groupby(@view(cmp[isvideo, :]), identity)
-        nrow(g) > 1 || continue
-        g_dups = g._row[2:end]
-        df[g_dups, :calibration_id] .= missing
-        push!.(df[g_dups, :issues], "duplicate rectification")
-        if any(c -> !allequal(g[!, c]), other)
-            push!.(df[g_dups, :issues], "same rectification with conflicting parameters")
+    for g in groupby(@view(candidates[isvideo, :]), [:file, :start, :stop, :extrinsic, :center, :north])
+        dups = reject_duplicates!(df, g)
+        if !isempty(dups) && any(c -> !allequal(g[!, c]), other)
+            push!.(df[dups, :issues], "same rectification with conflicting parameters")
         end
     end
 end

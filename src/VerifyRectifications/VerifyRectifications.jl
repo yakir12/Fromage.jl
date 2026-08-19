@@ -6,7 +6,7 @@ import ..Rectifications: Rectification
 using ..PawsomeTracker: PawsomeTracker, ApriltagRectification
 using FileIO: FileIO
 using DataFrames: AbstractDataFrame, ByRow, DataFrame, Not, allowmissing!, completecases,
-    dropmissing, groupby, nonunique, nrow, passmissing, select, subset
+    dropmissing, groupby, nonunique, nrow, passmissing, subset
 using ..Gateway: backfill!, blank!, read_per_file!, read_rows, report_issues, resolve_paths!,
     verify!
 using ..Parsing: Parsing, MyTemporal, parseto!
