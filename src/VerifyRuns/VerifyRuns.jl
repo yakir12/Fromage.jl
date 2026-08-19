@@ -1,8 +1,8 @@
 module VerifyRuns
 
-using DataFramesMeta: DataFramesMeta, @transform!, AbstractDataFrame, DataFrame,
-    allowmissing!, groupby, nrow
-using ..Gateway: backfill!, read_per_file!, read_rows, report_issues, resolve_paths!, verify!
+using DataFrames: AbstractDataFrame, DataFrame, allowmissing!, groupby, nrow
+using ..Gateway: backfill!, blank!, read_per_file!, read_rows, report_issues, resolve_paths!,
+    verify!
 using ..Parsing: Parsing, MyTemporal, parseto!
 import ..Parsing: mytryparse                # extended on MyWindow (a type this module owns)
 using ..Probing: frame_geometry, no_video_stream, parse_framerate, parse_sar, probe_fields

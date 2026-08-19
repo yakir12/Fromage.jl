@@ -57,7 +57,8 @@ lens["inverse, 640 px"] = @benchmarkable [R.inv_lens_distortion(v, $K, $RSTAR) f
 
 # An only_scale rectification: no video is read when `diagnostic` is nothing, so this is a pure
 # pair of coordinate maps.
-const RECT = R.Rectification("unread.mp4", 0, 0.05, 1.0, missing, missing, 640, 480)
+const RECT = R.from_scale(; file = "unread.mp4", extrinsic = 0, scale = 0.05, aspect = 1.0,
+    center = missing, north = missing, width = 640, height = 480)
 const IMAGE_PTS = vec([SVector(float(r), float(c)) for r in 1:16:480, c in 1:16:640])
 const REAL_PTS = map(RECT.image2real, IMAGE_PTS)
 
@@ -117,6 +118,28 @@ end
 # `main` writes results_dir relative to the working directory, so each run gets a fresh one.
 run_main() = cd(() -> main(MAIN_DIR; rectification_defaults = (n_corners = (5, 8),),
                                      tracking_defaults = (target_width = 10,)), mktempdir())
+
+# The gateways, without any video: every path points at a file that does not exist, so each row is
+# parsed, verified and reported but nothing is probed. That isolates the DataFrames work — column
+# typing, `subset`, `groupby`, the issue accumulation — from ffprobe, which otherwise dominates.
+const GATEWAY_DIR = let dir = mktempdir(), n = 200
+    write(joinpath(dir, "runs.csv"),
+        "run_id,calibration_id,file,start_location\n" *
+        join(["r$i,c$(i % 5),nope_$i.mp4,\"(55, 50)\"" for i in 1:n], '\n') * "\n")
+    write(joinpath(dir, "calibs.csv"),
+        "calibration_id,type,file,extrinsic,scale\n" *
+        join(["c$i,only_scale,nope_$i.mp4,1,2" for i in 0:4], '\n') * "\n")
+    dir
+end
+
+# Every row ends up flagged, so the run also pays for building and printing the issue report. That
+# is a constant across revisions; allocations are the cleaner signal for whether machinery was
+# actually removed.
+gates = SUITE["micro"]["gateways"] = BenchmarkGroup()
+gates["load_runs, 200 rows"] =
+    @benchmarkable Fromage.VerifyRuns.load_runs(joinpath($GATEWAY_DIR, "runs.csv"); strict = false)
+gates["load_rectifications, 5 rows"] =
+    @benchmarkable Fromage.VerifyRectifications.load_rectifications(joinpath($GATEWAY_DIR, "calibs.csv"); strict = false)
 
 pipe = SUITE["macro"] = BenchmarkGroup()
 pipe["track, 50 frames"] =

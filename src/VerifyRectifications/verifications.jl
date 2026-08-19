@@ -12,16 +12,20 @@ end
 function read_video_metadata!(df::AbstractDataFrame)
     # :width/:height have no CSV column (they are not user-supplied); create them here so the probe
     # can fill them, alongside the intermediate :duration/:dimension columns.
-    @transform! df :duration = missing :dimension = missing :width = missing :height = missing
+    blank!(df, :duration, :dimension, :width, :height)
     # Every type carries a source video (:file), so every group is probed once: the read fills
     # :duration/:dimension/:width/:height for all, plus imputes :aspect (and :yadif for video).
     read_per_file!(df, :file, [:file, :type], "Reading calibration videos...", probe_video, apply_video_metadata!)
 end
 
-apply_video_metadata!(g, issue::String) = @transform! g :duration = missing :dimension = missing :issues = push!.(:issues, issue)
+function apply_video_metadata!(g, issue::String)
+    blank!(g, :duration, :dimension)
+    push!.(g.issues, issue)
+end
 
 function apply_video_metadata!(g, m::NamedTuple)
-    @transform! g :dimension = (m.width, m.height) :duration = m.duration
+    g.dimension .= Ref((m.width, m.height))   # Ref, or the tuple broadcasts one element per row
+    g.duration  .= m.duration
     # width/height are the real frame size (used to decode the video); always taken from the probe.
     g.width  .= m.width
     g.height .= m.height
@@ -119,7 +123,7 @@ end
 # resolved :matlab_file reads each physical file once. The source-video :dimension was already filled
 # by read_video_metadata!, so the cross-check runs here against it.
 function read_matlab_metadata!(df::AbstractDataFrame)
-    @transform! df :n_extrinsics = missing
+    blank!(df, :n_extrinsics)
     # matlab_file is set for matlab rows only, so non-matlab rows form no group and are untouched.
     read_per_file!(df, :matlab_file, [:matlab_file], "Reading matlab calibration files...",
                    matlab_metadata, apply_matlab_metadata!)
@@ -136,13 +140,20 @@ function matlab_metadata(file)
     return (; n_extrinsics = matlab_extrinsic_count(dict), dimension = matlab_dimension(dict))
 end
 
-apply_matlab_metadata!(g::AbstractDataFrame, structure_issue::String) = @transform! g :matlab_file = missing :issues = push!.(:issues, structure_issue)
+function apply_matlab_metadata!(g::AbstractDataFrame, structure_issue::String)
+    blank!(g, :matlab_file)
+    push!.(g.issues, structure_issue)
+end
 
 function apply_matlab_metadata!(g::AbstractDataFrame, m::NamedTuple)
-    m.n_extrinsics isa String ? (@transform! g :extrinsic_index = missing :issues = push!.(:issues, m.n_extrinsics)) :
-                                (@transform! g :n_extrinsics = m.n_extrinsics)
+    if m.n_extrinsics isa String
+        blank!(g, :extrinsic_index)
+        push!.(g.issues, m.n_extrinsics)
+    else
+        g.n_extrinsics .= m.n_extrinsics
+    end
     if m.dimension isa String
-        @transform! g :issues = push!.(:issues, m.dimension)
+        push!.(g.issues, m.dimension)
     else
         # Cross-check the .mat's ImageSize against each row's source-video frame size (:dimension, set
         # by read_video_metadata!). Skip rows whose video read failed — :dimension missing, already flagged.
@@ -255,18 +266,17 @@ end
 function verify_extrinsics!(df::AbstractDataFrame, issues_dir)
     # :file is the canonical resolved path, so grouping on it corner-detects a file reached via different
     # spellings once per (extrinsic, blur, n_corners).
-    gs = @chain df begin
-        subset(:type => ByRow(passmissing(==("video"))), view = true, skipmissing = true)
-        dropmissing([:file, :extrinsic, :blur, :n_corners], view = true)
-        @groupby [:file, :extrinsic, :yadif, :blur, :width, :height, :n_corners]
-    end
+    videos = subset(df, :type => ByRow(passmissing(==("video"))); view = true, skipmissing = true)
+    usable = dropmissing(videos, [:file, :extrinsic, :blur, :n_corners]; view = true)
+    gs = groupby(usable, [:file, :extrinsic, :yadif, :blur, :width, :height, :n_corners])
     ks = collect(keys(gs))
     issues = @showprogress desc = "Validating extrinsics..." tmap(k -> extrinsic_issue(k.file, k.extrinsic, k.yadif, k.blur, k.width, k.height, k.n_corners), ks)
     for (g, k, issue) in zip(gs, ks, issues)
         isnothing(issue) && continue
         # dump the frame the detector saw (deinterlaced/blurred) so the user can see what went wrong
         saved = save_issue_frame(issues_dir, k.file, k.extrinsic, () -> extrinsic_gray_frame(k.file, k.extrinsic, _vf(k.yadif, k.blur), k.width, k.height))
-        @transform! g :extrinsic = missing :issues = push!.(:issues, note_saved_frame(issue, saved))
+        blank!(g, :extrinsic)
+        push!.(g.issues, note_saved_frame(issue, saved))
     end
 end
 
@@ -299,16 +309,15 @@ function verify_intrinsics!(df::AbstractDataFrame)
     # Rows already flagged are skipped: a failed probe, extrinsic or window check implies this
     # (expensive) scan would fail too — re-running it wastes frame reads and re-reports noise.
     # A missing calibs window (both bounds blank) is skipped like everywhere else.
-    gs = @chain df begin
-        subset(:type => ByRow(passmissing(==("video"))), view = true, skipmissing = true)
-        subset(:issues => ByRow(isempty), view = true)
-        dropmissing([:file, :start, :stop, :temporal_step, :width, :height, :n_corners], view = true)
-        @groupby [:file, :start, :stop, :temporal_step, :yadif, :blur, :width, :height, :n_corners]
-    end
+    videos = subset(df, :type => ByRow(passmissing(==("video"))); view = true, skipmissing = true)
+    clean = subset(videos, :issues => ByRow(isempty); view = true)
+    usable = dropmissing(clean, [:file, :start, :stop, :temporal_step, :width, :height, :n_corners]; view = true)
+    gs = groupby(usable, [:file, :start, :stop, :temporal_step, :yadif, :blur, :width, :height, :n_corners])
     issues = @showprogress desc = "Validating intrinsics..." tmap(k -> intrinsic_issue(k.file, k.start, k.stop, k.temporal_step, k.yadif, k.blur, k.width, k.height, k.n_corners), keys(gs))
     for (g, issue) in zip(gs, issues)
         if !isnothing(issue)
-            @transform! g :start = missing :stop = missing :issues = push!.(:issues, issue)
+            blank!(g, :start, :stop)
+            push!.(g.issues, issue)
         end
     end
 end
@@ -318,19 +327,18 @@ end
 # real frames, so it runs only on otherwise-clean apriltag rows, grouped so one physical file is
 # checked once per (extrinsic, apriltags, family, checker_size).
 function verify_apriltag_extrinsics!(df::AbstractDataFrame, issues_dir)
-    gs = @chain df begin
-        subset(:type => ByRow(passmissing(==("apriltag"))), view = true, skipmissing = true)
-        subset(:issues => ByRow(isempty), view = true)
-        dropmissing([:file, :extrinsic, :apriltags, :family, :checker_size], view = true)
-        @groupby [:file, :extrinsic, :apriltags, :family, :checker_size]
-    end
+    tags = subset(df, :type => ByRow(passmissing(==("apriltag"))); view = true, skipmissing = true)
+    clean = subset(tags, :issues => ByRow(isempty); view = true)
+    usable = dropmissing(clean, [:file, :extrinsic, :apriltags, :family, :checker_size]; view = true)
+    gs = groupby(usable, [:file, :extrinsic, :apriltags, :family, :checker_size])
     ks = collect(keys(gs))
     issues = @showprogress desc = "Validating AprilTag extrinsics..." tmap(k -> PawsomeTracker.apriltag_extrinsic_issue(k.file, k.extrinsic, k.apriltags, k.family, k.checker_size), ks)
     for (g, k, issue) in zip(gs, ks, issues)
         isnothing(issue) && continue
         # dump the extrinsic frame the tag detector saw so the user can see what went wrong
         saved = save_issue_frame(issues_dir, k.file, k.extrinsic, () -> collect(PawsomeTracker.read_frame_at(k.file, k.extrinsic)))
-        @transform! g :extrinsic = missing :issues = push!.(:issues, note_saved_frame(issue, saved))
+        blank!(g, :extrinsic)
+        push!.(g.issues, note_saved_frame(issue, saved))
     end
 end
 
@@ -398,7 +406,7 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = joinpath(
         verify!(df, (poi, dim) -> any(poi .> dim), "$point cannot be larger than the dimensions of the frame", point, :dimension)
     end
     # if north wasn't missing, but center was wrong and set to missing here, then now we have a missing center but existing north. the following fixes that:
-    @rtransform! df :north = ismissing(:center) ? missing : :north
+    df.north[ismissing.(df.center)] .= missing
 
     verify!(df, ≤(0), "aspect must be larger than zero", :aspect)
     verify!(df, ≤(0), "scale must be larger than zero", :scale)
