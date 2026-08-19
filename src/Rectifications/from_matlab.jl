@@ -4,7 +4,7 @@
 # angle conventions) is ported untouched from CameraCalibrations.jl's `loadMAT`. Real-world
 # coordinates come out in the `.mat`'s own world units (whatever square size the MATLAB
 # calibration was given), so the unit scale is 1.
-function Rectification(file, extrinsic, matlab_file, extrinsic_index, aspect, center, north, width, height; diagnostic = nothing)
+function from_matlab(; file, extrinsic, matlab_file, extrinsic_index, aspect, center, north, width, height, diagnostic = nothing)
     dict = matread(matlab_file)
     # the Camera Calibrator wraps everything in a single top-level struct (e.g. "cameraParams");
     # unwrap until the calibration fields are at hand (VerifyRectifications already verified they

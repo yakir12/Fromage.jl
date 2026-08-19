@@ -254,7 +254,7 @@ function apriltag_image2real(M, center, north, width, height)
 end
 
 # Build the AprilTag rectification from a verified `type = apriltag` calibs row.
-function ApriltagRectification(file, extrinsic, ntags, family, checker_size, center, north, width, height)
+function ApriltagRectification(; file, extrinsic, ntags, family, checker_size, center, north, width, height)
     ref = reference_frame(file, extrinsic, ntags, family, checker_size)
     # Building a rectification has nowhere to put an issue string, so the report becomes a throw
     # here. In the normal pipeline this is unreachable: VerifyRectifications ran

@@ -67,24 +67,44 @@ elseif row.type == "apriltag"
 else # can only be matlab
     MATLAB(source(row), row.calibration_id, row.matlab_file, row.extrinsic_index)
 end
-Rectification(c::Video; kwargs...) = Rectification(c.source.file, c.source.extrinsic, c.start, c.stop, c.temporal_step, c.yadif, c.blur, c.source.width, c.source.height, c.n_corners, c.checker_size, c.source.aspect, c.radial_parameters, c.source.center, c.source.north; kwargs...)
+
+# `Rectification(c)` turns one verified calibs row into its image ↔ real map pair. Which builder
+# runs is chosen by the row's type, which the parser already decided — not by how many arguments
+# get passed, and every argument travels by name. That matters here more than it usually does:
+# `width`/`height`, `start`/`stop` and `center`/`north` are same-typed neighbours, so a
+# transposition would produce a silently wrong map rather than an error.
+
+# The six facts every builder needs. `aspect` is not among them: the AprilTag path recovers metric
+# scale from the tags themselves and has no pixel-aspect correction to make, so the three builders
+# that do need it ask for it by name.
+_source(s::Source) = (; s.file, s.extrinsic, s.center, s.north, s.width, s.height)
+
+Rectification(c::Video; kwargs...) =
+    from_video(; _source(c.source)..., c.source.aspect, c.start, c.stop, c.temporal_step, c.yadif,
+        c.blur, c.n_corners, c.checker_size, c.radial_parameters, kwargs...)
 
 # A Video without a calibs window (both bounds blank ⇒ Video{Missing}) is an extrinsics-only
 # rectification: the pose and focal length come from the single extrinsic frame and lens aberrations
 # are disregarded. temporal_step/radial_parameters play no role and are deliberately NOT flagged
-# when filled anyway (see the extrinsics-only Rectification docstring); only one bound filled is
-# still an error (verify_pair).
-Rectification(c::Video{Missing}; kwargs...) = Rectification(c.source.file, c.source.extrinsic, c.yadif, c.blur, c.source.width, c.source.height, c.n_corners, c.checker_size, c.source.aspect, c.source.center, c.source.north; kwargs...)
+# when filled anyway (see the `from_extrinsic` docstring); only one bound filled is still an error
+# (verify_pair).
+Rectification(c::Video{Missing}; kwargs...) =
+    from_extrinsic(; _source(c.source)..., c.source.aspect, c.yadif, c.blur, c.n_corners,
+        c.checker_size, kwargs...)
 
 # A MATLAB rectification reads the camera model (intrinsics, distortion, and the pose picked by
 # extrinsic_index) from the .mat file; the source video supplies the frame size (already
 # cross-checked against the .mat's ImageSize) and the extrinsic timestamp for the diagnostics.
-Rectification(c::MATLAB; kwargs...) = Rectification(c.source.file, c.source.extrinsic, c.matlab_file, c.extrinsic_index, c.source.aspect, c.source.center, c.source.north, c.source.width, c.source.height; kwargs...)
+Rectification(c::MATLAB; kwargs...) =
+    from_matlab(; _source(c.source)..., c.source.aspect, c.matlab_file, c.extrinsic_index, kwargs...)
 
-Rectification(c::Scale; kwargs...) = Rectification(c.source.file, c.source.extrinsic, c.scale, c.source.aspect, c.source.center, c.source.north, c.source.width, c.source.height; kwargs...)
+Rectification(c::Scale; kwargs...) =
+    from_scale(; _source(c.source)..., c.source.aspect, c.scale, kwargs...)
 
 # An AprilTag rectification builds its shared reference from the extrinsic frame (detecting the tags
 # and fitting the metric map) and carries the centre/north gauge. There is no diagnostic image to
 # render at build time — the top-down diagnostic is produced per-run during tracking — so `kwargs`
 # (e.g. `diagnostic`) are ignored.
-Rectification(c::Apriltag; kwargs...) = ApriltagRectification(c.source.file, c.source.extrinsic, c.apriltags, c.family, c.checker_size, c.source.center, c.source.north, c.source.width, c.source.height)
+Rectification(c::Apriltag; kwargs...) =
+    ApriltagRectification(; _source(c.source)..., ntags = c.apriltags, c.family, c.checker_size)
+

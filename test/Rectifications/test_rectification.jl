@@ -63,12 +63,15 @@
 
         # frames 0..10 (t = 0.05..1.05) drive the intrinsics; frame 11 (t = 1.15) is the extrinsic
         extrinsic_t, start, stop, step = 1.15, 0.05, 1.05, 0.1
-        common = (extrinsic_t, start, stop, step, missing, missing, Wimg, Himg,
-                  n_corners, checker_size, 1.0, 1)
+        # The two `missing`s used to be positional here, and nothing said which was `yadif` and
+        # which was `blur`.
+        common = (; file = vid, extrinsic = extrinsic_t, start, stop, temporal_step = step,
+                  yadif = missing, blur = missing, width = Wimg, height = Himg, n_corners,
+                  checker_size, aspect = 1.0, radial_parameters = 1)
 
         diag = mktempdir()
         # center = missing ⇒ defaults to the frame centre (the intended behaviour)
-        rect = R.Rectification(vid, common..., missing, missing; diagnostic = diag)
+        rect = R.from_video(; common..., center = missing, north = missing, diagnostic = diag)
         image2real = rect.image2real
         ext_corners = R.get_corners(vid, extrinsic_t, missing, Wimg, Himg, n_corners)
 
@@ -90,8 +93,9 @@
             # no calibs window: pose + focal fit from the extrinsic frame alone, distortion pinned
             # at zero. The rendered clip is a pure pinhole with the principal point at the frame
             # centre, so the single-view fit (which fixes the principal point there) is well-posed.
-            rect0 = R.Rectification(vid, extrinsic_t, missing, missing, Wimg, Himg,
-                                    n_corners, checker_size, 1.0, missing, missing)
+            rect0 = R.from_extrinsic(; file = vid, extrinsic = extrinsic_t, yadif = missing,
+                                     blur = missing, width = Wimg, height = Himg, n_corners,
+                                     checker_size, aspect = 1.0, center = missing, north = missing)
             real_pts = map(rect0.image2real, ext_corners)
             spacing = R.checker_size_pixel(real_pts, n_corners)
             @test spacing ≈ checker_size rtol = 0.05
@@ -100,7 +104,8 @@
 
         @testset "center defaults to frame centre" begin
             # explicit frame-centre pixel must reproduce the center = missing result exactly
-            i2r_explicit = R.Rectification(vid, common..., SVector(Wimg / 2, Himg / 2), missing).image2real
+            i2r_explicit = R.from_video(; common..., center = SVector(Wimg / 2, Himg / 2),
+                                        north = missing).image2real
             @test all(a ≈ b for (a, b) in zip(map(image2real, ext_corners),
                                               map(i2r_explicit, ext_corners)))
         end

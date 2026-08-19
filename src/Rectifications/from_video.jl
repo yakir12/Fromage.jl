@@ -177,7 +177,8 @@ end
 # however, are read off a GUI (Gimp, Photoshop) by hand, so they are:
 # 1. pixel coordinates with width first and height second, (w, h)
 # 2. at an aspect ratio of 1, whatever `aspect` says
-function Rectification(file, extrinsic, start, stop, temporal_step, yadif, blur, width, height, n_corners, checker_size, aspect, radial_parameters, center, north; diagnostic = nothing)
+function from_video(; file, extrinsic, start, stop, temporal_step, yadif, blur, width, height,
+        n_corners, checker_size, aspect, radial_parameters, center, north, diagnostic = nothing)
     vf = _vf(yadif, blur)
     intrinsic_task = Threads.@spawn extract_intrinsics(file, start, stop, temporal_step, vf, width, height, n_corners)
     extrinsic_corners = get_corners(file, extrinsic, vf, width, height, n_corners)
@@ -188,7 +189,7 @@ function Rectification(file, extrinsic, start, stop, temporal_step, yadif, blur,
 end
 
 """
-    Rectification(file, extrinsic, yadif, blur, width, height, n_corners, checker_size, aspect, center, north)
+    from_extrinsic(; file, extrinsic, yadif, blur, width, height, n_corners, checker_size, aspect, center, north)
 Extrinsics-only rectification: no intrinsic-calibration window exists, so the camera pose (and
 focal length) are fit from the single extrinsic frame with every lens-distortion coefficient fixed
 at zero — the map is effectively the board-plane homography, disregarding lens aberrations.
@@ -199,7 +200,8 @@ than flagged; everything else (`yadif`, `blur`, `n_corners`, `checker_size`, `as
 `north`) is honoured as usual. Filling only one of the two bounds is rejected upstream. See
 DESIGN-HISTORY.md for why this asymmetry is deliberate.
 """
-function Rectification(file, extrinsic, yadif, blur, width, height, n_corners, checker_size, aspect, center, north; diagnostic = nothing)
+function from_extrinsic(; file, extrinsic, yadif, blur, width, height, n_corners, checker_size,
+        aspect, center, north, diagnostic = nothing)
     vf = _vf(yadif, blur)
     extrinsic_corners = get_corners(file, extrinsic, vf, width, height, n_corners)
     ismissing(extrinsic_corners) && error("no corners detected at extrinsic time stamp")
