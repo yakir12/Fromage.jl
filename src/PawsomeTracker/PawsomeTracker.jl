@@ -369,62 +369,25 @@ selects the H.264 encoder) is given, an annotated diagnostic video is written th
 $(DIAGNOSTIC_SPEEDUP)× real time; a `rectification` also renders it top-down instead of as the
 raw frame.
 """
-function track(
-        file::AbstractString;
-        start::Real = 0,
-        stop::Real = get_duration(file),
-        target_width::Real = 25,
+# A single video is a one-segment run, so the vector method below is the implementation and this is
+# just the spelling most callers want. Passing a one-element vector was verified to give identical
+# timestamps and coordinates — same values and same types — as the separate body this replaces, at
+# no measurable cost. See DESIGN-HISTORY.md.
+function track(file::AbstractString; start::Real = 0, stop::Real = get_duration(file),
         # The union is exactly what is supported (#18). `RowCol` is absent on purpose despite having
         # a method: that is the internal form a *later* segment's start takes in the vector method,
         # carried over from the previous segment's last coordinate, not something a caller supplies.
-        start_location::Union{Missing, NTuple{2, Int}} = missing,
-        window_size::Union{Missing, Int, NTuple{2, Int}} = round(Int, 2target_width),
-        darker_target::Bool = true,
-        fps::Real = get_framerate(file),
-        diagnostic_file::Union{Nothing, AbstractString} = nothing,
-        initial_search_factor::Real=4,
-        scale::Real = 1,
-        background_length::Integer = DEFAULT_BACKGROUND_LENGTH,
-        rectification = nothing # rectification object
-    )
-
-    # `missing` means "use the default", like a blank csv cell: resolve it up front so the
-    # `Missing` never reaches fix_window_size (which has no method for it).
-    window_size = ismissing(window_size) ? round(Int, 2target_width) : window_size
-
-    # The diagnostic declares the rate its frames actually arrive at, which is knowable only from
-    # the video — hence the probe; `Video` derives the same stride from the same rule (#55).
-    dia_fps = effective_fps(get_framerate(file), fps)
-
-    # AprilTag mode (drone footage): the rectification carries the shared reference and detector
-    # family; register out camera motion, track, and return metric ground coordinates with the
-    # rectification's centre/north gauge applied. The AprilTag diagnostic (top-down rectified) is created
-    # here and shared with track_apriltag.
-    if rectification isa ApriltagRectification
-        dia = diagnose_apriltag(diagnostic_file, rectification.reference, darker_target, dia_fps)
-        ts, coords = try
-            track_apriltag(file, start, stop, scale * target_width, start_location,
-                round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia,
-                rectification.reference, rectification.family,
-                (rectification.height, rectification.width), scale * initial_search_factor,
-                scale, background_length)
-        finally
-            close(dia)
-        end
-        return (ts, _apply_image2real(rectification.image2real, coords))
-    end
-
-    ts, coords = diagnose(diagnostic_file, darker_target, rectification, dia_fps) do dia
-        track_one(file, start, stop, scale*target_width, start_location, round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia, scale * initial_search_factor, scale, background_length)
-    end
-    # With a rectification, return the target in real-world coordinates (its `image2real` applied);
-    # without one, the raw pixel track.
-    return isnothing(rectification) ? (ts, coords) : (ts, map(rectification.image2real, coords))
+        start_location::Union{Missing, NTuple{2, Int}} = missing, kwargs...)
+    return track([file]; start = [start], stop = [stop], start_location = [start_location], kwargs...)
 end
 
 # Apply an image2real map over a track that may hold `missing` frames (AprilTag mode reports
 # `missing` where a frame lost a tag), leaving the missings in place.
 _apply_image2real(f, coords) = map(c -> ismissing(c) ? missing : f(c), coords)
+
+# The segments' timestamps are one clock: the first segment's start and step, running to the total
+# number of samples. Segments share a frame rate (see runs.md), so the step is the same throughout.
+_concat_timestamps(tss) = range(tss[1][1], step = step(tss[1]), length = sum(length, tss))
 
 """
     track(files::AbstractVector; start::AbstractVector, stop::AbstractVector, target_width,
@@ -485,9 +448,7 @@ function track(
         finally
             close(dia)
         end
-        n = sum(length, tss)
-        ts = range(tss[1][1], step = step(tss[1]), length = n)
-        return (ts, _apply_image2real(rectification.image2real, reduce(vcat, segs)))
+        return (_concat_timestamps(tss), _apply_image2real(rectification.image2real, reduce(vcat, segs)))
     end
 
     ijs = Vector{Vector{RowCol}}(undef, nfiles)
@@ -499,11 +460,13 @@ function track(
             end_location = ijs[i][end]
         end
     end
-    n = sum(length, tss)
-    ts = range(tss[1][1], step = step(tss[1]), length = n)
+    ts = _concat_timestamps(tss)
     ij = vcat(ijs...)
 
-    # real-world coordinates when a rectification is given (see the single-file method), else pixels
+    # Real-world coordinates when a rectification is given, else pixels. This stays `map`, not
+    # `_apply_image2real`: no coordinate here can be `missing`, and routing it through the
+    # missing-tolerant version would widen the returned element type to `Union{Missing, …}` for
+    # every ordinary rectified run.
     return isnothing(rectification) ? (ts, ij) : (ts, map(rectification.image2real, ij))
 end
 
