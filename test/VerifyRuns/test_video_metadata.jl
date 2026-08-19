@@ -1,7 +1,7 @@
 @testset "video metadata (probe + imputation)" begin
     @testset "stop and fps are imputed from the video" begin
         r = only(check("vm_impute.csv", [runrow()]))   # stop & fps omitted
-        @test r.stop ≈ VIDEO_DURATION atol = 0.1        # ← container duration (5 s)
+        @test only(r.stops) ≈ VIDEO_DURATION atol = 0.1 # ← container duration (5 s)
         @test r.source.fps == 30.0                      # ← video frame rate
     end
 
@@ -14,7 +14,7 @@
 
     @testset "CSV values win over imputation" begin
         r = only(check("vm_explicit.csv", [runrow(stop = "3", fps = "15")]))
-        @test r.stop == 3.0
+        @test only(r.stops) == 3.0
         @test r.source.fps == 15.0
     end
 

@@ -125,7 +125,7 @@
         runs = check("t_seg.csv", rows)
         @test clean(runs)
         r = only(runs)
-        @test r isa VR.MultiRun
+        @test length(r.files) == 3
         _, ij = VR.track(r)
         @test length(ij) == 50
         @test tracking_rmse(ij, seg_exp) < 1

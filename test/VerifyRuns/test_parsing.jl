@@ -19,7 +19,7 @@
         runs = check("p_id_none.csv",
                      [runrow(run_id = missing), runrow(run_id = "   "), runrow(run_id = missing)])
         @test clean(runs)
-        @test all(r -> r isa VR.SingleRun, runs)
+        @test all(r -> length(r.files) == 1, runs)
         @test [r.run_id for r in runs] == ["1", "2", "3"]
 
         # all rows named ⇒ clean, ids used as-is
@@ -67,12 +67,12 @@
         runs = check("p_defaults.csv", [runrow()])   # only run_id + calibration_id + file set
         @test clean(runs)
         r = only(runs)
-        @test r isa VR.SingleRun                      # one file ⇒ scalar-field run type
+        @test length(r.files) == 1                    # one csv row ⇒ one segment
         @test r.calibration_id        == "c"   # the baseline's id (required, never defaulted)
-        @test r.start                        == 0.0
+        @test only(r.starts)                 == 0.0
         @test r.source.target_width          == 25.0
         @test r.source.window_size           === missing
-        @test r.start_location               === missing
+        @test only(r.start_locations)        === missing
         @test r.source.darker_target         == true
         @test r.source.initial_search_factor == 4.0
         @test r.source.scale                 == 1.0
@@ -81,7 +81,7 @@
     @testset "start/stop accept seconds and HH:MM:SS" begin
         @test clean(check("p_secs.csv",  [runrow(start = "1.0", stop = "3.5")]))
         @test clean(check("p_clock.csv", [runrow(start = "00:00:01", stop = "00:00:03")]))
-        @test only(check("p_clock2.csv", [runrow(start = "00:00:02")])).start == 2.0
+        @test only(only(check("p_clock2.csv", [runrow(start = "00:00:02")])).starts) == 2.0
     end
 
     @testset "whitespace is trimmed from string fields" begin
