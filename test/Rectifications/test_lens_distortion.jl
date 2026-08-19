@@ -54,6 +54,36 @@
               SVector(0.3, 0.0) atol = 1e-9
     end
 
+    @testset "inverse accuracy in pixels, 100×100 to 2000×2000 frames" begin
+        # `inv_lens_distortion` receives NORMALIZED camera coordinates — (pixel − principal point)
+        # / focal, see `obj2img` — so the error a caller actually feels is the normalized error
+        # times the focal length. This sweeps observed pixels across whole frames, at two fields of
+        # view, and requires the recovered point to map back onto the pixel it came from. The
+        # tolerance is therefore in PIXELS, which is the unit the accuracy has to be judged in.
+        #
+        # The bisection solver's measured worst residual over this entire sweep is 1.3e-11 px; the
+        # bound below leaves two orders of magnitude of headroom, so it states a requirement rather
+        # than pinning one implementation — but any replacement has to meet it. See DESIGN-HISTORY.
+        frames = ((100, 100), (320, 240), (640, 480), (1280, 720), (1920, 1080), (2000, 2000))
+        for (w, h) in frames, fov in (1.4, 0.7),
+                k in ((), (-0.1,), (0.15,), (-0.28, 0.09), (0.1, -0.02, 0.005))
+            f = fov * max(w, h)              # focal length; 0.7 is the wide lens, the harder case
+            rstar = R._first_critical(k)
+            gmax = isfinite(rstar) ? rstar * R.lens_distortion_factor(rstar, k) : Inf
+            worst, n = 0.0, 0
+            for px in range(0, w; length = 12), py in range(0, h; length = 12)
+                v2 = SVector((py - h / 2) / f, (px - w / 2) / f)   # observed pixel, normalized
+                norm(v2) < gmax || continue          # past the fold there is no physical preimage
+                v = R.inv_lens_distortion(v2, k, rstar)
+                worst = max(worst, norm(R.lens_distortion(v, k) - v2) * f)
+                n += 1
+            end
+            # none of these regimes folds inside the frame, so the sweep cannot silently shrink
+            @test n == 144
+            @test worst < 1e-9
+        end
+    end
+
     @testset "inv_lens_distortion beyond the fold" begin
         # NOTE: the clamp warning uses `maxlog = 1`, so it fires only once per process.
         # This must be the FIRST beyond-fold call in the suite — the round-trips above stay
