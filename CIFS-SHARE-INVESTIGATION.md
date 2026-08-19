@@ -518,7 +518,85 @@ plausible, wrong number that was believed for a while.
 
 ---
 
-## 11. Reproducing this
+## 11. The rest of the issue #68 audit: candidates 06, 18 and 19
+
+This document is the tail end of a nineteen-candidate simplification audit. Sixteen candidates are
+settled (fourteen merged, two — 13 and 17 — measured and declined). Three are not, and a reader
+picking this up should know what they are, because two of them touch the same code this report is
+about.
+
+### 11.1 Candidate 06 — the part that was not done
+
+Only the innermost of five parallel layers was landed (PR #85: `imfilter!` on the detection window
+moved from `CPUThreads` to `CPU1`, bitwise identical, no measurable cost). The rest of 06 —
+flattening the remaining four `tmap`/`@spawn` layers and deleting `READ_SEM` — is what this report
+measures rather than implements.
+
+**The single most valuable outstanding item in the entire audit is not in candidate 06 as written.**
+It is the observation in §5.1 that the tracking `tmap` runs at `ntasks = nthreads = 32` when its
+measured optimum is near 8, which is worth roughly **200 s of a 693 s run**. That is an order of
+magnitude more than everything else in this document, it is a one-line change, and it was not landed
+because the run that would have confirmed it across three rounds is the one that hit the credit
+stall of §4. **Measure it properly (stratified across files, interleaved rounds), then land it.**
+
+### 11.2 Candidate 18 — "one gateway, parameterized by schema"
+
+*Estimated −200 src lines. Risk: very high. Parked from the outset.*
+
+`VerifyRuns` and `VerifyRectifications` are the same program over different column sets: parse rows
+to dicts, accumulate issue strings, probe the referenced video, run a list of predicate-message
+checks, group and cross-check, report or throw. Candidate 02 (merged, PR #72) lifted the shared
+*plumbing* into `src/gateway.jl`. Candidate 18 proposes going further: make the remaining difference
+pure data — a column list, a defaults table, a check list — and have one gateway consume it.
+
+**Assessment: decline.** Two independent lines of evidence from this audit argue against it.
+
+1. **Extraction reliably costs lines in this codebase.** Twelve estimates, twelve misses, and the
+   sign is predictable: candidates that *extracted* shared code (10, 16, 08, 12, 14) all came out
+   flat or larger, because the extraction has to be named and documented where the duplicated copies
+   were terse. Only candidates that *deleted a structure* (11 at −23, 07 at −33) actually shrank the
+   tree. 18 is an extraction, and the −200 estimate is very likely the wrong sign.
+2. **The same idea was tested at small scale and lost.** Candidate 10 proposed parameterising the
+   test harness by (loader, header, artifact set). Written out, the factory plus the per-suite
+   unpacking came to *more* lines than the five explicit definitions each suite already had, and it
+   hid which loader a given `check` call reaches. 18 is that idea one level up, over the most
+   safety-critical code in the package.
+
+If anyone revisits it, the burden of proof should be a written-out prototype of the *call sites*,
+not of the abstraction — that is where 10 died.
+
+### 11.3 Candidate 19 — replace the issues-column machinery
+
+*Estimated −150 src lines. Risk: very high. Parked from the outset.*
+
+Rows become `Dict{Symbol,Any}`, then a `DataFrame`, then `allowmissing!`, then each failed check
+nulls its own column so later checks skip the row, and issues accumulate in a vector-of-vectors
+column. The proposal is a vector of row structs plus an explicit validation pipeline.
+
+**Assessment: still park it, but this is the only remaining candidate with real upside.**
+
+- It is a *deletion* of a structure, which is the shape that actually paid in this audit.
+- However, its stated motivation has partly evaporated. 19 argued the machinery "is why the
+  verification code needs as many comments as it has" — and candidate 12 (merged, PR #79) has since
+  removed `DataFramesMeta` and `Chain` entirely. That code is now plain DataFrames with named
+  intermediates, so some of the pain 19 was reacting to is already gone.
+- The null-on-failure convention is genuinely subtle and is well-tested largely by accident.
+
+If it is attempted, it should follow the pattern that worked for candidate 14 (PR #82):
+**characterisation tests written against the current behaviour and confirmed passing first**, then a
+**differential test over thousands of randomised frames** comparing old and new implementations
+field by field. 14 found three load-bearing behaviours nothing asserted; 19 will find more.
+
+### 11.4 Why none of this affects the share problem
+
+Neither 18 nor 19 touches how bytes are read off the mount. They are both about how the *verified
+row data* is represented once read. The failure rate in §7.2 and the stall in §4 would be exactly
+the same after either. They are listed here for completeness of the audit, not because they bear on
+the investigation this document is background for.
+
+---
+
+## 12. Reproducing this
 
 Scripts used live in the session scratchpad, not in the repo. The essentials:
 
@@ -535,7 +613,7 @@ Scripts used live in the session scratchpad, not in the repo. The essentials:
 
 ---
 
-## 12. Recommendation
+## 13. Recommendation
 
 1. **Delete** `READ_SEM`, `set_read_limit!`, `read_limit`, `Rectifications.__init__` and the
    `RECTIFICATIONS_READ_LIMIT` environment variable. They cost ~5% on the stage they guard and
@@ -549,3 +627,4 @@ Scripts used live in the session scratchpad, not in the repo. The essentials:
    of magnitude more than everything else here. Measure it properly first (§5.1).
 5. **Escalate the mount.** The application-level work is finished at ~5%; the remaining error rate
    is a filesystem problem and should be treated as one.
+6. **Candidates 18 and 19 stay parked** (§11), and neither would change anything in this report.
