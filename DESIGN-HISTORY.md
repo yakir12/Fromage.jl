@@ -250,6 +250,39 @@ Zero turns background subtraction off, but the stack itself stays, because it is
 source of the current frame. It holds 2 slices rather than 1: a single-slice stack has no valid
 linear-interpolation stencil along the slice axis.
 
+### One `track` body, not four (#68)
+
+`track` had two methods — one video and several — and each carried an AprilTag branch and an
+ordinary branch. All four resolved `window_size` from `missing` the same way, computed `dia_fps`
+the same way (comment included, twice, verbatim), opened and `finally`-closed the diagnostic, and
+stitched the timestamps with the same two lines.
+
+The vector method is now the implementation and the single-video method is a wrapper around a
+one-element vector. That was checked to be equivalent before the change, not after: identical
+timestamps (same values *and* the same `StepRangeLen{Float64, TwicePrecision…}` type), identical
+coordinates and type, and a diagnostic video of the same dimensions, frame count and rate. Cost:
+within noise on wall clock, +16 allocations out of ~1000. The AprilTag path keeps its exact
+guarantee under test — `findall(ismissing, xy) == occluded` pins where a lost tag reports `missing`,
+through the wrapper.
+
+The keyword the wrapper still declares itself is `start_location`, because its type annotation is
+load-bearing (see below).
+
+### What was deliberately *not* merged
+
+The AprilTag and ordinary branches still stand apart, and the last line of each still differs:
+
+```julia
+isnothing(rectification) ? (ts, ij) : (ts, map(rectification.image2real, ij))   # ordinary
+_apply_image2real(rectification.image2real, reduce(vcat, segs))                # AprilTag
+```
+
+`_apply_image2real` is missing-tolerant and would cover both — but only by widening the ordinary
+path's return element type from `SVector{2, Float64}` to `Union{Missing, SVector{2, Float64}}`, for
+every run that can never produce a `missing`. The two branches also track with different functions
+(`track_apriltag` vs `track_one`), hold different element types, and differ on whether segments
+chain their start locations. One `if` is the honest shape.
+
 ### `start_location`'s declared type is exactly what is supported (#18)
 
 `CartesianIndex{2}` sat in the keyword's `Union` with no `get_guess` method behind it, so a call
