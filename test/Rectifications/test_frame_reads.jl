@@ -42,27 +42,20 @@
             @test spread(blurred) < spread(frame)
         end
 
-        @testset "concurrent reads are correct, at any configured limit" begin
+        @testset "concurrent reads are correct" begin
             # The production read pattern is nested `tmap`s over a network share; here, nested
             # spawns over the same file. Every task must get the byte-identical frame a lone
             # reader gets — no interleaved decode, no torn buffer, no env race between builders.
-            # Limit 1 (fully serialised) and the configured default are both legitimate settings.
-            old = R.read_limit()
-            try
-                for limit in (1, old)
-                    R.set_read_limit!(limit)
-                    results = Vector{Matrix{UInt8}}(undef, 64)
-                    @sync for i in 1:8
-                        Threads.@spawn @sync for j in 1:8
-                            Threads.@spawn results[(i - 1) * 8 + j] =
-                                R._frame_at(file, 1.0, missing, w, h)
-                        end
-                    end
-                    @test all(==(frame), results)
+            # These once ran under a global semaphore that capped simultaneous opens; it was
+            # measured to prevent nothing (5,371 reads at concurrency 1 through 48, zero
+            # failures) and removed, so the reads here are unbounded, as in production.
+            results = Vector{Matrix{UInt8}}(undef, 64)
+            @sync for i in 1:8
+                Threads.@spawn @sync for j in 1:8
+                    Threads.@spawn results[(i - 1) * 8 + j] = R._frame_at(file, 1.0, missing, w, h)
                 end
-            finally
-                R.set_read_limit!(old)
             end
+            @test all(==(frame), results)
         end
 
         @testset "reading leaves the process environment alone" begin

@@ -1,7 +1,7 @@
 module VerifyRectifications
 
-using ..Rectifications: get_corners, _vf, extrinsic_gray_frame, from_extrinsic, from_matlab,
-    from_scale, from_video
+using ..Rectifications: FrameReadError, get_corners, _vf, extrinsic_gray_frame, from_extrinsic,
+    from_matlab, from_scale, from_video
 import ..Rectifications: Rectification
 using ..PawsomeTracker: PawsomeTracker, ApriltagRectification
 using FileIO: FileIO

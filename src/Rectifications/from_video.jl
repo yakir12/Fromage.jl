@@ -26,30 +26,94 @@ _cmd(file, t, ::Missing) = `$(FFMPEG.ffmpeg()) -hide_banner -loglevel error -ss 
 _cmd(file, t, vf) = `$(FFMPEG.ffmpeg()) -hide_banner -loglevel error -ss $t -i $file -frames:v 1 -vf $vf -f rawvideo -pix_fmt gray pipe:1`
 
 
-# What `_read_frame` retries: everything a flaky share can plausibly do to a frame read. ffmpeg
-# exiting nonzero (`ProcessFailedException` — how an EAGAIN against the share surfaces, since it is
-# ffmpeg itself that fails), and the Julia-side spawn/pipe failures (`IOError`, `SystemError`).
-# Everything else is not transient, and must surface at once rather than after four attempts.
-_transient(e) = e isa ProcessFailedException || e isa Base.IOError || e isa SystemError
+"""
+    FrameReadError(file, t, exitcode, message)
 
-# Read one frame, retrying transient failures. EAGAIN ("Resource temporarily unavailable") from
-# the CIFS share is transient by definition, so a few backoff retries ride out residual blips even
-# under the concurrency limit. A persistent failure still rethrows after the last try.
-function _read_frame(cmd; tries = 4)
+A failed frame read, carrying what ffmpeg said about it on stderr.
+
+`read(cmd)` raises a `ProcessFailedException` that holds an exit code and nothing else: ffmpeg's
+stderr goes to the terminal, where it is lost. That made a share which dropped the connection
+under an `open()` indistinguishable from a genuinely broken file, and it was reported as one —
+"the file is corrupt, truncated, or not a video" — for a file that is perfectly intact. Keeping
+the message is what tells the two apart: a transient share failure says "Resource temporarily
+unavailable" (EAGAIN, exit 245); a broken file says "moov atom not found".
+"""
+struct FrameReadError <: Exception
+    file::String
+    t::Float64
+    exitcode::Int
+    message::String
+end
+
+# The message goes into the user-facing issues report, next to the row that already names the
+# file, so it has to stay one short sentence. ffmpeg writes several lines for one failure — the
+# first is the specific one ("moov atom not found", "Error opening input: Resource temporarily
+# unavailable"), the rest restate it and repeat the full path — so the first is what is kept.
+Base.showerror(io::IO, e::FrameReadError) =
+    print(io, "ffmpeg could not read the frame at $(e.t)s (exit $(e.exitcode))",
+              isempty(e.message) ? "" : ": $(e.message)")
+
+# ffmpeg prefixes its lines with "[component @ 0xADDRESS] "; the address changes every run and
+# would make otherwise identical failures compare unequal.
+function _clean_stderr(s)
+    for line in eachsplit(s, '\n')
+        cleaned = strip(replace(line, r"^\[[^\]]*@ 0x[0-9a-f]+\]\s*" => ""))
+        isempty(cleaned) || return String(cleaned)
+    end
+    return ""
+end
+
+# Run one read, capturing both streams: stdout is the raw frame, stderr is the diagnosis. Both
+# pipes are drained concurrently with the wait — a frame is ~2 MB, more than a pipe buffer holds,
+# so reading them in sequence would deadlock against an ffmpeg blocked on write.
+function _capture(cmd, file, t)
+    out = Pipe()
+    err = Pipe()
+    proc = run(pipeline(cmd; stdout = out, stderr = err), wait = false)
+    close(out.in)
+    close(err.in)
+    frame = @async read(out)
+    message = @async read(err, String)
+    wait(proc)
+    bytes = fetch(frame)
+    proc.exitcode == 0 && proc.termsignal == 0 && return bytes
+    throw(FrameReadError(string(file), float(t), Int(proc.exitcode), _clean_stderr(fetch(message))))
+end
+
+# What `_read_frame` retries: everything a flaky share can plausibly do to a frame read. ffmpeg
+# exiting nonzero (`FrameReadError`) and the Julia-side spawn/pipe failures (`IOError`,
+# `SystemError`). Everything else is not transient, and must surface at once rather than after
+# four attempts.
+_transient(e) = e isa FrameReadError || e isa Base.IOError || e isa SystemError
+
+# Read one frame, retrying transient failures.
+#
+# The share this runs against reconnects on its own schedule — measured at roughly one session
+# reconnect per two minutes while the mount sits completely IDLE — and it is mounted `soft`, so
+# the cifs client hands a reconnect straight to userspace as EAGAIN rather than reissuing the
+# request itself, the way a `hard` mount would. Any `open()` in flight at that moment dies. The
+# retries exist to cover those windows and nothing else; they are not a concurrency guard.
+# Measured: failures do not scale with how many reads are in flight (5,371 reads at concurrency
+# 1 through 48, zero failures), so limiting concurrency never helped and no longer happens.
+# See CIFS-SHARE-INVESTIGATION.md and WHY-FRAMES-FAIL.md.
+#
+# It takes the built command rather than building it, so the retry policy can be exercised with a
+# stand-in command instead of a real ffmpeg spawn; `file` and `t` are carried only to label a
+# failure.
+function _read_frame(cmd, file, t; tries = 4)
     for i in 1:(tries - 1)
         try
-            return read(cmd)
+            return _capture(cmd, file, t)
         catch e
             _transient(e) || rethrow()
             sleep(0.2 * 2^(i - 1))          # 0.2s, 0.4s, 0.8s backoff
         end
     end
-    return read(cmd)   # last attempt outside the try, so the real error propagates and the
-end                    # function provably never returns `nothing`
+    return _capture(cmd, file, t)   # last attempt outside the try, so the real error propagates
+end                                 # and the function provably never returns `nothing`
 
 function _frame_at(file, t, vf, w, h)
-    cmd = _cmd(file, t, vf)
-    buf = Base.acquire(() -> _read_frame(cmd), READ_SEM[])   # bound concurrent opens against the share
+    buf = _read_frame(_cmd(file, t, vf), file, t)
     return permutedims(reshape(buf, w, h))
 end
 

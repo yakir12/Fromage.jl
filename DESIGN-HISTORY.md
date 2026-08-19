@@ -68,16 +68,36 @@ option gives constant quality instead.
 
 ## Concurrency
 
-### Reads through a share are the bottleneck, and the limit is global
+### Reads through a share fail on the share's schedule, not on ours (#68)
 
-`Rectifications.READ_SEM` bounds simultaneous ffmpeg opens against the (CIFS/network) share. A
-burst of nested `tmap` tasks otherwise trips EAGAIN ("Resource temporarily unavailable"). The
-limiter is a single process-global semaphore rather than a per-call `ntasks` because the read
-sites are nested — per-call limits would multiply. Benchmarks against the CIFS mount plateau
-around 12–24 concurrent reads, hence the default of 12.
+There used to be a global limiter here — `READ_SEM`, `set_read_limit!`, `read_limit`, an
+`__init__` and a `RECTIFICATIONS_READ_LIMIT` environment variable — bounding simultaneous ffmpeg
+opens on the stated grounds that "a burst of nested `tmap` tasks otherwise trips EAGAIN". It was
+measured against the real share and deleted. The premise was false: failures do not scale with
+how many reads are in flight. Sweeping concurrency 1 → 4 → 12 → 48 in interleaved rounds gave
+**5,371 reads and zero failures at every level**, while a *completely idle* minute of the same
+mount logged two session reconnects — the highest reconnect rate of any arm in the experiment.
+Capping concurrency bought nothing and cost ~5% on the stage it guarded.
 
-`_read_frame` additionally retries transient failures with exponential backoff, since EAGAIN is
-transient by definition and a few retries ride out residual blips even under the limit.
+What does fail is an `open()` that is in flight when the mount reconnects. Captured verbatim:
+ffmpeg exits 245 (`AVERROR(EAGAIN)`, i.e. errno 11) with `Error opening input: Resource
+temporarily unavailable`, having hung 5–15 s first and delivered zero bytes; neighbouring
+failures carry ECONNABORTED (exit 153) and EBADF (exit 247). No read ever dies part-way through —
+the failures are entirely in the open. The mount is `soft`, which is precisely the option that
+tells the cifs client to hand a reconnect to userspace as EAGAIN instead of reissuing the request
+itself the way `hard` would; the failures arrive in bursts across unrelated files because one
+reconnect kills everything open at that instant.
+
+This is also why tracking never sees it while doing a hundred times the I/O: `open_gray_video`
+opens each video once, under a lock, and streams from the established handle, at roughly 0.6
+opens/s. Rectification opens once per *frame*, concurrently, at ~10 opens/s. The exposure is the
+open, not the bytes.
+
+`_read_frame` therefore keeps its exponential backoff, and keeps it for a reason that is now
+written down rather than assumed. It is not a concurrency guard; it covers reconnect windows. It
+can be deleted only by fixing the mount (see CIFS-SHARE-INVESTIGATION.md §8 and
+WHY-FRAMES-FAIL.md) — a `hard` mount would make the kernel do this retrying, invisibly and
+correctly.
 
 **If the threading is ever flattened to one level per stage, the semaphore becomes an ordinary
 `tmap(...; ntasks = n)` and can go away — but measure against the real share, not the test
@@ -105,8 +125,9 @@ The resource argument cannot simply be dropped: `imfilter!` has no method taking
 one, so `ComputationalResources` remains a dependency.
 
 This removes one layer. The other four — `tmap` over runs, `Threads.@spawn` for intrinsics, `tmap`
-over intrinsic timestamps, and the `tmap` pairs in verification — still nest, and `READ_SEM` still
-exists because of them. Those need the real share to judge.
+over intrinsic timestamps, and the `tmap` pairs in verification — still nest. They no longer need
+a global limiter above them: `READ_SEM` was measured against the real share and deleted (see
+"Reads through a share fail on the share's schedule, not on ours").
 
 ### ffmpeg commands bake their environment into the `Cmd`
 
@@ -799,9 +820,11 @@ and were removed or rewritten for that reason:
   count never exceeded the limit. That is a test of `Base.Semaphore`, not of this package. What
   actually needs protecting is that concurrent reads come back *correct*, which is now asserted in
   `test_frame_reads.jl` by reading the same frame from sixty-four tasks and requiring every one to
-  equal the frame a lone reader gets. The limiter is still exercised — the reads run at limit 1 and
-  at the configured default — but nothing asserts how the bound is implemented, so replacing the
-  semaphore does not turn the suite red.
+  equal the frame a lone reader gets. Nothing asserted how the bound was implemented, so removing
+  the semaphore outright cost exactly one edit — deleting the loop that swept the limit — and the
+  correctness assertion it guarded still stands, now over unbounded concurrency as in production.
+  Behaviour-shaped tests survive the deletion of the mechanism they were written against; that was
+  the claim, and this is the case that tested it.
 - `test_ffmpeg_cmd.jl` walked `Cmd.exec` asserting that `-ss`, `-frames:v` and `rawvideo` were
   present and `-vf` was not. Any reordering or reformulation of the command broke it, while a
   command that was well-formed and wrong still passed. The observable claims — the frame has the
