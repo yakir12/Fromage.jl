@@ -113,6 +113,39 @@
         @test !flagged(df, 2, "duplicate rectification")
     end
 
+    @testset "a duplicate loses its calibration_id" begin
+        # Nulling it is what stops anything downstream joining a run onto a rectification that was
+        # rejected — and it is why the report names the duplicate's row without an id.
+        df, out = load_capturing("s_dupid.csv", [videorow(calibration_id = "keep"),
+                                                 videorow(calibration_id = "drop")])
+        @test df.calibration_id[1] == "keep"
+        @test ismissing(df.calibration_id[2])
+        @test occursin("row 2: duplicate rectification", out)
+    end
+
+    @testset "three identical rows: the first is kept, both others flagged" begin
+        # Which of a duplicate set survives is load-bearing: the first occurrence in csv order.
+        df = check("s_dup3.csv", [videorow(calibration_id = "a"),
+                                  videorow(calibration_id = "b"),
+                                  videorow(calibration_id = "c")])
+        @test !flagged(df, 1, "duplicate rectification")
+        @test flagged(df, 2, "duplicate rectification")
+        @test flagged(df, 3, "duplicate rectification")
+        @test df.calibration_id[1] == "a"
+        @test ismissing(df.calibration_id[2]) && ismissing(df.calibration_id[3])
+    end
+
+    @testset "the video and non-video halves are judged separately" begin
+        # One csv holding both kinds, each with its own duplicate. A video row and a matlab row can
+        # never be duplicates of each other, and each half keeps its own first occurrence.
+        df = check("s_dupmixed.csv", [videorow(calibration_id = "v1"), videorow(calibration_id = "v2"),
+                                      matlabrow(calibration_id = "m1"), matlabrow(calibration_id = "m2")])
+        @test !flagged(df, 1, "duplicate rectification")
+        @test flagged(df, 2, "duplicate rectification")
+        @test !flagged(df, 3, "duplicate rectification")
+        @test flagged(df, 4, "duplicate rectification")
+    end
+
     @testset "negative control: same file+type, different extrinsic is fine" begin
         df = check("s_ok.csv", [videorow(calibration_id = "n1", extrinsic = "00:00:01"),
                                 videorow(calibration_id = "n2", extrinsic = "00:00:03")])

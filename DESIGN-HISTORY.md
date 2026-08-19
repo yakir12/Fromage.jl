@@ -559,6 +559,30 @@ video can legitimately carry several rectifications differing in, say, `blur` �
 the same identity that disagree on the remaining parameters also get a conflicting-parameters
 issue.
 
+Within a duplicate set the **first row in csv order stands** and every later one is rejected: its
+`:calibration_id` is nulled, so nothing downstream can join a run onto a rectification that was
+thrown out.
+
+### Duplicates are found by grouping, not by a shadow index column (#68)
+
+The check used to copy the frame, append a throwaway `:_row` column carrying each row's index,
+build three boolean masks, split video from non-video, and write the flags back through that index.
+The bookkeeping was the part most likely to be wrong in a way no test would catch.
+
+`parentindices` does the same job for free: the per-type frames are views of `df` all the way down,
+so a group's rows already know where they came from. Both halves are now one `groupby` — the
+non-video half over every column that is not `:calibration_id` or `:issues` (`:type` among them, so
+the two kinds never group together), the video half over its identity key — sharing one
+`reject_duplicates!`.
+
+Equivalence was not taken on faith. Three semantics the old code encoded implicitly and nothing
+asserted — that the duplicate's `:calibration_id` is nulled, that with three identical rows the
+first is kept and *both* others flagged, and that the video and non-video halves are judged
+separately — were written as tests against the old implementation first. Then both implementations
+were run over 4,000 randomly generated frames drawn from a deliberately tiny value space (so
+collisions and `missing`s are common, and a third of rows arrive pre-flagged): identical
+`:calibration_id` and identical `:issues` every time.
+
 ### `comment` is exempt from the irrelevant-column check (#16)
 
 A filled cell in a column the row's `type` never reads is flagged, because it usually means the
