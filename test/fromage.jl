@@ -11,8 +11,7 @@ using StaticArrays: SVector
 using MAT: matwrite
 using AprilTags: getAprilTagImage, tag36h11
 using FFMPEG: ffmpeg_exe
-
-include("common.jl")
+using ..Fixtures
 
 # A synthetic "drone" video for the AprilTag pipeline: four tag36h11 tags fixed on a ground canvas, a
 # dark disc target moving along a known straight ground path, and a per-frame pan (a cropping window
@@ -343,7 +342,7 @@ end
     dir = mktempdir()
     vid, _, _, _ = make_apriltag_video(dir, "ref"; nframes = 20)
     file = joinpath(dir, vid)
-    corrupt = joinpath(dir, "corrupt.mp4"); write(corrupt, rand(UInt8, 500))
+    corrupt = make_corrupt_video(joinpath(dir, "corrupt.mp4"))
 
     @test PT.reference_frame(file, 0.2, 4, "tag36h11", 8)    isa PT.ReferenceFrame   # success
     @test PT.reference_frame(file, 0.2, 99, "tag36h11", 8)   isa String              # too few tags

@@ -1,8 +1,12 @@
-# The consolidated suite: each former package's tests run inside their own wrapper module (so
-# their helper constants — DATADIR, ART, HEADER, make_video, … — cannot collide), followed by the
-# Fromage-level end-to-end test. Testsets nest fine across module boundaries (they use the task's
+# The consolidated suite. Two support modules are defined first — `Fixtures` (the synthetic videos
+# and the ffprobe readers) and `Harness` (the gateway suites' CSV plumbing) — and then each former
+# package's tests run inside their own wrapper module, so their suite-specific names (DATADIR, ART,
+# HEADER, …) cannot collide. Testsets nest fine across module boundaries (they use the task's
 # dynamic scope, not lexical scope).
 using Test
+
+include("fixtures.jl")
+include("harness.jl")
 
 @testset "Fromage (consolidated)" begin
     include("quality.jl")

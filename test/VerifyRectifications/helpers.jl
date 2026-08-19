@@ -1,14 +1,16 @@
-# Suite-specific helpers; the generic infrastructure (video/CSV builders, flagged, …) lives in
-# test/common.jl, included by the wrapper module before this file.
+# Everything specific to this gateway: the artifacts, the column header, and the four entry points
+# its test files use. The generic infrastructure lives in test/fixtures.jl (synthetic videos,
+# ffprobe readers) and test/harness.jl (CSV building, `flagged`, `capturing`).
 using Test
 using Fromage: VerifyRectifications
 using CSV, DataFrames
 using FFMPEG, MAT
+import ..Harness: write_csv
 
 const VRect = VerifyRectifications
 
 # ---------------------------------------------------------------------------
-# Artifact generation (videos, matlab files) into a shared directory.
+# Artifact generation (videos, matlab files) into DATADIR.
 # ---------------------------------------------------------------------------
 
 # The first `board_t` seconds show the (padded, 500×376) checkerboard, the rest is cornerless
@@ -72,9 +74,8 @@ make_matlab_consistent(path; f = 500.0, Z = 100.0) = (MAT.matwrite(path, Dict("c
 # 0…4 s, so the video must be longer than 4 s. 5 s satisfies both with a 1 s margin.
 const VIDEO_DURATION = 5
 
-"Generate every shared artifact into `dir`; return a NamedTuple of their basenames."
-function setup_artifacts(dir)
-    checkerboard_png = joinpath(@__DIR__, "fixtures", "checkerboard.png")
+# Every shared artifact, generated into DATADIR; the NamedTuple gives their basenames.
+const ART = let dir = DATADIR, checkerboard_png = joinpath(@__DIR__, "fixtures", "checkerboard.png")
     make_video(joinpath(dir, "video.mp4"); duration = VIDEO_DURATION, size = (640, 480))      # dim (640,480)
     make_checkerboard_video(joinpath(dir, "board.mp4"), checkerboard_png; duration = VIDEO_DURATION) # dim (500,376)
     make_mixed_video(joinpath(dir, "mixed.mp4"), checkerboard_png)                  # board 0–2 s, testsrc 2–5 s
@@ -87,10 +88,10 @@ function setup_artifacts(dir)
     make_matlab_nested(joinpath(dir, "nested.mat"); imagesize = (480, 640))        # dim (640,480), matches video.mp4
     make_matlab_mismatch(joinpath(dir, "mismatch.mat"))                            # translation/rotation pose counts differ
     make_matlab_consistent(joinpath(dir, "consistent.mat"))                        # buildable: fronto-parallel pinhole, dim (640,480)
-    return (video = "video.mp4", board = "board.mp4", mixed = "mixed.mp4", corrupt = "corrupt.mp4", interlaced = "interlaced.mp4",
-            good_mat = "good.mat", noimsize_mat = "noimsize.mat", bad_mat = "bad.mat",
-            partial_mat = "partialcalib.mat", nested_mat = "nested.mat", mismatch_mat = "mismatch.mat",
-            consistent_mat = "consistent.mat")
+    (video = "video.mp4", board = "board.mp4", mixed = "mixed.mp4", corrupt = "corrupt.mp4", interlaced = "interlaced.mp4",
+     good_mat = "good.mat", noimsize_mat = "noimsize.mat", bad_mat = "bad.mat",
+     partial_mat = "partialcalib.mat", nested_mat = "nested.mat", mismatch_mat = "mismatch.mat",
+     consistent_mat = "consistent.mat")
 end
 
 # ---------------------------------------------------------------------------
@@ -105,6 +106,7 @@ const HEADER = ["calibration_id", "path", "file", "matlab_file", "type", "extrin
 
 row(; kw...) = buildrow(HEADER; kw...)
 write_csv(path, rows; header = HEADER) = write_csv(path, rows, header)
+_merge(base; kw...) = row(; merge(base, values(kw))...)
 
 # Clean baseline rows per rectification type; override any field via keyword to isolate one issue.
 # (Each scenario is loaded as its own single-row CSV, so there is no cross-row coupling.)
@@ -125,7 +127,7 @@ mixedrow(; kw...) = _merge((calibration_id = "x", path = ".", file = ART.mixed, 
                             checker_size = 4, temporal_step = 0.9, radial_parameters = 1, blur = 0); kw...)
 
 # ---------------------------------------------------------------------------
-# Run + assert. DATADIR is defined in the wrapper module before any test file runs.
+# Run + assert.
 # ---------------------------------------------------------------------------
 
 "Write `rows` to a CSV in DATADIR and load it. Scenario rows keep indices 1:length(rows).
@@ -138,6 +140,9 @@ function check(name, rows; strict = false, header = HEADER, defaults = (;), issu
     csv = write_csv(joinpath(DATADIR, name), rows; header)
     VRect.load_rectifications(DATADIR, csv; strict, defaults, issues_dir)
 end
+
+"Like `check`, but also capture what the load prints to stdout. Returns (result, output)."
+load_capturing(name, rows; kw...) = capturing(() -> check(name, rows; kw...))
 
 # A clean load returns Vector{RectificationMethod}; a load with issues keeps the df's :issues.
 clean(df) = !hasproperty(df, :issues) || all(isempty, df.issues)

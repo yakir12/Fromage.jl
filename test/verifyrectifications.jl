@@ -2,13 +2,13 @@ module VerifyRectificationsTests
 
 using Test
 using Fromage: Fromage
+using ..Fixtures, ..Harness
 
-include("common.jl")
-include("VerifyRectifications/helpers.jl")
-
-# Shared artifacts and CSV scratch space, built once (ffmpeg is the slow part).
+# Shared artifacts and CSV scratch space, built once for the whole suite. DATADIR comes
+# first: helpers.jl generates into it and closes over it.
 const DATADIR = mktempdir()
-const ART = setup_artifacts(DATADIR)
+
+include("VerifyRectifications/helpers.jl")
 
 @testset "VerifyRectifications" begin
     include("VerifyRectifications/test_input.jl")
