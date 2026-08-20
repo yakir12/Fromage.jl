@@ -53,5 +53,8 @@ jobs:
       - uses: codecov/codecov-action@v7
         if: ${{ inputs.run_codecov }}
         with:
-          file: lcov.info
+          # `files`, plural: v7 renamed the singular `file`, and an unknown input is only a
+          # warning, so the old name was silently ignored and the upload fell back to searching
+          # the tree. That happened to find lcov.info, which is why coverage still worked.
+          files: lcov.info
           token: ${{ secrets.codecov_token }}
