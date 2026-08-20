@@ -94,10 +94,16 @@ opens/s. Rectification opens once per *frame*, concurrently, at ~10 opens/s. The
 open, not the bytes.
 
 `_read_frame` therefore keeps its exponential backoff, and keeps it for a reason that is now
-written down rather than assumed. It is not a concurrency guard; it covers reconnect windows. It
-can be deleted only by fixing the mount (see CIFS-SHARE-INVESTIGATION.md §8 and
-WHY-FRAMES-FAIL.md) — a `hard` mount would make the kernel do this retrying, invisibly and
-correctly.
+written down rather than assumed. It is not a concurrency guard; it covers reconnect windows.
+
+It is also not the constant crutch it was taken for. Over a 3.5-hour paired soak — 407,160 reads
+across four arms, 23 reconnects — there were **zero failures, and the loop fired zero times**. The
+"~7% of stages abort without it" figure from CIFS-SHARE-INVESTIGATION.md is not a rate; the same
+measurement repeated here gave 0 aborts in 522 iterations. What the retry covers is rare and
+severe: one episode failed 62 of 195 reads inside 19 seconds. So it costs nothing in the normal
+case and is decisive in the abnormal one, which is why it stays. It can be deleted for good only by
+fixing the mount (see WHY-FRAMES-FAIL.md) — a `hard` mount would make the kernel do this retrying,
+invisibly and correctly.
 
 **If the threading is ever flattened to one level per stage, the semaphore becomes an ordinary
 `tmap(...; ntasks = n)` and can go away — but measure against the real share, not the test

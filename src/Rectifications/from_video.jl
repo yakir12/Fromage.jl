@@ -95,14 +95,20 @@ _transient(e) = e isa FrameReadError || e isa Base.IOError || e isa SystemError
 
 # Read one frame, retrying transient failures.
 #
-# The share this runs against reconnects on its own schedule — measured at roughly one session
-# reconnect per two minutes while the mount sits completely IDLE — and it is mounted `soft`, so
-# the cifs client hands a reconnect straight to userspace as EAGAIN rather than reissuing the
-# request itself, the way a `hard` mount would. Any `open()` in flight at that moment dies. The
-# retries exist to cover those windows and nothing else; they are not a concurrency guard.
-# Measured: failures do not scale with how many reads are in flight (5,371 reads at concurrency
-# 1 through 48, zero failures), so limiting concurrency never helped and no longer happens.
-# See CIFS-SHARE-INVESTIGATION.md and WHY-FRAMES-FAIL.md.
+# The share this runs against reconnects on its own schedule — about five times an hour, including
+# while the mount sits completely IDLE — and it is mounted `soft`, so the cifs client can hand a
+# reconnect straight to userspace as EAGAIN rather than reissuing the request itself, the way a
+# `hard` mount would. What dies is an `open()` in flight, never a transfer already under way.
+#
+# These retries are NOT a concurrency guard, and they are not paid for in the normal case. Measured
+# over a 3.5 h paired soak: 101,790 reads, zero failures, and the loop below fired zero times. What
+# it covers is rare and severe — one episode failed 62 of 195 reads inside 19 s. It is dormant
+# insurance, and it becomes dead code the day the mount is fixed.
+#
+# A global limiter used to sit above this on the theory that concurrency caused the EAGAIN. It does
+# not: 5,371 reads swept across concurrency 1 through 48 gave zero failures at every level, while an
+# idle minute of the same mount reconnected twice. See WHY-FRAMES-FAIL.md and
+# CIFS-SHARE-INVESTIGATION.md.
 #
 # It takes the built command rather than building it, so the retry policy can be exercised with a
 # stand-in command instead of a real ffmpeg spawn; `file` and `t` are carried only to label a
