@@ -2,6 +2,9 @@ const results_dir = "results_dir"
 
 # Every segment shares one resolution, codec and quality (see diagnose.jl), so a single ffmpeg
 # concat-demuxer call stream-copies them into the final video, rewriting timestamps monotonically.
+#
+# Deliberately NOT routed through `ShareIO`: every path here is under `results_dir`, on local disk.
+# The retries exist for the CIFS share and belong only on reads that cross it.
 function concatenate(path, files)
     list = joinpath(path, "list.txt")
     open(list, "w") do io

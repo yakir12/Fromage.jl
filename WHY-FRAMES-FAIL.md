@@ -247,14 +247,23 @@ The argument for *deleting* it is real too, and it lives one layer down: fix the
 loop becomes provably dead code. That is worth doing, and it is the only version of "delete the
 retry" that does not amount to hoping.
 
-### Two adjacent exposures, neither of which I changed
+### All three open paths are now retried, from one module
 
-**`Probing.probe_fields` has the same failure mode and no retry at all.** It opens the share 386
-times per run across the two gateways (372 runs + 14 calibrations), each open as vulnerable as a
-frame read's. A single EAGAIN there aborts the run. Its reporting is fixed — it now quotes ffprobe
-instead of asserting corruption — but no retry was added, because adding a second workaround for a
-mount problem is the wrong direction. Worth knowing that this stage is *less* protected than the
-one everybody has been worrying about, not more.
+The retry used to live on the frame reads alone — the *smallest* of the three paths that open the
+share. `ShareIO` now owns every retry in the package and the single definition of "transient":
+
+| path | opens per run | before | now |
+|---|---|---|---|
+| rectification frame reads | ~195 | 4 tries | `ShareIO.capture` |
+| ffprobe probes (both gateways) | ~386 | **none** | `ShareIO.capture` |
+| VideoIO tracking opens | ~372 | **none** | `ShareIO.withretry` |
+
+Probing was the sharpest gap: more opens than the frame-read path, no retry, and a failure there
+aborts the run at verification before any work is done. `main.jl`'s concat is deliberately excluded
+— it touches only `results_dir` on local disk.
+
+The module is built to be deleted. If the mount is made reliable the retries become dead code and
+one file goes away in one piece.
 
 **`PawsomeTracker.OPENVIDEO_LOCK` is load-bearing for a reason it does not claim.** It exists
 because `VideoIO.openvideo` is not thread-safe, which is true and sufficient on its own. But it is

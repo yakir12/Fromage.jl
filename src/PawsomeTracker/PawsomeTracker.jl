@@ -3,7 +3,8 @@ module PawsomeTracker
 using ImageFiltering: Kernel, imfilter!, Algorithm, NoPad
 using OffsetArrays: OffsetMatrix
 using PaddedViews: PaddedView
-using FFMPEG: exe, ffprobe
+using FFMPEG: ffprobe
+using ..ShareIO: ShareIO
 using VideoIO: openvideo, AV_PIX_FMT_GRAY8, aspect_ratio, open_video_out, VideoWriter, VideoReader, close_video_out!, framerate, skipframes, gettime, get_duration
 using ImageDraw: draw!, CirclePointRadius, Path
 using FreeTypeAbstraction: renderstring!, FTFont
@@ -41,8 +42,29 @@ export track, ApriltagRectification
 # so only the open is serialized — every seek/read/decode stays concurrent. Guards both the
 # extrinsic-frame reads (`read_frame_at`, run under `tmap`) and the per-run tracking opens (the
 # `Video` constructor).
+#
+# This lock is also, incidentally, why tracking has never been seen to hit the share failure that
+# plagues the rectification reads: it makes the opens serial, one at a time, ~0.6/s. That is a side
+# effect, not the lock's purpose — do not remove it for concurrency without reading
+# WHY-FRAMES-FAIL.md first.
 const OPENVIDEO_LOCK = ReentrantLock()
-open_gray_video(file) = lock(() -> openvideo(file; target_format = AV_PIX_FMT_GRAY8), OPENVIDEO_LOCK)
+
+# The open is retried like every other read of the share (see `ShareIO`). This path had no retry
+# and ~372 opens per run.
+#
+# `transient` is widened because VideoIO reports an unreadable file, a share failure and a seek past
+# the end alike as a plain `ErrorException` — there is no exit code to inspect, as there is for the
+# two subprocess paths. The cost of that coarseness is that a genuinely broken file is opened three
+# more times before failing; that is cheap, it fails in milliseconds, and every file reaching here
+# has already been probed successfully by the gateway. The alternative is leaving the largest open
+# path on the share unprotected.
+#
+# The lock is taken INSIDE the retried closure, so the backoff sleeps without holding it — retrying
+# under the lock would stall every other open in the process for the duration.
+open_gray_video(file) =
+    ShareIO.withretry(; transient = ShareIO.videoio_transient) do
+        lock(() -> openvideo(file; target_format = AV_PIX_FMT_GRAY8), OPENVIDEO_LOCK)
+    end
 
 # The AprilTag C detector (`apriltag_detector_detect`) is not reentrant: it has global/static state
 # that concurrent calls corrupt, even across distinct per-thread detectors on distinct frames, and
@@ -54,11 +76,18 @@ const APRILTAG_LOCK = ReentrantLock()
 include("diagnose.jl")
 include("apriltag.jl")
 
+# Both branches read the share, so both are retried through `ShareIO` — the probe by `capture`,
+# which retries internally, the VideoIO open by `withretry` with the widened predicate VideoIO's
+# undifferentiated `ErrorException` forces.
 function get_framerate(file)
-    vid_fps = openvideo(framerate, file)
+    vid_fps = ShareIO.withretry(() -> openvideo(framerate, file); transient = ShareIO.videoio_transient)
     !isinf(vid_fps) && return vid_fps
-    txt = exe(` -v error -select_streams v:0 -show_entries stream=r_frame_rate -of default=noprint_wrappers=1:nokey=1 $file`, command=ffprobe, collect=true)
-    parse(Rational{Int}, only(txt))
+    # `ffprobe()` is bound before interpolation, as in `Probing`: ExplicitImports does not see
+    # through a `Cmd` interpolation and reports the import stale if it is called inline.
+    exe = ffprobe()
+    cmd = `$exe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of default=noprint_wrappers=1:nokey=1 $file`
+    txt = String(ShareIO.capture(cmd, "ffprobe could not read the frame rate"))
+    parse(Rational{Int}, strip(txt))
 end
 
 # The sampler advances whole frames, so the only rates it can deliver are `vid_fps / skip`; this is

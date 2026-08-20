@@ -93,6 +93,37 @@ opens each video once, under a lock, and streams from the established handle, at
 opens/s. Rectification opens once per *frame*, concurrently, at ~10 opens/s. The exposure is the
 open, not the bytes.
 
+### One module owns every retry (#68)
+
+`ShareIO` is the only place in the package that retries anything, and the only place that decides
+what "transient" means. It is included first, because all three paths that open the share depend
+on it.
+
+There used to be one retry, on the frame reads, and it covered the *smallest* of the three:
+
+| path | opens per run | before | now |
+|---|---|---|---|
+| rectification frame reads | ~195 | 4 tries | `ShareIO.capture` |
+| ffprobe probes (both gateways) | ~386 | **none** | `ShareIO.capture` |
+| VideoIO tracking opens | ~372 | **none** | `ShareIO.withretry` |
+
+The two subprocess paths were the same operation written twice — run a command against the share,
+drain both pipes, classify the failure by its exit code — so they collapsed into one `capture`, and
+the near-duplicate stderr cleaners in `Rectifications` and `Probing` became one `first_line`.
+
+VideoIO gets `withretry` with a widened predicate rather than `capture`, because it reports an
+unreadable file, a share failure and a seek past the end alike as a bare `ErrorException`; there is
+no exit code to inspect. The price is that a genuinely broken file is opened three more times before
+failing, which is cheap and is stated where it happens. The lock is taken *inside* the retried
+closure so the backoff never sleeps holding it.
+
+`main.jl`'s concat is deliberately left alone: every path it touches is under `results_dir` on local
+disk. The retries are for the share and belong only on reads that cross it.
+
+**The module is built to be deleted.** It compensates for a mount, not for anything in this package.
+If the share is ever made reliable, the retries become dead code and one file goes away in one
+piece — which is the whole reason it is one piece.
+
 `_read_frame` therefore keeps its exponential backoff, and keeps it for a reason that is now
 written down rather than assumed. It is not a concurrency guard; it covers reconnect windows.
 

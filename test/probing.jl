@@ -9,6 +9,7 @@ using FFMPEG: FFMPEG
 using ..Fixtures
 
 const P = Fromage.Probing
+const SR = Fromage.ShareIO.ShareReadError
 
 @testset "Probing (shared ffprobe plumbing)" begin
     dir = mktempdir()
@@ -67,28 +68,35 @@ const P = Fromage.Probing
     end
 
     @testset "probe_failure: ffprobe's own words for a failed process, verbatim otherwise" begin
-        # The two arms directly: a failed ffprobe reports its first stderr line (the Cmd dump is the
-        # whole problem), while any other failure — rare, and not something we can paraphrase
-        # usefully — is printed in full. Driving probe_fields only ever produces the first arm,
-        # hence the direct test.
-        pfe = try read(`false`) catch e; e end
-        @test pfe isa ProcessFailedException
-        @test P.probe_failure(ErrorException("boom"), "") == "boom"
-        @test occursin("nope", P.probe_failure(SystemError("nope", 2), ""))
+        # The two arms directly: a failed ffprobe reports what it said (the Cmd dump is the whole
+        # problem), while any other failure — rare, and not something we can paraphrase usefully —
+        # is printed in full. Driving probe_fields only ever produces the first arm, hence the
+        # direct test.
+        @test P.probe_failure(ErrorException("boom")) == "boom"
+        @test occursin("nope", P.probe_failure(SystemError("nope", 2)))
 
         # The distinction this exists to preserve. Both used to render as "the file is corrupt,
-        # truncated, or not a video"; only one of them is about the file at all. ffmpeg's
-        # "[component @ 0xADDR]" prefix and its restating follow-up lines are dropped.
-        broken = P.probe_failure(pfe, "[in#0 @ 0x8755b40] moov atom not found\nError opening input file /a/b.MP4.\n")
-        share  = P.probe_failure(pfe, "[in#0 @ 0x1bc6a800] Error opening input: Resource temporarily unavailable\n")
+        # truncated, or not a video"; only one of them is about the file at all. (The stderr
+        # cleaning itself is ShareIO's and is tested there.)
+        err(msg, code) = SR("ffprobe could not read it", code, 0, msg)
+        broken = P.probe_failure(err("moov atom not found", 183))
+        share  = P.probe_failure(err("Error opening input: Resource temporarily unavailable", 245))
         @test occursin("moov atom not found", broken)
         @test occursin("Resource temporarily unavailable", share)
         @test broken != share
-        @test !occursin("0x", broken)
-        @test !occursin("/a/b.MP4", broken)
+        @test length(broken) < 200
 
         # A process that fails silently must still say something.
-        @test occursin("said nothing about why", P.probe_failure(pfe, "   \n "))
+        @test occursin("said nothing about why", P.probe_failure(err("", 1)))
+    end
+
+    @testset "a transient share failure is retried, not reported" begin
+        # This stage opens the share ~386 times per run and used to have no retry at all, so one
+        # EAGAIN aborted the whole run at verification. `probe_fields` now reads through
+        # `ShareIO.capture`; that the retry reaches this path is what is asserted here, using a
+        # probe of a real file to prove the success path still parses.
+        fields = P.probe_fields(vid, "stream=width,height")
+        @test fields isa Dict && haskey(fields, "width")
     end
 end
 

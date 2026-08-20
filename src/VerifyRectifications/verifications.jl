@@ -206,11 +206,11 @@ _unwrap_task(e) = e isa TaskFailedException ? _unwrap_task(e.task.result) :
                   e isa CompositeException ? _unwrap_task(first(e.exceptions)) : e
 
 # What corner detection can legitimately fail with, as opposed to a bug here: the frame read raises
-# FrameReadError/IOError/SystemError (see Rectifications._read_frame, which already retried the
-# transient ones); a seek that yields no frame raises DimensionMismatch out of the reshape; and
-# OpenCV reports every C++ error as a plain ErrorException. ErrorException is therefore as narrow as
-# this can honestly get, and it still excludes the MethodError/BoundsError of a bug on our side.
-_detection_failure(e) = e isa FrameReadError || e isa Base.IOError || e isa SystemError ||
+# ShareReadError/IOError/SystemError (see ShareIO, which already retried the transient ones); a seek
+# that yields no frame raises DimensionMismatch out of the reshape; and OpenCV reports every C++
+# error as a plain ErrorException. ErrorException is therefore as narrow as this can honestly get,
+# and it still excludes the MethodError/BoundsError of a bug on our side.
+_detection_failure(e) = e isa ShareReadError || e isa Base.IOError || e isa SystemError ||
                         e isa DimensionMismatch || e isa ErrorException
 
 # How to say it once classified. Every one of these prints short and true, so all of them stay
@@ -219,7 +219,7 @@ _detection_failure(e) = e isa FrameReadError || e isa Base.IOError || e isa Syst
 # This used to special-case the frame read, because it arrived as a `ProcessFailedException` whose
 # `showerror` prints the whole failed `Cmd` — env-baked PATH and LD_LIBRARY_PATH included, some
 # 8 kB — and the canned replacement asserted the one thing nobody had checked: that the file was
-# corrupt. Against the lab share it usually was not. The read now raises a `FrameReadError`
+# corrupt. Against the lab share it usually was not. The read now raises a `ShareReadError`
 # carrying ffmpeg's own stderr, which is both short and accurate ("Resource temporarily
 # unavailable" for a share that reconnected, "moov atom not found" for a file that really is
 # broken), so there is nothing left to substitute.

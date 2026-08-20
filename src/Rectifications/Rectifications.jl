@@ -2,6 +2,7 @@ module Rectifications
 
 using ColorTypes: Gray
 using CoordinateTransformations: AffineMap, IdentityTransformation, LinearMap, PerspectiveMap, Translation
+using ..ShareIO: ShareIO
 using FFMPEG: FFMPEG
 using FileIO: FileIO
 using ImageCore: colorview, normedview
