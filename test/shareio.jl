@@ -74,10 +74,22 @@ const S = ShareIO
         # `exit -1` is what a signalled process reports, and it is uninformative. 137 (SIGKILL, the
         # OOM killer's signature) must be legible: 48 concurrent decoders against 27 GiB files is
         # exactly the shape that would provoke it, and it must never be confused with the share.
+        #
+        # A signal is the one POSIX thing in this module, so this is the one test that has to fork.
+        # Windows has no `termsignal` — Julia reports 0 there — and MSYS's `sh` surfaces its own
+        # kill as the raw wait status (9 << 8 = 2304) in the exit code instead. The share is a
+        # Linux mount and the signal branch is what production exercises; all Windows owes us is
+        # that the kill still arrives as a legible `ShareReadError` rather than a silent success.
         e = grab(() -> S.capture(`sh -c 'kill -9 $$'`, "ffmpeg could not read it"; tries = 1))
         @test e isa S.ShareReadError
-        @test e.signal == 9
-        @test occursin("killed by signal 9", sprint(showerror, e))
+        if Sys.isunix()
+            @test e.signal == 9
+            @test occursin("killed by signal 9", sprint(showerror, e))
+        else
+            @test e.signal == 0
+            @test e.exitcode != 0
+            @test occursin("ffmpeg could not read it", sprint(showerror, e))
+        end
     end
 
     @testset "a persistent failure propagates after the last try" begin
