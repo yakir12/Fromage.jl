@@ -96,9 +96,11 @@ _transient(e) = e isa FrameReadError || e isa Base.IOError || e isa SystemError
 # Read one frame, retrying transient failures.
 #
 # The share this runs against reconnects on its own schedule — about five times an hour, including
-# while the mount sits completely IDLE — and it is mounted `soft`, so the cifs client can hand a
-# reconnect straight to userspace as EAGAIN rather than reissuing the request itself, the way a
-# `hard` mount would. What dies is an `open()` in flight, never a transfer already under way.
+# while the mount sits completely IDLE. It was mounted `soft` (the Linux default), which lets the
+# cifs client hand a reconnect straight to userspace as EAGAIN rather than reissuing the request
+# itself. What dies is an `open()` in flight, never a transfer already under way. The mount has
+# since been moved to `hard`, measured as free (identical throughput over 413,400 reads, no
+# wedges) but NOT yet proven against an actual episode — none occurred while it was watched.
 #
 # These retries are NOT a concurrency guard, and they are not paid for in the normal case. Measured
 # over a 3.5 h paired soak: 101,790 reads, zero failures, and the loop below fired zero times. What

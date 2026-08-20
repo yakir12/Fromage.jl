@@ -166,10 +166,22 @@ Reconnects are overwhelmingly on the **file server**, not the DFS roots: `Instan
 `lces1133cs` against `73` on each of the other two. This is not referral churn; it is one server
 dropping its connection, and it has done so about a thousand times.
 
-`soft` is the operative mount option. On a soft mount the cifs client returns a timed-out or
-reset request to userspace as an error; in-flight requests are marked `MID_RETRY_NEEDED` on
-reconnect and surface as **-EAGAIN**. On a `hard` mount the kernel reissues them itself and the
-application never sees anything. So:
+`soft` is the operative mount option, and **nobody chose it**. The mount is made by
+`~/bin/mount_lu`, which passes only `username`, `password`, `uid`, `gid`, `dir_mode` and
+`file_mode`. Every other option above — `soft`, `vers=3.1.1`, `cache=strict`, `actimeo=1`,
+`closetimeo=1`, `echo_interval=60`, the buffer sizes — is a kernel default. `mount.cifs(8)` is
+explicit:
+
+```
+hard   The program accessing a file on the cifs mounted file system will hang
+       when the server crashes.
+soft   (default) The program accessing a file ... will not hang when the server
+       crashes and will return errors to the user application.
+```
+
+On a soft mount the cifs client returns a timed-out or reset request to userspace as an error;
+in-flight requests are marked `MID_RETRY_NEEDED` on reconnect and surface as **-EAGAIN**. On a
+`hard` mount the kernel reissues them itself and the application never sees anything. So:
 
 > **The retry loop in `_read_frame` is a userspace reimplementation of what `hard` does in the
 > kernel.** It exists because the mount asked the application to do the retrying.
@@ -261,16 +273,91 @@ In rough order of expected value:
    everything else is a workaround. `dmesg` is unreadable here (`kernel.dmesg_restrict = 1`), so
    this needs a root shell: `dmesg | grep -i 'CIFS: VFS:'` carries the reason (timeouts, credential
    renewal, server restarts). Correlate with server-side SMB logs.
-2. **Remount `hard` and re-measure.** This is the change that would make the retry dead code. It
-   trades a failure mode for a different one — `hard` blocks rather than erroring, which interacts
-   badly with the credit stall documented in `CIFS-SHARE-INVESTIGATION.md` §4 — so it must be
-   measured, not assumed. Requires root; could not be tested here.
-3. **Revisit `actimeo=1`/`closetimeo=1`.** Both are unusually aggressive and force constant
-   revalidation, which is pure metadata load on a server that is already unhappy.
+2. **Stay on `hard`.** Done and measured (§5.2): identical throughput, no wedges, no failures. It
+   is free, and it is what the Windows and macOS clients do by default. Make it permanent by adding
+   `,hard` to the option list in `~/bin/mount_lu`, which currently passes only credentials and
+   ownership and inherits `soft` from the kernel. (That script also holds the share password in
+   plaintext at mode 755 — worth moving to a root-owned credentials file with `credentials=`.)
+3. **Revisit `actimeo=1`/`closetimeo=1`.** Both force constant revalidation, which is pure
+   metadata load on a server that is already unhappy. Note these are *defaults*, not choices —
+   raising them is an opt-in, and worth trying only after `hard`.
+
+### 5.1 Why this looks like a Linux problem, because it is one
+
+`soft` being the Linux default, while the other two major SMB clients default to blocking-and-
+retrying, answers the "compare clients" question in `CIFS-SHARE-INVESTIGATION.md` §8.4 before
+anyone runs the comparison:
+
+| client | default behaviour on a reconnect | how to change it |
+|---|---|---|
+| **Linux (cifs.ko)** | `soft` — fails the syscall, EAGAIN reaches the application | add `hard` to the mount options |
+| **Windows** | blocks and retries transparently; relies on SMB3 durable/resilient handles, fails only after the session timeout | `Set-SmbClientConfiguration -SessionTimeout` / `-ExtendedSessionTimeout`; no soft/hard switch exists |
+| **macOS** | `hard` — blocks (the classic Finder beachball on a dead share) | opt into `soft` per-mount with `mount_smbfs -o soft`, or globally via `soft=yes` in `/etc/nsmb.conf` |
+
+A Mac or Windows client reading these same files off this same server would very likely never see
+this failure — not because the share is healthier from there, but because those clients do the
+retrying in the transport layer instead of handing the error up. Which is precisely what
+`_read_frame` was written to do by hand.
 
 Until one of those lands, deleting the retry means accepting that roughly one rectification stage
 in fourteen aborts, and does so on a mount that reconnects while nobody is using it.
 
+
+---
+
+## 5.2 The `hard` mount, measured
+
+The mount was remounted `hard` (identical in every other option) and the same four-arm soak was
+re-run for the same 3.5 hours.
+
+| arm | reads | failures | retries fired | cycle max-dt p50 / p95 / max |
+|---|---|---|---|---|
+| ffmpeg, no retry | 103,350 | **0** | — | 11.25 / 11.58 / 19.74 s |
+| ffmpeg, with retry | 103,350 | **0** | **0** | 11.24 / 11.54 / 28.04 s |
+| bare `open()` | 103,350 | **0** | — | 0.03 / 0.07 / 2.79 s |
+| held handle | 103,350 | **0** | — | 0.41 / 0.96 / 2.93 s |
+
+16 reconnect events, 5 of them on the file server itself. Zero failures, no wedge, no sustained
+D-state, and no latency excursion coinciding with any reconnect (the single 28 s cycle is cycle 1,
+cold start).
+
+**`hard` costs nothing.** That is the solid result:
+
+| | `soft` | `hard` |
+|---|---|---|
+| cycle wall (4 arms, 780 reads) | 24.1 s | **23.8 s** |
+| reads | 407,160 | 413,400 |
+| reconnects | 23 | 16 |
+| failures | 0 | 0 |
+| wedges / uninterruptible stalls | — | **none observed** |
+
+The feared downside — `hard` converting a transient error into an unkillable hang, which the
+credit stall of `CIFS-SHARE-INVESTIGATION.md` §4 makes a real possibility — did not appear in 3.5
+hours and 413,400 reads.
+
+**But it is not the proof it was meant to be.** No destructive episode occurred in *either* soak.
+Across both configurations that is **820,560 reads and 39 reconnects with zero failures**, since
+the one burst at the very start of this work. `hard` was never given the thing it is supposed to
+fix. The experiment was run; it did not fire.
+
+So the state of the claim is: `hard` is theoretically correct (it is what the kernel is for, and
+what the Windows and macOS clients do by default, §5.1), it is measurably free, and it remains
+**unproven** against the actual failure. The way to settle it is not another soak — it is to leave
+the mount `hard` and see whether a frame read ever raises EAGAIN again over weeks of real runs.
+The reporting change makes that observable: if it happens, the issues report will now say
+"Resource temporarily unavailable" instead of blaming the file.
+
+**Keep the retry meanwhile.** Deleting it now, on the strength of a hypothesis that was tested and
+did not get the chance to fail, would be precisely the error this whole investigation exists to
+correct.
+
+### A caveat on the `bare_open` arm
+
+Its p50 of 0.03 s against `held_handle`'s 0.41 s is not evidence that opens are cheap. It reads the
+same 64 KiB at the same offset of each file every time, so with `cache=strict` the client is
+largely serving it locally, while `held_handle` seeks to a random offset and must cross the wire.
+`bare_open` is therefore weaker than intended as a test of the open path, and its zero should not
+be read as "opens are fine".
 
 ---
 
@@ -281,8 +368,9 @@ in fourteen aborts, and does so on a mount that reconnects while nobody is using
 - **Whether an established handle survives what an in-flight `open()` does not.** The `bare_open`
   vs `held_handle` arms were built to answer it and both sat at zero for want of an episode. This
   is the most likely explanation for tracking's immunity and it remains a hypothesis.
-- **Whether `hard` would fix it.** It is the mechanism-level prediction of this report and it could
-  not be tested: no passwordless root here, and the mount is not in `/etc/fstab`.
+- **Whether `hard` fixes it.** Tested (§5.2) and inconclusive: `hard` is free and safe over 413,400
+  reads, but no episode occurred to test it against. This is now a question for weeks of ordinary
+  use, not for another soak.
 - **The true episode frequency.** Two data points — a bad afternoon (4 aborts in 58 iterations) and
   a good night (0 in 522) — do not make a rate.
 - **Whether the corrupt file `C3. clear dense_trees dance/videos/20251125-0909.MP4` is still
