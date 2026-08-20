@@ -44,14 +44,15 @@
 
     @testset "a failing extrinsic frame is dumped to the issues folder" begin
         idir = mktempdir()
-        # a stale file proves the folder is wiped at the start of each run
+        # a file of the caller's own proves the folder they named is only ever added to (#86)
         touch(joinpath(idir, "stale.png"))
         df = check([videorow(file = ART.video, n_corners = (5, 8))]; issues_dir = idir)
         @test flagged(df, 1, "no corners detected")
         @test flagged(df, 1, "saved the extrinsic frame")          # the message points at the file
-        pngs = filter(endswith(".png"), readdir(idir))
-        @test !("stale.png" in pngs)                               # emptied at the start of the run
+        @test isfile(joinpath(idir, "stale.png"))                  # nothing of the caller's is removed
+        run_dir = only(filter(isdir, readdir(idir; join = true)))   # this run's own folder
+        pngs = filter(endswith(".png"), readdir(run_dir; join = true))
         @test length(pngs) == 1                                    # exactly the one failing frame
-        @test filesize(joinpath(idir, only(pngs))) > 0             # a real, non-empty image
+        @test filesize(only(pngs)) > 0                             # a real, non-empty image
     end
 end

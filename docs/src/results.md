@@ -39,6 +39,18 @@ Things to look for:
 - The arena should look right in the top-down view: straight edges straight, circles circular. A warped arena means a bad calibration.
 - The trace should look like a plausible path for your animal.
 
+## The issues folder
+
+If a calibration fails detection — the checkerboard or the AprilTags can't be found in its extrinsic frame — Fromage saves that exact frame so you can see what it saw. The message in the report tells you where it went, e.g.:
+
+```
+row 2 (calibration_id: morning): only 4 of 6 AprilTags detected at the extrinsic frame — saved the extrinsic frame to results_dir/issues/2026-08-20T14-22-05/board_t1.0s.png for inspection
+```
+
+Each run gets its own time-stamped folder under `results_dir/issues`, named for the moment it started, so the folder holds exactly the frames of that run and older runs stay where they are. Nothing here is ever deleted: the folder is yours to clean out whenever you like.
+
+Open the frame and look at it — a blurry, over-exposed, or half-out-of-shot board is usually the whole story, and the fix is a different `extrinsic` timestamp or a better calibration video.
+
 ## Working with the results in Julia
 
 `main` returns a `DataFrame` with one row per run:
