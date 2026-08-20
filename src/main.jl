@@ -1,5 +1,3 @@
-const results_dir = "results_dir"
-
 # Every segment shares one resolution, codec and quality (see diagnose.jl), so a single ffmpeg
 # concat-demuxer call stream-copies them into the final video, rewriting timestamps monotonically.
 #
@@ -54,8 +52,10 @@ end
 # — asserted so the union doesn't leak downstream (JET flags e.g. `length(::DataFrame)` otherwise).
 function gather_rectifications(data_path, calibs_file, defaults, calibration_ids = nothing)
     mkpath(results_dir)
-    cs = load_rectifications(joinpath(data_path, calibs_file); defaults,
-        issues_dir = joinpath(results_dir, "issues"))::Vector{RectificationMethod}
+    # `issues_dir` is left at its default, which Paths derives from `results_dir` — the frames a
+    # failing calibration dumps land under the same output folder as everything else.
+    cs = load_rectifications(joinpath(data_path, calibs_file);
+        defaults)::Vector{RectificationMethod}
     return filter_ids!(cs, calibration_ids, :calibration_id, "calibration_ids")
 end
 

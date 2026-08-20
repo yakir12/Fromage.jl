@@ -237,14 +237,14 @@ function extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
     end
 end
 
-# Save the frame that failed detection into `issues_dir` (created on demand) for the user to
-# inspect, named by the video and extrinsic timestamp — e.g. `board_t1.0s.png`. `get_frame` reads
-# the frame lazily; best effort throughout, returning `nothing` if anything goes wrong.
-function save_issue_frame(issues_dir, file, extrinsic, get_frame)
+# Save the frame that failed detection into this run's issues folder (created on demand) for the
+# user to inspect, named by the video and extrinsic timestamp — e.g. `board_t1.0s.png`. `get_frame`
+# reads the frame lazily; best effort throughout, returning `nothing` if anything goes wrong.
+function save_issue_frame(run_dir, file, extrinsic, get_frame)
     try
         image = get_frame()
-        mkpath(issues_dir)
-        path = joinpath(issues_dir, string(first(splitext(basename(file))), "_t", extrinsic, "s.png"))
+        mkpath(run_dir)
+        path = joinpath(run_dir, string(first(splitext(basename(file))), "_t", extrinsic, "s.png"))
         FileIO.save(path, image)
         return path
     catch e
@@ -262,7 +262,7 @@ function note_saved_frame(issue, saved)
     return string(issue, " — saved the extrinsic frame to ", saved, " for inspection")
 end
 
-function verify_extrinsics!(df::AbstractDataFrame, issues_dir)
+function verify_extrinsics!(df::AbstractDataFrame, run_dir)
     # :file is the canonical resolved path, so grouping on it corner-detects a file reached via different
     # spellings once per (extrinsic, blur, n_corners).
     videos = subset(df, :type => ByRow(passmissing(==("video"))); view = true, skipmissing = true)
@@ -273,7 +273,7 @@ function verify_extrinsics!(df::AbstractDataFrame, issues_dir)
     for (g, k, issue) in zip(gs, ks, issues)
         isnothing(issue) && continue
         # dump the frame the detector saw (deinterlaced/blurred) so the user can see what went wrong
-        saved = save_issue_frame(issues_dir, k.file, k.extrinsic, () -> extrinsic_gray_frame(k.file, k.extrinsic, _vf(k.yadif, k.blur), k.width, k.height))
+        saved = save_issue_frame(run_dir, k.file, k.extrinsic, () -> extrinsic_gray_frame(k.file, k.extrinsic, _vf(k.yadif, k.blur), k.width, k.height))
         blank!(g, :extrinsic)
         push!.(g.issues, note_saved_frame(issue, saved))
     end
@@ -325,7 +325,7 @@ end
 # `family` must be detectable and their metric fit must converge (coplanar, not mis-detected). Reads
 # real frames, so it runs only on otherwise-clean apriltag rows, grouped so one physical file is
 # checked once per (extrinsic, apriltags, family, checker_size).
-function verify_apriltag_extrinsics!(df::AbstractDataFrame, issues_dir)
+function verify_apriltag_extrinsics!(df::AbstractDataFrame, run_dir)
     tags = subset(df, :type => ByRow(passmissing(==("apriltag"))); view = true, skipmissing = true)
     clean = subset(tags, :issues => ByRow(isempty); view = true)
     usable = dropmissing(clean, [:file, :extrinsic, :apriltags, :family, :checker_size]; view = true)
@@ -335,7 +335,7 @@ function verify_apriltag_extrinsics!(df::AbstractDataFrame, issues_dir)
     for (g, k, issue) in zip(gs, ks, issues)
         isnothing(issue) && continue
         # dump the extrinsic frame the tag detector saw so the user can see what went wrong
-        saved = save_issue_frame(issues_dir, k.file, k.extrinsic, () -> collect(PawsomeTracker.read_frame_at(k.file, k.extrinsic)))
+        saved = save_issue_frame(run_dir, k.file, k.extrinsic, () -> collect(PawsomeTracker.read_frame_at(k.file, k.extrinsic)))
         blank!(g, :extrinsic)
         push!.(g.issues, note_saved_frame(issue, saved))
     end
@@ -386,11 +386,13 @@ function verify_unique_calibrations!(df::AbstractDataFrame)
     end
 end
 
-function verifications!(df::AbstractDataFrame, data_path, issues_dir = joinpath("results_dir", "issues"))
+function verifications!(df::AbstractDataFrame, data_path, issues_dir = DEFAULT_ISSUES_DIR)
 
-    # The issues folder is fully transient: it reflects only the current verification run, so it is
-    # wiped up front and recreated lazily by save_issue_frame.
-    rm(issues_dir; recursive = true, force = true)
+    # This run's frames go in a folder of their own, named for the moment the run started, so the
+    # folder reflects only this run without anything being deleted to make that true — `issues_dir`
+    # itself is the caller's, and Fromage only ever adds to it (#86). save_issue_frame creates the
+    # folder on the first frame it dumps, so a run that finds nothing to report writes nothing.
+    run_dir = run_issues_dir(issues_dir)
 
     verify_unique_ids!(df)
 
@@ -443,14 +445,14 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = joinpath(
 
     # the extrinsic time stamp must actually yield a detectable frame; only meaningful once the
     # time stamp itself has been range-checked above
-    verify_extrinsics!(df, issues_dir)
+    verify_extrinsics!(df, run_dir)
 
     # the calibs window must actually contain ≥ 3 detectable-corner frames; runs after
     # verify_extrinsics! so rows whose extrinsic already failed are skipped, not re-scanned
     verify_intrinsics!(df)
 
     # apriltag rows: the extrinsic frame must yield a valid shared reference (tags detectable + coplanar)
-    verify_apriltag_extrinsics!(df, issues_dir)
+    verify_apriltag_extrinsics!(df, run_dir)
 
     verify_unique_calibrations!(df)
 

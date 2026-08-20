@@ -239,6 +239,8 @@ end
     @test length(lines) == nframes + 1 && lines[1] == "time,x,y"
     diag = joinpath(outdir, "results_dir", "diagnostic.mp4")
     @test isfile(diag) && filesize(diag) > 0
+    # nothing failed detection, so no frame was dumped — and the issues folder was never created
+    @test !ispath(joinpath(outdir, "results_dir", "issues"))
 end
 
 @testset "AprilTag: registered stack survives a large pan, the rolling phase, and tag loss" begin
@@ -339,18 +341,51 @@ end
 
 @testset "AprilTag calibration: failing extrinsic frame is dumped to the issues folder" begin
     # the video has four tags; asking for six fails detection at the extrinsic frame, and the frame
-    # is dumped to the issues folder (pointed at a temp dir) for the user to inspect.
+    # is dumped to the issues folder (pointed at a temp dir) for the user to inspect. Each run dumps
+    # into a time-stamped folder of its own, and Fromage never deletes anything in the folder it was
+    # given (#86): a second run adds a second folder, leaving the first run's frame — and whatever
+    # the user keeps there — untouched.
     dir = mktempdir(); idir = mktempdir()
+    keepsake = joinpath(idir, "my_notes.txt")          # the user's own file, in the folder they named
+    write(keepsake, "hands off")
     vid, _, _, _ = make_apriltag_video(dir, "drone")
     open(joinpath(dir, "calibs.csv"), "w") do io
         println(io, "calibration_id,type,file,extrinsic,apriltags,family,checker_size")
         println(io, "drone,apriltag,$vid,0,6,tag36h11,12")
     end
-    df = Fromage.VerifyRectifications.load_rectifications(dir, joinpath(dir, "calibs.csv"); strict = false, issues_dir = idir)
+    verify() = Fromage.VerifyRectifications.load_rectifications(dir, joinpath(dir, "calibs.csv"); strict = false, issues_dir = idir)
+    run_dirs() = filter(isdir, readdir(idir; join = true))
+    frames(d) = filter(endswith(".png"), readdir(d; join = true))
+
+    df = verify()
     @test any(m -> occursin("only 4 of 6 AprilTags", m), only(df.issues))
     @test any(m -> occursin("saved the extrinsic frame", m), only(df.issues))
-    pngs = filter(endswith(".png"), readdir(idir))
-    @test length(pngs) == 1 && filesize(joinpath(idir, only(pngs))) > 0
+    first_run = only(run_dirs())
+    @test length(frames(first_run)) == 1 && filesize(only(frames(first_run))) > 0
+
+    df2 = verify()
+    @test any(m -> occursin("saved the extrinsic frame", m), only(df2.issues))
+    both = run_dirs()
+    @test length(both) == 2 && first_run in both       # the second run added a folder, it didn't replace one
+    @test all(d -> length(frames(d)) == 1, both)       # each folder holds only its own run's frame
+    @test isfile(only(frames(first_run)))              # the first run's frame survived the second run
+    @test read(keepsake, String) == "hands off"        # and so did the user's file
+end
+
+@testset "issue folders never collide" begin
+    # run_issues_dir names a folder for the second the run started and counts past any folder that
+    # second already has, which is what keeps back-to-back runs apart. It only names the folder —
+    # save_issue_frame creates it — so a run with nothing to report leaves the issues folder alone.
+    P = Fromage.Paths
+    d = mktempdir()
+    a = P.run_issues_dir(d); mkpath(a)
+    b = P.run_issues_dir(d); mkpath(b)
+    c = P.run_issues_dir(d)
+    @test allunique((a, b, c))
+    @test all(==(d) ∘ dirname, (a, b, c))
+    @test !ispath(c)
+    # no colons in the stamp: these paths have to be creatable on Windows too
+    @test !occursin(':', basename(a))
 end
 
 @testset "reference_frame reports failures, and only the builder throws" begin

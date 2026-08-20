@@ -11,6 +11,7 @@ using DataFrames: AbstractDataFrame, ByRow, DataFrame, Not, allowmissing!, compl
 using ..Gateway: backfill!, blank!, read_per_file!, read_rows, report_issues, resolve_paths!,
     verify!
 using ..Parsing: Parsing, MyTemporal, parseto!
+using ..Paths: DEFAULT_ISSUES_DIR, run_issues_dir
 using ..Probing: frame_geometry, is_interlaced, no_video_stream, parse_sample_aspect, probe_fields
 using MAT: MAT, matread
 using OhMyThreads: OhMyThreads, tmap
@@ -27,15 +28,17 @@ include("parsers.jl")
 include("verifications.jl")
 
 # `issues_dir` is where the extrinsic frame of a calibration that fails checkerboard/AprilTag
-# detection is dumped for inspection (see `verifications!`); it is emptied at the start of every run.
-function load_rectifications(file; strict = true, defaults = (;), issues_dir = joinpath("results_dir", "issues"))
+# detection is dumped for inspection (see `verifications!`). Every run writes into a new time-stamped
+# folder of its own inside it, so what a run dumped is exactly what its folder holds; nothing here is
+# ever deleted, including anything the user keeps in the folder they name.
+function load_rectifications(file; strict = true, defaults = (;), issues_dir = DEFAULT_ISSUES_DIR)
     data_path = dirname(file)
     load_rectifications(data_path, file; strict, defaults, issues_dir)
 end
 
 # `defaults` globally replaces the hardcoded fallbacks of the whitelisted rectification parameters
 # (see DEFAULTS in parsers.jl); the hierarchy is csv cell → `defaults` → hardcoded/probed value.
-function load_rectifications(data_path, file; strict = true, defaults = (;), issues_dir = joinpath("results_dir", "issues"))
+function load_rectifications(data_path, file; strict = true, defaults = (;), issues_dir = DEFAULT_ISSUES_DIR)
     defaults = resolve_defaults(defaults)   # fail fast on unknown keys / unconvertible values
     csvrows = read_rows(file, COLUMNS, "calibration")
 
