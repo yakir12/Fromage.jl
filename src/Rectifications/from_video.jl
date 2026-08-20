@@ -26,30 +26,12 @@ _cmd(file, t, ::Missing) = `$(FFMPEG.ffmpeg()) -hide_banner -loglevel error -ss 
 _cmd(file, t, vf) = `$(FFMPEG.ffmpeg()) -hide_banner -loglevel error -ss $t -i $file -frames:v 1 -vf $vf -f rawvideo -pix_fmt gray pipe:1`
 
 
-# What `_read_frame` retries: everything a flaky share can plausibly do to a frame read. ffmpeg
-# exiting nonzero (`ProcessFailedException` — how an EAGAIN against the share surfaces, since it is
-# ffmpeg itself that fails), and the Julia-side spawn/pipe failures (`IOError`, `SystemError`).
-# Everything else is not transient, and must surface at once rather than after four attempts.
-_transient(e) = e isa ProcessFailedException || e isa Base.IOError || e isa SystemError
-
-# Read one frame, retrying transient failures. EAGAIN ("Resource temporarily unavailable") from
-# the CIFS share is transient by definition, so a few backoff retries ride out residual blips even
-# under the concurrency limit. A persistent failure still rethrows after the last try.
-function _read_frame(cmd; tries = 4)
-    for i in 1:(tries - 1)
-        try
-            return read(cmd)
-        catch e
-            _transient(e) || rethrow()
-            sleep(0.2 * 2^(i - 1))          # 0.2s, 0.4s, 0.8s backoff
-        end
-    end
-    return read(cmd)   # last attempt outside the try, so the real error propagates and the
-end                    # function provably never returns `nothing`
+# Read one frame off the share. Every retry in this package lives in `ShareIO`, including the one
+# that used to sit here; see that module for what the share does and why this is needed at all.
+_read_frame(file, t, vf) = ShareIO.capture(_cmd(file, t, vf), "ffmpeg could not read the frame at $(t)s")
 
 function _frame_at(file, t, vf, w, h)
-    cmd = _cmd(file, t, vf)
-    buf = Base.acquire(() -> _read_frame(cmd), READ_SEM[])   # bound concurrent opens against the share
+    buf = _read_frame(file, t, vf)
     return permutedims(reshape(buf, w, h))
 end
 

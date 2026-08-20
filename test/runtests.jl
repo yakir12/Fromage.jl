@@ -12,6 +12,7 @@ include("harness.jl")
     include("quality.jl")
     # Only on the pinned CI minor — see the header of jet.jl.
     VERSION.major == 1 && VERSION.minor == 11 && include("jet.jl")
+    include("shareio.jl")
     include("parsing.jl")
     include("probing.jl")
     include("rectifications.jl")

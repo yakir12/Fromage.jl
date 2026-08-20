@@ -25,12 +25,18 @@
         @test flagged(df, 1, "ffmpeg could not read the frame")
         @test !flagged(df, 1, "LD_LIBRARY_PATH")
         @test length(only(filter(contains("corner detection"), df.issues[1]))) < 200
+        # This fixture is genuinely truncated, and now says so in ffmpeg's own words. The report
+        # used to assert "the file is corrupt, truncated, or not a video" for EVERY failed read,
+        # including a share that merely reconnected mid-open — the one case where that sentence
+        # is false and sends the user looking at their data instead of their mount.
+        @test flagged(df, 1, "moov atom not found")
     end
 
-    @testset "failures that are not a process dump are still shown in full" begin
-        # Only the ProcessFailedException is replaced, and only because printing it means printing
-        # the whole `Cmd`. The others say something specific about this file — a DimensionMismatch
-        # is what an empty seek reshapes into — so they must keep reaching the user verbatim.
+    @testset "failures are shown in full" begin
+        # Nothing is substituted any more: a failed read arrives as a FrameReadError carrying
+        # ffmpeg's own (short) stderr, and the rest say something specific about this file — a
+        # DimensionMismatch is what an empty seek reshapes into — so all of them reach the user
+        # verbatim.
         e = DimensionMismatch("new dimensions (640, 480) must be consistent with array length 0")
         @test VRect._failure_message(e) == sprint(showerror, e)
         @test occursin("array length 0", VRect._failure_message(e))

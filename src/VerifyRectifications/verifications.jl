@@ -206,25 +206,24 @@ _unwrap_task(e) = e isa TaskFailedException ? _unwrap_task(e.task.result) :
                   e isa CompositeException ? _unwrap_task(first(e.exceptions)) : e
 
 # What corner detection can legitimately fail with, as opposed to a bug here: the frame read raises
-# ProcessFailedException/IOError/SystemError (see Rectifications._read_frame, which already retried
-# the transient ones); a seek that yields no frame raises DimensionMismatch out of the reshape; and
-# OpenCV reports every C++ error as a plain ErrorException. ErrorException is therefore as narrow as
-# this can honestly get, and it still excludes the MethodError/BoundsError of a bug on our side.
-_detection_failure(e) = e isa ProcessFailedException || e isa Base.IOError || e isa SystemError ||
+# ShareReadError/IOError/SystemError (see ShareIO, which already retried the transient ones); a seek
+# that yields no frame raises DimensionMismatch out of the reshape; and OpenCV reports every C++
+# error as a plain ErrorException. ErrorException is therefore as narrow as this can honestly get,
+# and it still excludes the MethodError/BoundsError of a bug on our side.
+_detection_failure(e) = e isa ShareReadError || e isa Base.IOError || e isa SystemError ||
                         e isa DimensionMismatch || e isa ErrorException
 
-# How to say it once classified. `showerror` on a ProcessFailedException prints the whole failed
-# `Cmd` — env-baked PATH and LD_LIBRARY_PATH included, some 8 kB — which lands verbatim in the
-# user-facing issues report and says nothing anyone can act on (as in `Probing.probe_failure`; the
-# wording differs only because this process is ffmpeg reading a frame). The rest (an IOError, a
-# DimensionMismatch out of an empty seek) print short and stay verbatim.
+# How to say it once classified. Every one of these prints short and true, so all of them stay
+# verbatim.
 #
-# One method with a branch, rather than a pair dispatching on the exception type: a method whose
-# whole body is a string literal is const-folded away, so its instrumentation never runs and
-# coverage reports the line as missed even though the tests exercise it.
-_failure_message(e) = e isa ProcessFailedException ?
-    "ffmpeg could not read the frame (the file is corrupt, truncated, or not a video)" :
-    sprint(showerror, e)
+# This used to special-case the frame read, because it arrived as a `ProcessFailedException` whose
+# `showerror` prints the whole failed `Cmd` — env-baked PATH and LD_LIBRARY_PATH included, some
+# 8 kB — and the canned replacement asserted the one thing nobody had checked: that the file was
+# corrupt. Against the lab share it usually was not. The read now raises a `ShareReadError`
+# carrying ffmpeg's own stderr, which is both short and accurate ("Resource temporarily
+# unavailable" for a share that reconnected, "moov atom not found" for a file that really is
+# broken), so there is nothing left to substitute.
+_failure_message(e) = sprint(showerror, e)
 
 function extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
     try
