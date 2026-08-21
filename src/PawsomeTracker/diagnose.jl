@@ -140,8 +140,12 @@ end
 canvas_prototype(s::RectifiedScene) = Matrix{Gray{N0f8}}(undef, length.(s.indices)...)
 update_ratio!(::RectifiedScene, _) = nothing
 
+# `convert`, not `Gray{N0f8}.(img)`: the frame handed here is a slice of the stack, which stores
+# `Gray{N0f8}` already (#27), so the broadcast was an identity copy of the whole frame on every
+# written frame. `convert(AbstractArray{T}, A)` returns `A` itself when the eltype matches and
+# converts otherwise, so the fallback for anything else is unchanged.
 function (s::RectifiedScene)(img, point)
-    wimg = warp(Gray{N0f8}.(img), s.real2image, s.indices; fillvalue = zero(Gray{N0f8}))
+    wimg = warp(convert(AbstractArray{Gray{N0f8}}, img), s.real2image, s.indices; fillvalue = zero(Gray{N0f8}))
     return wimg, CartesianIndex(Tuple(round.(Int, s.image2real(point))))
 end
 
