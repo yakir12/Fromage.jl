@@ -55,10 +55,10 @@ lens["_first_critical"] = @benchmarkable R._first_critical($K)
 lens["forward, 640 px"] = @benchmarkable [R.lens_distortion(v, $K) for v in $PIXELS]
 lens["inverse, 640 px"] = @benchmarkable [R.inv_lens_distortion(v, $K, $RSTAR) for v in $PIXELS]
 
-# An only_scale rectification: no video is read when `diagnostic` is nothing, so this is a pure
-# pair of coordinate maps.
-const RECT = R.from_scale(; file = "unread.mp4", extrinsic = 0, scale = 0.05, aspect = 1.0,
-    center = missing, north = missing, width = 640, height = 480)
+# An only_scale rectification: no video is read unless `rectification_diagnostics` asks for one, so
+# this is a pure pair of coordinate maps.
+const RECT = R.from_scale(; file = "unread.mp4", extrinsic = 0, calibration_id = "bench",
+    scale = 0.05, aspect = 1.0, center = missing, north = missing, width = 640, height = 480)
 const IMAGE_PTS = vec([SVector(float(r), float(c)) for r in 1:16:480, c in 1:16:640])
 const REAL_PTS = map(RECT.image2real, IMAGE_PTS)
 

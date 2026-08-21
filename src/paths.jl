@@ -9,6 +9,11 @@ using Dates: format, now, @dateformat_str
 # docs/src/results.md): the tracks, the diagnostic videos, and the issue frames below.
 const results_dir = "results_dir"
 
+# One warped extrinsic frame per calibration, written only when a caller asks for them (`main`'s
+# `rectification_diagnostics`). Derived here like every other output location, so there is still one
+# string to change.
+const rectifications_dir = joinpath(results_dir, "rectifications")
+
 # The parent of the per-run issue folders (see `run_issues_dir`), and the default a caller who names
 # no folder of their own gets.
 const DEFAULT_ISSUES_DIR = joinpath(results_dir, "issues")

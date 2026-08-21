@@ -49,6 +49,8 @@ Fromage.only_track("path/to/data"; runs_file = "runs.csv", run_ids = ["run1", "l
 
 `main` itself also accepts `run_ids` to process only a subset of the runs (only the calibrations those runs reference are built). Every id you list must exist: if even one does not, the run stops with an error naming it and listing the ids that do exist, rather than quietly processing the ones that matched.
 
+`main` and `only_rectify` also accept `rectification_diagnostics = true`, which saves each calibration's warped extrinsic frame to `results_dir/rectifications/` so you can check a calibration before tracking against it — see [the rectification images](results.md#The-rectification-images).
+
 ## Changing a default for all rows at once
 
 The default of every *tuning* column can be overridden globally from `main`, so you don't have to fill in the same value on every row. The hierarchy is: a csv cell always wins over a global default, which wins over the built-in default (including the value probed from the video, for `yadif` and `fps`):

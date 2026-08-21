@@ -159,15 +159,16 @@ end
 # however, are read off a GUI (Gimp, Photoshop) by hand, so they are:
 # 1. pixel coordinates with width first and height second, (w, h)
 # 2. at an aspect ratio of 1, whatever `aspect` says
-function from_video(; file, extrinsic, start, stop, temporal_step, yadif, blur, width, height,
-        n_corners, checker_size, aspect, radial_parameters, center, north, diagnostic = nothing)
+function from_video(; file, extrinsic, calibration_id, start, stop, temporal_step, yadif, blur,
+        width, height, n_corners, checker_size, aspect, radial_parameters, center, north,
+        rectification_diagnostics::Bool = false)
     vf = _vf(yadif, blur)
     intrinsic_task = Threads.@spawn extract_intrinsics(file, start, stop, temporal_step, vf, width, height, n_corners)
     extrinsic_corners = get_corners(file, extrinsic, vf, width, height, n_corners)
     ismissing(extrinsic_corners) && error("no corners detected at extrinsic time stamp")
     imgpointss = fetch(intrinsic_task)
     push!(imgpointss, extrinsic_corners)
-    return _rectification(file, extrinsic, imgpointss, width, height, n_corners, checker_size, aspect, radial_parameters, center, north, diagnostic)
+    return _rectification(file, extrinsic, calibration_id, imgpointss, width, height, n_corners, checker_size, aspect, radial_parameters, center, north, rectification_diagnostics)
 end
 
 """
@@ -183,16 +184,16 @@ than flagged; everything else (`yadif`, `blur`, `n_corners`, `checker_size`, `as
 DESIGN-HISTORY.md for why this asymmetry is deliberate.
 """
 function from_extrinsic(; file, extrinsic, yadif, blur, width, height, n_corners, checker_size,
-        aspect, center, north, diagnostic = nothing)
+        aspect, center, north, calibration_id, rectification_diagnostics::Bool = false)
     vf = _vf(yadif, blur)
     extrinsic_corners = get_corners(file, extrinsic, vf, width, height, n_corners)
     ismissing(extrinsic_corners) && error("no corners detected at extrinsic time stamp")
-    return _rectification(file, extrinsic, [extrinsic_corners], width, height, n_corners, checker_size, aspect, 0, center, north, diagnostic)
+    return _rectification(file, extrinsic, calibration_id, [extrinsic_corners], width, height, n_corners, checker_size, aspect, 0, center, north, rectification_diagnostics)
 end
 
 # Shared tail of both constructors above: fit the camera model to the collected views (the
 # extrinsic frame is always the LAST view) and compose the transform pipeline off its pose.
-function _rectification(file, extrinsic, imgpointss, width, height, n_corners, checker_size, aspect, radial_parameters, center, north, diagnostic)
+function _rectification(file, extrinsic, calibration_id, imgpointss, width, height, n_corners, checker_size, aspect, radial_parameters, center, north, rectification_diagnostics)
     objpoints = XYZ.(Tuple.(CartesianIndices((0:(n_corners[1] - 1), 0:(n_corners[2] - 1), 0:0))))
     # (height, width), not (width, height): every point handed to OpenCV lives in the TRANSPOSED
     # view (see `get_corners` — the frame goes in as `reshape(img, 1, h, w)` and OpenCV.jl's `Mat`
@@ -205,7 +206,7 @@ function _rectification(file, extrinsic, imgpointss, width, height, n_corners, c
     t = ts[extrinsic_index]
     image2real, real2image = _maps(R, t, frow, fcol, crow, ccol, k, checker_size, width, height, aspect, center, north)
     ratio = checker_size/checker_size_pixel(extrinsic_corners, n_corners)
-    _diagnostic(diagnostic, file, extrinsic, width, height, ratio, real2image)
+    _diagnostic(rectification_diagnostics, file, extrinsic, calibration_id, width, height, ratio, real2image)
     return (; image2real, real2image, ratio, width, height)
 end
 
@@ -223,12 +224,22 @@ function _maps(R, t, frow, fcol, crow, ccol, k, checker_size, width, height, asp
     return add_center_north(image2real, real2image, center, north, aspect)
 end
 
-# Save the warped extrinsic frame as a JPEG into the `diagnostic` directory (a no-op when none
-# was requested) — a quick visual check that the rectification looks right.
-function _diagnostic(diagnostic, file, extrinsic, width, height, ratio, real2image)
-    isnothing(diagnostic) && return
-    warp_trans = get_warp(ratio, real2image)
-    imgw = warp_extrinsic(file, extrinsic, width, height, warp_trans)
-    FileIO.save(joinpath(diagnostic, string(first(splitext(basename(file))), "_$extrinsic.jpg")), parent(imgw))
+# Save the warped extrinsic frame (a no-op unless asked) — a quick visual check that the
+# rectification looks right, available as soon as the rectification is built rather than after every
+# run has been tracked. `rectification_diagnostics` is the same flag `main` takes, passed straight
+# down, so there is one name and one type for it the whole way.
+#
+# The file is named by `calibration_id`, which is what lets a reader match an image back to its csv
+# row — and is unique, where the video/extrinsic pair this used to be named after is not: two video
+# rows differing only in `center` are not duplicates by `verify_unique_calibrations!` and warp
+# differently, so one would have silently overwritten the other.
+#
+# `mkpath` here rather than in the caller keeps the function correct when called on its own, and is
+# safe under the builders' `tmap`: it tolerates the directory already existing.
+function _diagnostic(rectification_diagnostics, file, extrinsic, calibration_id, width, height, ratio, real2image)
+    rectification_diagnostics || return
+    imgw = warp_extrinsic(file, extrinsic, width, height, get_warp(ratio, real2image))
+    mkpath(rectifications_dir)
+    FileIO.save(joinpath(rectifications_dir, string(calibration_id, ".jpg")), parent(imgw))
     return
 end
