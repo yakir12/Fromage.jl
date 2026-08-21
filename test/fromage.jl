@@ -9,49 +9,8 @@ using Fromage
 using DataFrames: DataFrame, nrow
 using StaticArrays: SVector
 using MAT: matwrite
-using AprilTags: getAprilTagImage, tag36h11
-using FFMPEG: ffmpeg_exe
 using ..Fixtures
 
-# A synthetic "drone" video for the AprilTag pipeline: four tag36h11 tags fixed on a ground canvas, a
-# dark disc target moving along a known straight ground path, and a per-frame pan (a cropping window
-# sliding over the larger ground canvas) that stands in for drone motion — registration must cancel
-# it. Encoded losslessly (-qp 0) so the tags stay crisp for detection. `checker_size = cell = 8` (tag
-# cells are 8 px on the ground) makes the recovered metric unit equal one ground pixel, so the tracked
-# cm path is directly comparable to `groundpath`. `amp` is the pan amplitude (px; at most 59 to stay
-# inside the canvas margins) and frames listed in `occlude` get the first tag painted over (a lost
-# tag ⇒ that frame cannot register). Returns (basename, groundpath::Vector{(row, col)},
-# start_location::(x, y) of the disc in frame 1, nframes).
-function make_apriltag_video(dir, name; H = 480, W = 480, GH = 600, GW = 600, nframes = 60, fps = 25, tw = 12,
-                             amp = 40, occlude = Int[])
-    cell = 8                                            # ground px per tag cell ⇒ 8-cell black square = 64 px
-    upscale(t) = UInt8.(kron(Int.(t), ones(Int, cell, cell)))
-    tagu8(id) = UInt8.(255 .* (Float64.(getAprilTagImage(id, tag36h11)) .> 0.5))
-    ground = fill(0xff, GH, GW)                         # white background with quiet zones around each tag
-    for (p, id) in zip([(150, 150), (150, 370), (370, 150), (370, 370)], 0:3)
-        r, c = p; ground[r+1:r+80, c+1:c+80] .= upscale(tagu8(id))
-    end
-    rad = tw ÷ 2
-    gr(k) = 260.0 + 40 * (k - 1) / (nframes - 1)        # disc ground path (row, col): a straight line
-    gc(k) = 260.0 + 60 * (k - 1) / (nframes - 1)
-    oy(k) = round(Int, 60 + amp * sin(2π * (k - 1) / nframes))   # drone pan (crop offset), within the margins
-    ox(k) = round(Int, 60 + amp * cos(2π * (k - 1) / nframes))
-    raw = joinpath(dir, "$name.raw")
-    open(raw, "w") do io
-        for k in 1:nframes
-            g = copy(ground); r0 = gr(k); c0 = gc(k)
-            for i in floor(Int, r0 - rad):ceil(Int, r0 + rad), j in floor(Int, c0 - rad):ceil(Int, c0 + rad)
-                (i - r0)^2 + (j - c0)^2 ≤ rad^2 && (g[i, j] = 0x00)
-            end
-            k in occlude && (g[151:230, 151:230] .= 0xff)               # paint over the first tag
-            write(io, vec(permutedims(g[oy(k)+1:oy(k)+H, ox(k)+1:ox(k)+W])))   # row-major gray for ffmpeg
-        end
-    end
-    ffmpeg_exe(`-y -loglevel error -f rawvideo -pix_fmt gray -s $(W)x$(H) -r $fps -i $raw -pix_fmt yuv420p -qp 0 $(joinpath(dir, "$name.mp4"))`)
-    groundpath = [(gr(k), gc(k)) for k in 1:nframes]
-    start_location = (round(Int, gc(1) - ox(1) + 1), round(Int, gr(1) - oy(1) + 1))   # disc (x, y) in frame 1
-    return "$name.mp4", groundpath, start_location, nframes
-end
 
 @testset "Fromage end-to-end (main)" begin
     dir = mktempdir()

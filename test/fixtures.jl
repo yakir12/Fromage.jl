@@ -7,9 +7,12 @@ module Fixtures
 
 using FFMPEG: FFMPEG
 using Statistics: mean
+using AprilTags: getAprilTagImage, tag36h11
+using StaticArrays: SVector, SMatrix
 
 export make_video, make_checkerboard_video, make_corrupt_video, make_target_video,
-    tracking_rmse, probe_stream, probe_frames
+    tracking_rmse, probe_stream, probe_frames,
+    make_apriltag_video, drone_pose, apriltag_ground, render_pose, pose_apply
 
 # ---------------------------------------------------------------------------
 # Video artifacts.
@@ -81,6 +84,178 @@ end
 "RMSE (in stored-frame pixels) between tracked coordinates and the ground-truth closure."
 function tracking_rmse(ij, expected; skip = 1, offset = 0)
     sqrt(mean([sum(abs2, Tuple(rc) .- expected(i; skip, offset)) for (i, rc) in enumerate(ij)]))
+end
+
+# ---------------------------------------------------------------------------
+# AprilTag drone footage.
+# ---------------------------------------------------------------------------
+#
+# One static ground plane carrying four tags and a moving disc, filmed by a drone whose pose
+# changes every frame. The drone's motion is expressed as a `ground -> image` homography per
+# frame, and the frame is rendered by looking that homography up backwards — which makes the
+# whole fixture analytic: the disc's image position is `pose_apply(H_k, ground_xy(k))`, and its
+# position in the REFERENCE frame is `pose_apply(H_1, ground_xy(k))` no matter what `H_k` is.
+# That last invariant is the ground truth the AprilTag pipeline is measured against, since
+# registration exists precisely to cancel `H_k`.
+
+# `pose_apply` is deliberately a local re-implementation of the source's `apply_h` rather than an
+# import of it: this is the ground truth the source is checked against, so it must not be able to
+# fail in step with the code under test.
+pose_apply(H, p) = (v = H * SVector(Float64(p[1]), Float64(p[2]), 1.0); SVector(v[1] / v[3], v[2] / v[3]))
+
+# Ground layout, in ground-canvas pixels. `getAprilTagImage` returns the 10x10 cell image — the
+# 8x8 black-border square plus one white quiet-zone cell all round — so each tag block is
+# 10 * TAG_CELL px square. TAG_CELL is also what the calibs row declares as `checker_size`, which
+# makes one recovered metric unit exactly one ground pixel and the tracked cm path therefore
+# directly comparable to the intended ground path.
+const TAG_CELL = 8
+const TAG_BLOCKS = [(150, 150), (150, 370), (370, 150), (370, 370)]   # (row, col) of each block
+
+"The static ground plane: white, with tag36h11 ids 0:3 burned in at `TAG_BLOCKS`."
+function apriltag_ground(GH = 600, GW = 600)
+    upscale(t) = UInt8.(kron(Int.(t), ones(Int, TAG_CELL, TAG_CELL)))
+    tagu8(id) = UInt8.(255 .* (Float64.(getAprilTagImage(id, tag36h11)) .> 0.5))
+    ground = fill(0xff, GH, GW)
+    for ((r, c), id) in zip(TAG_BLOCKS, 0:3)
+        ground[r+1:r+10TAG_CELL, c+1:c+10TAG_CELL] .= upscale(tagu8(id))
+    end
+    return ground
+end
+
+# A drone pose, as the image-space motion it induces, composed from interpretable degrees of
+# freedom about the fixed point `(cx, cy)` — pass the frame centre for the rotations a drone
+# actually makes. A planar scene can only ever be seen through a homography, and these knobs reach
+# every one such a camera produces: the six rigid-body degrees of freedom, plus skew.
+# (A full homography has eight; the eighth is non-uniform scale, which a camera with square pixels
+# cannot produce, so it is deliberately absent rather than overlooked.)
+#
+#   dx, dy  translation (px)          the drone flying over the ground   (x, y)
+#   zoom    uniform scale             altitude                           (z)
+#   yaw     in-plane rotation (rad)   spinning about the vertical axis
+#   pitch   projective tilt (rad)     nose up/down: the far ground edge converges
+#   roll    projective tilt (rad)     banking left/right
+#   shear   pure skew                 not a drone DOF at all; a separate knob so skew can be
+#                                     exercised on its own rather than only where a physical
+#                                     pose happens to induce it
+#
+# pitch/roll enter through the projective row `[px py 1]`. For a nadir camera at height `alt` px,
+# a tilt of `phi` induces `tan(phi) / alt`, so a test can ask for "12 degrees of pitch" and get a
+# displacement of the right physical size instead of a bare 3e-4.
+function drone_pose(; dx = 0.0, dy = 0.0, zoom = 1.0, yaw = 0.0, pitch = 0.0, roll = 0.0,
+                      shear = 0.0, alt = 1000.0, cx = 0.0, cy = 0.0)
+    # NB StaticArrays' constructor is COLUMN-major; each line below is one column.
+    T(x, y) = SMatrix{3, 3, Float64}(1, 0, 0, 0, 1, 0, x, y, 1)
+    R = SMatrix{3, 3, Float64}(cos(yaw), sin(yaw), 0, -sin(yaw), cos(yaw), 0, 0, 0, 1)
+    S = SMatrix{3, 3, Float64}(zoom, 0, 0, 0, zoom, 0, 0, 0, 1)
+    K = SMatrix{3, 3, Float64}(1, 0, 0, shear, 1, 0, 0, 0, 1)
+    P = SMatrix{3, 3, Float64}(1, 0, tan(roll) / alt, 0, 1, tan(pitch) / alt, 0, 0, 1)
+    H = T(cx + dx, cy + dy) * P * S * R * K * T(-cx, -cy)
+    return H / H[3, 3]
+end
+
+# Render one frame: for every image pixel, find where it came from on the ground plane
+# (`inv(H)`) and sample there, bilinearly, so tag edges stay smooth under a non-integer transform
+# and the detector keeps its sub-pixel corner accuracy. An integer translation reduces to an exact
+# pixel copy, which is what keeps a plain-pan fixture bit-identical to the crop it used to be.
+# Reads off the canvas return the background white.
+function render_pose(ground, H, height, width)
+    Hinv = inv(H)
+    out = Matrix{UInt8}(undef, height, width)
+    GH, GW = size(ground)
+    @inbounds for j in 1:width, i in 1:height
+        v = Hinv * SVector(Float64(j), Float64(i), 1.0)
+        x = v[1] / v[3]
+        y = v[2] / v[3]
+        x0 = floor(Int, x)
+        y0 = floor(Int, y)
+        if x0 < 1 || y0 < 1 || x0 >= GW || y0 >= GH
+            out[i, j] = 0xff
+            continue
+        end
+        fx = x - x0
+        fy = y - y0
+        out[i, j] = round(UInt8, (1 - fy) * ((1 - fx) * ground[y0, x0] + fx * ground[y0, x0+1]) +
+                                      fy  * ((1 - fx) * ground[y0+1, x0] + fx * ground[y0+1, x0+1]))
+    end
+    return out
+end
+
+# The disc, burned into a copy of the ground plane at ground position `(r0, c0)`.
+function draw_disc(ground, r0, c0, tw)
+    g = copy(ground)
+    rad = tw / 2
+    for i in floor(Int, r0 - rad):ceil(Int, r0 + rad), j in floor(Int, c0 - rad):ceil(Int, c0 + rad)
+        (i - r0)^2 + (j - c0)^2 <= rad^2 && (g[i, j] = 0x00)
+    end
+    return g
+end
+
+"""
+    make_apriltag_video(dir, name; kwargs...)
+
+A synthetic drone flight over four stationary tag36h11 tags: a dark disc travels a known straight
+line across the ground plane while the drone pose changes every frame. Encoded losslessly (`-qp 0`)
+so the tags stay crisp for detection.
+
+`pose(k)` supplies frame `k`'s image-space drone motion (a 3x3 homography, e.g. from `drone_pose`),
+composed onto the fixed crop that places the `height` x `width` frame in the middle of the
+`GH` x `GW` ground canvas. The default is the legacy circular pan of amplitude `amp` px — pure
+translation, and bit-identical to the crop it used to be implemented as. Frames listed in
+`occlude` get the first tag painted over, so that frame cannot register.
+
+Returns a NamedTuple; its first four fields are positional-destructuring compatible with the
+older `(file, groundpath, start_location, nframes)` form.
+
+  * `file`           the video's basename in `dir`
+  * `groundpath`     the disc's `(row, col)` on the ground canvas, per frame
+  * `start_location` the disc's `(x, y)` in frame 1, as the runs CSV wants it
+  * `nframes`
+  * `expected_ref(k)` the disc's `(x, y)` in the REFERENCE frame (frame 1) at frame `k`. Independent
+    of `pose`, because registration is supposed to cancel it — this is the ground truth a tracked
+    cm coordinate is checked against, via `pose_apply(ref.M, expected_ref(k))`.
+  * `poses[k]`       frame `k`'s full ground -> image homography
+  * `image_xy(k)`    the disc's true `(x, y)` in frame `k` itself
+"""
+function make_apriltag_video(dir, name; H = 480, W = 480, GH = 600, GW = 600,
+                             nframes = 60, fps = 25, tw = 12, amp = 40, pose = nothing,
+                             occlude = Int[])
+    ox0, oy0 = (GW - W) ÷ 2, (GH - H) ÷ 2                   # the fixed crop: ground -> frame
+    turn(k) = 2π * (k - 1) / nframes
+    # The default flight is the legacy circular pan, expressed as a pose. Its offsets are rounded
+    # exactly as the crop used to round them (`round(Int, ox0 + amp*cos)`, not `ox0 + round(...)`
+    # — those differ on a tie), so the render stays an exact pixel copy of that crop.
+    poses = if isnothing(pose)
+        [drone_pose(dx = -round(Int, ox0 + amp * cos(turn(k))),
+                    dy = -round(Int, oy0 + amp * sin(turn(k)))) for k in 1:nframes]
+    else
+        base = drone_pose(dx = -ox0, dy = -oy0)
+        [pose(k) * base for k in 1:nframes]                 # `pose` moves the drone about the frame
+    end
+
+    gr(k) = 260.0 + 40 * (k - 1) / (nframes - 1)           # disc ground path (row, col): a line
+    gc(k) = 260.0 + 60 * (k - 1) / (nframes - 1)
+    ground_xy(k) = SVector(gc(k), gr(k))                    # the same point as (x, y)
+
+    ground = apriltag_ground(GH, GW)
+    occluded = copy(ground)
+    r, c = TAG_BLOCKS[1]
+    occluded[r+1:r+10TAG_CELL, c+1:c+10TAG_CELL] .= 0xff    # the first tag painted out
+    raw = joinpath(dir, "$name.raw")
+    open(raw, "w") do io
+        for k in 1:nframes
+            g = draw_disc(k in occlude ? occluded : ground, gr(k), gc(k), tw)
+            write(io, vec(permutedims(render_pose(g, poses[k], H, W))))   # row-major for ffmpeg
+        end
+    end
+    FFMPEG.ffmpeg_exe(`-y -loglevel error -f rawvideo -pix_fmt gray -s $(W)x$(H) -r $fps -i $raw -pix_fmt yuv420p -qp 0 $(joinpath(dir, "$name.mp4"))`)
+    rm(raw)
+
+    expected_ref = k -> pose_apply(poses[1], ground_xy(k))
+    image_xy = k -> pose_apply(poses[k], ground_xy(k))
+    return (; file = "$name.mp4",
+              groundpath = [(gr(k), gc(k)) for k in 1:nframes],
+              start_location = Tuple(round.(Int, expected_ref(1))),
+              nframes, expected_ref, poses, image_xy, ground_xy)
 end
 
 # ---------------------------------------------------------------------------
