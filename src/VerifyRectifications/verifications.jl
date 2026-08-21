@@ -9,13 +9,13 @@ end
 # the video :width/:height (always taken from the file — they are the frame size used to decode it)
 # and impute :aspect/:yadif. Grouping on the canonical resolved :file reads one physical file once,
 # not once per spelling.
-function read_video_metadata!(df::AbstractDataFrame)
+function read_video_metadata!(df::AbstractDataFrame; progress = true)
     # :width/:height have no CSV column (they are not user-supplied); create them here so the probe
     # can fill them, alongside the intermediate :duration/:dimension columns.
     blank!(df, :duration, :dimension, :width, :height)
     # Every type carries a source video (:file), so every group is probed once: the read fills
     # :duration/:dimension/:width/:height for all, plus imputes :aspect (and :yadif for video).
-    read_per_file!(df, :file, [:file, :type], "Reading calibration videos...", probe_video, apply_video_metadata!)
+    read_per_file!(df, :file, [:file, :type], "Reading calibration videos...", probe_video, apply_video_metadata!; progress)
 end
 
 function apply_video_metadata!(g, issue::String)
@@ -122,11 +122,11 @@ end
 # (:n_extrinsics) and the ImageSize cross-check against the source video. Grouping on the canonical
 # resolved :matlab_file reads each physical file once. The source-video :dimension was already filled
 # by read_video_metadata!, so the cross-check runs here against it.
-function read_matlab_metadata!(df::AbstractDataFrame)
+function read_matlab_metadata!(df::AbstractDataFrame; progress = true)
     blank!(df, :n_extrinsics)
     # matlab_file is set for matlab rows only, so non-matlab rows form no group and are untouched.
     read_per_file!(df, :matlab_file, [:matlab_file], "Reading matlab calibration files...",
-                   matlab_metadata, apply_matlab_metadata!)
+                   matlab_metadata, apply_matlab_metadata!; progress)
 end
 
 # Pure read+derive: one matread, then structure/extrinsic-count/dimension off the same dict. A bad
@@ -262,7 +262,7 @@ function note_saved_frame(issue, saved)
     return string(issue, " — saved the extrinsic frame to ", saved, " for inspection")
 end
 
-function verify_extrinsics!(df::AbstractDataFrame, run_dir)
+function verify_extrinsics!(df::AbstractDataFrame, run_dir; progress = true)
     # :file is the canonical resolved path, so grouping on it corner-detects a file reached via different
     # spellings once per (extrinsic, blur, n_corners).
     videos = subset(df, :type => ByRow(passmissing(==("video"))); view = true, skipmissing = true)
@@ -281,7 +281,7 @@ function verify_extrinsics!(df::AbstractDataFrame, run_dir)
     usable = dropmissing(clean, [:file, :extrinsic, :blur, :n_corners, :width, :height]; view = true)
     gs = groupby(usable, [:file, :extrinsic, :yadif, :blur, :width, :height, :n_corners])
     ks = collect(keys(gs))
-    issues = @showprogress desc = "Validating extrinsics..." tmap(k -> extrinsic_issue(k.file, k.extrinsic, k.yadif, k.blur, k.width, k.height, k.n_corners), ks)
+    issues = @showprogress desc = "Validating extrinsics..." enabled = progress tmap(k -> extrinsic_issue(k.file, k.extrinsic, k.yadif, k.blur, k.width, k.height, k.n_corners), ks)
     for (g, k, issue) in zip(gs, ks, issues)
         isnothing(issue) && continue
         # dump the frame the detector saw (deinterlaced/blurred) so the user can see what went wrong
@@ -317,7 +317,7 @@ function intrinsic_issue(file, start, stop, temporal_step, yadif, blur, width, h
     end
 end
 
-function verify_intrinsics!(df::AbstractDataFrame)
+function verify_intrinsics!(df::AbstractDataFrame; progress = true)
     # Rows already flagged are skipped: a failed probe, extrinsic or window check implies this
     # (expensive) scan would fail too — re-running it wastes frame reads and re-reports noise.
     # A missing calibs window (both bounds blank) is skipped like everywhere else.
@@ -325,7 +325,7 @@ function verify_intrinsics!(df::AbstractDataFrame)
     clean = subset(videos, :issues => ByRow(isempty); view = true)
     usable = dropmissing(clean, [:file, :start, :stop, :temporal_step, :width, :height, :n_corners]; view = true)
     gs = groupby(usable, [:file, :start, :stop, :temporal_step, :yadif, :blur, :width, :height, :n_corners])
-    issues = @showprogress desc = "Validating intrinsics..." tmap(k -> intrinsic_issue(k.file, k.start, k.stop, k.temporal_step, k.yadif, k.blur, k.width, k.height, k.n_corners), keys(gs))
+    issues = @showprogress desc = "Validating intrinsics..." enabled = progress tmap(k -> intrinsic_issue(k.file, k.start, k.stop, k.temporal_step, k.yadif, k.blur, k.width, k.height, k.n_corners), keys(gs))
     for (g, issue) in zip(gs, issues)
         if !isnothing(issue)
             blank!(g, :start, :stop)
@@ -338,13 +338,13 @@ end
 # `family` must be detectable and their metric fit must converge (coplanar, not mis-detected). Reads
 # real frames, so it runs only on otherwise-clean apriltag rows, grouped so one physical file is
 # checked once per (extrinsic, apriltags, family, checker_size).
-function verify_apriltag_extrinsics!(df::AbstractDataFrame, run_dir)
+function verify_apriltag_extrinsics!(df::AbstractDataFrame, run_dir; progress = true)
     tags = subset(df, :type => ByRow(passmissing(==("apriltag"))); view = true, skipmissing = true)
     clean = subset(tags, :issues => ByRow(isempty); view = true)
     usable = dropmissing(clean, [:file, :extrinsic, :apriltags, :family, :checker_size]; view = true)
     gs = groupby(usable, [:file, :extrinsic, :apriltags, :family, :checker_size])
     ks = collect(keys(gs))
-    issues = @showprogress desc = "Validating AprilTag extrinsics..." tmap(k -> PawsomeTracker.apriltag_extrinsic_issue(k.file, k.extrinsic, k.apriltags, k.family, k.checker_size), ks)
+    issues = @showprogress desc = "Validating AprilTag extrinsics..." enabled = progress tmap(k -> PawsomeTracker.apriltag_extrinsic_issue(k.file, k.extrinsic, k.apriltags, k.family, k.checker_size), ks)
     for (g, k, issue) in zip(gs, ks, issues)
         isnothing(issue) && continue
         # dump the extrinsic frame the tag detector saw so the user can see what went wrong
@@ -399,7 +399,8 @@ function verify_unique_calibrations!(df::AbstractDataFrame)
     end
 end
 
-function verifications!(df::AbstractDataFrame, data_path, issues_dir = DEFAULT_ISSUES_DIR)
+function verifications!(df::AbstractDataFrame, data_path, issues_dir = DEFAULT_ISSUES_DIR;
+        progress = true)
 
     # This run's frames go in a folder of their own, named for the moment the run started, so the
     # folder reflects only this run without anything being deleted to make that true — `issues_dir`
@@ -420,9 +421,9 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = DEFAULT_I
     # One read per physical file: ffprobe on the source video (every type) and matread on the .mat
     # (matlab). read_video_metadata! must run first: it sets the frame size that bounds-checks
     # center/north and cross-checks the matlab ImageSize.
-    read_video_metadata!(df)
+    read_video_metadata!(df; progress)
 
-    read_matlab_metadata!(df)
+    read_matlab_metadata!(df; progress)
 
     # center/north are optional and left missing when omitted (no imputation). verify! skips missing
     # rows, so a missing center or north is simply not bounds-checked.
@@ -462,14 +463,14 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = DEFAULT_I
 
     # the extrinsic time stamp must actually yield a detectable frame; only meaningful once the
     # time stamp itself has been range-checked above
-    verify_extrinsics!(df, run_dir)
+    verify_extrinsics!(df, run_dir; progress)
 
     # the calibs window must actually contain ≥ 3 detectable-corner frames; runs after
     # verify_extrinsics! so rows whose extrinsic already failed are skipped, not re-scanned
-    verify_intrinsics!(df)
+    verify_intrinsics!(df; progress)
 
     # apriltag rows: the extrinsic frame must yield a valid shared reference (tags detectable + coplanar)
-    verify_apriltag_extrinsics!(df, run_dir)
+    verify_apriltag_extrinsics!(df, run_dir; progress)
 
     verify_unique_calibrations!(df)
 

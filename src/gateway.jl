@@ -83,9 +83,9 @@ end
 # once, then fold the result back into its rows with `apply!`. Grouping on the canonical resolved
 # path (see `resolve_paths!`) reads a file reached through several spellings once, not once per
 # spelling. `read` returns either the metadata or an issue string, and `apply!` dispatches on which.
-function read_per_file!(df::AbstractDataFrame, filecol, groupcols, desc, read, apply!)
+function read_per_file!(df::AbstractDataFrame, filecol, groupcols, desc, read, apply!; progress = true)
     groups = collect(groupby(dropmissing(df, groupcols; view = true), groupcols))
-    metas = @showprogress desc = desc tmap(g -> read(g[1, filecol]), groups)
+    metas = @showprogress desc = desc enabled = progress tmap(g -> read(g[1, filecol]), groups)
     for (g, meta) in zip(groups, metas)
         apply!(g, meta)
     end

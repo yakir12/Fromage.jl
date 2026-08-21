@@ -24,18 +24,18 @@ include("types.jl")
 include("parsers.jl")
 include("verifications.jl")
 
-function load_runs(file; strict = true, defaults = (;))
-    load_runs(dirname(file), file; strict, defaults)
+function load_runs(file; strict = true, defaults = (;), progress = true)
+    load_runs(dirname(file), file; strict, defaults, progress)
 end
 
 # `defaults` globally replaces the hardcoded fallbacks of the whitelisted tracking parameters
 # (see DEFAULTS in parsers.jl); the hierarchy is csv cell → `defaults` → hardcoded/probed value.
-function load_runs(data_path, file; strict = true, defaults = (;))
+function load_runs(data_path, file; strict = true, defaults = (;), progress = true)
     defaults = resolve_defaults(defaults)   # fail fast on unknown keys / unconvertible values
     csvrows = read_rows(file, COLUMNS, "runs")
 
     # parse each row to a Dict of parsed values + an :issues accumulator
-    cs = @showprogress desc = "Parsing runs.csv..." tmap(r -> parse_row(r, defaults), collect(csvrows))
+    cs = @showprogress desc = "Parsing runs.csv..." enabled = progress tmap(r -> parse_row(r, defaults), collect(csvrows))
 
     df = DataFrame(Tables.dictrowtable(cs))
     allowmissing!(df)
@@ -44,7 +44,7 @@ function load_runs(data_path, file; strict = true, defaults = (;))
     # :run_id is concrete on the clean path.
     resolve_run_ids!(df)
 
-    verifications!(df, data_path)
+    verifications!(df, data_path; progress)
 
     # a run_id that is missing (mixed numbering) or equal to the row number (auto-assigned) adds
     # nothing over "row $i", so it is only mentioned when the csv named the run itself
