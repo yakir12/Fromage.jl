@@ -449,7 +449,9 @@ function (s::ApriltagScene)(frame, beetle, H)
         c = _canvas_to_cm(s, idx[1], idx[2]); v = Hinv * SVector(c[1], c[2], 1.0)
         SVector(v[2]/v[3], v[1]/v[3])                           # (row, col) = (img_y, img_x)
     end
-    wimg = warp(Gray{N0f8}.(frame), tf, (1:s.m, 1:s.m); fillvalue = zero(Gray{N0f8}))
+    # `convert` rather than a broadcast, for the reason given at RectifiedScene: `frame` is a stack
+    # slice in the prefill loop and `vid.img` in the rolling one, both `Gray{N0f8}` already.
+    wimg = warp(convert(AbstractArray{Gray{N0f8}}, frame), tf, (1:s.m, 1:s.m); fillvalue = zero(Gray{N0f8}))
     return wimg, ismissing(beetle) ? missing : _cm_to_canvas(s, beetle)
 end
 
