@@ -3,10 +3,16 @@
 #
 # Deliberately NOT routed through `ShareIO`: every path here is under `results_dir`, on local disk.
 # The retries exist for the CIFS share and belong only on reads that cross it.
+# ffmpeg takes each path in the list single-quoted, and a literal quote inside one is written
+# `'\''` — close the string, escape the quote, reopen. An apostrophe is a legal file-name character
+# and a plausible `run_id` ("beetle's run"); unescaped it closed the line early and took the segment
+# with it.
+concat_escape(f) = replace(f, "'" => raw"'\''")
+
 function concatenate(path, files)
     list = joinpath(path, "list.txt")
     open(list, "w") do io
-        foreach(f -> println(io, "file '", f, "'"), files)
+        foreach(f -> println(io, "file '", concat_escape(f), "'"), files)
     end
     out = joinpath(results_dir, "diagnostic.mp4")
     ffmpeg_exe(` -y -loglevel error -f concat -safe 0 -i $list -c copy $out`)

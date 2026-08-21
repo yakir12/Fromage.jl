@@ -92,6 +92,39 @@ function read_per_file!(df::AbstractDataFrame, filecol, groupcols, desc, read, a
     return df
 end
 
+# Both csvs carry an id that becomes a file name — `results_dir/<run_id>.csv` and the diagnostic
+# segments, `rectifications/<calibration_id>.jpg` — so both have to be usable as one. Checked in the
+# gateway, where every other cell is already checked, rather than left to fail at write time: a
+# `run_id` of "2026/03/14" would otherwise surface as a SystemError out of `save2csv`, after every
+# run had already been tracked.
+#
+# The set is what Windows forbids plus the POSIX separator, which is the union both platforms have
+# to satisfy — the same reason the time-stamped issue folders carry no colons (#86). An apostrophe is
+# deliberately NOT here: it is a legal file-name character, and the one place it used to break (the
+# ffmpeg concat list) escapes it properly now.
+const BAD_ID_CHARS = ('/', '\\', ':', '*', '?', '"', '<', '>', '|')
+
+# Returns the fault as a predicate phrase ("contains …"), or `nothing`. A missing or blank id is
+# already reported by the parser, so it is passed over rather than reported twice.
+function id_filename_issue(id)
+    (ismissing(id) || isempty(id)) && return nothing
+    i = findfirst(c -> c in BAD_ID_CHARS || iscntrl(c), id)
+    isnothing(i) || return "contains $(repr(id[i])), which cannot appear in a file name"
+    id in (".", "..") && return "is $(repr(id)), which cannot be a file name"
+    return nothing
+end
+
+# Flag every row whose `idcol` could not be written to disk. The id is left as it is: the row now
+# carries an issue, so nothing downstream builds anything from it, and nulling the column would
+# only cost the grouping that reports it.
+function verify_id_filename!(df::AbstractDataFrame, idcol)
+    for r in eachrow(df)
+        issue = id_filename_issue(r[idcol])
+        isnothing(issue) || push!(r.issues, "$idcol $issue")
+    end
+    return df
+end
+
 # Print every row's issues, one line per row, and throw under `strict`. Returns whether anything was
 # wrong, so a caller can hand the raw DataFrame back instead of building its objects.
 #

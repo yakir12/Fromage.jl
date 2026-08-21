@@ -28,9 +28,12 @@ Required:
 
 | column | description |
 | --- | --- |
-| `calibration_id` | a unique name for this calibration; referenced from `runs.csv`. |
+| `calibration_id` | a unique name for this calibration; referenced from `runs.csv`. It also names this calibration's rectification image, so it has to be usable as a file name — see the note below. |
 | `file` | the video file name, including extension. |
 | `extrinsic` | timestamp of a frame where the checkerboard lies **flat on the arena floor**. This frame anchors the mapping between the image and the arena surface, so make sure the full board is clearly visible in it. |
+
+!!! note "`calibration_id` becomes a file name"
+    With `rectification_diagnostics = true` each calibration's [rectification image](results.md#The-rectification-images) is saved as `<calibration_id>.jpg`, so the id may not contain `/`, `\`, `:`, `*`, `?`, `"`, `<`, `>` or `|`, and may not be `.` or `..`. A bad one is reported along with everything else in the file, before any calibration is built. Spaces and apostrophes are fine.
 
 Optional:
 

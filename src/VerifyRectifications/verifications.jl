@@ -408,6 +408,10 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = DEFAULT_I
 
     verify_unique_ids!(df)
 
+    # calibration_id names the diagnostic image `rectification_diagnostics` writes (#101), so it
+    # must be a usable file name.
+    verify_id_filename!(df, :calibration_id)
+
     # The resolved :file is the identity every later step uses (the read passes, duplicate
     # detection); :matlab_file (the .mat, matlab rows only) groups the .mat reads.
     resolve_paths!(df, data_path, :file, :matlab_file)

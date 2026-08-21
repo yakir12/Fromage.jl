@@ -1,6 +1,21 @@
 @testset "value ranges & temporal" begin
     # baseline a.mp4 is 640×480, 5 s, 30 fps; each row overrides one field.
 
+    @testset "run_id must be usable as a file name" begin
+        # It becomes results_dir/<run_id>.csv and the diagnostic segments. Caught in the gateway,
+        # where a bad value is one reported row, rather than as a SystemError out of save2csv after
+        # every run has already been tracked.
+        for bad in ("a/b", "a\\b", "a:b", "..", "a?b")
+            @testset "run_id = $(repr(bad))" begin
+                @test flagged(check([runrow(run_id = bad)]), 1, "run_id")
+            end
+        end
+        # legal file-name characters stay legal: an apostrophe is escaped into ffmpeg's concat list
+        # (see the concatenate test in test/fromage.jl), not rejected here
+        @test clean(check([runrow(run_id = "beetle's run")]))
+        @test clean(check([runrow(run_id = "run 01")]))
+    end
+
     @testset "start_location bounds" begin
         @test flagged(check([runrow(start_location = "(0, 100)")]),   1, "start_location cannot be smaller than 1")
         @test flagged(check([runrow(start_location = "(700, 100)")]), 1, "start_location is outside the frame")
