@@ -15,21 +15,34 @@
     end
 
     @testset "a throwing detection is caught as an issue, never thrown" begin
-        # corrupt.mp4 fails the probe (width/height stay missing), so the frame read inside
-        # extrinsic_issue throws; the catch turns that into an issue instead of aborting the load.
-        df = check([videorow(file = ART.corrupt)])
-        @test flagged(df, 1, "issue with corner detection")
+        # The gateway never reaches corner detection with an unreadable file — verify_extrinsics!
+        # skips rows already flagged, so the probe catches it first (see the testset below), which
+        # is exactly why this path has no end-to-end coverage. Call it directly: a throw out of
+        # get_corners must become an issue string rather than escape and kill the verification run.
+        issue = VRect.extrinsic_issue(joinpath(DATADIR, ART.corrupt), 0.5, missing, 0.0, 640, 480, (7, 10))
+        @test issue isa String
+        @test occursin("issue with corner detection", issue)
         # ...and it says what happened, in one sentence. Interpolating the raw exception dumped the
         # entire failed ffmpeg `Cmd` — environment block and all, ~8 kB of it — straight into the
         # user-facing issues report (same reasoning as Probing.probe_failure).
-        @test flagged(df, 1, "ffmpeg could not read the frame")
-        @test !flagged(df, 1, "LD_LIBRARY_PATH")
-        @test length(only(filter(contains("corner detection"), df.issues[1]))) < 200
+        @test occursin("ffmpeg could not read the frame", issue)
+        @test !occursin("LD_LIBRARY_PATH", issue)
+        @test length(issue) < 200
         # This fixture is genuinely truncated, and now says so in ffmpeg's own words. The report
         # used to assert "the file is corrupt, truncated, or not a video" for EVERY failed read,
         # including a share that merely reconnected mid-open — the one case where that sentence
         # is false and sends the user looking at their data instead of their mount.
-        @test flagged(df, 1, "moov atom not found")
+        @test occursin("moov atom not found", issue)
+    end
+
+    @testset "an unreadable video is reported once, not once per check" begin
+        # verify_extrinsics! used to be the only frame-reading check that did not skip flagged
+        # rows, so a file the probe had already rejected was re-read here and reported a second
+        # time. One unreadable file is one issue.
+        df = check([videorow(file = ART.corrupt)])
+        @test flagged(df, 1, "issue reading from video file")
+        @test !flagged(df, 1, "issue with corner detection")
+        @test length(df.issues[1]) == 1
     end
 
     @testset "failures are shown in full" begin

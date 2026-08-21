@@ -266,7 +266,19 @@ function verify_extrinsics!(df::AbstractDataFrame, run_dir)
     # :file is the canonical resolved path, so grouping on it corner-detects a file reached via different
     # spellings once per (extrinsic, blur, n_corners).
     videos = subset(df, :type => ByRow(passmissing(==("video"))); view = true, skipmissing = true)
-    usable = dropmissing(videos, [:file, :extrinsic, :blur, :n_corners]; view = true)
+    # Rows already flagged are skipped, as in verify_intrinsics! and verify_apriltag_extrinsics!.
+    # This check was the only one of the three that re-scanned them, and it cost twice over: a row
+    # whose probe failed was read again — four ffmpeg attempts, ShareIO's retry — and reported a
+    # second time for the same unreadable file. Worse, a failed probe blanks :duration/:dimension
+    # but leaves :file and :extrinsic intact, so such a row reached the read with :width/:height
+    # still missing. That only stayed harmless while the read failed too: had it succeeded (the
+    # probe failing transiently and the read not — the share reconnect this package exists to
+    # survive), `reshape(buf, missing, missing)` is a MethodError, which _detection_failure rightly
+    # refuses to classify as a detection failure, so it would escape the tmap and abort the whole
+    # verification. :width/:height are dropped as well, so that stays impossible even if a later
+    # change lets an unflagged row through without them.
+    clean = subset(videos, :issues => ByRow(isempty); view = true)
+    usable = dropmissing(clean, [:file, :extrinsic, :blur, :n_corners, :width, :height]; view = true)
     gs = groupby(usable, [:file, :extrinsic, :yadif, :blur, :width, :height, :n_corners])
     ks = collect(keys(gs))
     issues = @showprogress desc = "Validating extrinsics..." tmap(k -> extrinsic_issue(k.file, k.extrinsic, k.yadif, k.blur, k.width, k.height, k.n_corners), ks)
