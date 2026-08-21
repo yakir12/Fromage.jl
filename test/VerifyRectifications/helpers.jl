@@ -5,7 +5,7 @@ using Test
 using Fromage: VerifyRectifications
 using CSV, DataFrames
 using FFMPEG, MAT
-import ..Harness: write_csv
+import ..Harness
 
 const VRect = VerifyRectifications
 
@@ -105,7 +105,9 @@ const HEADER = ["calibration_id", "path", "file", "matlab_file", "type", "extrin
                 "yadif", "aspect", "apriltags", "family", "comment"]
 
 row(; kw...) = buildrow(HEADER; kw...)
-write_csv(path, rows; header = HEADER) = write_csv(path, rows, header)
+# Module-local, and deliberately not a method on `Harness.write_csv`: both suites would add
+# the same two-argument signature to it, and the second would silently replace the first (#115).
+write_rows(path, rows; header = HEADER) = Harness.write_csv(path, rows, header)
 _merge(base; kw...) = row(; merge(base, values(kw))...)
 
 # Clean baseline rows per rectification type; override any field via keyword to isolate one issue.
@@ -137,7 +139,7 @@ column `verifications!` references — no column-completing filler rows are need
 # extrinsic frame) don't write into the test's working directory; a test that inspects the dumped
 # frames passes an explicit path.
 function check(name, rows; strict = false, header = HEADER, defaults = (;), issues_dir = mktempdir())
-    csv = write_csv(joinpath(DATADIR, name), rows; header)
+    csv = write_rows(joinpath(DATADIR, name), rows; header)
     VRect.load_rectifications(DATADIR, csv; strict, defaults, issues_dir)
 end
 

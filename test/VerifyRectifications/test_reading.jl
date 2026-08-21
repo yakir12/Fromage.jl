@@ -145,7 +145,7 @@
     @testset "single-type CSV (no per-type fillers) loads" begin
         # parse_row back-fills every COLUMNS entry with missing, so a video-only CSV (which never
         # creates the :scale column) must not make verifications! throw `column :scale not found`.
-        csv = write_csv(joinpath(DATADIR, "videoonly.csv"), [videorow()])   # no fillers
+        csv = write_rows(joinpath(DATADIR, "videoonly.csv"), [videorow()])   # no fillers
         @test (VRect.load_rectifications(DATADIR, csv; strict = false); true)
     end
 

@@ -6,12 +6,12 @@
     end
 
     @testset "empty csv file" begin
-        csv = write_csv(joinpath(DATADIR, "empty.csv"), [])   # header only, no data rows
+        csv = write_rows(joinpath(DATADIR, "empty.csv"), [])   # header only, no data rows
         @test_throws "csv file is empty" VR.load_runs(DATADIR, csv)
     end
 
     @testset "unrecognized column" begin
-        csv = write_csv(joinpath(DATADIR, "badcol.csv"), [["x", "y"]]; header = ["run_id", "foo"])
+        csv = write_rows(joinpath(DATADIR, "badcol.csv"), [["x", "y"]]; header = ["run_id", "foo"])
         @test_throws "unrecognized column" VR.load_runs(DATADIR, csv)
     end
 
@@ -19,8 +19,8 @@
         # It was accepted and validated but never read, so it was removed rather than implemented.
         # A csv that still carries it is rejected up front, naming the column — the migration is
         # deleting it, and nothing about tracking changes, since the value never reached the tracker.
-        csv = write_csv(joinpath(DATADIR, "wp_removed.csv"), [["c1", "a.mp4", "1.0"]];
-                        header = ["calibration_id", "file", "white_point"])
+        csv = write_rows(joinpath(DATADIR, "wp_removed.csv"), [["c1", "a.mp4", "1.0"]];
+                         header = ["calibration_id", "file", "white_point"])
         @test_throws "unrecognized column" VR.load_runs(DATADIR, csv)
         @test_throws "white_point" VR.load_runs(DATADIR, csv)
     end

@@ -6,12 +6,12 @@
     end
 
     @testset "empty csv file" begin
-        csv = write_csv(joinpath(DATADIR, "empty.csv"), [])   # header only, no data rows
+        csv = write_rows(joinpath(DATADIR, "empty.csv"), [])   # header only, no data rows
         @test_throws "csv file is empty" VRect.load_rectifications(DATADIR, csv)
     end
 
     @testset "unrecognized column" begin
-        csv = write_csv(joinpath(DATADIR, "badcol.csv"), [["x", "y"]]; header = ["calibration_id", "foo"])
+        csv = write_rows(joinpath(DATADIR, "badcol.csv"), [["x", "y"]]; header = ["calibration_id", "foo"])
         @test_throws "unrecognized column" VRect.load_rectifications(DATADIR, csv)
     end
 end
