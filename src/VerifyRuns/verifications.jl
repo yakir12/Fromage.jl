@@ -60,6 +60,9 @@ function verify_run_consistency!(df::AbstractDataFrame)
 end
 
 function verifications!(df::AbstractDataFrame, data_path)
+    # run_id names the track file and the diagnostic segments, so it must be a usable file name.
+    verify_id_filename!(df, :run_id)
+
     # :file becomes the canonical absolute path — the identity used for per-file reads and segment
     # grouping.
     resolve_paths!(df, data_path, :file)

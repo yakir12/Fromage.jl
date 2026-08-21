@@ -123,6 +123,13 @@
         @test flagged(df, 2, "calibration_id must not repeat")
     end
 
+    @testset "calibration_id must be usable as a file name" begin
+        # Since #101 it names the diagnostic image `rectification_diagnostics` writes.
+        @test flagged(check([videorow(calibration_id = "a/b")]), 1, "calibration_id")
+        @test flagged(check([videorow(calibration_id = "a:b")]), 1, "calibration_id")
+        @test clean(check([videorow(calibration_id = "morning's board")]))
+    end
+
     @testset "extrinsic accepts seconds and HH:MM:SS" begin
         @test clean(check([videorow(extrinsic = "1.0")]))
         @test clean(check([videorow(extrinsic = "00:00:01")]))

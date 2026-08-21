@@ -474,4 +474,26 @@ end
     end
 end
 
+@testset "an apostrophe in a segment path survives the concat list" begin
+    # ffmpeg takes each path in the concat list single-quoted, so an unescaped apostrophe closed the
+    # line early and the segment after it was silently dropped. An apostrophe is a legal file-name
+    # character and a plausible run_id ("beetle's run"), so it is escaped rather than rejected — and
+    # asserted against real ffmpeg here, since the escaping is ffmpeg's rule and not ours to assume.
+    dir = mktempdir()
+    segs = map(1:2) do k
+        f = joinpath(dir, "beetle's run $k.mp4")
+        make_video(f; duration = 1, size = (64, 64), rate = 5)
+        f
+    end
+    outdir = mktempdir()
+    cd(outdir) do
+        mkpath("results_dir")                       # `main` makes it; this calls concatenate directly
+        Fromage.concatenate(dir, segs)
+    end
+    joined = joinpath(outdir, "results_dir", "diagnostic.mp4")
+    @test isfile(joined)
+    # both 5-frame segments, not just the one before the apostrophe broke the line
+    @test probe_stream(joined).nframes == 10
+end
+
 end

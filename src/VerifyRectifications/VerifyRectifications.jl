@@ -9,7 +9,7 @@ using FileIO: FileIO
 using DataFrames: AbstractDataFrame, ByRow, DataFrame, Not, allowmissing!, completecases,
     dropmissing, groupby, nonunique, nrow, passmissing, subset
 using ..Gateway: backfill!, blank!, read_per_file!, read_rows, report_issues, resolve_paths!,
-    verify!
+    verify!, verify_id_filename!
 using ..Parsing: Parsing, MyTemporal, parseto!
 using ..Paths: DEFAULT_ISSUES_DIR, run_issues_dir
 using ..Probing: frame_geometry, is_interlaced, no_video_stream, parse_sample_aspect, probe_fields
