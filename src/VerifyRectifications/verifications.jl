@@ -294,9 +294,10 @@ end
 # The camera-model fit needs at least 3 frames with detectable corners sampled from the
 # [start, stop] window — the "temporal_step too short" check only guarantees 3 *sampled* frames, not
 # 3 *detectable* ones. Detection stops as soon as 3 succeed, so a good window costs ~3 frame reads
-# and only a genuinely bad one scans to the end. Frames are read in small parallel batches, with the
-# global read semaphore in Rectifications bounding the concurrent opens as in the real
-# rectification.
+# and only a genuinely bad one scans to the end. Frames are read in parallel batches of 4, which is
+# the only thing bounding the concurrent opens: the global read limiter this used to name
+# (`READ_SEM`) was measured against the real share, found to prevent nothing, and deleted — see
+# WHY-FRAMES-FAIL.md.
 function intrinsic_issue(file, start, stop, temporal_step, yadif, blur, width, height, n_corners)
     vf = _vf(yadif, blur)
     found = 0

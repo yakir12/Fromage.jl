@@ -312,12 +312,13 @@ canvas2raw(Hinv, scale) = rc -> (p = apply_h(Hinv, SVector(rc[2], rc[1]) ./ scal
 const PROTECT_PAD = 5
 
 # ============================================================================================
-# PHASE 2 — detection and the single-pass tracking loop.
+# Detection and the single-pass tracking loop.
 # ============================================================================================
 
 # The AprilTag detector needs a plain Gray{N0f8}/UInt8 matrix (not the Gray{Float32} background
-# stack), so detection always runs on the raw frame. Whole-frame detection for now — the ROI /
-# local-search fast path is PHASE 4.
+# stack), so detection always runs on the raw frame. Whole-frame detection is used only to establish
+# the reference and to relocate the (stationary) tags in a run's first frame; every frame after that
+# goes through the per-tag local search below.
 function set_detector!(det; nthreads = 1)
     det.nThreads = nthreads
     det.quad_decimate = 1.0
@@ -358,7 +359,7 @@ function apriltag_guess(start_xy::NTuple{2, Int}, _, vid, _, _, _, _, seedR)
     return round.(Int, vid.scale .* (p[2], p[1]))
 end
 
-# ---- PHASE 4: local ROI search ----------------------------------------------------------------
+# ---- local ROI search --------------------------------------------------------------------------
 # AprilTag detection cost scales with pixels, so after the reference frame each tag is searched in a
 # small box around where it was last seen rather than over the whole frame. Detecting on a crop
 # reproduces the full-frame corners to better than 0.1 px, so this is a pure speedup. The box grows
