@@ -446,9 +446,15 @@ imputation path, so the guarantee is asserted at both arities.
 
 The stored frame is squeezed horizontally by the sample aspect ratio (`stored x = display x / sar`).
 Window sizes arrive in display pixels and their column extent is converted to stored pixels,
-otherwise an anamorphic (sar < 1) target fills its own search window. `start_location` and a
-rectification's `center`/`north` are likewise display-pixel conventions and are bounds-checked
-against the display width, `width × sar`.
+otherwise an anamorphic (sar < 1) target fills its own search window. `start_location` is likewise
+a display-pixel convention and is bounds-checked against the display width, `width × sar`.
+
+A rectification's `center`/`north` were described here as being handled the same way. They are not.
+They are bounds-checked against the *stored* width (`:dimension`, straight from ffprobe, with no
+`sar` applied), and `fix_coordinate` scales them by `aspect` where the tracker's `get_guess` divides
+by it — so the two halves of the pipeline disagree about which direction `sar` goes for the same
+user-supplied value. All of it is invisible at `sar = 1`, which is why it has stood; #36 tracks
+getting aspect ratio right across the whole system.
 
 ### One diagnostic writer, three scenes (#68)
 
@@ -737,10 +743,25 @@ Putting the video itself in `path` is the common slip, and `isdir` alone reporte
 not exist" — false, and it sends the user looking for a file that is plainly there. The targeted
 check runs first and nulls `:path`, so the existence check does not also fire.
 
-### The issues folder is wiped each run
+### The issues folder is only ever added to (#86)
 
-`results_dir/issues` reflects only the current verification run, so it is removed up front and
-recreated lazily the first time a frame fails to detect.
+`verifications!` used to open by recursively force-deleting `issues_dir` — a path the caller hands
+in, defaulting to a relative `results_dir/issues` resolved against whatever the process cwd happened
+to be. Naming the folder one level up (`results_dir` instead of `results_dir/issues`) wiped every
+track and diagnostic; anything the user kept beside the dumped frames went with it; and because the
+wipe ran first thing, a run that failed on the next line had already destroyed the previous run's
+evidence. The precompile workload calls `load_rectifications` with that default, so precompiling the
+package ran the `rm` too.
+
+Freshness comes from newness instead of deletion. Each run dumps into a folder named for the second
+it started (`issues/2026-08-20T14-22-05/`, counted apart when that second already has one), so a
+folder holds exactly what its run wrote and nothing has to be removed to keep it that way.
+`save_issue_frame` mkpaths on demand, so a run with nothing to report writes nothing at all —
+including during precompilation. The stamp carries no colons, so the folders are creatable on
+Windows.
+
+Fromage removes nothing from the issues folder, including anything of the user's that happens to
+live there. Cleaning it out is their call.
 
 ---
 
