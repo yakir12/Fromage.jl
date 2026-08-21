@@ -112,4 +112,60 @@
         @test reproj_rms(res, views) < 0.2
     end
 
+    # --- the transposed-frame convention, and the single-view fit that depends on it (#92) -----
+
+    # Everything here hands OpenCV the frame transposed (`reshape(img, 1, h, w)` against `Mat`'s
+    # `(channels, cols, rows)` axes), so a detected corner's coordinate 1 is its ROW. The frames
+    # above are square-ish and their synthetic points are built to match, so neither notices which
+    # way round the two extents go. These two do.
+    @testset "detected corners are (row, col)" begin
+        Hf, Wf = 300, 640                      # deliberately wide: a column index can exceed the height
+        inner = (7, 6)                         # 7 corners across, 6 down => pattern (6, 7) in (row, col)
+        small = checkerboard(inner; sq = 30, m = 20)
+        h, w = size(small, 2), size(small, 3)
+        img = fill(0xff, 1, Hf, Wf)            # float the board in a wide white canvas
+        r0, c0 = (Hf - h) ÷ 2, (Wf - w) ÷ 2
+        img[1, r0 .+ (1:h), c0 .+ (1:w)] .= small[1, :, :]
+
+        det = R._detect_corners(img, (inner[2], inner[1]))
+        @test det !== missing
+        @test size(det) == (inner[2], inner[1])
+        # coordinate 1 is the row: it stays inside the height and never reaches the width
+        @test maximum(p -> p[1], det) < Hf
+        # coordinate 2 is the column: it runs past the height, which no row index could
+        @test maximum(p -> p[2], det) > Hf
+    end
+
+    # The extrinsics-only rectification fits one view, so `CALIB_FIX_PRINCIPAL_POINT` pins the
+    # principal point at the centre of the `imageSize` it was given and never moves it. Handing that
+    # size in the wrong order reflects the principal point across the frame diagonal, and the pose
+    # absorbs the difference as a distortion of the recovered board: ~4% here, and worse the more
+    # oblique the view. Asserted on the rectification rather than on the intrinsics, so it covers the
+    # call site in `_rectification` and not just `fit_model`'s own handling.
+    @testset "single-view rectification recovers the board grid" begin
+        Wf, Hf = 640, 480                      # width != height, or the two orders coincide
+        ncr = (6, 7)
+        objs = R.XYZ.(Tuple.(CartesianIndices((0:(ncr[1] - 1), 0:(ncr[2] - 1), 0:0))))
+        f = 900.0
+        crow_true, ccol_true = (Hf - 1) / 2, (Wf - 1) / 2
+        Rm = SMatrix{3,3,Float64}(RotationVec(0.35, -0.22, 0.08))
+        tvec = SVector(-2.4, -3.0, 12.0)
+        # The board seen obliquely, in the detector's own (row, col) convention. Named apart from
+        # the `project` above: a method definition for a name already local to the enclosing scope
+        # extends that function rather than shadowing it, and the extra captured variable would
+        # then be unassigned on the earlier calls.
+        oblique(Xo) = (Xc = Rm * SVector{3,Float64}(Xo) + tvec;
+                       R.RowCol(f * Xc[1] / Xc[3] + crow_true, f * Xc[2] / Xc[3] + ccol_true))
+        corners = reshape(map(oblique, objs), ncr)
+
+        checker = 1.0
+        rect = R._rectification("unused.mp4", 0.0, [corners], Wf, Hf, ncr, checker, 1.0, 0,
+                                missing, missing, nothing)
+        metric = map(rect.image2real, corners)
+        down   = vec([hypot((metric[i + 1, j] - metric[i, j])...) for i in 1:ncr[1] - 1, j in 1:ncr[2]])
+        across = vec([hypot((metric[i, j + 1] - metric[i, j])...) for i in 1:ncr[1], j in 1:ncr[2] - 1])
+        # a correct fit reproduces the board exactly (residual ~1e-7 checker units)
+        @test maximum(abs, vcat(down, across) .- checker) < 1e-4
+    end
+
 end

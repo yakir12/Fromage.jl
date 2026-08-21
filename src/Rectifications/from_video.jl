@@ -194,7 +194,11 @@ end
 # extrinsic frame is always the LAST view) and compose the transform pipeline off its pose.
 function _rectification(file, extrinsic, imgpointss, width, height, n_corners, checker_size, aspect, radial_parameters, center, north, diagnostic)
     objpoints = XYZ.(Tuple.(CartesianIndices((0:(n_corners[1] - 1), 0:(n_corners[2] - 1), 0:0))))
-    k, Rs, ts, frow, fcol, crow, ccol = fit_model((width, height), objpoints, imgpointss, n_corners, radial_parameters, aspect)
+    # (height, width), not (width, height): every point handed to OpenCV lives in the TRANSPOSED
+    # view (see `get_corners` — the frame goes in as `reshape(img, 1, h, w)` and OpenCV.jl's `Mat`
+    # axes are `(channels, cols, rows)`), so coordinate 1 of a corner is its row and spans `height`.
+    # `fit_model`'s `sz` is the extent of those two coordinates, in their own order.
+    k, Rs, ts, frow, fcol, crow, ccol = fit_model((height, width), objpoints, imgpointss, n_corners, radial_parameters, aspect)
     extrinsic_index = length(imgpointss)
     extrinsic_corners = imgpointss[extrinsic_index]
     R = Rs[extrinsic_index]
