@@ -12,6 +12,17 @@
         @test r.source.sar    == 1                      # square pixels; anamorphic: test_tracking.jl
     end
 
+    @testset "the video's own frame rate is carried onto the run's Source" begin
+        # The gateway already probes it (it imputes a blank `fps` from it and bounds-checks an
+        # explicit one against it). Carrying it means `track` no longer reopens the video to read it
+        # back — one fewer open of the share per run.
+        r = only(check([runrow()]))
+        @test r.source.video_fps == 30.0
+        # an explicit tracking fps does not disturb it: the two are different numbers
+        r2 = only(check([runrow(fps = "15")]))
+        @test r2.source.fps == 15.0 && r2.source.video_fps == 30.0
+    end
+
     @testset "CSV values win over imputation" begin
         r = only(check([runrow(stop = "3", fps = "15")]))
         @test only(r.stops) == 3.0

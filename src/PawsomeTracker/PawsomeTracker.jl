@@ -383,7 +383,8 @@ end
 Use a Difference of Gaussian (DoG) filter to track a target in the video `file` between `start`
 and `stop` seconds, sampling `fps` frames per second (capped at the video's own rate, and rounded
 to the nearest rate reachable by skipping whole frames — `vid_fps / skip`; `ts` always describes the
-rate actually used). Returns
+rate actually used; `video_fps` is that own rate, read from the file unless a caller who already
+knows it — the runs gateway probes it — passes it in, sparing an open). Returns
 `(ts, coords)`: timestamps and the target's per-frame position. With a `rectification`, `coords`
 are **real-world** coordinates (the rectification's `image2real` applied); without one, they are
 raw `(row, col)` pixels in the original frame (`scale` trades precision for speed — see `scale` in
@@ -442,7 +443,13 @@ function track(
         start_location::AbstractVector = similar(files, Missing),
         window_size::Union{Missing, Int, NTuple{2, Int}} = round(Int, 2target_width),
         darker_target::Bool = true,
-        fps::Real = get_framerate(files[1]),
+        # The video's own frame rate. Declared before `fps` so that one defaults to the other: the
+        # rate is then read at most once, where the two used to call `get_framerate` separately. A
+        # caller who already knows it (`track(::Run)`, from the gateway's probe) passes it and the
+        # video is never opened for it at all — one fewer open of the share per run, which is worth
+        # having in a package where an open is the thing that fails (see WHY-FRAMES-FAIL.md).
+        video_fps::Real = get_framerate(files[1]),
+        fps::Real = video_fps,
         diagnostic_file::Union{Nothing, AbstractString} = nothing,
         initial_search_factor::Real = 4,
         scale::Real = 1,
@@ -456,8 +463,9 @@ function track(
     window_size = ismissing(window_size) ? round(Int, 2target_width) : window_size
 
     # As in the single-file method (#55). Segments are assumed to share one native frame rate (see
-    # runs.md), so the first one's is representative — as it is for the `fps` default above.
-    dia_fps = effective_fps(get_framerate(files[1]), fps)
+    # runs.md), so the first one's is representative — as it is for the `fps` default above, and as
+    # it is for the value `track(::Run)` hands in.
+    dia_fps = effective_fps(video_fps, fps)
 
     nfiles = length(files)
     tss = Vector{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}(undef, nfiles)

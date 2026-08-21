@@ -163,6 +163,23 @@ const DATADIR = mktempdir()
         @test probe_stream(df).nframes == 25
     end
 
+    @testset "a supplied video_fps is used instead of reopening the video" begin
+        # `track(::Run)` hands in the rate the gateway probed. Supplying the true rate must be
+        # indistinguishable from letting it be read; supplying a wrong one must visibly change the
+        # diagnostic's declared playback rate, which is what proves the value is actually used
+        # rather than quietly re-read from the file.
+        df_read = joinpath(DATADIR, "vfps_read.mp4")
+        df_told = joinpath(DATADIR, "vfps_told.mp4")
+        df_lied = joinpath(DATADIR, "vfps_lied.mp4")
+        track(base_file; diagnostic_file = df_read)
+        track(base_file; video_fps = 25, diagnostic_file = df_told)
+        # 30, not 50: at 50 the sampler picks skip = 2 and the effective rate lands back on 25, so
+        # the declared rate would match by coincidence and the test would prove nothing
+        track(base_file; video_fps = 30, fps = 25, diagnostic_file = df_lied)
+        @test probe_stream(df_told).fps ≈ probe_stream(df_read).fps
+        @test probe_stream(df_lied).fps ≉ probe_stream(df_read).fps
+    end
+
     @testset "diagnostic playback speed holds for a non-divisor fps (#55)" begin
         # The check above only covers a divisor rate, where requested == effective and the bug is
         # invisible. The diagnostic declares its framerate from the fps it is handed, so handing it

@@ -20,6 +20,7 @@ struct Source
     window_size::Union{Missing, Int, NTuple{2, Int}}
     darker_target::Bool
     fps::Float64
+    video_fps::Float64
     initial_search_factor::Float64
     scale::Float64
     background_length::Int
@@ -41,10 +42,15 @@ end
 # The run-level values are read off the group's first row (verify_run_consistency! guaranteed the
 # segments agree on them — :dimension/:sar included). :dimension is the ffprobe-filled
 # (width, height) in stored pixels; :sar the sample aspect ratio (display width = width × sar).
+#
+# :video_fps is the exception: it is NOT in SHARED_PARAMS, so segments are not required to agree on
+# it (see runs.md, #95). The first row's is what `track` used anyway — it read the rate from
+# `files[1]` — so carrying it here changes nothing except that the video is no longer reopened for
+# it.
 function Source(g::AbstractDataFrame)
     width, height = g.dimension[1]
     Source(g.target_width[1], g.window_size[1], g.darker_target[1],
-        g.fps[1], g.initial_search_factor[1], g.scale[1],
+        g.fps[1], g.video_fps[1], g.initial_search_factor[1], g.scale[1],
         g.background_length[1], width, height, g.sar[1])
 end
 
@@ -65,7 +71,8 @@ end
 # impute_window_size).
 function shared_kw(r::Run)
     s = r.source
-    (; s.target_width, s.darker_target, s.fps, s.initial_search_factor, s.scale, s.background_length)
+    (; s.target_width, s.darker_target, s.fps, s.video_fps, s.initial_search_factor, s.scale,
+        s.background_length)
 end
 
 # Drive `PawsomeTracker.track` from a verified run. The returned coordinates are (row, col) in
