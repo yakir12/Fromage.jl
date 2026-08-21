@@ -5,7 +5,7 @@ using Test
 using Fromage: VerifyRuns
 using CSV, DataFrames
 import ..Fixtures: make_target_video
-import ..Harness: write_csv
+import ..Harness
 
 const VR = VerifyRuns
 
@@ -38,7 +38,9 @@ const HEADER = ["run_id", "calibration_id", "path", "file", "start", "stop", "ta
                 "initial_search_factor", "scale", "background_length"]
 
 row(; kw...) = buildrow(HEADER; kw...)
-write_csv(path, rows; header = HEADER) = write_csv(path, rows, header)
+# Module-local, and deliberately not a method on `Harness.write_csv`: both suites would add
+# the same two-argument signature to it, and the second would silently replace the first (#115).
+write_rows(path, rows; header = HEADER) = Harness.write_csv(path, rows, header)
 _merge(base; kw...) = row(; merge(base, values(kw))...)
 
 # Clean baseline run row (run_id + calibration_id + a 5 s video; every other field defaults).
@@ -51,7 +53,7 @@ runrow(; kw...) = _merge((run_id = "r", calibration_id = "c", file = ART.a); kw.
 # ---------------------------------------------------------------------------
 
 function check(name, rows; strict = false, header = HEADER, defaults = (;))
-    csv = write_csv(joinpath(DATADIR, name), rows; header)
+    csv = write_rows(joinpath(DATADIR, name), rows; header)
     VR.load_runs(DATADIR, csv; strict, defaults)
 end
 
