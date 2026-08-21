@@ -101,8 +101,11 @@ function verifications!(df::AbstractDataFrame, data_path)
     verify!(df, (a, o) -> a ≥ o, "start must come before stop", :start, :stop)
     verify!(df, (o, d) -> o > d, "stop can not come after video duration", :stop, :duration)
     verify!(df, (a, d) -> a > d, "start can not come after video duration", :start, :duration)
-    # PawsomeTracker reads round(Int, fps × (stop − start)) frames, so a window shorter than half a
-    # frame period reads none at all, and a zero-frame segment crashes the multi-segment track.
+    # A window shorter than half a frame period is not what anyone asking for a window meant. It
+    # does not crash: `Video` floors its sample count at one (`max(1, floor(Int, …))`), so such a
+    # segment yields a single-sample track instead — silently, which is why this is checked here.
+    # (This used to claim a zero-frame segment crashed the multi-segment track. That `max` has made
+    # it impossible, and a wrong reason invites someone to delete the check once they find out.)
     verify!(df, (o, a, f) -> round(Int, f * (o - a)) < 1, "temporal window is too short to contain a single frame at this fps", :stop, :start, :fps)
 
     # Cross-row: segments of one run (shared :run_id) must agree on the run-level parameters.

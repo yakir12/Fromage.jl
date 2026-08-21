@@ -56,9 +56,14 @@ function Diagnostic(file::AbstractString, darker_target, fps, scene; radius, fon
         darker_target ? Gray{N0f8}(1) : Gray{N0f8}(0), radius, font, FTFont(String(FONT)), scene)
 end
 
+# Written frames are 1, skip+1, 2*skip+1, … — the counter is tested BEFORE it is bumped. Bumping
+# first tested the opening frame as `rem(1, skip)`, so the one frame that shows where tracking
+# actually began was the one frame never written, unless the stride happened to be 1. That is the
+# frame a reader checking for a wrong `start_location` needs (see results.md).
 function (dia::Diagnostic)(frame, point, extra...)
+    write_now = rem(dia.state[], dia.skip) == 0
     dia.state[] += 1
-    rem(dia.state[], dia.skip) == 0 || return nothing
+    write_now || return nothing
     canvas, ij = dia.scene(frame, point, extra...)
     if !ismissing(ij)
         push!(dia.trace, ij)

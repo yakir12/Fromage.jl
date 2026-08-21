@@ -165,8 +165,14 @@ function from_video(; file, extrinsic, calibration_id, start, stop, temporal_ste
     vf = _vf(yadif, blur)
     intrinsic_task = Threads.@spawn extract_intrinsics(file, start, stop, temporal_step, vf, width, height, n_corners)
     extrinsic_corners = get_corners(file, extrinsic, vf, width, height, n_corners)
-    ismissing(extrinsic_corners) && error("no corners detected at extrinsic time stamp")
+    # Fetched before the extrinsic frame is judged, so the spawned scan is awaited on every path out
+    # of here. Throwing first left its `tmap` of ffmpeg reads running against the share after the
+    # call had already failed, and dropped its exception silently — an unfetched failed Task is
+    # never reported. There is nothing to cancel (Julia has no task cancellation) and nothing to
+    # gain from failing sooner: the scan is bounded by the calibs window, and in the pipeline this
+    # error is close to unreachable, `verify_extrinsics!` having already rejected such a row.
     imgpointss = fetch(intrinsic_task)
+    ismissing(extrinsic_corners) && error("no corners detected at extrinsic time stamp")
     push!(imgpointss, extrinsic_corners)
     return _rectification(file, extrinsic, calibration_id, imgpointss, width, height, n_corners, checker_size, aspect, radial_parameters, center, north, rectification_diagnostics)
 end
