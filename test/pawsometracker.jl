@@ -153,6 +153,16 @@ const DATADIR = mktempdir()
         @test s.nframes / s.fps * 2 ≈ 2 rtol = 0.01
     end
 
+    @testset "the diagnostic opens on the first tracked frame" begin
+        # `stop` trims the window to 49 samples, an ODD count — which is what makes the two
+        # behaviours distinguishable. The opening frame plus every 2nd after it is cld(49, 2) = 25;
+        # starting at the stride instead, as it used to, gives fld(49, 2) = 24 and drops the one
+        # frame that shows where tracking began. The 50-sample case above cannot tell them apart.
+        df = joinpath(DATADIR, "diag_first.mp4")
+        track(base_file; stop = 1.96, diagnostic_file = df)
+        @test probe_stream(df).nframes == 25
+    end
+
     @testset "diagnostic playback speed holds for a non-divisor fps (#55)" begin
         # The check above only covers a divisor rate, where requested == effective and the bug is
         # invisible. The diagnostic declares its framerate from the fps it is handed, so handing it
