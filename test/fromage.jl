@@ -77,7 +77,8 @@ end
     # main writes results_dir/diagnostic.mp4 relative to the current directory
     outdir = mktempdir()
     runs = cd(() -> main(dir; rectification_defaults = (n_corners = (5, 8),),
-                              tracking_defaults = (target_width = 10,)), outdir)
+                              tracking_defaults = (target_width = 10,),
+                              rectification_diagnostics = true), outdir)
 
     @test runs isa DataFrame
     @test nrow(runs) == 1
@@ -90,6 +91,11 @@ end
     diag = joinpath(outdir, "results_dir", "diagnostic.mp4")
     @test isfile(diag)
     @test filesize(diag) > 0
+    # rectification_diagnostics: one warped extrinsic frame per calibration, named by its id — so a
+    # bad calibration is visible without watching the run through
+    rectjpg = joinpath(outdir, "results_dir", "rectifications", "c1.jpg")
+    @test isfile(rectjpg)
+    @test filesize(rectjpg) > 0
     # the diagnostic contract: fixed square canvas, 2× real time — 50 tracked frames at 25 fps
     # write every 2nd frame, declared at 25 fps ⇒ 25 frames spanning 1 s of playback
     s = probe_stream(diag)
@@ -135,6 +141,15 @@ end
     @test (rect.width, rect.height) == (320, 240)
     p = SVector(7.0, 11.0)
     @test rect.real2image(rect.image2real(p)) ≈ p   # the two maps are inverses
+    # off by default, and off means no trace at all — not even the folder
+    @test !ispath(joinpath(outdir, "results_dir", "rectifications"))
+
+    # on request, one image per calibration here too — this time through the only_scale builder
+    diagdir = mktempdir()
+    cd(() -> Fromage.only_rectify(dir; rectification_diagnostics = true), diagdir)
+    scalejpg = joinpath(diagdir, "results_dir", "rectifications", "c1.jpg")
+    @test isfile(scalejpg)
+    @test filesize(scalejpg) > 0
 
     # no rectification involved: raw pixel coordinates, one raw-view diagnostic per run, named by
     # run_id — which this csv does not set, so it is the imputed row number

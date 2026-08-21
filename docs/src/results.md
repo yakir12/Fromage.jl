@@ -39,6 +39,21 @@ Things to look for:
 - The arena should look right in the top-down view: straight edges straight, circles circular. A warped arena means a bad calibration.
 - The trace should look like a plausible path for your animal.
 
+## The rectification images
+
+Off by default. Ask for them and `main` saves, for every calibration, that calibration's `extrinsic` frame warped through the rectification fit to it:
+
+```julia
+main("path/to/data"; rectification_diagnostics = true)
+```
+
+One JPEG per calibration lands in `results_dir/rectifications/`, named by its `calibration_id` — so `c1.jpg` is the calibration the csv calls `c1`. `only_rectify` takes the same keyword.
+
+This is the same "is the arena square?" check the diagnostic video gives you, except you get it as soon as the calibrations are built, before a single run has been tracked. Straight arena edges should come out straight and circles circular. A bowed, sheared or wildly stretched image means the calibration is wrong, and there is no point tracking anything against it — fix the calibration first.
+
+!!! note "AprilTag calibrations produce no image here"
+    An `apriltag` calibration has no single fixed image-to-real map to warp through, because the drone moves and every frame is registered separately. Its top-down view is the per-run [diagnostic video](#The-diagnostic-video) instead.
+
 ## The issues folder
 
 If a calibration fails detection — the checkerboard or the AprilTags can't be found in its extrinsic frame — Fromage saves that exact frame so you can see what it saw. The message in the report tells you where it went, e.g.:

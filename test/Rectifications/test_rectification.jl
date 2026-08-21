@@ -65,13 +65,16 @@
         extrinsic_t, start, stop, step = 1.15, 0.05, 1.05, 0.1
         # The two `missing`s used to be positional here, and nothing said which was `yadif` and
         # which was `blur`.
-        common = (; file = vid, extrinsic = extrinsic_t, start, stop, temporal_step = step,
+        common = (; file = vid, extrinsic = extrinsic_t, calibration_id = "c1", start, stop, temporal_step = step,
                   yadif = missing, blur = missing, width = Wimg, height = Himg, n_corners,
                   checker_size, aspect = 1.0, radial_parameters = 1)
 
-        diag = mktempdir()
+        # `rectification_diagnostics` is the same flag `main` takes: the image lands under
+        # results_dir, which is relative to the working directory, hence the `cd`.
+        outdir = mktempdir()
         # center = missing ⇒ defaults to the frame centre (the intended behaviour)
-        rect = R.from_video(; common..., center = missing, north = missing, diagnostic = diag)
+        rect = cd(() -> R.from_video(; common..., center = missing, north = missing,
+                                     rectification_diagnostics = true), outdir)
         image2real = rect.image2real
         ext_corners = R.get_corners(vid, extrinsic_t, missing, Wimg, Himg, n_corners)
 
@@ -93,7 +96,7 @@
             # no calibs window: pose + focal fit from the extrinsic frame alone, distortion pinned
             # at zero. The rendered clip is a pure pinhole with the principal point at the frame
             # centre, so the single-view fit (which fixes the principal point there) is well-posed.
-            rect0 = R.from_extrinsic(; file = vid, extrinsic = extrinsic_t, yadif = missing,
+            rect0 = R.from_extrinsic(; file = vid, extrinsic = extrinsic_t, calibration_id = "c0", yadif = missing,
                                      blur = missing, width = Wimg, height = Himg, n_corners,
                                      checker_size, aspect = 1.0, center = missing, north = missing)
             real_pts = map(rect0.image2real, ext_corners)
@@ -111,9 +114,9 @@
         end
 
         @testset "diagnostic frame written" begin
-            jpgs = filter(f -> endswith(f, ".jpg"), readdir(diag))
-            @test length(jpgs) == 1
-            @test filesize(joinpath(diag, only(jpgs))) > 0
+            jpg = joinpath(outdir, "results_dir", "rectifications", "c1.jpg")   # named by calibration_id
+            @test isfile(jpg)
+            @test filesize(jpg) > 0
         end
     end
 end

@@ -159,8 +159,8 @@
         corners = reshape(map(oblique, objs), ncr)
 
         checker = 1.0
-        rect = R._rectification("unused.mp4", 0.0, [corners], Wf, Hf, ncr, checker, 1.0, 0,
-                                missing, missing, nothing)
+        rect = R._rectification("unused.mp4", 0.0, "regression", [corners], Wf, Hf, ncr, checker,
+                                1.0, 0, missing, missing, false)
         metric = map(rect.image2real, corners)
         down   = vec([hypot((metric[i + 1, j] - metric[i, j])...) for i in 1:ncr[1] - 1, j in 1:ncr[2]])
         across = vec([hypot((metric[i, j + 1] - metric[i, j])...) for i in 1:ncr[1], j in 1:ncr[2] - 1])

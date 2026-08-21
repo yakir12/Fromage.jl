@@ -2,6 +2,7 @@ module Rectifications
 
 using ColorTypes: Gray
 using CoordinateTransformations: AffineMap, IdentityTransformation, LinearMap, PerspectiveMap, Translation
+using ..Paths: rectifications_dir
 using ..ShareIO: ShareIO
 using FFMPEG: FFMPEG
 using FileIO: FileIO
@@ -32,7 +33,7 @@ include("from_matlab.jl")
 include("plotting.jl")
 
 """
-    Rectification(c; diagnostic = nothing)
+    Rectification(c; rectification_diagnostics = false)
 
 The image ↔ real map pair for one verified calibration `c`, chosen by `c`'s type. The methods live
 in `VerifyRectifications`, which owns those types; each reads `c`'s fields and calls one of the

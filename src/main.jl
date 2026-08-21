@@ -65,7 +65,12 @@ function gather_runs(data_path, runs_file, defaults, run_ids = nothing)
     return filter_ids!(rs, run_ids, :run_id, "run_ids")
 end
 
-build_rectifications(cs) = @showprogress desc = "Building rectifications" tmap(Rectification, cs)
+# `rectification_diagnostics` travels from here to `_diagnostic` unchanged — same name, same `Bool`
+# — so there is no path assembly in between and nothing to keep in step. An `apriltag` calibration
+# has no fixed image->real map to warp through and quietly produces no image; its top-down
+# diagnostic is the per-run video instead.
+build_rectifications(cs, rectification_diagnostics::Bool = false) =
+    @showprogress desc = "Building rectifications" tmap(c -> Rectification(c; rectification_diagnostics), cs)
 
 # `rectification_defaults`/`tracking_defaults` globally replace the hardcoded defaults of the
 # tuning parameters (e.g. `rectification_defaults = (n_corners = (5, 8), blur = 0)`,
@@ -73,8 +78,14 @@ build_rectifications(cs) = @showprogress desc = "Building rectifications" tmap(R
 # hardcoded/probed defaults. Each gateway whitelists what may be set (see DEFAULTS in the
 # respective parsers.jl) and rejects anything else up front. `run_ids` restricts processing to
 # the named runs (only the rectifications those runs reference are built).
+#
+# `rectification_diagnostics` saves each calibration's extrinsic frame, warped through the
+# rectification that was fit to it, to `results_dir/rectifications/<calibration_id>.jpg` — the same
+# "are the straight edges straight" check the diagnostic video offers, but available as soon as the
+# rectifications are built rather than after every run has been tracked.
 function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.csv",
-        rectification_defaults = (;), tracking_defaults = (;), run_ids = nothing)
+        rectification_defaults = (;), tracking_defaults = (;), run_ids = nothing,
+        rectification_diagnostics::Bool = false)
     cs = gather_rectifications(data_path, calibs_file, rectification_defaults)
     rs = gather_runs(data_path, runs_file, tracking_defaults, run_ids)
 
@@ -88,7 +99,7 @@ function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.c
 
     calibs = DataFrame(calibration_id = calib_ids, c = cs)
 
-    calibs.rectification .= build_rectifications(calibs.c)
+    calibs.rectification .= build_rectifications(calibs.c, rectification_diagnostics)
 
     runs = DataFrame(calibration_id = [r.calibration_id for r in rs], run_id = [r.run_id for r in rs], r = rs)
     leftjoin!(runs, calibs, on = :calibration_id)
@@ -114,7 +125,8 @@ function only_track(data_path::String; runs_file = "runs.csv", tracking_defaults
         r -> track(r; diagnostic_file = joinpath(results_dir, string(r.run_id, ".mp4"))), rs)
 end
 
-function only_rectify(data_path::String; calibs_file = "calibs.csv", rectification_defaults = (;), calibration_ids = nothing)
+function only_rectify(data_path::String; calibs_file = "calibs.csv", rectification_defaults = (;),
+        calibration_ids = nothing, rectification_diagnostics::Bool = false)
     cs = gather_rectifications(data_path, calibs_file, rectification_defaults, calibration_ids)
-    return build_rectifications(cs)
+    return build_rectifications(cs, rectification_diagnostics)
 end
