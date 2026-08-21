@@ -18,9 +18,9 @@ end
 
 # One ffprobe per physical video file fills the intermediate :dimension/:duration/:video_fps columns
 # and imputes the two blank-able run parameters: :stop (← duration) and :fps (← video frame rate).
-function read_video_metadata!(df::AbstractDataFrame)
+function read_video_metadata!(df::AbstractDataFrame; progress = true)
     blank!(df, :dimension, :duration, :video_fps, :sar)
-    read_per_file!(df, :file, [:file], "Reading runs videos...", probe_video, apply_video_metadata!)
+    read_per_file!(df, :file, [:file], "Reading runs videos...", probe_video, apply_video_metadata!; progress)
 end
 
 apply_video_metadata!(g, issue::String) = push!.(g.issues, issue)
@@ -59,7 +59,7 @@ function verify_run_consistency!(df::AbstractDataFrame)
     end
 end
 
-function verifications!(df::AbstractDataFrame, data_path)
+function verifications!(df::AbstractDataFrame, data_path; progress = true)
     # run_id names the track file and the diagnostic segments, so it must be a usable file name.
     verify_id_filename!(df, :run_id)
 
@@ -68,7 +68,7 @@ function verifications!(df::AbstractDataFrame, data_path)
     resolve_paths!(df, data_path, :file)
 
     # One ffprobe per file: fills :dimension/:duration/:video_fps and imputes :stop/:fps.
-    read_video_metadata!(df)
+    read_video_metadata!(df; progress)
 
     # start_location is optional (missing rows skipped). It is (x, y) = (horizontal, vertical) in
     # *display* pixels, like a rectification's center/north, while ffprobe's width is in stored

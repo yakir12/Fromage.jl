@@ -14,9 +14,11 @@
         println(io, "r,c,nope.mp4,0,5")
     end
     @compile_workload begin
+        # `progress = false` silences the meters, which draw on stderr; the redirect silences the
+        # issues report, which is a genuine println to stdout. Neither belongs in precompile output.
         redirect_stdout(devnull) do
             try
-                load_runs(dir, csv; strict = false)
+                load_runs(dir, csv; strict = false, progress = false)
             catch e
                 # Deliberately broad: precompilation must not fail because the workload did. Ctrl-C
                 # during precompile should still stop it.

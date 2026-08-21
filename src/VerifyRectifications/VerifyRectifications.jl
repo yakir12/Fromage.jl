@@ -31,24 +31,26 @@ include("verifications.jl")
 # detection is dumped for inspection (see `verifications!`). Every run writes into a new time-stamped
 # folder of its own inside it, so what a run dumped is exactly what its folder holds; nothing here is
 # ever deleted, including anything the user keeps in the folder they name.
-function load_rectifications(file; strict = true, defaults = (;), issues_dir = DEFAULT_ISSUES_DIR)
+function load_rectifications(file; strict = true, defaults = (;), issues_dir = DEFAULT_ISSUES_DIR,
+        progress = true)
     data_path = dirname(file)
-    load_rectifications(data_path, file; strict, defaults, issues_dir)
+    load_rectifications(data_path, file; strict, defaults, issues_dir, progress)
 end
 
 # `defaults` globally replaces the hardcoded fallbacks of the whitelisted rectification parameters
 # (see DEFAULTS in parsers.jl); the hierarchy is csv cell → `defaults` → hardcoded/probed value.
-function load_rectifications(data_path, file; strict = true, defaults = (;), issues_dir = DEFAULT_ISSUES_DIR)
+function load_rectifications(data_path, file; strict = true, defaults = (;), issues_dir = DEFAULT_ISSUES_DIR,
+        progress = true)
     defaults = resolve_defaults(defaults)   # fail fast on unknown keys / unconvertible values
     csvrows = read_rows(file, COLUMNS, "calibration")
 
     # parse rows to RectificationMethods or error messages
-    cs = @showprogress desc = "Parsing calibs.csv" tmap(r -> parse_row(r, defaults), collect(csvrows))
+    cs = @showprogress desc = "Parsing calibs.csv" enabled = progress tmap(r -> parse_row(r, defaults), collect(csvrows))
 
     df = DataFrame(Tables.dictrowtable(cs))
     allowmissing!(df)
 
-    verifications!(df, data_path, issues_dir)
+    verifications!(df, data_path, issues_dir; progress)
 
     # a blank calibration_id cell is itself flagged as an issue, so it can be missing here
     if report_issues(df, :calibration_id, "calibs.csv", "calibration", strict;
