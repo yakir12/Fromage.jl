@@ -12,6 +12,13 @@ end
 """
     fit_model
 Wraps OpenCV function to fit a camera model to given object and image points.
+
+`sz` is the extent of the image points' two coordinates, in the order the points carry them —
+`(height, width)` for the transposed view everything here works in (see `_detect_corners`). It
+reaches OpenCV as `imageSize`, which seeds the principal point at its centre; with a single view
+that seed is also the answer, since `CALIB_FIX_PRINCIPAL_POINT` pins it there. Passing it the
+other way round therefore fits the extrinsics-only rectification around a principal point
+reflected across the frame diagonal.
 """
 function fit_model(sz, objpoints, imgpointss, n_corners, radial_parameters, aspect)
     cammat = convert(Matrix{Float64}, I(3))
