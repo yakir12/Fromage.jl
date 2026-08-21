@@ -3,8 +3,9 @@
 
 # Precompile the parse → verify → report pipeline. The bulk of first-call latency is the
 # DataFrames machinery (column-typed `subset`/`groupby`/`verify!` specializations) a single
-# points at a nonexistent file, so the run exercises the full parse + verification path but bails
-# before any ffprobe — no bundled media, fast and deterministic.
+# `load_runs` run compiles. The workload CSV points at a nonexistent file, so the run exercises the
+# full parse + verification path but bails before any ffprobe — no bundled media, fast and
+# deterministic.
 @setup_workload begin
     dir = mktempdir()
     csv = joinpath(dir, "precompile.csv")
