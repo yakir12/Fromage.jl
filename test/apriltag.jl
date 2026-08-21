@@ -32,7 +32,7 @@ const ANGLES  = [0.10, -0.20, 0.15, -0.05]
 const TAGS_CM = [[CENTERS[i] + rot(ANGLES[i]) * c for c in CANON] for i in 1:4]
 project(H) = [[apply_h(H, c) for c in tc] for tc in TAGS_CM]
 
-@testset "AprilTag geometry (phase 1)" begin
+@testset "AprilTag geometry" begin
 
     @testset "homography_dlt recovers a known homography" begin
         pts = SVector{2,Float64}[SVector(1400, 880), SVector(1500, 890), SVector(1490, 970), SVector(1395, 965), SVector(1445, 925)]
