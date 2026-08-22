@@ -97,27 +97,71 @@ build_rectifications(cs, rectification_diagnostics::Bool = false) =
 # rectification that was fit to it, to `results_dir/rectifications/<calibration_id>.jpg` — the same
 # "are the straight edges straight" check the diagnostic video offers, but available as soon as the
 # rectifications are built rather than after every run has been tracked.
+# Both csv files, validated as one dataset. The identities of BOTH are settled first — each file's
+# own, then the cross-file check that they describe the same thing — before either file's videos are
+# opened, so an incoherent pair costs no reads at all (#121, #122).
+#
+# The two loaders are driven a tier at a time rather than through `load_rectifications`/`load_runs`,
+# which validate one file end to end: the cross-file check has to happen between the tiers, and it
+# needs both files parsed to run at all.
+#
+# Returns the built vectors, or — under `strict = false`, when anything was wrong with the pair —
+# both annotated DataFrames instead. Both, not just the offending one: a dataset is accepted or
+# rejected as a whole, and runs whose calibration was rejected are not buildable anyway.
+function load_dataset(data_path, calibs_file, runs_file, rectification_defaults, tracking_defaults,
+        strict)
+    calibs, calibs_ids_ok = VerifyRectifications.parse_rectifications(
+        data_path, joinpath(data_path, calibs_file); defaults = rectification_defaults)
+    runs, runs_ids_ok = VerifyRuns.parse_runs(
+        data_path, joinpath(data_path, runs_file); defaults = tracking_defaults)
+
+    # Coherence is a property of the two files AS WRITTEN, so it is checked on all of their rows —
+    # before `run_ids` narrows anything. Narrowing decides what gets built, never what gets
+    # validated; otherwise asking for one run would fail the calibrations it did not ask for.
+    coherent = verify_cross_references!(calibs, runs, :calibration_id, "calibs.csv", "runs.csv")
+
+    # The first-tier gate, across both files. Both are reported before the throw, so a user fixing a
+    # dataset sees everything the csv text can tell them in one pass rather than one file's problems
+    # per run.
+    if !(calibs_ids_ok && runs_ids_ok && coherent)
+        bad = VerifyRectifications.report_calibs(calibs, false)
+        bad |= VerifyRuns.report_runs(runs, false)
+        bad && strict && error("there were issues with the data (see above)")
+    end
+
+    VerifyRectifications.verifications!(calibs, data_path, DEFAULT_ISSUES_DIR)
+    VerifyRuns.verifications!(runs, data_path)
+
+    bad = VerifyRectifications.report_calibs(calibs, false)
+    bad |= VerifyRuns.report_runs(runs, false)
+    if bad
+        strict && error("there were issues with the data (see above)")
+        return calibs, runs
+    end
+    return VerifyRectifications.build_methods(calibs), VerifyRuns.build_runs(runs)
+end
+
 function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.csv",
         rectification_defaults = (;), tracking_defaults = (;), run_ids = nothing,
         rectification_diagnostics::Bool = false, strict::Bool = true)
-    cs = gather_rectifications(data_path, calibs_file, rectification_defaults; strict)
-    rs = gather_runs(data_path, runs_file, tracking_defaults, run_ids; strict)
+    mkpath(results_dir)
+    cs, rs = load_dataset(data_path, calibs_file, runs_file, rectification_defaults,
+                          tracking_defaults, strict)
 
-    # `strict = false` is for looking at a dataset, not processing one: a file with issues comes
-    # back as its annotated DataFrame instead of built objects, so there is nothing to rectify or
-    # track. Both are handed back for inspection — including the clean one, which is a vector.
+    # `strict = false` is for looking at a dataset, not processing one: if anything was wrong the
+    # two annotated DataFrames come back instead of built objects, so there is nothing to rectify or
+    # track — a report, not a degraded run.
     if cs isa AbstractDataFrame || rs isa AbstractDataFrame
         return (; calibs = cs, runs = rs)
     end
 
+    # Coherence guarantees every calibration is used, so with no `run_ids` this keeps all of them;
+    # with one, it drops the calibrations the surviving runs no longer reference.
+    rs = filter_ids!(rs, run_ids, :run_id, "run_ids")
     run_calib_ids = [r.calibration_id for r in rs]
     filter!(c -> c.calibration_id ∈ run_calib_ids, cs)
 
     calib_ids = [c.calibration_id for c in cs]
-    if any(∉(calib_ids), run_calib_ids)
-        error("there are calibration IDs in the runs.csv file that are not present in the calibs.csv file")
-    end
-
     calibs = DataFrame(calibration_id = calib_ids, c = cs)
 
     calibs.rectification .= build_rectifications(calibs.c, rectification_diagnostics)
