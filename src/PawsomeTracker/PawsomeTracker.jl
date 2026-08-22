@@ -137,7 +137,11 @@ struct Video
     height::Int
     duration::Float64
     fps::Float64
-    sar::Rational
+    # `Rational{Int}`, not a bare `Rational`: the unparameterised spelling is abstract, so the field
+    # would be boxed and every read of it untyped. `VideoIO.aspect_ratio` returns
+    # `Union{Rational{Int32}, Rational{Int64}}` and either converts on construction. Matches
+    # `VerifyRuns.Source.sar`, which holds the same quantity read from ffprobe instead.
+    sar::Rational{Int}
 
     # `fps` is a request, not a promise: the sampler advances whole frames, so the only rates it can
     # deliver are `vid_fps / skip`. The sample count and every timestamp are derived from that
