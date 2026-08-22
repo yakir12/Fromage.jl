@@ -1,3 +1,15 @@
+# ---- first tier: identity ---------------------------------------------------------------------
+# Reads `calibration_id` and nothing else — no filesystem, no decoding. It runs before
+# `verifications!` so a duplicated or unusable id fails before a single video is probed or
+# corner-detected (#121). `calibration_id`'s presence is already checked at parse time.
+function verify_ids!(df::AbstractDataFrame)
+    verify_unique_ids!(df)
+    # calibration_id names the diagnostic image `rectification_diagnostics` writes (#101), so it
+    # must be a usable file name.
+    verify_id_filename!(df, :calibration_id)
+    return df
+end
+
 function verify_unique_ids!(df::AbstractDataFrame)
     tf = nonunique(df, :calibration_id) .&& completecases(df, :calibration_id)
     df.calibration_id[tf] .= missing
@@ -399,6 +411,9 @@ function verify_unique_calibrations!(df::AbstractDataFrame)
     end
 end
 
+# The second tier: everything that has to open a file, plus the value checks that depend on what
+# those files report. `verify_ids!` has already run and passed (or, under `strict = false`, flagged
+# the rows it rejected — which every stage below skips, since they all subset to unflagged rows).
 function verifications!(df::AbstractDataFrame, data_path, issues_dir = DEFAULT_ISSUES_DIR;
         progress = true)
 
@@ -407,12 +422,6 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = DEFAULT_I
     # itself is the caller's, and Fromage only ever adds to it (#86). save_issue_frame creates the
     # folder on the first frame it dumps, so a run that finds nothing to report writes nothing.
     run_dir = run_issues_dir(issues_dir)
-
-    verify_unique_ids!(df)
-
-    # calibration_id names the diagnostic image `rectification_diagnostics` writes (#101), so it
-    # must be a usable file name.
-    verify_id_filename!(df, :calibration_id)
 
     # The resolved :file is the identity every later step uses (the read passes, duplicate
     # detection); :matlab_file (the .mat, matlab rows only) groups the .mat reads.
