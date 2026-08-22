@@ -475,10 +475,15 @@ end
 
     @test_throws "there were issues" cd(() -> main(dir), outdir)      # the default still aborts
 
+    # A dataset is accepted or rejected as a whole, so both tables come back annotated — handing
+    # back built runs whose calibration was just rejected would imply a usability they lack (#122).
     out = cd(() -> main(dir; strict = false), outdir)
-    @test out.calibs isa DataFrame                                    # the offending file, annotated
+    @test out.calibs isa DataFrame
+    @test out.runs isa DataFrame
     @test hasproperty(out.calibs, :issues)
-    @test out.runs isa Vector                                         # runs.csv was clean
+    @test hasproperty(out.runs, :issues)
+    @test any(!isempty, out.calibs.issues)                            # the offending file
+    @test all(isempty, out.runs.issues)                               # runs.csv itself was clean
 end
 
 # The two csv files must describe one dataset: every run's calibration exists, and every calibration

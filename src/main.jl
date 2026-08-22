@@ -105,8 +105,9 @@ build_rectifications(cs, rectification_diagnostics::Bool = false) =
 # which validate one file end to end: the cross-file check has to happen between the tiers, and it
 # needs both files parsed to run at all.
 #
-# Returns the built vectors, or — under `strict = false`, when something was wrong — whichever of
-# the two annotated DataFrames the caller should read instead.
+# Returns the built vectors, or — under `strict = false`, when anything was wrong with the pair —
+# both annotated DataFrames instead. Both, not just the offending one: a dataset is accepted or
+# rejected as a whole, and runs whose calibration was rejected are not buildable anyway.
 function load_dataset(data_path, calibs_file, runs_file, rectification_defaults, tracking_defaults,
         strict)
     calibs, calibs_ids_ok = VerifyRectifications.parse_rectifications(
@@ -147,9 +148,9 @@ function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.c
     cs, rs = load_dataset(data_path, calibs_file, runs_file, rectification_defaults,
                           tracking_defaults, strict)
 
-    # `strict = false` is for looking at a dataset, not processing one: a file with issues comes
-    # back as its annotated DataFrame instead of built objects, so there is nothing to rectify or
-    # track. Both are handed back for inspection — including the clean one, which is a vector.
+    # `strict = false` is for looking at a dataset, not processing one: if anything was wrong the
+    # two annotated DataFrames come back instead of built objects, so there is nothing to rectify or
+    # track — a report, not a degraded run.
     if cs isa AbstractDataFrame || rs isa AbstractDataFrame
         return (; calibs = cs, runs = rs)
     end
