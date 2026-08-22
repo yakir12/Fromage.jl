@@ -133,7 +133,9 @@ metric_fit_issue(err) = "AprilTag metric fit did not converge (worst square erro
 struct ReferenceFrame
     ids::Vector{Int}
     corners::Vector{SVector{2, Float64}}          # flat 16, tag-major in `ids` order
-    M::SMatrix{3, 3, Float64}
+    # The length parameter is not optional decoration: without it the type is a UnionAll, so the
+    # matrix is boxed and every `ref.M * R` loses the static size. Same reason as RegisteredWarp.Hinvs.
+    M::SMatrix{3, 3, Float64, 9}
 end
 
 # Direct construction from detected corners: this one throws on a non-converged fit, since a caller
@@ -489,7 +491,8 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
             stack = get_stack(vid, tr.sz, tr.h, n_bkgd, warp)
             n = vid.nframes
             sz = size(vid.img)                             # raw frame size (row, col)
-            Hs = Vector{Union{Nothing, SMatrix{3, 3, Float64}}}(undef, n_bkgd)  # image→cm per prefill frame (dia + gating)
+            # image→cm per prefill frame (dia + gating); length parameter as in Hinvs above
+            Hs = Vector{Union{Nothing, SMatrix{3, 3, Float64, 9}}}(undef, n_bkgd)
             coords = Vector{Union{Missing, RowCol}}(undef, n)
             boxes = NTuple{4, Int}[]                       # per-tag ROI search boxes
             seeded = false
