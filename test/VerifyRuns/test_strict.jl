@@ -16,4 +16,28 @@
         @test occursin("row 1: target_width must be larger than zero", out)
         @test !occursin("run_id", out)
     end
+    # As in the calibration suite: under `strict` an id failure aborts before a video is opened, and
+    # ART.corrupt's absence from the report is what proves it (#121).
+    @testset "an id failure aborts before any video is opened (#121)" begin
+        rows = [runrow(run_id = "ok", file = ART.corrupt),
+                runrow(run_id = "bad/name", file = ART.a)]
+        _, out = capturing() do
+            try
+                check("tier1_abort.csv", rows; strict = true)
+            catch e
+                e
+            end
+        end
+        @test occursin("cannot appear in a file name", out)
+        @test !occursin("issue reading from video file", out)
+    end
+
+    @testset "without strict the id failure is quarantined, and the rest is still validated" begin
+        rows = [runrow(run_id = "ok", file = ART.corrupt),
+                runrow(run_id = "bad/name", file = ART.a)]
+        df = check("tier1_quarantine.csv", rows)
+        @test flagged(df, 2, "cannot appear in a file name")
+        @test flagged(df, 1, "issue reading from video file")
+    end
+
 end
