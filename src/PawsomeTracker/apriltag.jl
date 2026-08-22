@@ -242,9 +242,12 @@ end
 # does, and returns real coordinates as `(y, x)` (matching every other rectification's `image2real`,
 # so `save2csv` unpacks them the same way). `center`/`north` are pixels in the reference (extrinsic)
 # frame; a missing `center` defaults to the frame centre, a missing `north` leaves orientation alone.
-function apriltag_image2real(M, center, north, width, height)
-    c = ismissing(center) ? SVector{2, Float64}(width / 2, height / 2) : SVector{2, Float64}(center[1], center[2])
-    n = ismissing(north) ? missing : SVector{2, Float64}(north[1], north[2])
+function apriltag_image2real(M, center, north, width, height, aspect)
+    # `center`/`north` are DISPLAY pixels (see Rectifications.fix_coordinate), while `M` maps STORED
+    # reference pixels, so x is divided by aspect on the way in. The frame-centre default needs no
+    # such conversion: the display centre and the stored centre are the same point (#130).
+    c = ismissing(center) ? SVector{2, Float64}(width / 2, height / 2) : SVector{2, Float64}(center[1] / aspect, center[2])
+    n = ismissing(north) ? missing : SVector{2, Float64}(north[1] / aspect, north[2])
     # `f` mirrors a video image2real: reference pixel (col, row) → real (y, x). Feeding it and the
     # gauge points to the shared centre/north helpers pins the SAME north convention as the video path.
     f = p -> (cm = apply_h(M, SVector(Float64(p[1]), Float64(p[2]))); SVector(cm[2], cm[1]))
@@ -254,13 +257,14 @@ function apriltag_image2real(M, center, north, width, height)
 end
 
 # Build the AprilTag rectification from a verified `type = apriltag` calibs row.
-function ApriltagRectification(; file, extrinsic, ntags, family, checker_size, center, north, width, height)
+function ApriltagRectification(; file, extrinsic, ntags, family, checker_size, center, north,
+        width, height, aspect = 1.0)
     ref = reference_frame(file, extrinsic, ntags, family, checker_size)
     # Building a rectification has nowhere to put an issue string, so the report becomes a throw
     # here. In the normal pipeline this is unreachable: VerifyRectifications ran
     # apriltag_extrinsic_issue over the same arguments first and rejected the row.
     ref isa String && error(ref)
-    i2r = apriltag_image2real(ref.M, center, north, width, height)
+    i2r = apriltag_image2real(ref.M, center, north, width, height, aspect)
     return ApriltagRectification(ref, april_family(family), i2r, reference_ratio(ref), width, height)
 end
 

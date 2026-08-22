@@ -438,7 +438,11 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = DEFAULT_I
     # rows, so a missing center or north is simply not bounds-checked.
     for point in (:center, :north)
         verify!(df, x -> any(<(1), x), "$point cannot be smaller than 1", point)
-        verify!(df, (poi, dim) -> any(poi .> dim), "$point cannot be larger than the dimensions of the frame", point, :dimension)
+        # Display space, like start_location's bounds in the runs gateway: `center`/`north` are
+        # (x, y) as read off a screen, so x is checked against the display width (stored × aspect)
+        # while y, which aspect does not affect, is checked against the height (#130).
+        verify!(df, (poi, dim, asp) -> poi[1] > dim[1] * asp || poi[2] > dim[2],
+                "$point cannot be larger than the dimensions of the frame", point, :dimension, :aspect)
     end
     # if north wasn't missing, but center was wrong and set to missing here, then now we have a missing center but existing north. the following fixes that:
     df.north[ismissing.(df.center)] .= missing

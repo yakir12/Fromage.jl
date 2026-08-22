@@ -6,7 +6,7 @@ function from_scale(; file, extrinsic, calibration_id, scale, aspect, center, no
         rectification_diagnostics::Bool = false)
     image2real = LinearMap(scale * SDiagonal(SVector{2, Float64}(1, aspect)))
     real2image = inv(image2real)
-    center = default_center(center, width, height)
+    center = default_center(center, width, height, aspect)
     image2real, real2image = add_center_north(image2real, real2image, center, north, aspect)
     # `scale` is this method's units-per-pixel, i.e. its `ratio` — the same argument the other
     # builders hand `_diagnostic`. This used to repeat that function's body inline, and computed the

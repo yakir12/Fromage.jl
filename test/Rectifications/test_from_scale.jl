@@ -41,4 +41,38 @@
         @test hypot((i2r(p0 + SVector(0.0, 1.0)) - i2r(p0))...) ≈ 0.5
     end
 
+    # `center`/`north` are DISPLAY pixels: display x = stored col × aspect. This is the convention
+    # `start_location` already uses (see test/VerifyRuns/test_tracking.jl), and `center` feeds that
+    # same slot, so the two must agree. Before #130 the conversion went the wrong way and every
+    # anamorphic rectification was displaced by (aspect - 1) × x — half a frame at aspect 2.
+    @testset "center/north are display pixels (#130)" begin
+        W, H = 640, 480
+        stored_centre = SVector(H / 2, W / 2)          # image (row, col) — the true frame centre
+
+        for aspect in (1.0, 2.0, 0.5, 1.4)
+            display_w = W * aspect
+            rect(c) = R.from_scale(; file = "unused.mp4", extrinsic = 0.0, calibration_id = "s",
+                scale = 0.5, aspect, center = c, north = missing, width = W, height = H)
+
+            # the default centre must be the true frame centre, whatever the aspect
+            @test rect(missing).real2image(SVector(0.0, 0.0)) ≈ stored_centre
+
+            # and an explicitly given display-space centre must land in the same place
+            @test rect(SVector(display_w / 2, H / 2)).real2image(SVector(0.0, 0.0)) ≈ stored_centre
+
+            # a centre off to one side maps to stored col = x / aspect, not x * aspect
+            x = display_w / 4
+            @test rect(SVector(x, H / 2)).real2image(SVector(0.0, 0.0)) ≈ SVector(H / 2, W / 4)
+        end
+
+        # north is converted the same way: due north of centre in display space must come out due
+        # north in real space (real y increases downward, so north is -y)
+        r = R.from_scale(; file = "unused.mp4", extrinsic = 0.0, calibration_id = "s", scale = 0.5,
+            aspect = 2.0, center = SVector(640.0, 240.0), north = SVector(640.0, 100.0),
+            width = W, height = H)
+        up = r.image2real(SVector(100.0, 320.0))       # a point above the centre, stored (row, col)
+        @test up[1] < 0                                # north lies along -y
+        @test isapprox(up[2], 0.0; atol = 1e-9)        # and squarely on the axis
+    end
+
 end

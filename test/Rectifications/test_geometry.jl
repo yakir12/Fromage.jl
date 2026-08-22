@@ -6,8 +6,9 @@
 
     @testset "fix_coordinate" begin
         @test R.fix_coordinate(missing, 2.0) === missing            # passthrough for "no point"
-        # (x, y) ↦ (y, aspect*x): swaps axes and applies the aspect ratio
-        @test R.fix_coordinate((3.0, 5.0), 2.0) == (5.0, 6.0)
+        # display (x, y) ↦ stored (row, col) = (y, x/aspect): swaps the axes and undoes the pixel
+        # squeeze, so a display x maps back to the column it was read from (#130)
+        @test R.fix_coordinate((3.0, 5.0), 2.0) == (5.0, 1.5)
         @test R.fix_coordinate((3.0, 5.0), 1.0) == (5.0, 3.0)
     end
 
@@ -104,12 +105,16 @@
     end
 
     @testset "default_center" begin
-        # no center given ⇒ frame centre in (w, h) pixel coordinates
-        @test R.default_center(missing, 640, 480) == SVector(320.0, 240.0)
-        @test R.default_center(missing, 100, 50) == SVector(50.0, 25.0)
+        # no center given ⇒ the frame centre, expressed in the DISPLAY pixels center/north are
+        # written in, so fix_coordinate converts it back to the true stored centre (#130)
+        @test R.default_center(missing, 640, 480, 1.0) == SVector(320.0, 240.0)
+        @test R.default_center(missing, 100, 50, 1.0) == SVector(50.0, 25.0)
+        # anamorphic: the display centre is aspect times wider, and round-trips to the stored one
+        @test R.default_center(missing, 640, 480, 2.0) == SVector(640.0, 240.0)
+        @test R.fix_coordinate(R.default_center(missing, 640, 480, 2.0), 2.0) == (240.0, 320.0)
         # an explicit center passes straight through, untouched
-        @test R.default_center(SVector(1.0, 2.0), 640, 480) == SVector(1.0, 2.0)
-        @test R.default_center((10, 20), 640, 480) === (10, 20)
+        @test R.default_center(SVector(1.0, 2.0), 640, 480, 1.0) == SVector(1.0, 2.0)
+        @test R.default_center((10, 20), 640, 480, 2.0) === (10, 20)
     end
 
     @testset "checker_size_pixel" begin
