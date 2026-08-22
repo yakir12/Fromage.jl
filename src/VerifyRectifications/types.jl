@@ -75,9 +75,10 @@ end
 # transposition would produce a silently wrong map rather than an error.
 
 # The six facts every builder needs from the shared `Source` (`calibration_id`, which names the
-# diagnostic image, lives on the method itself and is passed alongside). `aspect` is not among them: the AprilTag path recovers metric
-# scale from the tags themselves and has no pixel-aspect correction to make, so the three builders
-# that do need it ask for it by name.
+# diagnostic image, lives on the method itself and is passed alongside). `aspect` is not among them
+# only because it is spelled `c.source.aspect` at each call below; every builder needs it, the
+# AprilTag one included — its metric scale comes from the tags, but its `center`/`north` are still
+# display pixels that have to be converted like everyone else's (#130).
 _source(s::Source) = (; s.file, s.extrinsic, s.center, s.north, s.width, s.height)
 
 Rectification(c::Video; kwargs...) =
@@ -108,5 +109,6 @@ Rectification(c::Scale; kwargs...) =
 # render at build time — the top-down diagnostic is produced per-run during tracking — so `kwargs`
 # (e.g. `diagnostic`) are ignored.
 Rectification(c::Apriltag; kwargs...) =
-    ApriltagRectification(; _source(c.source)..., ntags = c.apriltags, c.family, c.checker_size)
+    ApriltagRectification(; _source(c.source)..., c.source.aspect, ntags = c.apriltags, c.family,
+        c.checker_size)
 

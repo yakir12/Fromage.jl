@@ -226,7 +226,7 @@ function _maps(R, t, frow, fcol, crow, ccol, k, checker_size, width, height, asp
     inv_scale, inv_extrinsic, inv_perspective_map, inv_distort, inv_intrinsic = img2obj(intrinsic, extrinsic_transform, scale, k)
     image2real = ∘(pop, inv_scale, inv_extrinsic, inv_perspective_map, inv_distort, inv_intrinsic)
     real2image = ∘(intrinsic, distort, PerspectiveMap(), extrinsic_transform, scale, Base.Fix2(push, 0))
-    center = default_center(center, width, height)
+    center = default_center(center, width, height, aspect)
     return add_center_north(image2real, real2image, center, north, aspect)
 end
 
