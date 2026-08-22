@@ -109,7 +109,9 @@ update_ratio!(dia::Diagnostic, sz) = update_ratio!(dia.scene, sz)
 # `update_ratio!` before the first write.
 struct RawScene
     buffer::Matrix{Gray{N0f8}}
-    ratio::Ref{NTuple{2, Float64}}
+    # `Base.RefValue`, not `Ref`: `Ref` is abstract, so the field would be boxed. `Ref{T}()` below
+    # already constructs a `RefValue{T}` — only the declaration was loose.
+    ratio::Base.RefValue{NTuple{2, Float64}}
 end
 RawScene() = RawScene(Matrix{Gray{N0f8}}(undef, DIAGNOSTIC_VIDEO_SIZE...), Ref{NTuple{2, Float64}}())
 canvas_prototype(s::RawScene) = s.buffer
