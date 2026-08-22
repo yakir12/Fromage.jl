@@ -23,7 +23,7 @@ using .PawsomeTracker: track
 using .VerifyRectifications: load_rectifications, RectificationMethod
 using .VerifyRuns: load_runs, Run
 
-using DataFrames: DataFrame, Not, leftjoin!, select!, transform!
+using DataFrames: AbstractDataFrame, DataFrame, Not, leftjoin!, select!, transform!
 using FFMPEG: ffmpeg_exe
 using OhMyThreads: tforeach, tmap
 using ProgressMeter: @showprogress

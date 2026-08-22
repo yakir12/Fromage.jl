@@ -56,19 +56,23 @@ end
 # named, and drop everything the caller did not ask for. The loaders return the annotated DataFrame
 # only under `strict = false`; on the default strict path they return the run/rectification vectors
 # — asserted so the union doesn't leak downstream (JET flags e.g. `length(::DataFrame)` otherwise).
-function gather_rectifications(data_path, calibs_file, defaults, calibration_ids = nothing)
+# Under `strict = false` that DataFrame is handed straight back, unfiltered: it is a report, not a
+# set of things to build.
+function gather_rectifications(data_path, calibs_file, defaults, calibration_ids = nothing;
+        strict = true)
     mkpath(results_dir)
     # `issues_dir` is left at its default, which Paths derives from `results_dir` — the frames a
     # failing calibration dumps land under the same output folder as everything else.
-    cs = load_rectifications(joinpath(data_path, calibs_file);
-        defaults)::Vector{RectificationMethod}
-    return filter_ids!(cs, calibration_ids, :calibration_id, "calibration_ids")
+    cs = load_rectifications(joinpath(data_path, calibs_file); defaults, strict)
+    cs isa AbstractDataFrame && return cs
+    return filter_ids!(cs::Vector{RectificationMethod}, calibration_ids, :calibration_id, "calibration_ids")
 end
 
-function gather_runs(data_path, runs_file, defaults, run_ids = nothing)
+function gather_runs(data_path, runs_file, defaults, run_ids = nothing; strict = true)
     mkpath(results_dir)
-    rs = load_runs(joinpath(data_path, runs_file); defaults)::Vector{Run}
-    return filter_ids!(rs, run_ids, :run_id, "run_ids")
+    rs = load_runs(joinpath(data_path, runs_file); defaults, strict)
+    rs isa AbstractDataFrame && return rs
+    return filter_ids!(rs::Vector{Run}, run_ids, :run_id, "run_ids")
 end
 
 # `rectification_diagnostics` travels from here to `_diagnostic` unchanged — same name, same `Bool`
@@ -85,15 +89,26 @@ build_rectifications(cs, rectification_diagnostics::Bool = false) =
 # respective parsers.jl) and rejects anything else up front. `run_ids` restricts processing to
 # the named runs (only the rectifications those runs reference are built).
 #
+# `strict = false` reports every issue in both csv files and returns them for inspection rather
+# than aborting — a debugging mode (see the `only_*` entry points, which serve the same purpose by
+# narrowing instead). Nothing is rectified or tracked in that case.
+#
 # `rectification_diagnostics` saves each calibration's extrinsic frame, warped through the
 # rectification that was fit to it, to `results_dir/rectifications/<calibration_id>.jpg` — the same
 # "are the straight edges straight" check the diagnostic video offers, but available as soon as the
 # rectifications are built rather than after every run has been tracked.
 function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.csv",
         rectification_defaults = (;), tracking_defaults = (;), run_ids = nothing,
-        rectification_diagnostics::Bool = false)
-    cs = gather_rectifications(data_path, calibs_file, rectification_defaults)
-    rs = gather_runs(data_path, runs_file, tracking_defaults, run_ids)
+        rectification_diagnostics::Bool = false, strict::Bool = true)
+    cs = gather_rectifications(data_path, calibs_file, rectification_defaults; strict)
+    rs = gather_runs(data_path, runs_file, tracking_defaults, run_ids; strict)
+
+    # `strict = false` is for looking at a dataset, not processing one: a file with issues comes
+    # back as its annotated DataFrame instead of built objects, so there is nothing to rectify or
+    # track. Both are handed back for inspection — including the clean one, which is a vector.
+    if cs isa AbstractDataFrame || rs isa AbstractDataFrame
+        return (; calibs = cs, runs = rs)
+    end
 
     run_calib_ids = [r.calibration_id for r in rs]
     filter!(c -> c.calibration_id ∈ run_calib_ids, cs)

@@ -42,9 +42,43 @@ window_nonpositive(x) = x isa Tuple ? any(≤(0), x) : x ≤ 0
 # Run-level fields, as opposed to the per-segment file/start/stop/start_location: the whole run
 # shares one value (they end up in the run's `Source`), so segments of one run must agree on them —
 # checked by verify_run_consistency! via `allequal`, which treats all-missing as agreeing. All but
-# `calibration_id` and `dimension`/`sar` (ffprobe-read, not CSV columns) feed `track`.
+# `dimension`/`sar` (ffprobe-read, not CSV columns) feed `track`.
+#
+# `calibration_id` is deliberately absent: it is an identity, so `verify_ids!` compares it in the
+# first tier, before any video is opened (#121). Re-comparing it here would report the same
+# disagreement twice.
 const SHARED_PARAMS = (:target_width, :window_size, :darker_target, :fps,
-    :initial_search_factor, :scale, :background_length, :calibration_id, :dimension, :sar)
+    :initial_search_factor, :scale, :background_length, :dimension, :sar)
+
+# ---- first tier: identity ---------------------------------------------------------------------
+# Everything here reads `run_id` and `calibration_id` and nothing else — no filesystem, no decoding.
+# It runs before `verifications!` so that a mistyped or duplicated id fails before a single video is
+# opened, instead of after the whole file has been probed and corner-detected (#121).
+function verify_ids!(df::AbstractDataFrame)
+    # run_id is all-or-nothing, and auto-numbered when every cell is blank. It comes first because
+    # the grouping below, the issue report, and (in `main`) the cross-file check all need the final
+    # value.
+    resolve_run_ids!(df)
+    # run_id names the track file and the diagnostic segments, so it must be a usable file name.
+    verify_id_filename!(df, :run_id)
+    verify_run_calibration!(df)
+    return df
+end
+
+# A run must name exactly ONE calibration: everything downstream joins the two files on it. The
+# other run-level parameters are compared by verify_run_consistency! in the second tier, where the
+# ffprobe-filled ones it also covers are available. Compared only among otherwise-clean rows, as
+# there: a row whose id cell was already flagged would read as a spurious disagreement.
+function verify_run_calibration!(df::AbstractDataFrame)
+    for g in groupby(df, :run_id)
+        (nrow(g) > 1 && !ismissing(g.run_id[1]) && all(isempty, g.issues)) || continue
+        allequal(g.calibration_id) && continue
+        push!.(g.issues, "run segments disagree on calibration_id")
+    end
+    return df
+end
+
+# ---- second tier ------------------------------------------------------------------------------
 
 # A run may be split across several CSV rows (one per segment video) sharing a :run_id. Those rows
 # must agree on every run-level parameter; only file/start/stop/start_location may vary. Compared
@@ -59,10 +93,10 @@ function verify_run_consistency!(df::AbstractDataFrame)
     end
 end
 
+# The second tier: everything that has to open a file, plus the value checks that depend on what
+# those files report. `verify_ids!` has already run and passed (or, under `strict = false`, flagged
+# the rows it rejected — which every stage below skips, since they all subset to unflagged rows).
 function verifications!(df::AbstractDataFrame, data_path; progress = true)
-    # run_id names the track file and the diagnostic segments, so it must be a usable file name.
-    verify_id_filename!(df, :run_id)
-
     # :file becomes the canonical absolute path — the identity used for per-file reads and segment
     # grouping.
     resolve_paths!(df, data_path, :file)

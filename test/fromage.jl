@@ -455,4 +455,29 @@ end
     @test probe_stream(joined).nframes == 10
 end
 
+# `strict = false` is the debugging mode: report everything wrong with both files and hand them
+# back, rather than stopping at the first one (#121).
+@testset "main(strict = false) reports both files instead of aborting" begin
+    dir = mktempdir()
+    make_video(joinpath(dir, "cal.mp4"); size = (320, 240), duration = 2)
+    target, _ = make_target_video(dir, "nonstrict")
+    open(joinpath(dir, "calibs.csv"), "w") do io
+        println(io, "calibration_id,type,file,extrinsic,scale")
+        println(io, "c1,only_scale,cal.mp4,1,2")
+        println(io, "c1,only_scale,cal.mp4,1,2")     # duplicate id: a first-tier failure
+    end
+    open(joinpath(dir, "runs.csv"), "w") do io
+        println(io, "calibration_id,file,start_location")
+        println(io, "c1,$(only(target)),\"(55, 50)\"")
+    end
+    outdir = mktempdir()
+
+    @test_throws "there were issues" cd(() -> main(dir), outdir)      # the default still aborts
+
+    out = cd(() -> main(dir; strict = false), outdir)
+    @test out.calibs isa DataFrame                                    # the offending file, annotated
+    @test hasproperty(out.calibs, :issues)
+    @test out.runs isa Vector                                         # runs.csv was clean
+end
+
 end
