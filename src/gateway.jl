@@ -83,8 +83,12 @@ end
 # once, then fold the result back into its rows with `apply!`. Grouping on the canonical resolved
 # path (see `resolve_paths!`) reads a file reached through several spellings once, not once per
 # spelling. `read` returns either the metadata or an issue string, and `apply!` dispatches on which.
+# Flagged rows are skipped, as in every other second-tier stage: a row that is already rejected —
+# for a quarantined identity (#122), or anything else — has nothing to gain from the read, and on a
+# share a read is the expensive part.
 function read_per_file!(df::AbstractDataFrame, filecol, groupcols, desc, read, apply!; progress = true)
-    groups = collect(groupby(dropmissing(df, groupcols; view = true), groupcols))
+    usable = subset(dropmissing(df, groupcols; view = true), :issues => ByRow(isempty); view = true)
+    groups = collect(groupby(usable, groupcols))
     metas = @showprogress desc = desc enabled = progress tmap(g -> read(g[1, filecol]), groups)
     for (g, meta) in zip(groups, metas)
         apply!(g, meta)
@@ -123,6 +127,39 @@ function verify_id_filename!(df::AbstractDataFrame, idcol)
         isnothing(issue) || push!(r.issues, "$idcol $issue")
     end
     return df
+end
+
+# Two csv files describe one dataset when every id one of them references exists in the other, and
+# every id the other defines is actually referenced. Neither half is checkable inside a single
+# gateway — the knowledge is cross-file — so it lives here, where nothing knows either domain, and
+# the caller supplies the column and the two file names.
+#
+# `defined` owns the ids, `used` references them. Issues land on the rows carrying the offending id,
+# so the per-file report names the row and the id with no extra machinery, and every second-tier
+# stage skips those rows for free (they all subset to unflagged rows).
+#
+# A missing id is passed over rather than reported here: it is already flagged, by the parser or by
+# the uniqueness check that nulled it, and it cannot be matched against anything either way.
+#
+# Returns whether the two files cohere, which is what the caller's first-tier gate keys on.
+function verify_cross_references!(defined::AbstractDataFrame, used::AbstractDataFrame, idcol,
+        defined_name, used_name)
+    defined_ids = Set(skipmissing(defined[!, idcol]))
+    used_ids = Set(skipmissing(used[!, idcol]))
+    coherent = true
+    for r in eachrow(defined)
+        id = r[idcol]
+        (ismissing(id) || id in used_ids) && continue
+        push!(r.issues, "$idcol $id is not used by any row in $used_name — it will not be validated or built")
+        coherent = false
+    end
+    for r in eachrow(used)
+        id = r[idcol]
+        (ismissing(id) || id in defined_ids) && continue
+        push!(r.issues, "references $idcol $id, which is not in $defined_name — it will not be validated or built")
+        coherent = false
+    end
+    return coherent
 end
 
 # Print every row's issues, one line per row, and throw under `strict`. Returns whether anything was

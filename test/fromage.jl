@@ -10,6 +10,7 @@ using DataFrames: DataFrame, nrow
 using StaticArrays: SVector
 using MAT: matwrite
 using ..Fixtures
+using ..Harness: capturing
 
 
 @testset "Fromage end-to-end (main)" begin
@@ -478,6 +479,72 @@ end
     @test out.calibs isa DataFrame                                    # the offending file, annotated
     @test hasproperty(out.calibs, :issues)
     @test out.runs isa Vector                                         # runs.csv was clean
+end
+
+# The two csv files must describe one dataset: every run's calibration exists, and every calibration
+# is used (#122). Both are first-tier checks, so an incoherent pair costs no video reads at all.
+@testset "calibs.csv and runs.csv must be coherent" begin
+    dir = mktempdir()
+    make_video(joinpath(dir, "cal.mp4"); size = (320, 240), duration = 2)
+    write(joinpath(dir, "broken.mp4"), rand(UInt8, 4096))   # unreadable: probing it is loud
+    target, _ = make_target_video(dir, "coh")
+    outdir = mktempdir()
+
+    @testset "a calibration no run uses is rejected, before anything is opened" begin
+        write(joinpath(dir, "calibs.csv"),
+              "calibration_id,type,file,extrinsic,scale\nc1,only_scale,cal.mp4,1,2\nc2,only_scale,broken.mp4,1,2\n")
+        write(joinpath(dir, "runs.csv"),
+              "calibration_id,file,start_location\nc1,$(only(target)),\"(55, 50)\"\n")
+        _, out = capturing() do
+            try
+                cd(() -> main(dir; tracking_defaults = (target_width = 10,)), outdir)
+            catch e
+                e
+            end
+        end
+        @test occursin("calibration_id c2 is not used by any row in runs.csv", out)
+        # the unused calibration points at an unreadable video; probing it would say so loudly, so
+        # this silence is what proves the first tier stopped before any read
+        @test !occursin("issue reading from video file", out)
+    end
+
+    @testset "a run naming a calibration that does not exist is rejected, and both files reported" begin
+        write(joinpath(dir, "calibs.csv"),
+              "calibration_id,type,file,extrinsic,scale\nc1,only_scale,cal.mp4,1,2\n")
+        write(joinpath(dir, "runs.csv"),
+              "calibration_id,file,start_location\nc9,$(only(target)),\"(55, 50)\"\n")
+        _, out = capturing() do
+            try
+                cd(() -> main(dir; tracking_defaults = (target_width = 10,)), outdir)
+            catch e
+                e
+            end
+        end
+        # both halves are reported in one pass: together they diagnose the typo
+        @test occursin("references calibration_id c9, which is not in calibs.csv", out)
+        @test occursin("calibration_id c1 is not used by any row in runs.csv", out)
+    end
+end
+
+# Coherence is a property of the files AS WRITTEN, checked before `run_ids` narrows anything —
+# otherwise asking for one run would fail the calibrations it did not ask for (#122).
+@testset "run_ids still narrows a coherent multi-calibration folder" begin
+    dir = mktempdir()
+    make_video(joinpath(dir, "cal1.mp4"); size = (320, 240), duration = 2)
+    make_video(joinpath(dir, "cal2.mp4"); size = (320, 240), duration = 2)
+    t1, _ = make_target_video(dir, "n1")
+    t2, _ = make_target_video(dir, "n2")
+    write(joinpath(dir, "calibs.csv"),
+          "calibration_id,type,file,extrinsic,scale\nc1,only_scale,cal1.mp4,1,2\nc2,only_scale,cal2.mp4,1,2\n")
+    write(joinpath(dir, "runs.csv"),
+          "run_id,calibration_id,file,start_location\n" *
+          "r1,c1,$(only(t1)),\"(55, 50)\"\nr2,c2,$(only(t2)),\"(55, 50)\"\n")
+    outdir = mktempdir()
+
+    runs = cd(() -> main(dir; run_ids = ["r1"], tracking_defaults = (target_width = 10,)), outdir)
+    @test nrow(runs) == 1                       # only the run asked for
+    @test only(runs.run_id) == "r1"
+    @test only(runs.calibration_id) == "c1"     # and only the calibration it needs
 end
 
 end
