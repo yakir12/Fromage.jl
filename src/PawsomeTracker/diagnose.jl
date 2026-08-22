@@ -84,8 +84,9 @@ Base.close(dia::Diagnosis) = close_video_out!(dia.writer)
 struct Dont end
 # `file` (the diagnostic_file) is nothing: no diagnostic video requested, whatever the rectification.
 diagnose(::Nothing, _, _, _) = Dont()
-(::Dont)(_, _) = nothing
-(::Dont)(_, _, _) = nothing                    # 3-arg no-op for the apriltag callback
+# Shaped like `Diagnostic`'s own call signature, so the two stay in step: the apriltag callback
+# passes a third argument, anything else passes two.
+(::Dont)(_, _, _...) = nothing
 Base.close(::Dont) = nothing
 update_ratio!(::Dont, _) = nothing
 

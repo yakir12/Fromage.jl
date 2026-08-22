@@ -97,11 +97,15 @@ place_square(D, canon = CANON) = map(rigid_align(canon, D), canon)
 function fit_metric(tag_corners; canon = CANON, maxiter = 1000, tol = 1e-9)
     side = norm(canon[1] - canon[2])
     flat = reduce(vcat, tag_corners)
-    bestM = homography_dlt(collect(tag_corners[1]), canon)
-    beste = _worst_side(bestM, tag_corners, side)
-    for boot in eachindex(tag_corners)
-        M = homography_dlt(collect(tag_corners[boot]), canon)
-        e = _worst_side(M, tag_corners, side)
+    # The first bootstrap doubles as the fallback result: `beste` starts at its UNREFINED error, so
+    # if no refinement anywhere beats it, that fit is what comes back. It is therefore computed
+    # before the loop — and reused when the loop reaches it, rather than fitted a second time.
+    fit(boot) = (M = homography_dlt(collect(tag_corners[boot]), canon);
+                 (M, _worst_side(M, tag_corners, side)))
+    boots = eachindex(tag_corners)
+    bestM, beste = fit(first(boots))
+    for boot in boots
+        M, e = boot == first(boots) ? (bestM, beste) : fit(boot)
         for _ in 1:maxiter
             sq = [place_square(SVector{2,Float64}[apply_h(M, p) for p in tc], canon) for tc in tag_corners]
             T = rigid_align(sq[1], canon)                     # pin gauge: tag 1 → canonical square
@@ -278,11 +282,10 @@ function apriltag_extrinsic_issue(file, extrinsic, ntags, family, checker_size)
     return ref isa String ? ref : nothing
 end
 
-# `register`: homography mapping the current frame's image to the reference image, from all 16
-# corners (already aligned to `ref.ids` order by the caller). `ground_homography`: the full
-# image→cm map for this frame, composing registration with the fixed metric map.
+# Homography mapping the current frame's image to the reference image, from all 16 corners (already
+# aligned to `ref.ids` order by the caller). The full image→cm map for a frame is `ref.M * register(…)`,
+# which the tracking loop composes inline because it needs the registration separately for `inv`.
 register(ref::ReferenceFrame, corners) = homography_dlt(corners, ref.corners)
-ground_homography(ref::ReferenceFrame, corners) = ref.M * register(ref, corners)
 
 # The lazy registration warp: the background stack's index transform, composing each slice's
 # registration with the tracker's inverse scaling, so every slice is sampled in the SHARED REFERENCE

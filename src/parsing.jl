@@ -47,12 +47,16 @@ function set!(dict, ::Nothing, k, msg)
     push!(dict[:issues], msg)
 end
 
+# Does the csv actually say something in this cell? A present-but-blank cell (whitespace only)
+# counts as absent: a required field reports "is missing" rather than becoming an empty string, and
+# an optional one takes its default. Shared, so anything asking "did the user fill this in?" asks it
+# the same way the parser did — see VerifyRectifications' verify_pair.
+filled(row, k) = haskey(row, k) && !ismissing(row[k]) &&
+    !(row[k] isa AbstractString && isempty(strip(row[k])))
+
 function parseto!(dict, row, k, ::Type{T}, default = nothing) where {T}
-    raw = haskey(row, k) ? row[k] : missing
-    # A present-but-blank cell (whitespace only) counts as absent: a required field reports "is
-    # missing" rather than becoming an empty string, and an optional one takes its default.
-    if !ismissing(raw) && !(raw isa AbstractString && isempty(strip(raw)))
-        y = mytryparse(T, raw)
+    if filled(row, k)
+        y = mytryparse(T, row[k])
         set!(dict, y, k, "wrong $k format")
     else
         set!(dict, default, k, "$k is missing")
