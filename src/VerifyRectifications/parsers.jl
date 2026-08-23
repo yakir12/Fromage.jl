@@ -94,11 +94,14 @@ function parse_video!(dict, row, defaults)
     parseto!(dict, row, :yadif, Bool, defaults.yadif)
 end
 
-function verify_pair(dict, k1, k2)
-    if typeof(dict[k1]) != typeof(dict[k2])
-        dict[k1] = dict[k2] = missing
-        push!(dict[:issues], "$k1 and $k2 should be either both present or both missing")
-    end
+# The two calibs bounds are all-or-nothing. Asked of the CSV cells, not of the parsed values: a cell
+# that was filled in but malformed is *present*, and the parser has already said so — comparing the
+# parsed types instead reported a second, contradictory issue for one typo, and nulled the good
+# bound along with it.
+function verify_pair(dict, row, k1, k2)
+    filled(row, k1) == filled(row, k2) && return
+    dict[k1] = dict[k2] = missing
+    push!(dict[:issues], "$k1 and $k2 should be either both present or both missing")
 end
 
 function verify_center2north(dict)
@@ -135,7 +138,7 @@ function parse_row(row, defaults = DEFAULTS)
     dict[:type] = type
     if type == "video"
         parse_video!(dict, row, defaults)
-        verify_pair(dict, :start, :stop)
+        verify_pair(dict, row, :start, :stop)
     elseif type == "matlab"
         parse_matlab!(dict, row)
     elseif type == "only_scale"

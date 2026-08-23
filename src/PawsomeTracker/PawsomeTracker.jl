@@ -99,8 +99,16 @@ effective_fps(vid_fps, requested) = vid_fps / frame_skip(vid_fps, requested)
 
 get_sigma(target_width) = target_width / 2sqrt(2log(2))
 
-# A window side must be odd (the detection kernels are centred on a pixel), so an even one is
-# rounded up. Note the transpose: the caller gives (width, height), the tracker wants (rows, cols).
+# The transpose is the point: the caller gives (width, height), the tracker wants (rows, cols).
+#
+# `oddify` rounds an even side up, but NOT because the kernels need an odd window, as this used to
+# claim. `detect` scans `guess ± radii`, which spans `2r + 1` — odd whatever it is handed — and
+# `radii` is `window_size ÷ 2`, for which `oddify(l) ÷ 2 == l ÷ 2` at every `l`. So at `scale = 1`
+# and `sar = 1` it provably changes nothing. It only bites once the side is rescaled (`scale`) or
+# the column extent divided (`sar`), where the extra pixel survives the rounding often enough to
+# shift a radius by one — in about a fifth of sizes, and for no reason anyone can now state.
+# Removing it would change tracking on scaled or anamorphic runs, so it stays until that is a
+# deliberate call rather than a side effect of a comment fix.
 oddify(l::Int) = l + iseven(l)
 fix_window_size((w, h)::NTuple{2, Int}) = (oddify(h), oddify(w))
 fix_window_size(l::Int) = (oddify(l), oddify(l))

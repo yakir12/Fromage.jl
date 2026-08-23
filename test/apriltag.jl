@@ -9,7 +9,7 @@ using StaticArrays
 using LinearAlgebra
 # the geometry is internal to the submodule; import the (non-exported) names directly
 using Fromage.PawsomeTracker: CANON, apply_h, homography_dlt, place_square, fit_metric,
-    _worst_side, ReferenceFrame, register, ground_homography,
+    _worst_side, ReferenceFrame, register,
     RegisteredWarp, build_stack, canvas2raw, Gray, N0f8, METRIC_FIT_TOLERANCE
 
 rot(θ) = SMatrix{2,2,Float64}(cos(θ), sin(θ), -sin(θ), cos(θ))    # proper 2D rotation
@@ -76,12 +76,12 @@ project(H) = [[apply_h(H, c) for c in tc] for tc in TAGS_CM]
         beetle = SVector(37.0, -88.0)                                # a ground point (cm)
         img1 = project(HMILD); img2 = project(HMILD2)                # same tags, two drone poses
         b1 = apply_h(HMILD, beetle); b2 = apply_h(HMILD2, beetle)    # beetle seen in each frame
-        cm1 = apply_h(ground_homography(ref, reduce(vcat, img1)), b1)
-        cm2 = apply_h(ground_homography(ref, reduce(vcat, img2)), b2)
+        cm1 = apply_h(ref.M * register(ref, reduce(vcat, img1)), b1)
+        cm2 = apply_h(ref.M * register(ref, reduce(vcat, img2)), b2)
         @test norm(cm1 - cm2) < 1e-4                                 # same cm despite drone move
         # metric accuracy through a NON-reference frame: a known ground distance is recovered
         g1, g2 = SVector(50.0, -30.0), SVector(-90.0, 110.0)
-        Gh = ground_homography(ref, reduce(vcat, img2))
+        Gh = ref.M * register(ref, reduce(vcat, img2))
         d̂ = norm(apply_h(Gh, apply_h(HMILD2, g1)) - apply_h(Gh, apply_h(HMILD2, g2)))
         @test d̂ ≈ norm(g1 - g2) rtol = 1e-4
     end
