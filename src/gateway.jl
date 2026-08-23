@@ -17,9 +17,15 @@ using Tables: Tables
 # Read the CSV and screen it before a single cell is parsed: the file must exist, hold at least one
 # row, and name only columns the gateway recognizes. `what` names the file in the two messages that
 # mention it ("runs"/"calibration"), which are the gateway's own words for its input.
+#
+# CSV gets the bytes, not the path: a path source is memory-mapped, and the mapping outlives this
+# call — `CSV.Rows` is lazy and holds it until the object is collected. On Windows a mapped file
+# cannot be reopened for writing, so the iterate-on-your-csv loop (edit calibs.csv, run again in the
+# same session) fails with "Invalid argument" (#133). These files are one row per run; reading them
+# whole costs nothing.
 function read_rows(file, columns, what)
     isfile(file) || error("$what `.csv` file missing")
-    rows = CSV.Rows(file)
+    rows = CSV.Rows(read(file))
     isempty(Tables.rows(rows)) && error("csv file is empty")
     unrecognized = setdiff(Tables.schema(rows).names, columns)
     isempty(unrecognized) || error("unrecognized column/s in $what file: $unrecognized")
