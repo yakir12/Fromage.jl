@@ -7,6 +7,21 @@ on:
     tags: ["*"]
   workflow_dispatch:
 
+# julia-actions/cache runs with delete-old-caches: true, which needs `actions: write`
+# to prune superseded caches. The repository default is read-only, and permissions can
+# only be maintained or reduced down a reusable-workflow chain — never elevated — so
+# this has to be granted here, in the caller, not inside ReusableTest.yml.
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  # One concurrent run per ref. Never cancel in progress: AutoRelease gates on this workflow's
+  # conclusion, and a cancelled run reports "cancelled", which would silently skip
+  # the release for that commit.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   test:
     uses: ./.github/workflows/ReusableTest.yml
