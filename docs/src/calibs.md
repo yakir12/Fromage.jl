@@ -52,7 +52,7 @@ Optional:
 | `yadif` | read from video | `true` to deinterlace interlaced footage; detected automatically, override to force. |
 | `type` | `video` | see above. |
 
-!!! warning "Renamed in v0.1.57"
+!!! warning "Renamed in v0.1.58"
     `checker_width` used to be called `checker_size`. That name also served `type = apriltag` rows, where it meant a different quantity — a tag cell rather than a checkerboard square — so it has split in two: video rows use `checker_width`, apriltag rows use [`tag_cell_width`](#Columns-for-type-apriltag). A csv that still names `checker_size` is rejected up front with `unrecognized column/s in calibration file: [:checker_size]` and a note naming both replacements; rename the column and the file loads exactly as before. Nothing about the calibration changes.
 
 !!! tip "Count the *internal* corners"
@@ -92,7 +92,7 @@ Required: `calibration_id`, `file` (the drone footage — a video where the tags
 | `north` | — | `"(x, y)"` pixel due north of `center` in the `extrinsic` frame, as displayed; rotates the coordinates so north is consistent. Requires `center`. |
 | `path` | `.` | the **folder** containing `file`, relative to the csv file. Just the folder — the file name belongs in `file`, not here. |
 
-!!! warning "Renamed in v0.1.57"
+!!! warning "Renamed in v0.1.58"
     This column used to be called `checker_size`, a name it shared with the checkerboard square size of `type = video` rows. The two are different quantities, and one column could not carry both defaults — a global `checker_size` applied to video rows and silently did nothing to apriltag ones. The column has therefore split in two: video rows now use [`checker_width`](#Columns-for-type-video), apriltag rows use `tag_cell_width`. If you have already renamed it to `checker_width` but left it filled on an apriltag row, that is reported as `checker_width is not used by type apriltag (it was renamed to tag_cell_width)`.
 
 The tags are stationary across the whole experiment, so the reference is established once here and shared by every run — `runs.csv` therefore has no `apriltags` column (and, for an apriltag run, a run's own `start` frame is where its target search begins, not the calibration's `center`).

@@ -34,7 +34,7 @@ end
 # than to a fixed image→real map. `tag_cell_width` is the size of one tag CELL; the black-border
 # square is `cells_across(family) × tag_cell_width` (see PawsomeTracker.canon_square). It is NOT the
 # `checker_width` of a video calibration (a checkerboard square) — the two were one column until
-# v0.1.57 and are now separate, so each can carry its own default and each row says which it means.
+# v0.1.58 and are now separate, so each can carry its own default and each row says which it means.
 # `center`/`north` live in `source` and gauge the metric output exactly as for the other methods.
 struct Apriltag <: RectificationMethod
     source::Source

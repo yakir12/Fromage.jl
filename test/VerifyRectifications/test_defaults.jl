@@ -40,7 +40,7 @@
     end
 
     @testset "checker_width and tag_cell_width are separate columns" begin
-        # They shared one column until v0.1.57, which is what made a global checker_width silently do
+        # They shared one column until v0.1.58, which is what made a global checker_width silently do
         # nothing to apriltag rows: one key, two incompatible defaults (4.0 vs 12.0).
         df = check([apriltagrow()]; defaults = (checker_width = 5.0,))
         @test ismissing(df.checker_width[1])     # not a column this type reads

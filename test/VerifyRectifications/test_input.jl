@@ -17,7 +17,7 @@
 
     # A retired column is the one unrecognized name a user cannot debug from the generic message:
     # their file was correct when they wrote it. checker_size split into checker_width (video) and
-    # tag_cell_width (apriltag) in v0.1.57, so the error has to name both.
+    # tag_cell_width (apriltag) in v0.1.58, so the error has to name both.
     @testset "a renamed column says where it went" begin
         csv = write_rows(joinpath(DATADIR, "renamedcol.csv"), [["c", "4"]];
                          header = ["calibration_id", "checker_size"])
