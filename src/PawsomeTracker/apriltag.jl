@@ -263,8 +263,11 @@ function apriltag_image2real(M, center, north, width, height, aspect)
 end
 
 # Build the AprilTag rectification from a verified `type = apriltag` calibs row.
+# `aspect` has no default: the calibs gateway reads it from the video (or the csv) for every row,
+# so a default here would be a second definition of a value the caller always has -- exactly the
+# duplication #140/#141 were about. Square pixels are spelled `aspect = 1.0` at the call site.
 function ApriltagRectification(; file, extrinsic, ntags, family, tag_cell_width, center, north,
-        width, height, aspect = 1.0)
+        width, height, aspect)
     ref = reference_frame(file, extrinsic, ntags, family, tag_cell_width)
     # Building a rectification has nowhere to put an issue string, so the report becomes a throw
     # here. In the normal pipeline this is unreachable: VerifyRectifications ran

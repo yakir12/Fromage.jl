@@ -96,7 +96,7 @@
             # no calibs window: pose + focal fit from the extrinsic frame alone, distortion pinned
             # at zero. The rendered clip is a pure pinhole with the principal point at the frame
             # centre, so the single-view fit (which fixes the principal point there) is well-posed.
-            rect0 = R.from_extrinsic(; file = vid, extrinsic = extrinsic_t, calibration_id = "c0", yadif = missing,
+            rect0 = R.from_extrinsic(; rectification_diagnostics = false, file = vid, extrinsic = extrinsic_t, calibration_id = "c0", yadif = missing,
                                      blur = missing, width = Wimg, height = Himg, n_corners,
                                      checker_width, aspect = 1.0, center = missing, north = missing)
             real_pts = map(rect0.image2real, ext_corners)
@@ -107,7 +107,7 @@
 
         @testset "center defaults to frame centre" begin
             # explicit frame-centre pixel must reproduce the center = missing result exactly
-            i2r_explicit = R.from_video(; common..., center = SVector(Wimg / 2, Himg / 2),
+            i2r_explicit = R.from_video(; rectification_diagnostics = false, common..., center = SVector(Wimg / 2, Himg / 2),
                                         north = missing).image2real
             @test all(a ≈ b for (a, b) in zip(map(image2real, ext_corners),
                                               map(i2r_explicit, ext_corners)))

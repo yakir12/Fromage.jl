@@ -40,7 +40,7 @@ const REG_TOL = 1.0
 const TRACK_TOL = 1.5
 
 "Build the rectification the runs CSV would build, from frame 1 as the extrinsic frame."
-rectify(file) = ApriltagRectification(; file, extrinsic = 0, ntags = 4, family = "tag36h11",
+rectify(file) = ApriltagRectification(; aspect = 1.0, file, extrinsic = 0, ntags = 4, family = "tag36h11",
                                         tag_cell_width = Fixtures.TAG_CELL, center = missing,
                                         north = missing, width = FRAME, height = FRAME)
 

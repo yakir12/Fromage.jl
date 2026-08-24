@@ -161,7 +161,7 @@ end
 # 2. at an aspect ratio of 1, whatever `aspect` says
 function from_video(; file, extrinsic, calibration_id, start, stop, temporal_step, yadif, blur,
         width, height, n_corners, checker_width, aspect, radial_parameters, center, north,
-        rectification_diagnostics::Bool = false)
+        rectification_diagnostics::Bool)
     vf = _vf(yadif, blur)
     intrinsic_task = Threads.@spawn extract_intrinsics(file, start, stop, temporal_step, vf, width, height, n_corners)
     extrinsic_corners = get_corners(file, extrinsic, vf, width, height, n_corners)
@@ -190,7 +190,7 @@ than flagged; everything else (`yadif`, `blur`, `n_corners`, `checker_width`, `a
 DESIGN-HISTORY.md for why this asymmetry is deliberate.
 """
 function from_extrinsic(; file, extrinsic, yadif, blur, width, height, n_corners, checker_width,
-        aspect, center, north, calibration_id, rectification_diagnostics::Bool = false)
+        aspect, center, north, calibration_id, rectification_diagnostics::Bool)
     vf = _vf(yadif, blur)
     extrinsic_corners = get_corners(file, extrinsic, vf, width, height, n_corners)
     ismissing(extrinsic_corners) && error("no corners detected at extrinsic time stamp")

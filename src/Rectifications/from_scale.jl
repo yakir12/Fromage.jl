@@ -3,7 +3,7 @@
 # frame. Keyword-only, like every builder here — see the note above the dispatchers in
 # VerifyRectifications/types.jl.
 function from_scale(; file, extrinsic, calibration_id, scale, aspect, center, north, width, height,
-        rectification_diagnostics::Bool = false)
+        rectification_diagnostics::Bool)
     image2real = LinearMap(scale * SDiagonal(SVector{2, Float64}(1, aspect)))
     real2image = inv(image2real)
     center = default_center(center, width, height, aspect)

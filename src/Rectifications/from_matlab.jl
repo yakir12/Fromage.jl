@@ -5,7 +5,7 @@
 # coordinates come out in the `.mat`'s own world units (whatever square size the MATLAB
 # calibration was given), so the unit scale is 1.
 function from_matlab(; file, extrinsic, calibration_id, matlab_file, extrinsic_index, aspect, center, north,
-        width, height, rectification_diagnostics::Bool = false)
+        width, height, rectification_diagnostics::Bool)
     dict = matread(matlab_file)
     # the Camera Calibrator wraps everything in a single top-level struct (e.g. "cameraParams");
     # unwrap until the calibration fields are at hand (VerifyRectifications already verified they

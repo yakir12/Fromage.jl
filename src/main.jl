@@ -79,7 +79,7 @@ end
 # — so there is no path assembly in between and nothing to keep in step. An `apriltag` calibration
 # has no fixed image->real map to warp through and quietly produces no image; its top-down
 # diagnostic is the per-run video instead.
-build_rectifications(cs, rectification_diagnostics::Bool = false) =
+build_rectifications(cs, rectification_diagnostics::Bool) =
     @showprogress desc = "Building rectifications" tmap(c -> Rectification(c; rectification_diagnostics), cs)
 
 # `rectification_defaults`/`tracking_defaults` globally replace the hardcoded defaults of the
