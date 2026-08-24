@@ -11,6 +11,14 @@ on:
       - ".github/workflows/**"
     types: [opened, synchronize, reopened]
 
+# julia-actions/cache runs with delete-old-caches: true, which needs `actions: write`
+# to prune superseded caches. The repository default is read-only, and permissions can
+# only be maintained or reduced down a reusable-workflow chain — never elevated — so
+# this has to be granted here, in the caller, not inside ReusableTest.yml.
+permissions:
+  actions: write
+  contents: read
+
 concurrency:
   # Skip intermediate builds: always.
   # Cancel intermediate builds: only if it is a pull request build.
@@ -21,10 +29,24 @@ jobs:
   test:
     uses: ./.github/workflows/ReusableTest.yml
     with:
-      os: ubuntu-latest
+      os: ${{ matrix.os }}
       version: "1"
-      arch: x64
+      # Matches Test.yml: "default" resolves to the runner's native arch, so this keeps
+      # working if the runner images ever change architecture under us.
+      arch: default
       allow_failure: false
-      run_codecov: true
+      # Coverage is measured once, on the same leg Test.yml uploads from.
+      run_codecov: ${{ matrix.os == 'ubuntu-latest' }}
     secrets:
       codecov_token: ${{ secrets.CODECOV_TOKEN }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          # Windows is the only platform that has actually broken here (path/mmap
+          # handling), and it used to break *after* merge, where a red Test run on main
+          # silently blocks AutoRelease. Testing it on the PR is what closes that gap.
+          # macOS is deliberately left to the post-merge matrix in Test.yml: it has never
+          # caught a regression the other two missed, and Intel runners are the scarcest.
+          - windows-latest

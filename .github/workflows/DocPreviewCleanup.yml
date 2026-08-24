@@ -1,0 +1,49 @@
+# Adapted from FluxML/Flux.jl's clean_preview.yml (itself from CliMA/ClimaTimeSteppers.jl).
+#
+# docs/make.jl sets push_preview = true, so every PR deploys a previews/PR<n>/ directory
+# to gh-pages. Nothing removed them, so they accumulated indefinitely. This deletes a
+# PR's preview when the PR closes.
+#
+# Two deliberate deviations from the Flux original, both noted inline below:
+# the `permissions` block, and the `concurrency` group.
+name: Doc Preview Cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+# Flux's copy has no permissions block because it relies on the repository default
+# being read/write. Fromage's default is read-only, so the push below would fail
+# without this. Scoped to the one permission the job actually needs.
+permissions:
+  contents: write
+
+concurrency:
+  # Not in the Flux original. This job force-pushes gh-pages, so it must never run
+  # concurrently with itself — two closures racing would have the loser overwrite the
+  # winner's deletion. Queue instead of cancelling, so no cleanup is silently dropped.
+  group: gh-pages-force-push
+  cancel-in-progress: false
+
+jobs:
+  doc-preview-cleanup:
+    name: Delete the closed PR's doc preview
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v7
+        with:
+          ref: gh-pages
+
+      - name: Delete preview and history + push changes
+        run: |
+          if [ -d "previews/PR$PRNUM" ]; then
+            git config user.name "Documenter.jl"
+            git config user.email "documenter@juliadocs.github.io"
+            git rm -rf "previews/PR$PRNUM"
+            git commit -m "delete preview"
+            git branch gh-pages-new $(echo "delete history" | git commit-tree HEAD^{tree})
+            git push --force origin gh-pages-new:gh-pages
+          fi
+        env:
+          PRNUM: ${{ github.event.number }}
