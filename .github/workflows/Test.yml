@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  # One run per ref. Never cancel in progress: AutoRelease gates on this workflow's
+  # One concurrent run per ref. Never cancel in progress: AutoRelease gates on this workflow's
   # conclusion, and a cancelled run reports "cancelled", which would silently skip
   # the release for that commit.
   group: ${{ github.workflow }}-${{ github.ref }}
