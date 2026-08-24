@@ -26,10 +26,22 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # Skip intermediate builds: always.
-  # Cancel intermediate builds: only if it is a pull request build.
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+  # Keyed on the resource, not the ref (#125). Every job in this repository that writes
+  # to gh-pages — this workflow deploying main, this workflow deploying a PR preview, and
+  # DocPreviewCleanup.yml — shares this one group, so they serialize instead of racing.
+  #
+  # The old group was `${{ github.workflow }}-${{ github.ref }}`, which only stopped a ref
+  # from racing itself. A merge to main and an open PR's preview are different refs in
+  # different groups, so both deployed to the one branch they share and the loser died with
+  # `! [rejected] HEAD -> gh-pages (fetch first)`.
+  #
+  # cancel-in-progress must stay false: a cancelled deploy can leave gh-pages half-written,
+  # and DocPreviewCleanup force-pushes, so it must start from a checkout taken after any
+  # in-flight deploy has finished. The cost is that a PR preview no longer cancels its own
+  # superseded builds; GitHub still keeps only one run pending per group, so rapid pushes
+  # collapse to the newest rather than queueing without bound.
+  group: gh-pages
+  cancel-in-progress: false
 
 permissions:
   actions: write
