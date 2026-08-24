@@ -20,8 +20,8 @@ end
 
 # Save one run's track to results_dir/<run_id>.csv: one row per coordinate, with the `time` stamp
 # (seconds into the video) and the `x`/`y` real-world coordinates. `track` returns coordinates the
-# rectification's `image2real` has already been applied to, so the origin is at `center`,
-# north-aligned when `north` was given, in `checker_size`/`scale` units. Axis orientation follows
+# rectification's `image2real` has already been applied to, so the origin is at the calibration's
+# `center`, north-aligned when `north` was given, in the calibration's real-world unit. Axis follows
 # the image — x rightward, y downward — as `(y-direction, x-direction)`, hence the `y, x` unpack.
 # A `missing` coordinate (AprilTag tracking, where a frame's target couldn't be localized) keeps its
 # `time` with empty `x`/`y`, so the time axis stays intact and the gaps are explicit.
@@ -171,7 +171,7 @@ function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.c
 
     mktempdir() do path
         transform!(runs, :run_id => (x -> joinpath.(path, string.(x, ".mp4"))) => :diagnostic_file)
-        runs.run .= @showprogress desc = "Building runs" tmap((r, c, rectification, diagnostic_file) -> track(r; center = c.source.center, rectification, diagnostic_file), runs.r, runs.c, runs.rectification, runs.diagnostic_file)
+        runs.run .= @showprogress desc = "Building runs" tmap((r, c, rectification, diagnostic_file) -> track(r, c.source.center, rectification, diagnostic_file), runs.r, runs.c, runs.rectification, runs.diagnostic_file)
         concatenate(path, runs.diagnostic_file)
         select!(runs, Not(:diagnostic_file))
     end
@@ -186,8 +186,10 @@ end
 # rename every file as soon as `run_ids` filtered one out.
 function only_track(data_path::String; runs_file = "runs.csv", tracking_defaults = (;), run_ids = nothing)
     rs = gather_runs(data_path, runs_file, tracking_defaults, run_ids)
+    # No calibration here, so no scene centre to fall back on and nothing to rectify through: a
+    # first segment with no start_location of its own falls through to the frame centre.
     return @showprogress desc = "Building runs" tmap(
-        r -> track(r; diagnostic_file = joinpath(results_dir, string(r.run_id, ".mp4"))), rs)
+        r -> track(r, missing, nothing, joinpath(results_dir, string(r.run_id, ".mp4"))), rs)
 end
 
 function only_rectify(data_path::String; calibs_file = "calibs.csv", rectification_defaults = (;),

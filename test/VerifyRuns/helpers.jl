@@ -2,12 +2,13 @@
 # its test files use. The generic infrastructure lives in test/fixtures.jl (synthetic videos,
 # ffprobe readers) and test/harness.jl (CSV building, `flagged`, `capturing`).
 using Test
-using Fromage: VerifyRuns
+using Fromage: VerifyRuns, PawsomeTracker
 using CSV, DataFrames
 import ..Fixtures: make_target_video
 import ..Harness
 
 const VR = VerifyRuns
+const PT = PawsomeTracker
 
 # ---------------------------------------------------------------------------
 # Artifact generation (videos) into DATADIR.

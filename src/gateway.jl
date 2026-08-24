@@ -23,12 +23,19 @@ using Tables: Tables
 # cannot be reopened for writing, so the iterate-on-your-csv loop (edit calibs.csv, run again in the
 # same session) fails with "Invalid argument" (#133). These files are one row per run; reading them
 # whole costs nothing.
-function read_rows(file, columns, what)
+# `renamed` maps a retired column name to a description of where its value went. A rename is the
+# one unrecognized column a user cannot debug from the message alone: their file was correct when
+# they wrote it, and "unrecognized column/s: [:checker_size]" tells them it is gone without telling
+# them what replaced it. Nothing else needs the map, so gateways that have retired no column pass none.
+function read_rows(file, columns, what; renamed = Dict{Symbol, String}())
     isfile(file) || error("$what `.csv` file missing")
     rows = CSV.Rows(read(file))
     isempty(Tables.rows(rows)) && error("csv file is empty")
     unrecognized = setdiff(Tables.schema(rows).names, columns)
-    isempty(unrecognized) || error("unrecognized column/s in $what file: $unrecognized")
+    if !isempty(unrecognized)
+        hints = [" ($k was renamed to $(renamed[k]))" for k in unrecognized if haskey(renamed, k)]
+        error("unrecognized column/s in $what file: $unrecognized" * join(hints))
+    end
     return rows
 end
 

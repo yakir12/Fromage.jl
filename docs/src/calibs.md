@@ -40,7 +40,7 @@ Optional:
 | column | default | description |
 | --- | --- | --- |
 | `start`, `stop` | — | the time window during which the checkerboard is being moved around (tilted, shifted) for the internal camera calibration. Provide both or neither. The window must be long enough to contain at least 3 sampled frames with a detectable checkerboard (see `temporal_step`). When **both** are omitted the calibration is fit from the single `extrinsic` frame alone, and lens distortion is disregarded — only appropriate for distortion-free lenses; otherwise film a calibration window and provide it. |
-| `checker_size` | `4` | side length of a single checker square, in the real-world unit of your choice (e.g. cm). **The resulting track coordinates come out in this unit.** |
+| `checker_width` | `4` | side length of a single checker square, in the real-world unit of your choice (e.g. cm). **The resulting track coordinates come out in this unit.** |
 | `n_corners` | `"(7, 10)"` | number of *internal* corners of the checkerboard along its two sides (a board of 8 × 11 squares has 7 × 10 internal corners); each must be at least 2. |
 | `temporal_step` | `2.0` | sample one frame every `temporal_step` seconds within [`start`, `stop`]. E.g. a 30-second window at the default yields 16 candidate frames. Ignored without a calibration window. |
 | `center` | — | `"(x, y)"` pixel coordinate of the arena's center, **as the video is displayed** (the same convention as `start_location` in `runs.csv`: for anamorphic footage, x is measured across the displayed width, not the stored one). Becomes the **origin** of the real-world coordinate system, and doubles as the default starting location for this calibration's runs. |
@@ -51,6 +51,9 @@ Optional:
 | `aspect` | read from video | pixel aspect ratio; only override for anamorphic footage that misreports it. |
 | `yadif` | read from video | `true` to deinterlace interlaced footage; detected automatically, override to force. |
 | `type` | `video` | see above. |
+
+!!! warning "Renamed in v0.1.57"
+    `checker_width` used to be called `checker_size`. That name also served `type = apriltag` rows, where it meant a different quantity — a tag cell rather than a checkerboard square — so it has split in two: video rows use `checker_width`, apriltag rows use [`tag_cell_width`](#Columns-for-type-apriltag). A csv that still names `checker_size` is rejected up front with `unrecognized column/s in calibration file: [:checker_size]` and a note naming both replacements; rename the column and the file loads exactly as before. Nothing about the calibration changes.
 
 !!! tip "Count the *internal* corners"
     `n_corners` counts where four squares meet, not the squares themselves. A board of 8 × 11 squares has 7 × 10 internal corners.
@@ -84,10 +87,13 @@ Required: `calibration_id`, `file` (the drone footage — a video where the tags
 | --- | --- | --- |
 | `apriltags` | `4` | how many tags to expect. The `apriltags` lowest tag ids seen at `extrinsic` become the reference set; every run must show those same tags. |
 | `family` | `tag36h11` | the AprilTag family; one of `tag36h11`, `tag25h9`, `tag16h5`. |
-| `checker_size` | `12` | the real-world size of a single tag **cell** (e.g. cm). The black-border square is `cells × checker_size`, where `cells` is 8 for `tag36h11`, 7 for `tag25h9`, 6 for `tag16h5`. **Track coordinates come out in this unit.** |
+| `tag_cell_width` | `12` | the real-world size of a single tag **cell** (e.g. cm). The black-border square is `cells × tag_cell_width`, where `cells` is 8 for `tag36h11`, 7 for `tag25h9`, 6 for `tag16h5`. **Track coordinates come out in this unit.** |
 | `center` | — | `"(x, y)"` pixel of the arena's origin **in the `extrinsic` frame**, as displayed. Becomes the origin of the real-world coordinates. |
 | `north` | — | `"(x, y)"` pixel due north of `center` in the `extrinsic` frame, as displayed; rotates the coordinates so north is consistent. Requires `center`. |
 | `path` | `.` | the **folder** containing `file`, relative to the csv file. Just the folder — the file name belongs in `file`, not here. |
+
+!!! warning "Renamed in v0.1.57"
+    This column used to be called `checker_size`, a name it shared with the checkerboard square size of `type = video` rows. The two are different quantities, and one column could not carry both defaults — a global `checker_size` applied to video rows and silently did nothing to apriltag ones. The column has therefore split in two: video rows now use [`checker_width`](#Columns-for-type-video), apriltag rows use `tag_cell_width`. If you have already renamed it to `checker_width` but left it filled on an apriltag row, that is reported as `checker_width is not used by type apriltag (it was renamed to tag_cell_width)`.
 
 The tags are stationary across the whole experiment, so the reference is established once here and shared by every run — `runs.csv` therefore has no `apriltags` column (and, for an apriltag run, a run's own `start` frame is where its target search begins, not the calibration's `center`).
 
@@ -99,11 +105,11 @@ The tags are stationary across the whole experiment, so the reference is establi
 All kinds can be mixed in one file — leave a column blank on the rows where it doesn't apply:
 
 ```csv
-calibration_id,type,file,extrinsic,start,stop,checker_size,n_corners,center,north,scale,apriltags,family
-morning,video,calib_morning.mp4,00:00:02,00:00:05,00:00:35,4,"(7, 10)","(960, 540)","(960, 100)",,,
-afternoon,,calib_afternoon.mp4,1.5,5,35,4,"(7, 10)","(955, 545)",,,,
-drone,only_scale,drone_shot.mp4,0,,,,,"(2000, 1500)",,0.21,,
-flight,apriltag,drone_flight.mp4,00:00:04,,,12,,"(960, 540)","(960, 100)",,4,tag36h11
+calibration_id,type,file,extrinsic,start,stop,checker_width,n_corners,center,north,scale,apriltags,family,tag_cell_width
+morning,video,calib_morning.mp4,00:00:02,00:00:05,00:00:35,4,"(7, 10)","(960, 540)","(960, 100)",,,,
+afternoon,,calib_afternoon.mp4,1.5,5,35,4,"(7, 10)","(955, 545)",,,,,
+drone,only_scale,drone_shot.mp4,0,,,,,"(2000, 1500)",,0.21,,,
+flight,apriltag,drone_flight.mp4,00:00:04,,,,,"(960, 540)","(960, 100)",,4,tag36h11,12
 ```
 
 ## Next

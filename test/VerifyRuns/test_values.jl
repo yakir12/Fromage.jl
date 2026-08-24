@@ -53,11 +53,11 @@
 
     @testset "background_length is 0 (no subtraction) or at least 25" begin
         # blank cell ⇒ the hardcoded default (mirrors PawsomeTracker's own)
-        @test only(check([runrow()])).source.background_length == 250
+        @test only(check([runrow()])).tuning.background_length == 250
         # 0 is a real mode: background subtraction off
         runs = check([runrow(background_length = "0")])
         @test clean(runs)
-        @test only(runs).source.background_length == 0
+        @test only(runs).tuning.background_length == 0
         @test clean(check([runrow(background_length = "25")]))    # the boundary is allowed
         # 1–24 and negatives are rejected by the same check
         msg = "background_length must be 0 (disables background subtraction) or at least 25"

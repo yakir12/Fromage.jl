@@ -27,7 +27,7 @@ function from_matlab(; file, extrinsic, calibration_id, matlab_file, extrinsic_i
 
     image2real, real2image = _maps(R, t, frow, fcol, crow, ccol, k, 1, width, height, aspect, center, north)
     # units-per-pixel at the arena centre — the matlab analogue of the video path's
-    # checker_size/checker_size_pixel (there are no detected corners to measure it from): one
+    # checker_width/checker_width_pixel (there are no detected corners to measure it from): one
     # real-world unit step at the origin spans 1/ratio pixels
     ratio = 1 / norm(real2image(SVector(1.0, 0.0)) - real2image(SVector(0.0, 0.0)))
     _diagnostic(rectification_diagnostics, file, extrinsic, calibration_id, width, height, ratio, real2image)

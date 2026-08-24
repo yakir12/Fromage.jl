@@ -78,9 +78,9 @@
         Rvec = (0.1, -0.2, 0.05)
         t = (0.3, 0.4, 5.0)
         frow, fcol, crow, ccol = 800.0, 810.0, 320.0, 240.0
-        checker_size = 0.025
+        checker_width = 0.025
         k = (0.05, -0.01)
-        intrinsic, extrinsic, scale = R.obj2img(Rvec, t, frow, fcol, crow, ccol, checker_size)
+        intrinsic, extrinsic, scale = R.obj2img(Rvec, t, frow, fcol, crow, ccol, checker_width)
         inv_scale, inv_extrinsic, _, inv_distort, inv_intrinsic =
             R.img2obj(intrinsic, extrinsic, scale, k)
         # img2obj hands back genuine inverses of obj2img's components
@@ -117,13 +117,13 @@
         @test R.default_center((10, 20), 640, 480, 2.0) === (10, 20)
     end
 
-    @testset "checker_size_pixel" begin
+    @testset "checker_width_pixel" begin
         # a perfectly regular grid with spacing d ⇒ averaged edge length is exactly d
         d = 2.5f0
         n_corners = (3, 4)
         corners = [SVector{2,Float32}((i - 1) * d, (j - 1) * d)
                    for i in 1:n_corners[1], j in 1:n_corners[2]]
-        @test R.checker_size_pixel(corners, n_corners) ≈ d
+        @test R.checker_width_pixel(corners, n_corners) ≈ d
     end
 
 end

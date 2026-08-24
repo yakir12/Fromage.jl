@@ -31,15 +31,17 @@ end
 
 # An AprilTag rectification: the drone footage is registered to a shared reference frame (built from
 # the `extrinsic` frame, where ≥ `apriltags` tags of `family` must be detectable and coplanar) rather
-# than to a fixed image→real map. `checker_size` is the size of one tag CELL; the black-border square
-# is `cells_across(family) × checker_size` (see PawsomeTracker.canon_square). `center`/`north` live in
-# `source` and gauge the metric output exactly as for the other methods.
+# than to a fixed image→real map. `tag_cell_width` is the size of one tag CELL; the black-border
+# square is `cells_across(family) × tag_cell_width` (see PawsomeTracker.canon_square). It is NOT the
+# `checker_width` of a video calibration (a checkerboard square) — the two were one column until
+# v0.1.57 and are now separate, so each can carry its own default and each row says which it means.
+# `center`/`north` live in `source` and gauge the metric output exactly as for the other methods.
 struct Apriltag <: RectificationMethod
     source::Source
     calibration_id::String
     apriltags::Int
     family::String
-    checker_size::Float64
+    tag_cell_width::Float64
 end
 
 struct Video{S <: Union{Missing, Float64}} <: RectificationMethod
@@ -47,7 +49,7 @@ struct Video{S <: Union{Missing, Float64}} <: RectificationMethod
     calibration_id::String
     start::S
     stop::S
-    checker_size::Float64
+    checker_width::Float64
     n_corners::NTuple{2, Int}
     temporal_step::Float64
     radial_parameters::Int
@@ -58,12 +60,12 @@ end
 source(row) = Source(row.file, row.extrinsic, row.center, row.north, row.aspect, row.width, row.height)
 
 RectificationMethod(row) = if row.type == "video"
-    Video(source(row), row.calibration_id, row.start, row.stop, row.checker_size,
+    Video(source(row), row.calibration_id, row.start, row.stop, row.checker_width,
         row.n_corners, row.temporal_step, row.radial_parameters, row.blur, row.yadif)
 elseif row.type == "only_scale"
     Scale(source(row), row.calibration_id, row.scale)
 elseif row.type == "apriltag"
-    Apriltag(source(row), row.calibration_id, row.apriltags, row.family, row.checker_size)
+    Apriltag(source(row), row.calibration_id, row.apriltags, row.family, row.tag_cell_width)
 else # can only be matlab
     MATLAB(source(row), row.calibration_id, row.matlab_file, row.extrinsic_index)
 end
@@ -83,7 +85,7 @@ _source(s::Source) = (; s.file, s.extrinsic, s.center, s.north, s.width, s.heigh
 
 Rectification(c::Video; kwargs...) =
     from_video(; _source(c.source)..., c.calibration_id, c.source.aspect, c.start, c.stop,
-        c.temporal_step, c.yadif, c.blur, c.n_corners, c.checker_size, c.radial_parameters, kwargs...)
+        c.temporal_step, c.yadif, c.blur, c.n_corners, c.checker_width, c.radial_parameters, kwargs...)
 
 # A Video without a calibs window (both bounds blank ⇒ Video{Missing}) is an extrinsics-only
 # rectification: the pose and focal length come from the single extrinsic frame and lens aberrations
@@ -92,7 +94,7 @@ Rectification(c::Video; kwargs...) =
 # (verify_pair).
 Rectification(c::Video{Missing}; kwargs...) =
     from_extrinsic(; _source(c.source)..., c.calibration_id, c.source.aspect, c.yadif, c.blur,
-        c.n_corners, c.checker_size, kwargs...)
+        c.n_corners, c.checker_width, kwargs...)
 
 # A MATLAB rectification reads the camera model (intrinsics, distortion, and the pose picked by
 # extrinsic_index) from the .mat file; the source video supplies the frame size (already
@@ -110,5 +112,5 @@ Rectification(c::Scale; kwargs...) =
 # (e.g. `diagnostic`) are ignored.
 Rectification(c::Apriltag; kwargs...) =
     ApriltagRectification(; _source(c.source)..., c.source.aspect, ntags = c.apriltags, c.family,
-        c.checker_size)
+        c.tag_cell_width)
 

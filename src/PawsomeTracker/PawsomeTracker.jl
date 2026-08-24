@@ -3,9 +3,8 @@ module PawsomeTracker
 using ImageFiltering: Kernel, imfilter!, Algorithm, NoPad
 using OffsetArrays: OffsetMatrix
 using PaddedViews: PaddedView
-using FFMPEG: ffprobe
 using ..ShareIO: ShareIO
-using VideoIO: openvideo, AV_PIX_FMT_GRAY8, aspect_ratio, open_video_out, VideoWriter, VideoReader, close_video_out!, framerate, skipframes, gettime, get_duration
+using VideoIO: openvideo, AV_PIX_FMT_GRAY8, aspect_ratio, open_video_out, VideoWriter, VideoReader, close_video_out!, framerate, skipframes, gettime
 using ImageDraw: draw!, CirclePointRadius, Path
 using FreeTypeAbstraction: renderstring!, FTFont
 using ColorTypes: Gray
@@ -35,7 +34,7 @@ const GATE_DECAY = 0.99
 # spans background_length / fps seconds.
 const DEFAULT_BACKGROUND_LENGTH = 250
 
-export track, ApriltagRectification
+export track, ApriltagRectification, Segment, Tuning
 
 # VideoIO.openvideo (libav's demuxer/codec open) is not thread-safe: concurrent opens race, and
 # yield garbled or simply wrong frames rather than an error. Decoding independent streams IS safe,
@@ -76,19 +75,6 @@ const APRILTAG_LOCK = ReentrantLock()
 include("diagnose.jl")
 include("apriltag.jl")
 
-# Both branches read the share, so both are retried through `ShareIO` — the probe by `capture`,
-# which retries internally, the VideoIO open by `withretry` with the widened predicate VideoIO's
-# undifferentiated `ErrorException` forces.
-function get_framerate(file)
-    vid_fps = ShareIO.withretry(() -> openvideo(framerate, file); transient = ShareIO.videoio_transient)
-    !isinf(vid_fps) && return vid_fps
-    # `ffprobe()` is bound before interpolation, as in `Probing`: ExplicitImports does not see
-    # through a `Cmd` interpolation and reports the import stale if it is called inline.
-    exe = ffprobe()
-    cmd = `$exe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of default=noprint_wrappers=1:nokey=1 $file`
-    txt = String(ShareIO.capture(cmd, "ffprobe could not read the frame rate"))
-    parse(Rational{Int}, strip(txt))
-end
 
 # The sampler advances whole frames, so the only rates it can deliver are `vid_fps / skip`; this is
 # the stride nearest a request, and the rate it therefore yields. The single definition both the
@@ -148,7 +134,7 @@ struct Video
     # `Rational{Int}`, not a bare `Rational`: the unparameterised spelling is abstract, so the field
     # would be boxed and every read of it untyped. `VideoIO.aspect_ratio` returns
     # `Union{Rational{Int32}, Rational{Int64}}` and either converts on construction. Matches
-    # `VerifyRuns.Source.sar`, which holds the same quantity read from ffprobe instead.
+    # `VerifyRuns.Frame.sar`, which holds the same quantity read from ffprobe instead.
     sar::Rational{Int}
 
     # `fps` is a request, not a promise: the sampler advances whole frames, so the only rates it can
@@ -389,42 +375,83 @@ function track_one(file, start, stop, target_width, start_location, window_size,
 end
 
 """
-    track(file::AbstractString; start, stop, target_width, start_location, window_size,
-          darker_target, fps, diagnostic_file, rectification, scale, …)
+    Segment(file, start, stop, start_location)
 
-Use a Difference of Gaussian (DoG) filter to track a target in the video `file` between `start`
-and `stop` seconds, sampling `fps` frames per second (capped at the video's own rate, and rounded
-to the nearest rate reachable by skipping whole frames — `vid_fps / skip`; `ts` always describes the
-rate actually used; `video_fps` is that own rate, read from the file unless a caller who already
-knows it — the runs gateway probes it — passes it in, sparing an open). Returns
-`(ts, coords)`: timestamps and the target's per-frame position. With a `rectification`, `coords`
-are **real-world** coordinates (the rectification's `image2real` applied); without one, they are
-raw `(row, col)` pixels in the original frame (`scale` trades precision for speed — see `scale` in
-the runs.csv docs; coordinates are
-always reported unscaled). An `ApriltagRectification` selects AprilTag mode (drone footage): every
-background-stack slice is lazily warped into the rectification's shared reference, so drone motion
-is removed at lookup time and tracking happens in a static scene; `coords` are metric ground
-coordinates, `missing` on frames where a tag was lost. `start_location` is the target's `"(x, y)"`
-display-pixel position at `start`; when `missing` the target is searched for around the frame
-center. The target is detected against a rolling background model of the last `background_length`
-tracked frames (counted at the tracking `fps`, so the model spans `background_length / fps`
-seconds; memory scales with it); `background_length = 0` disables background subtraction entirely
-— the DoG filter runs on the raw frame, which suits clean high-contrast scenes but lets static
-dark clutter compete with the target. When `diagnostic_file` (an `.mp4` path — that container
-selects the H.264 encoder) is given, an annotated diagnostic video is written there, playing at
-$(DIAGNOSTIC_SPEEDUP)× real time; a `rectification` also renders it top-down instead of as the
-raw frame.
+One video of a run: the file, the seconds into it at which tracking starts and stops, and where the
+target is at `start`, as an `(x, y)` display-pixel position.
+
+`start_location` is `missing` on any segment whose starting position is not known independently —
+the second and later segments of an ordinary run, where the target continues from where the
+previous one ended, and any segment of an AprilTag run, where a missing one becomes a frame-centre
+search. The first segment of an ordinary run carries a concrete one: the runs gateway resolves it
+(csv cell, then the calibration's `center`, then the frame centre) before building the segment.
+
+The union is exactly what is supported (#18). `RowCol` is absent on purpose despite having a
+`get_guess` method: that is the internal form a later segment's start takes, carried over from the
+previous segment's last coordinate, not something a caller supplies.
 """
-# A single video is a one-segment run, so the vector method below is the implementation and this is
-# just the spelling most callers want. Passing a one-element vector was verified to give identical
-# timestamps and coordinates — same values and same types — as the separate body this replaces, at
-# no measurable cost. See DESIGN-HISTORY.md.
-function track(file::AbstractString; start::Real = 0, stop::Real = get_duration(file),
-        # The union is exactly what is supported (#18). `RowCol` is absent on purpose despite having
-        # a method: that is the internal form a *later* segment's start takes in the vector method,
-        # carried over from the previous segment's last coordinate, not something a caller supplies.
-        start_location::Union{Missing, NTuple{2, Int}} = missing, kwargs...)
-    return track([file]; start = [start], stop = [stop], start_location = [start_location], kwargs...)
+struct Segment
+    file::String
+    start::Float64
+    stop::Float64
+    start_location::Union{Missing, NTuple{2, Int}}
+
+    # `start_location` is ASSERTED by this constructor, not converted. Julia converts struct fields
+    # on assignment, and Base can convert a `CartesianIndex{2}` to an `NTuple{2, Int}` — so without
+    # the annotation here a (row, col) CartesianIndex would become an (x, y) start location with its
+    # axes silently swapped. That is a worse version of the bug #18 was filed about (a type the
+    # signature advertised but `get_guess` could not handle), and the reason the union names only
+    # what `get_guess` has a method for. The other three fields convert as usual.
+    Segment(file, start, stop, start_location::Union{Missing, NTuple{2, Int}}) =
+        new(file, start, stop, start_location)
+end
+
+"""
+    Tuning(target_width, window_size, darker_target, fps, video_fps, initial_search_factor,
+           scale, background_length)
+
+The run-level tracking parameters, every one of them concrete.
+
+Deliberately without defaults, and `track` deliberately takes no keyword arguments: each of these
+values is decided in exactly one place — a csv cell, `VerifyRuns.DEFAULTS`, or the gateway's probe
+of the video — and giving them a second definition here is what let a global default and a verified
+value disagree, and what let an unverified value reach the tracker at all (#140, #141). A caller
+with no gateway behind it (the test suite) builds one explicitly; see `test/harness.jl`.
+
+`window_size` is the search window scanned around the target's last known position, already imputed
+(`get_window`) rather than left blank — so there is one imputation rule, upstream, instead of a
+second one here. `fps` is the rate to track at and `video_fps` the video's own; the gateway probes
+the latter once, so tracking never opens a video merely to ask (see WHY-FRAMES-FAIL.md).
+"""
+struct Tuning
+    target_width::Float64
+    window_size::Union{Int, NTuple{2, Int}}
+    darker_target::Bool
+    fps::Float64
+    video_fps::Float64
+    initial_search_factor::Float64
+    scale::Float64
+    background_length::Int
+end
+
+# The default search window, when the csv leaves `window_size` blank: wide enough for the target
+# itself (from its DoG sigma) and for however far it can travel between two sampled frames,
+# whichever is larger. `m` is the smaller frame dimension, standing in for the distance the target
+# might cross, and `duration` the run's total tracked span.
+#
+# Lives here, beside `Tuning`, because it is the tracker's own rule for one of its own parameters.
+# It used to live in VerifyRuns while `track` carried a second, different fallback
+# (`2 * target_width`) for the same field — so which window you got depended on whether you came
+# through the gateway. This is now the only rule.
+function get_window(target_width, fps, m, duration)
+    σ = get_sigma(target_width)
+    ws1 = 4ceil(Int, σ) + 1 # the window the target itself needs
+
+    speed = m / duration    # pixels per second
+    distance = speed / fps  # distance traveled per frame
+    ws2 = round(Int, 2distance)
+
+    max(ws1, ws2)
 end
 
 # Apply an image2real map over a track that may hold `missing` frames (AprilTag mode reports
@@ -436,67 +463,68 @@ _apply_image2real(f, coords) = map(c -> ismissing(c) ? missing : f(c), coords)
 _concat_timestamps(tss) = range(tss[1][1], step = step(tss[1]), length = sum(length, tss))
 
 """
-    track(files::AbstractVector; start::AbstractVector, stop::AbstractVector, target_width,
-          start_location::AbstractVector, window_size, darker_target, fps, diagnostic_file,
-          rectification, scale, …)
+    track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnostic_file)
 
-Use a Difference of Gaussian (DoG) filter to track a target across multiple video `files` (the
-segments of one continuous run). `start`, `stop`, and `start_location` all must have the same
-number of elements as `files` does. If the second, third, etc elements in `start_location` are
-`missing` then the target is assumed to start where it ended in the previous video (as is the
-case in segmented videos). All other keywords behave as in the single-file method, and one
-diagnostic video covers all the segments.
+Use a Difference of Gaussian (DoG) filter to track a target across the `segments` of one run,
+sampling `tuning.fps` frames per second (capped at the video's own rate, and rounded to the nearest
+rate reachable by skipping whole frames — `video_fps / skip`; the returned timestamps always
+describe the rate actually used, never the one requested).
+
+Returns `(ts, coords)`: timestamps and the target's per-frame position. With a `rectification`,
+`coords` are **real-world** coordinates (the rectification's `image2real` applied); with `nothing`,
+they are raw `(row, col)` pixels in the original frame — `tuning.scale` trades precision for speed,
+and coordinates are always reported unscaled.
+
+An `ApriltagRectification` selects AprilTag mode (drone footage): every background-stack slice is
+lazily warped into the rectification's shared reference, so drone motion is removed at lookup time
+and tracking happens in a static scene. `coords` are then metric ground coordinates, `missing` on
+frames where a tag was lost, and the segments do NOT chain — each registers to the same shared
+reference and starts from its own `start_location` (see DESIGN-HISTORY.md). Otherwise the segments
+are one continuous run, and a segment whose `start_location` is `missing` continues from where the
+previous one ended.
+
+The target is detected against a rolling background model of the last `tuning.background_length`
+tracked frames (counted at the tracking fps, so the model spans `background_length / fps` seconds;
+memory scales with it); `background_length = 0` disables background subtraction entirely — the DoG
+filter runs on the raw frame, which suits clean high-contrast scenes but lets static dark clutter
+compete with the target.
+
+Given a `diagnostic_file` (an `.mp4` path — that container selects the H.264 encoder) rather than
+`nothing`, an annotated diagnostic video is written there, playing at $(DIAGNOSTIC_SPEEDUP)× real
+time; a `rectification` also renders it top-down instead of as the raw frame. One diagnostic covers
+every segment of the run.
+
+There are no keyword arguments by design: everything this needs is a field of `Segment` or
+`Tuning`, both of which the runs gateway fills from verified values. See `Tuning`.
 """
-function track(
-        files::AbstractVector;
-        start::AbstractVector = zeros(length(files)),
-        stop::AbstractVector = get_duration.(files),
-        target_width::Real = 25,
-        start_location::AbstractVector = similar(files, Missing),
-        window_size::Union{Missing, Int, NTuple{2, Int}} = round(Int, 2target_width),
-        darker_target::Bool = true,
-        # The video's own frame rate. Declared before `fps` so that one defaults to the other: the
-        # rate is then read at most once, where the two used to call `get_framerate` separately. A
-        # caller who already knows it (`track(::Run)`, from the gateway's probe) passes it and the
-        # video is never opened for it at all — one fewer open of the share per run, which is worth
-        # having in a package where an open is the thing that fails (see WHY-FRAMES-FAIL.md).
-        video_fps::Real = get_framerate(files[1]),
-        fps::Real = video_fps,
-        diagnostic_file::Union{Nothing, AbstractString} = nothing,
-        initial_search_factor::Real = 4,
-        scale::Real = 1,
-        background_length::Integer = DEFAULT_BACKGROUND_LENGTH,
-        rectification = nothing
-    )
+function track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnostic_file)
+    # As before (#55). Segments are assumed to share one native frame rate (see runs.md), so the
+    # run's `video_fps` — the first segment's, as the gateway probed it — is representative.
+    dia_fps = effective_fps(tuning.video_fps, tuning.fps)
 
-    @assert length(files) == length(start) == length(stop) == length(start_location) "Array length mismatch: files=$(length(files)), start=$(length(start)), stop=$(length(stop)), start_location=$(length(start_location))"
+    nsegments = length(segments)
+    tss = Vector{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}(undef, nsegments)
 
-    # `missing` means "use the default", like a blank csv cell (see the single-file method).
-    window_size = ismissing(window_size) ? round(Int, 2target_width) : window_size
-
-    # As in the single-file method (#55). Segments are assumed to share one native frame rate (see
-    # runs.md), so the first one's is representative — as it is for the `fps` default above, and as
-    # it is for the value `track(::Run)` hands in.
-    dia_fps = effective_fps(video_fps, fps)
-
-    nfiles = length(files)
-    tss = Vector{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}(undef, nfiles)
-    args = zip(files, start, stop, start_location)
+    # Every segment scales these three the same way, so they are computed once rather than per
+    # segment inside the loops below.
+    width = tuning.scale * tuning.target_width
+    window = round.(Int, tuning.scale .* fix_window_size(tuning.window_size))
+    search = tuning.scale * tuning.initial_search_factor
 
     # AprilTag mode: every segment registers to the SAME shared reference (the tags are stationary
     # across the whole run) and is tracked independently from its own start_location, a missing one
     # falling back to the frame-centre search. Segments do not chain (see DESIGN-HISTORY.md). One
     # diagnostic spans all of them.
     if rectification isa ApriltagRectification
-        segs = Vector{Vector{Union{Missing, RowCol}}}(undef, nfiles)
-        dia = diagnose_apriltag(diagnostic_file, rectification.reference, darker_target, dia_fps)
+        segs = Vector{Vector{Union{Missing, RowCol}}}(undef, nsegments)
+        dia = diagnose_apriltag(diagnostic_file, rectification.reference, tuning.darker_target, dia_fps)
         try
-            for (i, (f, t_start, t_stop, loc)) in enumerate(args)
-                tss[i], segs[i] = track_apriltag(f, t_start, t_stop, scale * target_width, loc,
-                    round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia,
+            for (i, s) in enumerate(segments)
+                tss[i], segs[i] = track_apriltag(s.file, s.start, s.stop, width, s.start_location,
+                    window, tuning.darker_target, tuning.fps, dia,
                     rectification.reference, rectification.family,
-                    (rectification.height, rectification.width), scale * initial_search_factor,
-                    scale, background_length)
+                    (rectification.height, rectification.width), search,
+                    tuning.scale, tuning.background_length)
             end
         finally
             close(dia)
@@ -504,12 +532,13 @@ function track(
         return (_concat_timestamps(tss), _apply_image2real(rectification.image2real, reduce(vcat, segs)))
     end
 
-    ijs = Vector{Vector{RowCol}}(undef, nfiles)
-    diagnose(diagnostic_file, darker_target, rectification, dia_fps) do dia
+    ijs = Vector{Vector{RowCol}}(undef, nsegments)
+    diagnose(diagnostic_file, tuning.darker_target, rectification, dia_fps) do dia
         end_location = missing
-        for (i, (f, t_start, t_stop, loc)) in enumerate(args)
-            loc = coalesce(loc, end_location)
-            tss[i], ijs[i] = track_one(f, t_start, t_stop, scale*target_width, loc, round.(Int, scale .* fix_window_size(window_size)), darker_target, fps, dia, scale * initial_search_factor, scale, background_length)
+        for (i, s) in enumerate(segments)
+            loc = coalesce(s.start_location, end_location)
+            tss[i], ijs[i] = track_one(s.file, s.start, s.stop, width, loc, window,
+                tuning.darker_target, tuning.fps, dia, search, tuning.scale, tuning.background_length)
             end_location = ijs[i][end]
         end
     end
@@ -524,6 +553,3 @@ function track(
 end
 
 end
-
-
-

@@ -2,7 +2,7 @@
 # checkerboard at varied known poses — encode it with the bundled ffmpeg, then run the full
 # `Rectification` constructor (probe → concurrent frame reads → corner detection → camera-model
 # fit → transform/warp build). Success is metric: the extrinsic corners, mapped through the
-# returned `image2real`, must form a regular grid whose spacing equals the real `checker_size`.
+# returned `image2real`, must form a regular grid whose spacing equals the real `checker_width`.
 #
 # Uses only the package's hard deps (FFMPEG_jll + OpenCV) — no system ffmpeg, no image libraries.
 
@@ -12,7 +12,7 @@
     fx, cx, cy = 1000.0, 320.0, 240.0
     Kmat = SMatrix{3,3,Float64}(fx, 0, 0, 0, fx, 0, cx, cy, 1)   # [[fx 0 cx];[0 fy cy];[0 0 1]]
     n_corners = (7, 6)
-    checker_size = 25.0
+    checker_width = 25.0
 
     # Render a planar board at pose (rv, t) exactly: it is the homography H = K·[r1 r2 t] of the
     # board plane. We rasterize by inverse-mapping each pixel and evaluating the square parity.
@@ -67,7 +67,7 @@
         # which was `blur`.
         common = (; file = vid, extrinsic = extrinsic_t, calibration_id = "c1", start, stop, temporal_step = step,
                   yadif = missing, blur = missing, width = Wimg, height = Himg, n_corners,
-                  checker_size, aspect = 1.0, radial_parameters = 1)
+                  checker_width, aspect = 1.0, radial_parameters = 1)
 
         # `rectification_diagnostics` is the same flag `main` takes: the image lands under
         # results_dir, which is relative to the working directory, hence the `cd`.
@@ -88,8 +88,8 @@
 
         @testset "recovers a metric grid (rectification is correct)" begin
             real_pts = map(image2real, ext_corners)
-            spacing = R.checker_size_pixel(real_pts, n_corners)
-            @test spacing ≈ checker_size rtol = 0.02      # within 2% of the true square size
+            spacing = R.checker_width_pixel(real_pts, n_corners)
+            @test spacing ≈ checker_width rtol = 0.02      # within 2% of the true square size
         end
 
         @testset "extrinsics-only constructor (single frame, zero distortion)" begin
@@ -98,10 +98,10 @@
             # centre, so the single-view fit (which fixes the principal point there) is well-posed.
             rect0 = R.from_extrinsic(; file = vid, extrinsic = extrinsic_t, calibration_id = "c0", yadif = missing,
                                      blur = missing, width = Wimg, height = Himg, n_corners,
-                                     checker_size, aspect = 1.0, center = missing, north = missing)
+                                     checker_width, aspect = 1.0, center = missing, north = missing)
             real_pts = map(rect0.image2real, ext_corners)
-            spacing = R.checker_size_pixel(real_pts, n_corners)
-            @test spacing ≈ checker_size rtol = 0.05
+            spacing = R.checker_width_pixel(real_pts, n_corners)
+            @test spacing ≈ checker_width rtol = 0.05
             @test rect0.real2image isa Function
         end
 

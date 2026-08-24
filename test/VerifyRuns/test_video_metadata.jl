@@ -1,15 +1,15 @@
 @testset "video metadata (probe + imputation)" begin
     @testset "stop and fps are imputed from the video" begin
         r = only(check([runrow()]))   # stop & fps omitted
-        @test only(r.stops) ≈ VIDEO_DURATION atol = 0.1 # ← container duration (5 s)
-        @test r.source.fps == 30.0                      # ← video frame rate
+        @test only(r.segments).stop ≈ VIDEO_DURATION atol = 0.1 # ← container duration (5 s)
+        @test r.tuning.fps == 30.0                      # ← video frame rate
     end
 
     @testset "the video's pixel dimensions are carried onto the run's Source" begin
         r = only(check([runrow()]))
-        @test r.source.width  == 640                    # ← probed from the video itself
-        @test r.source.height == 480
-        @test r.source.sar    == 1                      # square pixels; anamorphic: test_tracking.jl
+        @test r.frame.width  == 640                    # ← probed from the video itself
+        @test r.frame.height == 480
+        @test r.frame.sar    == 1                      # square pixels; anamorphic: test_tracking.jl
     end
 
     @testset "the video's own frame rate is carried onto the run's Source" begin
@@ -17,16 +17,16 @@
         # explicit one against it). Carrying it means `track` no longer reopens the video to read it
         # back — one fewer open of the share per run.
         r = only(check([runrow()]))
-        @test r.source.video_fps == 30.0
+        @test r.tuning.video_fps == 30.0
         # an explicit tracking fps does not disturb it: the two are different numbers
         r2 = only(check([runrow(fps = "15")]))
-        @test r2.source.fps == 15.0 && r2.source.video_fps == 30.0
+        @test r2.tuning.fps == 15.0 && r2.tuning.video_fps == 30.0
     end
 
     @testset "CSV values win over imputation" begin
         r = only(check([runrow(stop = "3", fps = "15")]))
-        @test only(r.stops) == 3.0
-        @test r.source.fps == 15.0
+        @test only(r.segments).stop == 3.0
+        @test r.tuning.fps == 15.0
     end
 
     @testset "corrupt/unreadable video is reported" begin

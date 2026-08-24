@@ -50,10 +50,10 @@ function extract_intrinsics(file, start, stop, temporal_step, vf, w, h, n_corner
     collect(skipmissing(corners))
 end
 
-function obj2img(R, t, frow, fcol, crow, ccol, checker_size)
+function obj2img(R, t, frow, fcol, crow, ccol, checker_width)
     intrinsic = AffineMap(SDiagonal(frow, fcol), SVector(crow, ccol))
     extrinsic = AffineMap(RotationVec(R...), SVector{3, Float64}(t))
-    scale = LinearMap(SDiagonal{3}(I/checker_size))
+    scale = LinearMap(SDiagonal{3}(I/checker_width))
     return intrinsic, extrinsic, scale
 end
 
@@ -143,7 +143,7 @@ function img2obj(intrinsic, extrinsic, scale, k)
     return inv(scale), inv_extrinsic, inv_perspective_map, inv_distort, inv(intrinsic)
 end
 
-function checker_size_pixel(extrinsic_corners::AbstractMatrix, n_corners)
+function checker_width_pixel(extrinsic_corners::AbstractMatrix, n_corners)
     s = 0.0
     for col in eachcol(extrinsic_corners)
         s += sum(norm, diff(col))
@@ -160,7 +160,7 @@ end
 # 1. pixel coordinates with width first and height second, (w, h)
 # 2. at an aspect ratio of 1, whatever `aspect` says
 function from_video(; file, extrinsic, calibration_id, start, stop, temporal_step, yadif, blur,
-        width, height, n_corners, checker_size, aspect, radial_parameters, center, north,
+        width, height, n_corners, checker_width, aspect, radial_parameters, center, north,
         rectification_diagnostics::Bool = false)
     vf = _vf(yadif, blur)
     intrinsic_task = Threads.@spawn extract_intrinsics(file, start, stop, temporal_step, vf, width, height, n_corners)
@@ -174,32 +174,32 @@ function from_video(; file, extrinsic, calibration_id, start, stop, temporal_ste
     imgpointss = fetch(intrinsic_task)
     ismissing(extrinsic_corners) && error("no corners detected at extrinsic time stamp")
     push!(imgpointss, extrinsic_corners)
-    return _rectification(file, extrinsic, calibration_id, imgpointss, width, height, n_corners, checker_size, aspect, radial_parameters, center, north, rectification_diagnostics)
+    return _rectification(file, extrinsic, calibration_id, imgpointss, width, height, n_corners, checker_width, aspect, radial_parameters, center, north, rectification_diagnostics)
 end
 
 """
-    from_extrinsic(; file, extrinsic, yadif, blur, width, height, n_corners, checker_size, aspect, center, north)
+    from_extrinsic(; file, extrinsic, yadif, blur, width, height, n_corners, checker_width, aspect, center, north)
 Extrinsics-only rectification: no intrinsic-calibration window exists, so the camera pose (and
 focal length) are fit from the single extrinsic frame with every lens-distortion coefficient fixed
 at zero — the map is effectively the board-plane homography, disregarding lens aberrations.
 
 Selected *solely* by the CSV row having no calibs window (both `start` and `stop` blank). Such a
 row may still carry `temporal_step`/`radial_parameters`, which are then silently ignored rather
-than flagged; everything else (`yadif`, `blur`, `n_corners`, `checker_size`, `aspect`, `center`,
+than flagged; everything else (`yadif`, `blur`, `n_corners`, `checker_width`, `aspect`, `center`,
 `north`) is honoured as usual. Filling only one of the two bounds is rejected upstream. See
 DESIGN-HISTORY.md for why this asymmetry is deliberate.
 """
-function from_extrinsic(; file, extrinsic, yadif, blur, width, height, n_corners, checker_size,
+function from_extrinsic(; file, extrinsic, yadif, blur, width, height, n_corners, checker_width,
         aspect, center, north, calibration_id, rectification_diagnostics::Bool = false)
     vf = _vf(yadif, blur)
     extrinsic_corners = get_corners(file, extrinsic, vf, width, height, n_corners)
     ismissing(extrinsic_corners) && error("no corners detected at extrinsic time stamp")
-    return _rectification(file, extrinsic, calibration_id, [extrinsic_corners], width, height, n_corners, checker_size, aspect, 0, center, north, rectification_diagnostics)
+    return _rectification(file, extrinsic, calibration_id, [extrinsic_corners], width, height, n_corners, checker_width, aspect, 0, center, north, rectification_diagnostics)
 end
 
 # Shared tail of both constructors above: fit the camera model to the collected views (the
 # extrinsic frame is always the LAST view) and compose the transform pipeline off its pose.
-function _rectification(file, extrinsic, calibration_id, imgpointss, width, height, n_corners, checker_size, aspect, radial_parameters, center, north, rectification_diagnostics)
+function _rectification(file, extrinsic, calibration_id, imgpointss, width, height, n_corners, checker_width, aspect, radial_parameters, center, north, rectification_diagnostics)
     objpoints = XYZ.(Tuple.(CartesianIndices((0:(n_corners[1] - 1), 0:(n_corners[2] - 1), 0:0))))
     # (height, width), not (width, height): every point handed to OpenCV lives in the TRANSPOSED
     # view (see `get_corners` — the frame goes in as `reshape(img, 1, h, w)` and OpenCV.jl's `Mat`
@@ -210,8 +210,8 @@ function _rectification(file, extrinsic, calibration_id, imgpointss, width, heig
     extrinsic_corners = imgpointss[extrinsic_index]
     R = Rs[extrinsic_index]
     t = ts[extrinsic_index]
-    image2real, real2image = _maps(R, t, frow, fcol, crow, ccol, k, checker_size, width, height, aspect, center, north)
-    ratio = checker_size/checker_size_pixel(extrinsic_corners, n_corners)
+    image2real, real2image = _maps(R, t, frow, fcol, crow, ccol, k, checker_width, width, height, aspect, center, north)
+    ratio = checker_width/checker_width_pixel(extrinsic_corners, n_corners)
     _diagnostic(rectification_diagnostics, file, extrinsic, calibration_id, width, height, ratio, real2image)
     return (; image2real, real2image, ratio, width, height)
 end
@@ -220,8 +220,8 @@ end
 # (frow/fcol/crow/ccol), the extrinsic pose (R, t), the radial distortion k and the real-unit
 # scale. Shared by the video paths above (parameters fit by fit_model) and the matlab path
 # (parameters read from the .mat file; see from_matlab.jl).
-function _maps(R, t, frow, fcol, crow, ccol, k, checker_size, width, height, aspect, center, north)
-    intrinsic, extrinsic_transform, scale = obj2img(R, t, frow, fcol, crow, ccol, checker_size)
+function _maps(R, t, frow, fcol, crow, ccol, k, checker_width, width, height, aspect, center, north)
+    intrinsic, extrinsic_transform, scale = obj2img(R, t, frow, fcol, crow, ccol, checker_width)
     distort(rc) = lens_distortion(rc, k)
     inv_scale, inv_extrinsic, inv_perspective_map, inv_distort, inv_intrinsic = img2obj(intrinsic, extrinsic_transform, scale, k)
     image2real = ∘(pop, inv_scale, inv_extrinsic, inv_perspective_map, inv_distort, inv_intrinsic)

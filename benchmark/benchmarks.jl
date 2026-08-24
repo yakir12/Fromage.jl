@@ -109,7 +109,7 @@ const MAIN_DIR = let dir = mktempdir()
     make_checkerboard_video(joinpath(dir, "board.mp4"), png)
     target, _ = make_target_video(dir, "run")
     write(joinpath(dir, "calibs.csv"),
-        "calibration_id,file,type,extrinsic,start,stop,checker_size\nc1,board.mp4,video,1,0,4,4\n")
+        "calibration_id,file,type,extrinsic,start,stop,checker_width\nc1,board.mp4,video,1,0,4,4\n")
     write(joinpath(dir, "runs.csv"),
         "calibration_id,file,start_location\nc1,$(only(target)),\"(55, 50)\"\n")
     dir

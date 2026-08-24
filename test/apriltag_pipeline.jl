@@ -32,7 +32,7 @@ const WINDOW = 2TARGET_WIDTH          # the DoG search window `track` derives fr
 const FRAME = 480                     # the fixture's frame is FRAME x FRAME
 const CENTRE = FRAME ÷ 2
 
-# Tolerances, in the fixture's metric unit — which `checker_size = TAG_CELL` makes exactly one
+# Tolerances, in the fixture's metric unit — which `tag_cell_width = TAG_CELL` makes exactly one
 # ground pixel. Measured worst cases over every flight below are ~0.37 (registration) and ~0.44
 # (track), so these sit at roughly 3x headroom: loose enough to survive detector and encoder
 # jitter, far tighter than any real breakage, which misplaces things by tens of pixels.
@@ -41,7 +41,7 @@ const TRACK_TOL = 1.5
 
 "Build the rectification the runs CSV would build, from frame 1 as the extrinsic frame."
 rectify(file) = ApriltagRectification(; file, extrinsic = 0, ntags = 4, family = "tag36h11",
-                                        checker_size = Fixtures.TAG_CELL, center = missing,
+                                        tag_cell_width = Fixtures.TAG_CELL, center = missing,
                                         north = missing, width = FRAME, height = FRAME)
 
 # Detect and register every frame directly, with no tracker involved, and report where each frame
@@ -96,8 +96,8 @@ function check_flight(dir, name, pose; teeth = false)
     end
 
     # ---- the track (stage 5b) ----------------------------------------------------------------
-    _, xy = track(file; rectification = rect, start_location = v.start_location,
-                  target_width = TARGET_WIDTH)
+    _, xy = track1(file; rectification = rect, start_location = v.start_location,
+                   target_width = TARGET_WIDTH)
     @test length(xy) == NFRAMES
     @test !any(ismissing, xy)
     expected(k) = rect.image2real(apply_h(rect.reference.M, v.expected_ref(k)))
@@ -200,7 +200,7 @@ end
                                                        dy = 24cos(2π*(k-1)/12)))
         file = joinpath(dir, v.file)
         rect = rectify(file)
-        _, xy = track(file; rectification = rect, target_width = TARGET_WIDTH)   # no start_location
+        _, xy = track1(file; rectification = rect, target_width = TARGET_WIDTH)  # no start_location
         @test !any(ismissing, xy)
         expected(k) = rect.image2real(apply_h(rect.reference.M, v.expected_ref(k)))
         @test maximum(norm(xy[k] - expected(k)) for k in 1:NFRAMES) < TRACK_TOL

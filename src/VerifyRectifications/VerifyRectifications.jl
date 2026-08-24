@@ -21,7 +21,14 @@ using Tables: Tables
 
 export load_rectifications
 
-const COLUMNS = (:comment, :calibration_id, :path, :file, :matlab_file, :start, :stop, :extrinsic, :checker_size, :center, :north, :n_corners, :scale, :type, :temporal_step, :radial_parameters, :blur, :extrinsic_index, :aspect, :yadif, :apriltags, :family)
+const COLUMNS = (:comment, :calibration_id, :path, :file, :matlab_file, :start, :stop, :extrinsic, :checker_width, :center, :north, :n_corners, :scale, :type, :temporal_step, :radial_parameters, :blur, :extrinsic_index, :aspect, :yadif, :apriltags, :family, :tag_cell_width)
+
+# Columns retired by a rename, and where each one's value went. Surfaced by `read_rows` when an
+# old csv still names them — the file-level error fires before any row is parsed, so this is the
+# only place such a user is reachable.
+const RENAMED_COLUMNS = Dict(
+    :checker_size => "checker_width — or tag_cell_width on `type = apriltag` rows",
+)
 
 include("types.jl")
 include("parsers.jl")
@@ -46,7 +53,7 @@ end
 # before either one opens a video (#121).
 function parse_rectifications(data_path, file; defaults = (;), progress = true)
     defaults = resolve_defaults(defaults)   # fail fast on unknown keys / unconvertible values
-    csvrows = read_rows(file, COLUMNS, "calibration")
+    csvrows = read_rows(file, COLUMNS, "calibration"; renamed = RENAMED_COLUMNS)
 
     # parse rows to RectificationMethods or error messages
     cs = @showprogress desc = "Parsing calibs.csv" enabled = progress tmap(r -> parse_row(r, defaults), collect(csvrows))

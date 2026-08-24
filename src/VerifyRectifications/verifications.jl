@@ -349,14 +349,14 @@ end
 # The AprilTag analogue of verify_extrinsics!: at the extrinsic frame, ≥ `apriltags` tags of
 # `family` must be detectable and their metric fit must converge (coplanar, not mis-detected). Reads
 # real frames, so it runs only on otherwise-clean apriltag rows, grouped so one physical file is
-# checked once per (extrinsic, apriltags, family, checker_size).
+# checked once per (extrinsic, apriltags, family, tag_cell_width).
 function verify_apriltag_extrinsics!(df::AbstractDataFrame, run_dir; progress = true)
     tags = subset(df, :type => ByRow(passmissing(==("apriltag"))); view = true, skipmissing = true)
     clean = subset(tags, :issues => ByRow(isempty); view = true)
-    usable = dropmissing(clean, [:file, :extrinsic, :apriltags, :family, :checker_size]; view = true)
-    gs = groupby(usable, [:file, :extrinsic, :apriltags, :family, :checker_size])
+    usable = dropmissing(clean, [:file, :extrinsic, :apriltags, :family, :tag_cell_width]; view = true)
+    gs = groupby(usable, [:file, :extrinsic, :apriltags, :family, :tag_cell_width])
     ks = collect(keys(gs))
-    issues = @showprogress desc = "Validating AprilTag extrinsics..." enabled = progress tmap(k -> PawsomeTracker.apriltag_extrinsic_issue(k.file, k.extrinsic, k.apriltags, k.family, k.checker_size), ks)
+    issues = @showprogress desc = "Validating AprilTag extrinsics..." enabled = progress tmap(k -> PawsomeTracker.apriltag_extrinsic_issue(k.file, k.extrinsic, k.apriltags, k.family, k.tag_cell_width), ks)
     for (g, k, issue) in zip(gs, ks, issues)
         isnothing(issue) && continue
         # dump the extrinsic frame the tag detector saw so the user can see what went wrong
@@ -402,7 +402,7 @@ function verify_unique_calibrations!(df::AbstractDataFrame)
         reject_duplicates!(df, g)
     end
 
-    other = [:checker_size, :n_corners, :temporal_step, :radial_parameters, :blur, :yadif, :aspect]
+    other = [:checker_width, :n_corners, :temporal_step, :radial_parameters, :blur, :yadif, :aspect]
     for g in groupby(@view(candidates[isvideo, :]), [:file, :start, :stop, :extrinsic, :center, :north])
         dups = reject_duplicates!(df, g)
         if !isempty(dups) && any(c -> !allequal(g[!, c]), other)
@@ -451,15 +451,16 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = DEFAULT_I
     verify!(df, ≤(0), "scale must be larger than zero", :scale)
     verify!(df, ≤(0), "extrinsic_index must be larger than zero", :extrinsic_index)
     verify!(df, (i, n) -> i > n, "extrinsic_index exceeds the number of extrinsics in the matlab file", :extrinsic_index, :n_extrinsics)
-    verify!(df, ≤(0), "checker_size must be larger than zero", :checker_size)
+    verify!(df, ≤(0), "checker_width must be larger than zero", :checker_width)
     # apriltag-only value checks (non-apriltag rows leave these missing ⇒ skipped by verify!):
+    verify!(df, ≤(0), "tag_cell_width must be larger than zero", :tag_cell_width)
     verify!(df, <(1), "apriltags must be at least 1", :apriltags)
     verify!(df, f -> !PawsomeTracker.valid_apriltag_family(f), "family is not a supported AprilTag family (" * join(PawsomeTracker.APRIL_FAMILY_NAMES, ", ") * ")", :family)
     verify!(df, ∉(1:3), "radial_parameters must be 1, 2, or 3", :radial_parameters)
     verify!(df, <(0), "blur must be larger than or equal to zero", :blur)
     # OpenCV's findChessboardCorners requires both pattern dimensions to be strictly bigger than 2,
     # so the bound is ≥ 3 — a precondition worth checking here instead of catching out of the
-    # detector. (It also subsumes checker_size_pixel's 2·prod(n) − sum(n) divisor being 0 at (1, 1).)
+    # detector. (It also subsumes checker_width_pixel's 2·prod(n) − sum(n) divisor being 0 at (1, 1).)
     verify!(df, x -> any(<(3), x), "n_corners must all be at least 3", :n_corners)
     verify!(df, <(0), "extrinsic must be larger than or equal to zero", :extrinsic)
     # strictly before: seeking at exactly the duration yields no frame at all
