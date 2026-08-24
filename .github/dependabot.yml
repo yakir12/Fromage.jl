@@ -5,3 +5,10 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
+    # One batched PR per week instead of one per action. Each Dependabot PR costs a full
+    # CI run, and the bumps are almost always independent and uncontroversial, so
+    # reviewing them together is both cheaper and easier to reason about.
+    groups:
+      github-actions:
+        patterns:
+          - "*"

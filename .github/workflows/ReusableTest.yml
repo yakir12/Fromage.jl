@@ -25,7 +25,11 @@ on:
         default: false
     secrets:
       codecov_token:
-        required: true
+        # Optional on purpose: pull requests from forks never receive secrets, and a
+        # `required: true` secret makes the whole workflow call fail for an outside
+        # contributor before a single test runs. The upload step below skips itself
+        # when the token is absent.
+        required: false
 
 jobs:
   test:
@@ -51,10 +55,17 @@ jobs:
       - uses: julia-actions/julia-processcoverage@v1
         if: ${{ inputs.run_codecov }}
       - uses: codecov/codecov-action@v7
-        if: ${{ inputs.run_codecov }}
+        # Skipped when no token is available, which is exactly the fork-PR case.
+        if: ${{ inputs.run_codecov && env.CODECOV_TOKEN != '' }}
+        env:
+          CODECOV_TOKEN: ${{ secrets.codecov_token }}
         with:
           # `files`, plural: v7 renamed the singular `file`, and an unknown input is only a
           # warning, so the old name was silently ignored and the upload fell back to searching
           # the tree. That happened to find lcov.info, which is why coverage still worked.
           files: lcov.info
           token: ${{ secrets.codecov_token }}
+          # Now that this step only runs when a token exists, a failed upload is a real
+          # failure rather than an unavoidable one. codecov.yml asserts 90% project and
+          # patch targets; silently skipping the upload would leave those unenforced.
+          fail_ci_if_error: true

@@ -6,9 +6,23 @@ on:
       - main
     tags:
       - '*'
+    paths:
+      - "docs/**"
+      - "src/**"
+      - "*.toml"
+      - ".github/workflows/Docs.yml"
   pull_request:
+    branches:
+      - main
+    paths:
+      - "docs/**"
+      - "src/**"
+      - "*.toml"
+      - ".github/workflows/Docs.yml"
+    types: [opened, synchronize, reopened]
   # AutoRelease dispatches this workflow on the release tag, because tags
   # pushed with GITHUB_TOKEN do not trigger tag-push workflows on their own.
+  # workflow_dispatch ignores path filters, so the tag build always runs.
   workflow_dispatch:
 
 concurrency:

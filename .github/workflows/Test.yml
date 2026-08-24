@@ -5,6 +5,20 @@ on:
     branches:
       - main
     tags: ["*"]
+    # Deliberately narrow. AutoRelease triggers on this workflow's completion, so anything
+    # excluded here also stops getting released — and a release is what advances /stable/.
+    # Only files that cannot affect the package or its documentation are listed. `docs/**`
+    # and `src/**` are pointedly NOT excluded: a docs-only change still has to cut a tag,
+    # or the published /stable/ docs would never catch up.
+    # Note `*.md` matches root-level markdown only ("*" does not cross "/"), so
+    # docs/src/*.md still triggers a run.
+    paths-ignore:
+      - "*.md"
+      - "LICENSE"
+      - ".gitignore"
+      - "codecov.yml"
+      - ".lychee.toml"
+      - ".copier-answers.yml"
   workflow_dispatch:
 
 # julia-actions/cache runs with delete-old-caches: true, which needs `actions: write`
