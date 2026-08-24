@@ -19,10 +19,12 @@ permissions:
   contents: write
 
 concurrency:
-  # Not in the Flux original. This job force-pushes gh-pages, so it must never run
-  # concurrently with itself — two closures racing would have the loser overwrite the
-  # winner's deletion. Queue instead of cancelling, so no cleanup is silently dropped.
-  group: gh-pages-force-push
+  # Not in the Flux original, and shared with Docs.yml on purpose (#125). This job
+  # force-pushes gh-pages, so unlike a losing deploy it does not fail loudly — it would
+  # silently overwrite whatever landed between its checkout and its push. Sharing one group
+  # with the deploys means it only starts once they are done, so its checkout is current.
+  # Queue rather than cancel, so no cleanup is silently dropped.
+  group: gh-pages
   cancel-in-progress: false
 
 jobs:
