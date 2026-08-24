@@ -15,7 +15,7 @@ The coordinates are already fully converted — lens distortion, perspective, an
 
 - The **origin** (0, 0) is at the calibration's `center` (if you gave one).
 - If you gave a `north` point, the coordinates are rotated so north is consistent across calibrations.
-- The **unit** is whatever your calibration used: the `checker_size` unit for checkerboard and AprilTag calibrations (e.g. cm if you measured your squares in cm), the `scale` unit for `only_scale`, or the MATLAB calibration's unit for `matlab`.
+- The **unit** is whatever your calibration used: the `checker_width` unit for checkerboard calibrations (e.g. cm if you measured your squares in cm), the `tag_cell_width` unit for AprilTag ones, the `scale` unit for `only_scale`, or the MATLAB calibration's unit for `matlab`.
 - `x` grows rightward and `y` grows **downward** in the image, like the pixel convention.
 
 ## The diagnostic video

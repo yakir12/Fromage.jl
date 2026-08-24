@@ -1,29 +1,24 @@
 # A verified run: everything `PawsomeTracker.track` needs, guaranteed not to error. A run is one or
-# more segment videos sharing a `run_id`, held as aligned per-segment vectors in CSV order — a
-# single-video run being the one-element case. A non-first segment's `start_location` may be
-# `missing` (the target continues from where the previous one ended).
+# more segment videos sharing a `run_id`, held as a vector of `PawsomeTracker.Segment` in CSV order
+# — a single-video run being the one-element case.
 #
 # `run_id` names the run and `calibration_id` names the rectification it uses (Fromage joins the two
-# on it, so a run without one has nothing to rectify against); neither is forwarded to `track`. The
-# run-level values live in `Source`: the `track` parameters (`target_width`…`scale`) plus the
-# video's stored-pixel `width`/`height` and sample aspect ratio `sar` as probed by ffprobe, which
-# the segments of a multi-segment run are verified to agree on (display width = `width × sar`).
+# on it, so a run without one has nothing to rectify against); neither is forwarded to `track`.
 #
-# `stop`/`fps` are concrete, imputed from the probed video. `window_size` stays `missing` when the
-# CSV omitted it, and `track(::Run)` imputes it from `target_width`/`fps`/duration.
+# The run-level `track` parameters live in `tuning`, a `PawsomeTracker.Tuning` built here — which is
+# to say every one of them is concrete by the time a `Run` exists. `stop`/`fps` were imputed from
+# the probed video during verification; `window_size` is imputed here, from `target_width`/`fps`/
+# the frame size/the run's duration. `track` itself imputes nothing and defaults nothing.
+#
+# `frame` holds what the video reports and the tracker does not take: the stored-pixel
+# `width`/`height` and the sample aspect ratio `sar` (display width = `width × sar`), which the
+# segments of a multi-segment run are verified to agree on. It is used to place a start location,
+# not to track.
 #
 # One concrete type, not an abstract `Run` over `SingleRun`/`MultiRun`: a run's arity is data, not a
 # kind of thing. See DESIGN-HISTORY.md for what the split cost and what it turned out not to buy.
 
-struct Source
-    target_width::Float64
-    window_size::Union{Missing, Int, NTuple{2, Int}}
-    darker_target::Bool
-    fps::Float64
-    video_fps::Float64
-    initial_search_factor::Float64
-    scale::Float64
-    background_length::Int
+struct Frame
     width::Int
     height::Int
     sar::Rational{Int}
@@ -32,95 +27,79 @@ end
 struct Run
     run_id::String
     calibration_id::String
-    source::Source
-    files::Vector{String}
-    starts::Vector{Float64}
-    stops::Vector{Float64}
-    start_locations::Vector{Union{Missing, NTuple{2, Int}}}
+    tuning::Tuning
+    frame::Frame
+    segments::Vector{Segment}
 end
+
+# The run's total tracked span, over which the default window size estimates the target's speed.
+run_duration(segments) = sum(s -> s.stop - s.start, segments)
 
 # The run-level values are read off the group's first row (verify_run_consistency! guaranteed the
 # segments agree on them — :dimension/:sar included). :dimension is the ffprobe-filled
-# (width, height) in stored pixels; :sar the sample aspect ratio (display width = width × sar).
+# (width, height) in stored pixels.
 #
 # :video_fps is the exception: it is NOT in SHARED_PARAMS, so segments are not required to agree on
-# it (see runs.md, #95). The first row's is what `track` used anyway — it read the rate from
-# `files[1]` — so carrying it here changes nothing except that the video is no longer reopened for
+# it (see runs.md, #95). The first row's is what `track` used anyway — it read the rate from the
+# first file — so carrying it here changes nothing except that the video is no longer reopened for
 # it.
-function Source(g::AbstractDataFrame)
-    width, height = g.dimension[1]
-    Source(g.target_width[1], g.window_size[1], g.darker_target[1],
-        g.fps[1], g.video_fps[1], g.initial_search_factor[1], g.scale[1],
-        g.background_length[1], width, height, g.sar[1])
+#
+# `window_size` is imputed here rather than left blank for `track` to fill: a blank csv cell means
+# "use the default", and this is where that default is applied, once.
+function _tuning(g::AbstractDataFrame, frame::Frame, segments::Vector{Segment})
+    target_width = g.target_width[1]
+    fps = g.fps[1]
+    window_size = @coalesce g.window_size[1] get_window(target_width, fps,
+        min(frame.height, frame.width), run_duration(segments))
+    return Tuning(target_width, window_size, g.darker_target[1], fps, g.video_fps[1],
+        g.initial_search_factor[1], g.scale[1], g.background_length[1])
 end
 
 # Build the run for one `run_id` group (rows in CSV order, one row per segment). The identity
 # columns are read off the first row, which verify_run_consistency! guaranteed the segments agree
-# on. The `collect(T, …)` narrows the per-segment columns from the `allowmissing!`-widened
-# `Union{Missing, T}` back to `T` — safe because only issue-free rows reach here — and materializes
-# the group's column views into owned vectors.
+# on. The per-segment columns come out of the `allowmissing!`-widened `Union{Missing, T}` columns
+# and are narrowed by `Segment`'s own field types — safe because only issue-free rows reach here.
 function Run(g::AbstractDataFrame)
-    Run(g.run_id[1], g.calibration_id[1], Source(g),
-        collect(String, g.file),
-        collect(Float64, g.start),
-        collect(Float64, g.stop),
-        Vector{Union{Missing, NTuple{2, Int}}}(g.start_location))
+    width, height = g.dimension[1]
+    frame = Frame(width, height, g.sar[1])
+    segments = Segment[Segment(f, a, o, sl)
+                       for (f, a, o, sl) in zip(g.file, g.start, g.stop, g.start_location)]
+    return Run(g.run_id[1], g.calibration_id[1], _tuning(g, frame, segments), frame, segments)
 end
 
-# The run-level keywords forwarded to `track` (`window_size` is imputed separately, by
-# impute_window_size).
-function shared_kw(r::Run)
-    s = r.source
-    (; s.target_width, s.darker_target, s.fps, s.video_fps, s.initial_search_factor, s.scale,
-        s.background_length)
-end
-
-# Drive `PawsomeTracker.track` from a verified run. The returned coordinates are (row, col) in
-# *stored*-frame pixels of the original (unscaled) video; for an anamorphic video the display-space
-# x is col × sar.
-#
 # The run's (or first segment's) start_location falls back to `center` (e.g. the rectification's
 # scene centre) and then to the frame's centre, so `track` always gets a concrete starting point.
 # Both are (x, y) in *display* pixels, matching start_location's convention, so x is half of
-# width × sar and `track` maps it back to stored columns. `center` defaults to `missing` rather than
-# `nothing` because coalesce only skips `missing`.
-frame_center(r::Run) = (round(Int, r.source.width * r.source.sar / 2), r.source.height ÷ 2)
+# width × sar and `track` maps it back to stored columns.
+frame_center(f::Frame) = (round(Int, f.width * f.sar / 2), f.height ÷ 2)
 
-function get_window(target_width, fps, m, duration)
-    σ = get_sigma(target_width)
-    ws1 = 4ceil(Int, σ) + 1 # calculates the default window size
-
-    speed = m/duration # pixels per second
-    distance = speed / fps # distance traveled per frame
-    ws2 = round(Int, 2distance)
-
-    max(ws1, ws2)
-end
-
-get_duration(r::Run) = mapreduce(-, +, r.stops, r.starts)
-
-function impute_window_size(r)
-    s = r.source
-    return @coalesce s.window_size get_window(s.target_width, s.fps, min(s.height, s.width), get_duration(r))
-end
-
-# The per-segment start locations with the first segment's fallbacks applied, as a vector `track`
-# can take. The `copy` is what makes this a query rather than an edit: a `Run` describes what the
-# csv said, and tracking it must leave it alone (#23).
-function impute_start_location(r::Run, center)
-    sls = copy(r.start_locations)
-    sls[1] = @coalesce sls[1] center frame_center(r)
-    return sls
-end
-
+# The run's segments with the first one's start-location fallbacks applied, ready for `track`.
+#
 # For an AprilTag run the calibration's `center` is a pixel in the (moved) extrinsic frame, not the
-# run frame, so it can't seed the tracker's start: the per-segment start_locations are used as-is,
-# a missing one becoming the frame-centre search inside `track`, and each segment relocates on its
+# run frame, so it can't seed the tracker's start: the per-segment start_locations are used as-is, a
+# missing one becoming the frame-centre search inside `track`, and each segment relocates on its
 # own. Every other rectification shares the run frame, so its centre is a valid fallback for the
 # first segment.
-function track(r::Run; center = missing, rectification = nothing, kwargs...)
-    sls = rectification isa ApriltagRectification ? r.start_locations : impute_start_location(r, center)
-    track(r.files; start = r.starts, stop = r.stops, start_location = sls,
-        window_size = impute_window_size(r), shared_kw(r)..., rectification, kwargs...)
+#
+# `center` defaults to nothing here only through its callers; it arrives as `missing` when absent,
+# because coalesce only skips `missing`.
+#
+# The `copy` is what makes this a query rather than an edit: a `Run` describes what the csv said,
+# and tracking it must leave it alone (#23).
+function resolved_segments(r::Run, center, rectification)
+    rectification isa ApriltagRectification && return r.segments
+    out = copy(r.segments)
+    s = out[1]
+    out[1] = Segment(s.file, s.start, s.stop,
+                     @coalesce s.start_location center frame_center(r.frame))
+    return out
 end
 
+# Drive `PawsomeTracker.track` from a verified run. Positional, like `track` itself: a `Run` already
+# holds every tuning value, so the only things left to say are which scene centre to fall back on,
+# what to rectify through, and where the diagnostic goes.
+#
+# The returned coordinates are (row, col) in *stored*-frame pixels of the original (unscaled) video;
+# for an anamorphic video the display-space x is col × sar.
+track(r::Run, center, rectification, diagnostic_file) =
+    track(resolved_segments(r, center, rectification), r.tuning, rectification, diagnostic_file)

@@ -6,12 +6,12 @@
         @test clean(runs)
         @test length(runs) == 1
         r = only(runs)
-        @test length(r.files) == 2             # two csv rows ⇒ two segments
-        @test basename.(r.files) == ["a.mp4", "b.mp4"]
-        @test r.starts == [0.0, 1.0]
-        @test r.stops  == [4.0, 7.0]
+        @test length(r.segments) == 2             # two csv rows ⇒ two segments
+        @test [basename(s.file) for s in r.segments] == ["a.mp4", "b.mp4"]
+        @test [s.start for s in r.segments] == [0.0, 1.0]
+        @test [s.stop for s in r.segments]  == [4.0, 7.0]
         # first segment's start_location kept; a non-first segment may omit it (continues from previous)
-        @test isequal(r.start_locations, [(100, 100), missing])
+        @test isequal([s.start_location for s in r.segments], [(100, 100), missing])
     end
 
     @testset "distinct run_ids stay separate runs" begin
@@ -19,7 +19,7 @@
                       runrow(run_id = "y", file = ART.b)])
         @test clean(runs)
         @test length(runs) == 2
-        @test all(r -> length(r.files) == 1, runs)
+        @test all(r -> length(r.segments) == 1, runs)
         @test [r.run_id for r in runs] == ["x", "y"]
     end
 
@@ -50,7 +50,7 @@
         runs = check([runrow(run_id = "s", file = ART.a, calibration_id = "cal_1"),
                       runrow(run_id = "s", file = ART.b, calibration_id = "cal_1")])
         @test clean(runs)
-        @test length(only(runs).files) == 2
+        @test length(only(runs).segments) == 2
         @test only(runs).calibration_id == "cal_1"
 
         # omitting it is not allowed: every such segment row is flagged at parse time
@@ -83,32 +83,32 @@
 
     @testset "imputing the start location leaves the run untouched (#23)" begin
         # A `Run` describes what the csv said; tracking it must not rewrite it. The imputation used
-        # to assign into `r.start_locations` itself, so the first `track` baked its `center` into the
+        # to assign into the run's own start locations, so the first `track` baked its `center` into the
         # run — and a later call with a *different* `center` then silently kept the first one, because
         # the coalesce saw a non-missing first element.
         # (`isequal`, not `==`: comparing vectors that contain `missing` yields `missing`.)
         runs = check([runrow(run_id = "m", file = ART.a, start_location = missing),
                       runrow(run_id = "m", file = ART.b)])
         r = only(runs)
-        @test length(r.files) == 2
-        before = copy(r.start_locations)
+        @test length(r.segments) == 2
+        before = [s.start_location for s in r.segments]
         @test all(ismissing, before)                  # nothing to impute from the csv
 
-        sls = VR.impute_start_location(r, (7, 9))
-        @test sls[1] == (7, 9)                        # the caller gets the imputed vector...
-        @test ismissing(sls[2])                       # ...with later segments left alone
-        @test sls !== r.start_locations               # ...as a vector of its own
-        @test isequal(r.start_locations, before)      # and the run itself is unchanged
+        sls = VR.resolved_segments(r, (7, 9), nothing)
+        @test sls[1].start_location == (7, 9)         # the caller gets the resolved segments...
+        @test ismissing(sls[2].start_location)        # ...with later segments left alone
+        @test sls !== r.segments                      # ...as a vector of its own
+        @test isequal([s.start_location for s in r.segments], before)   # run itself unchanged
 
         # so a second call is free to impute something else
-        sls2 = VR.impute_start_location(r, (11, 13))
-        @test sls2[1] == (11, 13)
-        @test isequal(r.start_locations, before)
+        sls2 = VR.resolved_segments(r, (11, 13), nothing)
+        @test sls2[1].start_location == (11, 13)
+        @test isequal([s.start_location for s in r.segments], before)
 
         # the frame-centre fallback (no centre given) must not write back either
-        sls3 = VR.impute_start_location(r, missing)
-        @test sls3[1] == VR.frame_center(r)
-        @test isequal(r.start_locations, before)
+        sls3 = VR.resolved_segments(r, missing, nothing)
+        @test sls3[1].start_location == VR.frame_center(r.frame)
+        @test isequal([s.start_location for s in r.segments], before)
     end
 
     @testset "...including a one-segment run (#23, #68)" begin
@@ -116,12 +116,13 @@
         # could not go wrong at arity 1. It is a one-element vector now, and every run takes the
         # same imputation path, so the guarantee has to be asserted here too.
         r = only(check([runrow(run_id = "o", start_location = missing)]))
-        @test length(r.files) == 1
-        @test all(ismissing, r.start_locations)
-        sls = VR.impute_start_location(r, (7, 9))
-        @test sls == [(7, 9)]
-        @test sls !== r.start_locations
-        @test all(ismissing, r.start_locations)          # the run itself is untouched
-        @test VR.impute_start_location(r, (11, 13)) == [(11, 13)]   # so a second call is free
+        @test length(r.segments) == 1
+        @test all(s -> ismissing(s.start_location), r.segments)
+        sls = VR.resolved_segments(r, (7, 9), nothing)
+        @test [s.start_location for s in sls] == [(7, 9)]
+        @test sls !== r.segments
+        @test all(s -> ismissing(s.start_location), r.segments)      # the run itself is untouched
+        # so a second call is free
+        @test [s.start_location for s in VR.resolved_segments(r, (11, 13), nothing)] == [(11, 13)]
     end
 end

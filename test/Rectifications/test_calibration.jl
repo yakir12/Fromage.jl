@@ -77,7 +77,7 @@
         @test detected isa Matrix{R.RowCol}
         @test size(detected) == n_corners                       # one corner per inner grid point
         @test all(p -> 0 ≤ p[1] ≤ size(board, 3) && 0 ≤ p[2] ≤ size(board, 2), detected)
-        @test R.checker_size_pixel(detected, n_corners) ≈ 30 atol = 0.5   # recovers the rendered square size
+        @test R.checker_width_pixel(detected, n_corners) ≈ 30 atol = 0.5   # recovers the rendered square size
 
         # a flat (cornerless) image yields no detection
         @test R._detect_corners(fill(0x7f, 1, 120, 160), n_corners) === missing

@@ -4,9 +4,9 @@
     @testset "kwarg fills a blank cell; a csv cell wins" begin
         runs = check([runrow()]; defaults = (target_width = 60,))
         @test clean(runs)
-        @test only(runs).source.target_width == 60.0
+        @test only(runs).tuning.target_width == 60.0
         runs = check([runrow(target_width = 30)]; defaults = (target_width = 60,))
-        @test only(runs).source.target_width == 30.0
+        @test only(runs).tuning.target_width == 30.0
     end
 
     @testset "fps kwarg beats the probe" begin
@@ -14,12 +14,12 @@
         # blank, and still passes the ≤ video-frame-rate check
         runs = check([runrow()]; defaults = (fps = 15,))
         @test clean(runs)
-        @test only(runs).source.fps == 15.0
+        @test only(runs).tuning.fps == 15.0
     end
 
     @testset "window_size accepts a scalar or a (w, h) tuple" begin
-        @test only(check([runrow()]; defaults = (window_size = 31,))).source.window_size == 31
-        @test only(check([runrow()]; defaults = (window_size = (31, 41),))).source.window_size == (31, 41)
+        @test only(check([runrow()]; defaults = (window_size = 31,))).tuning.window_size == 31
+        @test only(check([runrow()]; defaults = (window_size = (31, 41),))).tuning.window_size == (31, 41)
     end
 
     @testset "bad overrides fail fast; bad values are verified per row" begin

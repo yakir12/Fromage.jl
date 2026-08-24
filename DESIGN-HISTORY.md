@@ -298,7 +298,7 @@ caller feels is scaled by the focal length. Any future replacement has to clear 
 OpenCV's `findChessboardCorners` rejects anything smaller ("Both width and height of the pattern
 should have bigger than 2"), so `(2, n)` used to pass validation and then throw out of the
 detector. Checking the precondition in the gateway beats catching the failure in the detector.
-It also subsumes a degenerate case of its own: `checker_size_pixel`'s `2·prod(n) − sum(n)` divisor
+It also subsumes a degenerate case of its own: `checker_width_pixel`'s `2·prod(n) − sum(n)` divisor
 is zero at `(1, 1)`.
 
 ---

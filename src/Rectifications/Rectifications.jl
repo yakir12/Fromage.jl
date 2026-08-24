@@ -33,7 +33,7 @@ include("from_matlab.jl")
 include("plotting.jl")
 
 """
-    Rectification(c; rectification_diagnostics = false)
+    Rectification(c; rectification_diagnostics)
 
 The image ↔ real map pair for one verified calibration `c`, chosen by `c`'s type. The methods live
 in `VerifyRectifications`, which owns those types; each reads `c`'s fields and calls one of the

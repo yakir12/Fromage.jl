@@ -196,7 +196,7 @@ end
 # family, an unreadable frame, too few tags, corners that could not be re-read, or a metric fit that
 # did not converge. Every one of those is a fact about the calibration the user gave us, not an
 # exceptional condition, so it is reported rather than thrown.
-function reference_frame(file, extrinsic, ntags, family, checker_size)
+function reference_frame(file, extrinsic, ntags, family, tag_cell_width)
     valid_apriltag_family(family) ||
         return "unknown AprilTag family \"$family\" (supported: $(join(APRIL_FAMILY_NAMES, ", ")))"
     # Serialize the WHOLE read + detect: the one-shot VideoIO read races under the callers' `tmap`,
@@ -219,7 +219,7 @@ function reference_frame(file, extrinsic, ntags, family, checker_size)
             ids = sort([t.id for t in tags])[1:ntags]
             tc = detect_tags(det, img, ids)         # re-enters the lock (re-entrant), fine
             isnothing(tc) && return "could not read all $ntags AprilTag corners at the extrinsic frame"
-            M, err = fit_metric(tc; canon = canon_square(family, checker_size))
+            M, err = fit_metric(tc; canon = canon_square(family, tag_cell_width))
             err > METRIC_FIT_TOLERANCE && return metric_fit_issue(err)
             ReferenceFrame(collect(Int, ids), reduce(vcat, tc), M)
         finally
@@ -263,9 +263,12 @@ function apriltag_image2real(M, center, north, width, height, aspect)
 end
 
 # Build the AprilTag rectification from a verified `type = apriltag` calibs row.
-function ApriltagRectification(; file, extrinsic, ntags, family, checker_size, center, north,
-        width, height, aspect = 1.0)
-    ref = reference_frame(file, extrinsic, ntags, family, checker_size)
+# `aspect` has no default: the calibs gateway reads it from the video (or the csv) for every row,
+# so a default here would be a second definition of a value the caller always has -- exactly the
+# duplication #140/#141 were about. Square pixels are spelled `aspect = 1.0` at the call site.
+function ApriltagRectification(; file, extrinsic, ntags, family, tag_cell_width, center, north,
+        width, height, aspect)
+    ref = reference_frame(file, extrinsic, ntags, family, tag_cell_width)
     # Building a rectification has nowhere to put an issue string, so the report becomes a throw
     # here. In the normal pipeline this is unreachable: VerifyRectifications ran
     # apriltag_extrinsic_issue over the same arguments first and rejected the row.
@@ -283,8 +286,8 @@ valid_apriltag_family(family) = haskey(APRIL_FAMILIES, family)
 # string (unreadable frame, too few tags, non-coplanar / mis-detected tags), so it composes with the
 # gateway's other checks. A plain type test, since `reference_frame` already reports those as
 # strings — a genuine error propagates rather than being reformatted as a calibration issue.
-function apriltag_extrinsic_issue(file, extrinsic, ntags, family, checker_size)
-    ref = reference_frame(file, extrinsic, ntags, family, checker_size)
+function apriltag_extrinsic_issue(file, extrinsic, ntags, family, tag_cell_width)
+    ref = reference_frame(file, extrinsic, ntags, family, tag_cell_width)
     return ref isa String ? ref : nothing
 end
 

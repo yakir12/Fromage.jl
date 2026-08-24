@@ -52,7 +52,7 @@
         @test flagged(check([videorow(north = "1;2")]),             1, "wrong north format")
         @test flagged(check([videorow(extrinsic = "not_a_time")]),  1, "wrong extrinsic format")
         @test flagged(check([videorow(n_corners = "five")]),        1, "wrong n_corners format")
-        @test flagged(check([videorow(checker_size = "big")]),      1, "wrong checker_size format")
+        @test flagged(check([videorow(checker_width = "big")]),      1, "wrong checker_width format")
         @test flagged(check([videorow(radial_parameters = "2.5")]), 1, "wrong radial_parameters format")
         @test flagged(check([videorow(aspect = "wide")]),           1, "wrong aspect format")
         # malformed center/north on the non-video types (same shared parseto!/mytryparse path, for symmetry)
@@ -70,7 +70,7 @@
     @testset "a filled column irrelevant to the row's type is flagged" begin
         @test flagged(check([videorow(scale = 9.5)]),         1, "scale is not used by type video")
         @test flagged(check([videorow(extrinsic_index = 1)]), 1, "extrinsic_index is not used by type video")
-        @test flagged(check([matlabrow(checker_size = 4)]),   1, "checker_size is not used by type matlab")
+        @test flagged(check([matlabrow(checker_width = 4)]),   1, "checker_width is not used by type matlab")
         @test flagged(check([scalerow(n_corners = (5, 8))]),  1, "n_corners is not used by type only_scale")
         # blank cells in irrelevant columns stay fine — mixed-type CSVs share one header
         @test clean(check([videorow(), matlabrow(), scalerow()]))
@@ -104,10 +104,10 @@
     end
 
     @testset "defaults applied (with correct values) when optional fields omitted" begin
-        df = check([videorow(n_corners = missing, checker_size = missing,
+        df = check([videorow(n_corners = missing, checker_width = missing,
                              temporal_step = missing, radial_parameters = missing, blur = missing)])
         @test df.n_corners[1]         == (7, 10)
-        @test df.checker_size[1]      == 4.0
+        @test df.checker_width[1]      == 4.0
         @test df.temporal_step[1]     == 2.0
         @test df.radial_parameters[1] == 1
         @test df.blur[1]              == 1.0

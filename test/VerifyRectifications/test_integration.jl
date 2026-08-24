@@ -12,7 +12,7 @@ using StaticArrays: SVector
             @testset "$name" begin
                 cs = check([r])
                 @test cs isa Vector                          # clean load ⇒ structs, not an issues df
-                rect = Rectification(only(cs))
+                rect = Rectification(only(cs); rectification_diagnostics = false)
                 p = [100.0, 120.0]
                 @test rect.real2image(rect.image2real(p)) ≈ p    # the maps invert each other
                 @test rect.ratio == 9.5                          # only_scale carries the scale through
@@ -26,7 +26,7 @@ using StaticArrays: SVector
             @testset "$name" begin
                 cs = check([r])
                 @test cs isa Vector
-                rect = Rectification(only(cs))           # full pipeline: reads, detects, fits
+                rect = Rectification(only(cs); rectification_diagnostics = false)           # full pipeline: reads, detects, fits
                 @test rect.image2real isa Function
                 @test rect.real2image isa Function
                 @test (rect.width, rect.height) == (500, 376)
@@ -40,7 +40,7 @@ using StaticArrays: SVector
         cs = check([matlabrow(matlab_file = ART.consistent_mat)])
         @test cs isa Vector
         @test only(cs) isa VRect.MATLAB
-        rect = Rectification(only(cs))
+        rect = Rectification(only(cs); rectification_diagnostics = false)
         p = SVector(100.0, 120.0)
         @test rect.real2image(rect.image2real(p)) ≈ p atol = 1e-6
         @test rect.ratio ≈ 0.2
@@ -55,9 +55,28 @@ using StaticArrays: SVector
         @test cs isa Vector
         c = only(cs)
         @test c isa VRect.Video{Missing}
-        rect = Rectification(c)
+        rect = Rectification(c; rectification_diagnostics = false)
         @test rect.image2real isa Function
         @test rect.real2image isa Function
         @test (rect.width, rect.height) == (500, 376)
+    end
+
+    @testset "the dispatchers name what they take, and swallow nothing" begin
+        # These used to be `Rectification(c; kwargs...)`, splatted onward. Two things went silent
+        # with that: a misspelled keyword vanished on every type, and on `apriltag` — which
+        # forwards nothing — even a correctly spelled `rectification_diagnostics = true` was a
+        # no-op. Every spelling mistake is now loud.
+        c = only(check([videorow()]))
+
+        # a misspelling leaves the required keyword unassigned rather than disappearing
+        @test_throws UndefKeywordError Rectification(c; rectifcation_diagnostics = false)
+        # and it is required, not defaulted here — `main`'s signature is the one place it defaults
+        @test_throws UndefKeywordError Rectification(c)
+        # an extra keyword is rejected outright instead of being splatted into a builder
+        @test_throws MethodError Rectification(c; rectification_diagnostics = false, nonsense = 1)
+
+        # ...on every type, apriltag included, which is the method that forwards nothing
+        @test !isempty(methods(Rectification))
+        @test all(m -> :rectification_diagnostics in Base.kwarg_decl(m), methods(Rectification))
     end
 end

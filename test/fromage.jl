@@ -26,7 +26,7 @@ using ..Harness: capturing
     # defaults (the hardcoded n_corners (7, 10) would fail detection on the 5×8 board, so a clean
     # run proves the kwargs propagated into both gateways)
     open(joinpath(dir, "calibs.csv"), "w") do io
-        println(io, "calibration_id,file,type,extrinsic,start,stop,checker_size")
+        println(io, "calibration_id,file,type,extrinsic,start,stop,checker_width")
         println(io, "c1,board.mp4,video,1,0,4,4")
     end
     open(joinpath(dir, "runs.csv"), "w") do io
@@ -172,12 +172,12 @@ end
     # The whole AprilTag path through `main`: a `type = apriltag` calibs row builds the shared
     # reference from the extrinsic frame; the run registers each frame to it (cancelling the drone
     # pan) and is reported in metric ground coordinates. Exercises detection, reference building,
-    # motion cancellation, the metric scale (checker_size = cell size), the centre/north gauge, and
+    # motion cancellation, the metric scale (tag_cell_width = cell size), the centre/north gauge, and
     # the csv/diagnostic outputs — the pure geometry is unit-tested separately in test/apriltag.jl.
     dir = mktempdir()
     vid, groundpath, sl, nframes = make_apriltag_video(dir, "drone")
     open(joinpath(dir, "calibs.csv"), "w") do io
-        println(io, "calibration_id,type,file,extrinsic,apriltags,family,checker_size")
+        println(io, "calibration_id,type,file,extrinsic,apriltags,family,tag_cell_width")
         println(io, "drone,apriltag,$vid,0,4,tag36h11,8")
     end
     open(joinpath(dir, "runs.csv"), "w") do io
@@ -194,7 +194,7 @@ end
     ts, xy = only(runs.run)
     @test length(xy) == nframes
     @test !any(ismissing, xy)                          # every frame held all four tags (no gaps)
-    # checker_size = 8 ⇒ one metric unit = one ground pixel, so the tracked path is directly
+    # tag_cell_width = 8 ⇒ one metric unit = one ground pixel, so the tracked path is directly
     # comparable to the known straight ground path: the same total displacement (drone pan cancelled),
     # and straight (small deviation from its own chord).
     present = collect(skipmissing(xy))
@@ -204,7 +204,7 @@ end
     @test maximum(abs((p - a)[1] * d[2] - (p - a)[2] * d[1]) for p in present) < 3   # within 3 cm of the line
     # the no-subtraction path (background_length = 0) through track_apriltag: the 2-slice
     # registered stack still cancels the pan, and the same displacement contract holds
-    _, xy0 = Fromage.PawsomeTracker.track(joinpath(dir, vid); rectification = rect,
+    _, xy0 = track1(joinpath(dir, vid); rectification = rect,
         start_location = sl, target_width = 12, background_length = 0)
     @test !any(ismissing, xy0)
     p0 = collect(skipmissing(xy0))
@@ -231,14 +231,14 @@ end
     vid, groundpath, sl, nframes = make_apriltag_video(dir, "bigpan"; nframes = 300, amp = 55, occlude = occluded)
     file = joinpath(dir, vid)
     # extrinsic at t = 0.2 s (frame 6): the frames around t = 0 have the occluded tag
-    rect = Fromage.PawsomeTracker.ApriltagRectification(; file = file, extrinsic = 0.2, ntags = 4, family = "tag36h11",
-        checker_size = 8, center = missing, north = missing, width = 480, height = 480)
-    ts, xy = Fromage.PawsomeTracker.track(file; rectification = rect, start_location = sl, target_width = 12)
+    rect = Fromage.PawsomeTracker.ApriltagRectification(; aspect = 1.0, file = file, extrinsic = 0.2, ntags = 4, family = "tag36h11",
+        tag_cell_width = 8, center = missing, north = missing, width = 480, height = 480)
+    ts, xy = track1(file; rectification = rect, start_location = sl, target_width = 12)
     @test length(xy) == nframes
     @test findall(ismissing, xy) == occluded            # a lost tag ⇒ missing, exactly there
     pidx = findall(!ismissing, xy)
     present = [xy[i] for i in pidx]
-    # same accuracy contract as the e2e above (checker_size = 8 ⇒ metric unit = ground px),
+    # same accuracy contract as the e2e above (tag_cell_width = 8 ⇒ metric unit = ground px),
     # between the first and last frames that actually registered
     ground_disp = hypot((groundpath[pidx[end]] .- groundpath[pidx[1]])...)
     @test hypot((present[end] - present[1])...) ≈ ground_disp rtol = 0.05
@@ -257,13 +257,13 @@ end
     vidB, _, slB, nB = make_apriltag_video(dir, "segB"; nframes = 40)
     fileA, fileB = joinpath(dir, vidA), joinpath(dir, vidB)
     # the reference comes from segment A's extrinsic frame and serves both segments
-    rect = Fromage.PawsomeTracker.ApriltagRectification(; file = fileA, extrinsic = 0.2, ntags = 4, family = "tag36h11",
-        checker_size = 8, center = missing, north = missing, width = 480, height = 480)
+    rect = Fromage.PawsomeTracker.ApriltagRectification(; aspect = 1.0, file = fileA, extrinsic = 0.2, ntags = 4, family = "tag36h11",
+        tag_cell_width = 8, center = missing, north = missing, width = 480, height = 480)
 
     diag = joinpath(dir, "segmented.mp4")
     sls = Vector{Union{Missing, NTuple{2, Int}}}([slA, slB])
-    ts, xy = Fromage.PawsomeTracker.track([fileA, fileB]; rectification = rect, start_location = sls,
-                                          target_width = 12, diagnostic_file = diag)
+    ts, xy = track1([fileA, fileB]; rectification = rect, start_location = sls,
+                    target_width = 12, diagnostic_file = diag)
 
     @test length(xy) == nA + nB                        # both segments, concatenated
     @test length(ts) == length(xy)
@@ -275,7 +275,7 @@ end
     # tags are visible throughout these fixtures, so every frame should have registered
     @test count(ismissing, xy) == 0
     # the coordinates are metric: the disc covers the same known ground distance in each segment,
-    # so both halves must span the same distance (checker_size = 8 ⇒ metric unit = ground px)
+    # so both halves must span the same distance (tag_cell_width = 8 ⇒ metric unit = ground px)
     ground_disp = hypot((groundA[nA] .- groundA[1])...)
     @test hypot((xy[nA] - xy[1])...) ≈ ground_disp rtol = 0.1
     @test hypot((xy[end] - xy[nA + 1])...) ≈ ground_disp rtol = 0.1
@@ -295,8 +295,8 @@ end
     vid, _, sl, _ = make_apriltag_video(dir, "lbl"; nframes = 40)
     file = joinpath(dir, vid)
     PT = Fromage.PawsomeTracker
-    rect = PT.ApriltagRectification(; file = file, extrinsic = 0.2, ntags = 4, family = "tag36h11",
-        checker_size = 8, center = missing, north = missing, width = 480, height = 480)
+    rect = PT.ApriltagRectification(; aspect = 1.0, file = file, extrinsic = 0.2, ntags = 4, family = "tag36h11",
+        tag_cell_width = 8, center = missing, north = missing, width = 480, height = 480)
 
     # the label is the diagnostic file's name — which `main` sets to the run_id
     dia = PT.diagnose_apriltag(joinpath(dir, "run7.mp4"), rect.reference, true, 25)
@@ -307,8 +307,8 @@ end
     # content. The encoder is deterministic, so before the label they came out byte-identical.
     outs = map(("aaaa", "wwww")) do name
         d = joinpath(dir, "$name.mp4")
-        PT.track(file; rectification = rect, start_location = sl, target_width = 12,
-                 diagnostic_file = d)
+        track1(file; rectification = rect, start_location = sl, target_width = 12,
+               diagnostic_file = d)
         read(d)
     end
     @test outs[1] != outs[2]
@@ -325,7 +325,7 @@ end
     write(keepsake, "hands off")
     vid, _, _, _ = make_apriltag_video(dir, "drone")
     open(joinpath(dir, "calibs.csv"), "w") do io
-        println(io, "calibration_id,type,file,extrinsic,apriltags,family,checker_size")
+        println(io, "calibration_id,type,file,extrinsic,apriltags,family,tag_cell_width")
         println(io, "drone,apriltag,$vid,0,6,tag36h11,12")
     end
     verify() = Fromage.VerifyRectifications.load_rectifications(dir, joinpath(dir, "calibs.csv"); strict = false, issues_dir = idir)
@@ -383,10 +383,10 @@ end
     @test PT.apriltag_extrinsic_issue(corrupt, 0.2, 4, "tag36h11", 8) isa String
 
     # ...while the rectification builder, which has nowhere to put a message, still throws
-    @test_throws ErrorException PT.ApriltagRectification(; file = corrupt, extrinsic = 0.2, ntags = 4, family = "tag36h11",
-        checker_size = 8, center = missing, north = missing, width = 480, height = 480)
-    @test_throws ErrorException PT.ApriltagRectification(; file = file, extrinsic = 0.2, ntags = 99, family = "tag36h11",
-        checker_size = 8, center = missing, north = missing, width = 480, height = 480)
+    @test_throws ErrorException PT.ApriltagRectification(; aspect = 1.0, file = corrupt, extrinsic = 0.2, ntags = 4, family = "tag36h11",
+        tag_cell_width = 8, center = missing, north = missing, width = 480, height = 480)
+    @test_throws ErrorException PT.ApriltagRectification(; aspect = 1.0, file = file, extrinsic = 0.2, ntags = 99, family = "tag36h11",
+        tag_cell_width = 8, center = missing, north = missing, width = 480, height = 480)
 end
 
 @testset "diagnostic video: multi-run, mixed calibrations" begin

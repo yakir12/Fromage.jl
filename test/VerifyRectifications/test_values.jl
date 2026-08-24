@@ -34,7 +34,7 @@
 
     @testset "scalar field ranges" begin
         @test flagged(check([scalerow(scale = -1)]),              1, "scale must be larger than zero")
-        @test flagged(check([videorow(checker_size = 0)]),        1, "checker_size must be larger than zero")
+        @test flagged(check([videorow(checker_width = 0)]),        1, "checker_width must be larger than zero")
         @test flagged(check([videorow(radial_parameters = 4)]),   1, "radial_parameters must be 1, 2, or 3")
         @test flagged(check([videorow(radial_parameters = 0)]),   1, "radial_parameters must be 1, 2, or 3")
         @test flagged(check([videorow(blur = -1)]),               1, "blur must be larger than or equal to zero")

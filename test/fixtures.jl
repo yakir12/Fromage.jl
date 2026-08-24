@@ -9,10 +9,12 @@ using FFMPEG: FFMPEG
 using Statistics: mean
 using AprilTags: getAprilTagImage, tag36h11
 using StaticArrays: SVector, SMatrix
+using Fromage.PawsomeTracker: PawsomeTracker, Segment, Tuning, get_window, track
 
 export make_video, make_checkerboard_video, make_corrupt_video, make_target_video,
     tracking_rmse, probe_stream, probe_frames,
-    make_apriltag_video, drone_pose, apriltag_ground, render_pose, pose_apply
+    make_apriltag_video, drone_pose, apriltag_ground, render_pose, pose_apply,
+    tuning, segments, track1
 
 # ---------------------------------------------------------------------------
 # Video artifacts.
@@ -105,7 +107,7 @@ pose_apply(H, p) = (v = H * SVector(Float64(p[1]), Float64(p[2]), 1.0); SVector(
 
 # Ground layout, in ground-canvas pixels. `getAprilTagImage` returns the 10x10 cell image — the
 # 8x8 black-border square plus one white quiet-zone cell all round — so each tag block is
-# 10 * TAG_CELL px square. TAG_CELL is also what the calibs row declares as `checker_size`, which
+# 10 * TAG_CELL px square. TAG_CELL is also what the calibs row declares as `tag_cell_width`, which
 # makes one recovered metric unit exactly one ground pixel and the tracked cm path therefore
 # directly comparable to the intended ground path.
 const TAG_CELL = 8
@@ -297,6 +299,66 @@ function probe_frames(file)
         push!(dts, parse(Int, parts[2]))
     end
     return sizes, pts, dts
+end
+
+
+# ---------------------------------------------------------------------------
+# Tracking inputs.
+# ---------------------------------------------------------------------------
+
+# `PawsomeTracker.track` takes no keyword arguments: every tunable is a field of a `Tuning` and
+# every per-video value a field of a `Segment`, both of which the runs gateway fills from verified
+# csv values. Tests are the only caller with no gateway behind them, so the convenience lives HERE,
+# in the scaffolding, rather than as defaults on the shipped API — having a second definition of
+# every default is precisely what let a verified value and an unverified one disagree (#140, #141).
+#
+# The defaults below therefore have no authority: they exist so a test can say "this video, this
+# target width" in one line. Where a value is imputed rather than chosen, these call the same
+# function the gateway calls (`get_window`), so there is still one rule per value.
+
+"A `Tuning` for `file`, with the gateway's own imputations for anything not named."
+function tuning(file; target_width = 25.0, window_size = missing, darker_target = true,
+                fps = missing, video_fps = missing, initial_search_factor = 4.0, scale = 1.0,
+                background_length = PawsomeTracker.DEFAULT_BACKGROUND_LENGTH,
+                duration = missing)
+    m = probe_stream(file)
+    vfps = coalesce(video_fps, m.fps)
+    f = coalesce(fps, vfps)
+    ws = coalesce(window_size,
+                  get_window(target_width, f, min(m.width, m.height),
+                             coalesce(duration, m.nframes / m.fps)))
+    return Tuning(target_width, ws, darker_target, f, vfps, initial_search_factor, scale,
+                  background_length)
+end
+
+"""
+    segments(files; start, stop, start_location)
+
+The `Segment`s for `files` (one path or several). Each keyword is either one value for every
+segment or a vector with one entry per file; `stop` defaults to each video's own duration and
+`start_location` to `missing`, as a blank csv cell would.
+"""
+function segments(files; start = 0.0, stop = missing, start_location = missing)
+    fs = files isa AbstractString ? [files] : collect(files)
+    per(x, i) = x isa AbstractVector ? x[i] : x
+    return Segment[Segment(f, per(start, i),
+                           coalesce(per(stop, i), probe_stream(f).duration),
+                           per(start_location, i))
+                   for (i, f) in enumerate(fs)]
+end
+
+"""
+    track1(files; rectification, diagnostic_file, <segment and tuning keywords>)
+
+Track `files` as one run, building the `Segment`s and `Tuning` from keywords — the spelling
+`track` itself used to have, kept for the tests that exercise the tracker directly. The `Tuning` is
+built from the first file, as the gateway builds it from a run's first segment.
+"""
+function track1(files; rectification = nothing, diagnostic_file = nothing,
+                start = 0.0, stop = missing, start_location = missing, kw...)
+    segs = segments(files; start, stop, start_location)
+    return track(segs, tuning(first(segs).file; duration = sum(s -> s.stop - s.start, segs), kw...),
+                 rectification, diagnostic_file)
 end
 
 end

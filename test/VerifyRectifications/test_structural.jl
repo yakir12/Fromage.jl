@@ -35,10 +35,10 @@
 
     @testset "video duplicate with conflicting non-identity params" begin
         # Same identity (file, start, stop, extrinsic, center, north) but a different
-        # checker_size: still the same rectification, so the 2nd is a duplicate; and because a
+        # checker_width: still the same rectification, so the 2nd is a duplicate; and because a
         # non-identity parameter disagrees, the duplicate also gets the conflicting-parameters issue.
-        df = check([videorow(calibration_id = "k1", checker_size = 4),
-                    videorow(calibration_id = "k2", checker_size = 8)])
+        df = check([videorow(calibration_id = "k1", checker_width = 4),
+                    videorow(calibration_id = "k2", checker_width = 8)])
         @test flagged(df, 2, "duplicate rectification")
         @test flagged(df, 2, "same rectification with conflicting parameters")
         @test !flagged(df, 1, "duplicate rectification")

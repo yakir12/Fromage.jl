@@ -19,6 +19,7 @@
     # Every case below is this call with one field varied. Naming them is what the keyword-only
     # builder buys: the test now says which `missing` is the centre and which is the north.
     rectify(; kw...) = R.from_matlab(; file = "unused.mp4", extrinsic = 0.0, calibration_id = "m", matlab_file = mat,
+                                     rectification_diagnostics = false,
         extrinsic_index = 1, aspect = 1.0, center = missing, north = missing,
         width = W, height = H, kw...)
 

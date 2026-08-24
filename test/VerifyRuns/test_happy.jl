@@ -4,7 +4,7 @@
         @test clean(runs)
         @test runs isa Vector{VR.Run}
         @test length(runs) == 1
-        @test length(only(runs).files) == 1
+        @test length(only(runs).segments) == 1
     end
 
     @testset "several valid runs, strict returns them without throwing" begin
@@ -15,6 +15,6 @@
                      strict = true)
         @test runs isa Vector{VR.Run}
         @test length(runs) == 3
-        @test all(r -> length(r.files) == 1, runs)   # each is a distinct one-file run
+        @test all(r -> length(r.segments) == 1, runs)   # each is a distinct one-file run
     end
 end
