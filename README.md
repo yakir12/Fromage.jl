@@ -38,6 +38,12 @@ released, and the stable docs advance with it. Put `#minor` or `#major` in the c
 to bump more than a patch. There is nothing to do manually — see [RELEASING.md](RELEASING.md)
 for how it works, the commit-message rules, and recovery procedures.
 
+One exception: a push that touches *only* files which cannot affect the package — the
+top-level `*.md` files, `LICENSE`, `.gitignore`, `codecov.yml`, `.lychee.toml`,
+`.copier-answers.yml` — does not run the test workflow, and so is not released. Anything
+under `src/` or `docs/` does trigger a release, so the published documentation still keeps
+up with the code.
+
 Run the tests with:
 
 ```sh
