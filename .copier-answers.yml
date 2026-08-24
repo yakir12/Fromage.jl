@@ -12,7 +12,7 @@ AddGitHubTemplates: false
 AddLintCI: true
 AddLychee: true
 AddMacToCI: true
-AddTagBotCI: true
+AddTagBotCI: false
 AddTestCI: true
 AddWinToCI: true
 Authors: Yakir Gagnon <12.yakir@gmail.com> and contributors
