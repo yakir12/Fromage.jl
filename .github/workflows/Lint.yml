@@ -1,11 +1,21 @@
 name: Lint
 
 on:
-  push:
+  # Link rot happens on someone else's schedule, not on ours: a URL that worked at merge
+  # time can die a month later without anything in this repo changing. A weekly sweep
+  # catches that, while gating every push on a live network call only bought flaky runs.
+  schedule:
+    - cron: "0 0 * * 1" # Mondays, 00:00 UTC
+  pull_request:
     branches:
       - main
-    tags: ["*"]
-  pull_request:
+    paths:
+      - "docs/**"
+      - "**/*.md"
+      - ".lychee.toml"
+      - ".github/workflows/Lint.yml"
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
 
 concurrency:
   # Skip intermediate builds: always.
