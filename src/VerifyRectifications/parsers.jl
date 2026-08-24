@@ -13,7 +13,7 @@
 # `parse_apriltag!` and were therefore unreachable from `main` (#140). They live here now, on the
 # same footing as the video ones. `tag_cell_width` is a column of its own precisely so it can:
 # it and `checker_width` are different physical quantities (a tag cell vs a checkerboard square)
-# that shared one column until v0.1.57, which left a single default unable to serve both — a
+# that shared one column until v0.1.58, which left a single default unable to serve both — a
 # global `checker_width` silently did nothing to apriltag rows.
 const DEFAULTS = (;
     checker_width = 4.0,
@@ -136,7 +136,7 @@ end
 # exempt because it is free text that no parser reads by design (#16).
 #
 # One (type, column) pair gets a targeted hint instead of the generic message. The checkerboard
-# square size and the tag cell width shared a column until v0.1.57; a user who has migrated that
+# square size and the tag cell width shared a column until v0.1.58; a user who has migrated that
 # column to its new name `checker_width` but not yet noticed that apriltag rows went somewhere else
 # entirely is not making a type error — they are holding a value that moved. "not used by type
 # apriltag" would send them looking for the wrong thing. (A file still naming the old
