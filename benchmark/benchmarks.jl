@@ -79,7 +79,9 @@ tags["place_square"] = @benchmarkable PT.place_square($TAG)
 # Candidate 06 asks whether `imfilter!(CPUThreads(...))` earns its keep on a search window a few
 # tens of pixels wide. Measured against the serial algorithm on the same window and the same
 # kernel, with no tracker internals in the way, so the comparison outlives whatever `detect`
-# becomes. The shapes come from the tracker's own defaults: a 10 px target, a 21×21 window.
+# becomes. The shapes come from the tracker's own imputation rule rather than any default it still
+# carries: a 10 px target gives `get_sigma` a sigma of ~4.25, and `get_window`'s 4*ceil(sigma) + 1
+# a 21×21 window.
 const SIGMA = PT.get_sigma(10)
 const DOG = -1 * Kernel.DoG((SIGMA, SIGMA))
 const RADII = (10, 10)
@@ -135,19 +137,29 @@ end
 
 # Every row ends up flagged, so the run also pays for building and printing the issue report. That
 # is a constant across revisions; allocations are the cleaner signal for whether machinery was
-# actually removed.
+# actually removed. `progress = false` (#117, #118) keeps the meters out of it: redrawing a progress
+# bar is real work, and a sampled benchmark would pay for it on every evaluation.
 gates = SUITE["micro"]["gateways"] = BenchmarkGroup()
 gates["load_runs, 200 rows"] =
-    @benchmarkable Fromage.VerifyRuns.load_runs(joinpath($GATEWAY_DIR, "runs.csv"); strict = false)
+    @benchmarkable Fromage.VerifyRuns.load_runs(joinpath($GATEWAY_DIR, "runs.csv");
+                                                strict = false, progress = false)
 gates["load_rectifications, 5 rows"] =
-    @benchmarkable Fromage.VerifyRectifications.load_rectifications(joinpath($GATEWAY_DIR, "calibs.csv"); strict = false)
+    @benchmarkable Fromage.VerifyRectifications.load_rectifications(joinpath($GATEWAY_DIR, "calibs.csv");
+                                                                    strict = false, progress = false)
+
+# `track` takes no keyword arguments (#140, #141): a run's `Segment`s and its `Tuning` are what the
+# gateway hands it, so they are built ONCE here rather than inside the benchmarkable. That is not
+# just tidiness — `tuning` probes the video for its rate and duration, and tracking is designed
+# never to open a video merely to ask what rate it runs at, so building one per sample would time an
+# ffprobe spawn the shipped pipeline never pays. Built through the fixtures' `segments`/`tuning`,
+# the same way `track1` builds them, so a benchmark and a test still track the same run.
+const SEGS = segments(TARGET; start_location = (55, 50))
+const TUNING = tuning(TARGET; target_width = 10, duration = sum(s -> s.stop - s.start, SEGS))
 
 pipe = SUITE["macro"] = BenchmarkGroup()
 pipe["track, 50 frames"] =
-    @benchmarkable(track($TARGET; start_location = (55, 50), target_width = 10),
-                   samples = 1, evals = 1)
+    @benchmarkable(track($SEGS, $TUNING, nothing, nothing), samples = 1, evals = 1)
 pipe["track + diagnostic video"] =
-    @benchmarkable(track($TARGET; start_location = (55, 50), target_width = 10,
-                         diagnostic_file = joinpath(mktempdir(), "d.mp4")),
+    @benchmarkable(track($SEGS, $TUNING, nothing, joinpath(mktempdir(), "d.mp4")),
                    samples = 1, evals = 1)
 pipe["main, one calibration + one run"] = @benchmarkable(run_main(), samples = 1, evals = 1)
