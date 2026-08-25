@@ -5,7 +5,7 @@ using ..Gateway: backfill!, blank!, read_per_file!, read_rows, report_issues, re
     verify!, verify_id_filename!
 using ..Parsing: Parsing, MyTemporal, parseto!
 import ..Parsing: mytryparse                # extended on MyWindow (a type this module owns)
-using ..Probing: frame_geometry, no_video_stream, parse_framerate, parse_sar, probe_fields
+using ..Probing: frame_geometry, native_framerate, no_video_stream, parse_sar, probe_fields
 using OhMyThreads: OhMyThreads, tmap
 using ..PawsomeTracker: PawsomeTracker, ApriltagRectification, Segment, Tuning, get_window
 import ..PawsomeTracker: track
