@@ -45,21 +45,8 @@
         @test flagged(check([runrow(file = ART.corrupt)]), 1, "issue reading from video file")
     end
 
-    @testset "parse_framerate: tryparse semantics, never a throw" begin
-        # ffprobe reports r_frame_rate as "num/den", or occasionally a bare number.
-        @test VR.parse_framerate("30000/1001") ≈ 29.97 atol = 0.01
-        @test VR.parse_framerate("25")   == 25.0
-        @test VR.parse_framerate("25/1") == 25.0
-        @test VR.parse_framerate("25/0") == 25.0        # undefined rate: fall back to the numerator
-        # Anything unparseable is `nothing`, so probe_video reports malformed output rather than
-        # letting a `parse` throw into its catch. "N/A" is the interesting case: it contains
-        # a '/', so it took the fraction branch and split into ("N", "A").
-        @test VR.parse_framerate("N/A") === nothing
-        @test VR.parse_framerate("")    === nothing
-        @test VR.parse_framerate("abc") === nothing
-        @test VR.parse_framerate("1/2/3") === nothing
-    end
-
+    # parse_framerate moved to test/probing.jl with its import: VerifyRuns reaches the rate
+    # through `native_framerate` now, so the raw parser is no longer part of this gateway's surface.
     @testset "parse_sar: undefined ratios fall back to square pixels" begin
         @test VR.parse_sar("64:45") == 64//45
         @test VR.parse_sar("1:1")   == 1//1

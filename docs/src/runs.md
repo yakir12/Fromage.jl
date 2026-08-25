@@ -50,6 +50,15 @@ beetle03.mp4,afternoon
 !!! note "Why `native_fps` cannot be raised"
     `start` and `stop` stay in the video file's own seconds no matter what you declare, so claiming a rate *higher* than the file reports claims that your window holds more frames than it does — and the tracker would run off the end of the video partway through the run. A file that overstates its rate is the case worth correcting; one that understates it cannot be expressed here, because the frames it would need are not in the file.
 
+!!! note "Interlaced footage (50i / 60i) is corrected for you"
+    Camcorders that record interlaced video — AVCHD and HDV "50i"/"60i", usually `.MTS` or `.M2TS`
+    files — describe themselves in *fields* rather than frames: the file reports 50 fps while it
+    hands over 25 whole frames a second. That rate is halved automatically when the file says it is
+    interlaced **and** its own average rate confirms the doubling, so `native_fps` is imputed as 25
+    without you writing anything, and the timestamps in your track file come out right. Genuinely
+    progressive 50p footage reports 50 and is left alone. As always, a `native_fps` you write
+    yourself wins over whatever the file is imputed to have.
+
 !!! warning "Removed in v0.1.19"
     The `white_point` column was accepted but never had any effect, so it has been removed. A `runs.csv` that still has the column is now rejected with `unrecognized column/s in runs file: [:white_point]` — delete the column and the file loads as before. Nothing about tracking changes, since the value was never read.
 

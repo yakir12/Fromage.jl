@@ -5,11 +5,15 @@
 # asks for and which of them it cannot proceed without. The frame rate is one of those — it imputes
 # the run's `native_fps` when the csv leaves it blank, and through it the `sample_fps` as well. `sar`
 # has a documented square-pixel fallback, so a missing one is not an error.
+#
+# `avg_frame_rate` and `field_order` are asked for on the same spawn (no extra probe) purely so
+# `native_framerate` can recognise field-coded interlaced footage, whose `r_frame_rate` is the field
+# rate rather than the frame rate — see #145 and the note there.
 function probe_video(file)
-    fields = probe_fields(file, "stream=width,height,r_frame_rate,sample_aspect_ratio:format=duration")
+    fields = probe_fields(file, "stream=width,height,r_frame_rate,avg_frame_rate,field_order,sample_aspect_ratio:format=duration")
     fields isa String && return fields                 # unreadable file: pass the issue straight on
     geometry = frame_geometry(fields)
-    fps = parse_framerate(get(fields, "r_frame_rate", ""))
+    fps = native_framerate(fields)
     if isnothing(geometry) || isnothing(fps)
         return no_video_stream("width/height/duration/frame rate")
     end

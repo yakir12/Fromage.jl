@@ -98,6 +98,69 @@ const SR = Fromage.ShareIO.ShareReadError
         fields = P.probe_fields(vid, "stream=width,height")
         @test fields isa Dict && haskey(fields, "width")
     end
+
+    @testset "parse_framerate: tryparse semantics, never a throw" begin
+        # ffprobe reports r_frame_rate as "num/den", or occasionally a bare number.
+        @test P.parse_framerate("30000/1001") ≈ 29.97 atol = 0.01
+        @test P.parse_framerate("25")   == 25.0
+        @test P.parse_framerate("25/1") == 25.0
+        @test P.parse_framerate("25/0") == 25.0        # undefined rate: fall back to the numerator
+        # Anything unparseable is `nothing`, so probe_video reports malformed output rather than
+        # letting a `parse` throw into its catch. "N/A" is the interesting case: it contains
+        # a '/', so it took the fraction branch and split into ("N", "A").
+        @test P.parse_framerate("N/A") === nothing
+        @test P.parse_framerate("")    === nothing
+        @test P.parse_framerate("abc") === nothing
+        @test P.parse_framerate("1/2/3") === nothing
+    end
+
+    @testset "native_framerate: only field-coded interlacing is halved (#145)" begin
+        # The shape this exists for. Field-coded interlaced footage (PAFF — AVCHD/HDV "50i")
+        # reports the FIELD rate in r_frame_rate, while avg_frame_rate agrees with the frames a
+        # decoder actually produces.
+        paff = Dict("r_frame_rate" => "50/1", "avg_frame_rate" => "25/1", "field_order" => "tt")
+        @test P.native_framerate(paff) == 25.0
+        for order in ("bb", "tb", "bt")            # every interlaced order, not just the tt case
+            @test P.native_framerate(merge(paff, Dict("field_order" => order))) == 25.0
+        end
+        # NTSC 60i, where neither rate is a whole number
+        @test P.native_framerate(Dict("r_frame_rate" => "60000/1001",
+                                      "avg_frame_rate" => "30000/1001",
+                                      "field_order" => "bb")) ≈ 29.97 atol = 0.01
+
+        # Everything else keeps r_frame_rate. Each of these is a file the looser rules break:
+        # progressive 50p reports 50 and means it,
+        @test P.native_framerate(Dict("r_frame_rate" => "50/1", "avg_frame_rate" => "50/1",
+                                      "field_order" => "progressive")) == 50.0
+        # interlaced but FRAME-coded (MBAFF) already reports the frame rate,
+        @test P.native_framerate(Dict("r_frame_rate" => "25/1", "avg_frame_rate" => "25/1",
+                                      "field_order" => "tt")) == 25.0
+        # and an absent field_order is progressive, exactly as is_interlaced reads it.
+        @test P.native_framerate(Dict("r_frame_rate" => "50/1", "avg_frame_rate" => "25/1")) == 50.0
+
+        # avg_frame_rate only ever CONFIRMS the halving: where it is nonsense (a raw .dv stream
+        # reports 60000/1 for it), undefined or absent, r_frame_rate stands.
+        for avg in ("60000/1", "N/A", "0/0", "")
+            @test P.native_framerate(Dict("r_frame_rate" => "25/1", "avg_frame_rate" => avg,
+                                          "field_order" => "tt")) == 25.0
+        end
+        # An unparseable r_frame_rate stays `nothing`, so probe_video reports malformed output.
+        @test P.native_framerate(Dict("r_frame_rate" => "N/A", "field_order" => "tt")) === nothing
+        @test P.native_framerate(Dict{String, String}()) === nothing
+    end
+
+    @testset "real interlaced footage that is already correct is left alone (#145)" begin
+        # The regression the dict cases cannot prove: an actual interlaced file. x264 codes
+        # interlacing as frame pictures, so this reports field_order=tt with r_frame_rate ==
+        # avg_frame_rate == 25 — the halving must not fire on it. (No encoder here writes the
+        # field-coded PAFF stream that #145 is about; that shape is pinned above.)
+        ilace = joinpath(dir, "ilace.mp4")
+        FFMPEG.ffmpeg_exe(`-y -loglevel error -f lavfi -i testsrc=duration=1:size=320x240:rate=50
+                           -vf interlace -flags +ildct+ilme -pix_fmt yuv420p $ilace`)
+        f = P.probe_fields(ilace, "stream=r_frame_rate,avg_frame_rate,field_order")
+        @test P.is_interlaced(f)                   # it really is interlaced footage...
+        @test P.native_framerate(f) == 25.0        # ...and 25 is already its frame rate
+    end
 end
 
 end

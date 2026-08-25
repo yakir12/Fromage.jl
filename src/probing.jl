@@ -103,4 +103,34 @@ const INTERLACED_FIELD_ORDERS = ("tt", "bb", "tb", "bt")
 
 is_interlaced(fields) = get(fields, "field_order", "progressive") in INTERLACED_FIELD_ORDERS
 
+# The rate at which whole FRAMES arrive, from those same fields: `r_frame_rate` corrected on the one
+# family of files where it does not mean that (#145).
+#
+# `r_frame_rate` is the "real base frame rate" — the lowest rate that can represent every timestamp
+# in the stream. Where interlaced footage is coded as FIELD pictures (PAFF, what AVCHD and HDV
+# camcorders write), each field is a coded picture in its own right, so that rate is the FIELD rate:
+# twice the rate at which frames arrive. A 50i camera file reports `r_frame_rate = 50/1` while the
+# decoder hands over 25 frames a second, and imputing 50 as a run's `native_fps` doubles both the
+# frame count the sampler expects of the window and every timestamp derived from it.
+#
+# Only that exact disagreement is corrected. All three conditions are required, because each of the
+# looser rules is wrong on real footage:
+#   * interlacing alone is not enough — interlaced footage coded as FRAME pictures (MBAFF, what
+#     `x264 -flags +ilme` writes) already reports the frame rate, and halving it would break it;
+#   * a rate that looks doubled is not enough — genuinely progressive 50p footage reports 50/1 and
+#     is describing itself correctly;
+#   * `avg_frame_rate` cannot simply replace it — on a raw .dv stream ffprobe reports `60000/1`
+#     there while `r_frame_rate` is right, so it only ever CONFIRMS the halving, never supplies the
+#     answer on its own.
+# Anything failing a condition keeps `r_frame_rate`, so a file this cannot describe is left exactly
+# as it was.
+function native_framerate(fields)
+    r = parse_framerate(get(fields, "r_frame_rate", ""))
+    isnothing(r) && return nothing
+    is_interlaced(fields) || return r
+    avg = parse_framerate(get(fields, "avg_frame_rate", ""))
+    (isnothing(avg) || avg ≤ 0) && return r
+    return isapprox(r, 2avg; rtol = 0.01) ? avg : r
+end
+
 end # module Probing
