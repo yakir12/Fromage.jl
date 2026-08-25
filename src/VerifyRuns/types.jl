@@ -6,9 +6,10 @@
 # on it, so a run without one has nothing to rectify against); neither is forwarded to `track`.
 #
 # The run-level `track` parameters live in `tuning`, a `PawsomeTracker.Tuning` built here — which is
-# to say every one of them is concrete by the time a `Run` exists. `stop`/`fps` were imputed from
-# the probed video during verification; `window_size` is imputed here, from `target_width`/`fps`/
-# the frame size/the run's duration. `track` itself imputes nothing and defaults nothing.
+# to say every one of them is concrete by the time a `Run` exists. `stop` and the two rates were
+# imputed during verification (`stop` and `native_fps` from the probed video, `sample_fps` from
+# `native_fps`); `window_size` is imputed here, from `target_width`/`sample_fps`/the frame size/the
+# run's duration. `track` itself imputes nothing and defaults nothing.
 #
 # `frame` holds what the video reports and the tracker does not take: the stored-pixel
 # `width`/`height` and the sample aspect ratio `sar` (display width = `width × sar`), which the
@@ -39,19 +40,19 @@ run_duration(segments) = sum(s -> s.stop - s.start, segments)
 # segments agree on them — :dimension/:sar included). :dimension is the ffprobe-filled
 # (width, height) in stored pixels.
 #
-# :video_fps is the exception: it is NOT in SHARED_PARAMS, so segments are not required to agree on
-# it (see runs.md, #95). The first row's is what `track` used anyway — it read the rate from the
-# first file — so carrying it here changes nothing except that the video is no longer reopened for
-# it.
+# There is no exception left: `native_fps` is a run-level parameter like any other here, spread
+# across the run's rows when declared and compared across them when imputed, so the first row's is
+# the run's by construction. It used to be probed-only and unshared (#95) — and `track` read the
+# rate from the file all over again, which is what made a declared one impossible.
 #
 # `window_size` is imputed here rather than left blank for `track` to fill: a blank csv cell means
 # "use the default", and this is where that default is applied, once.
 function _tuning(g::AbstractDataFrame, frame::Frame, segments::Vector{Segment})
     target_width = g.target_width[1]
-    fps = g.fps[1]
-    window_size = @coalesce g.window_size[1] get_window(target_width, fps,
+    sample_fps = g.sample_fps[1]
+    window_size = @coalesce g.window_size[1] get_window(target_width, sample_fps,
         min(frame.height, frame.width), run_duration(segments))
-    return Tuning(target_width, window_size, g.darker_target[1], fps, g.video_fps[1],
+    return Tuning(target_width, window_size, g.darker_target[1], sample_fps, g.native_fps[1],
         g.initial_search_factor[1], g.scale[1], g.background_length[1])
 end
 

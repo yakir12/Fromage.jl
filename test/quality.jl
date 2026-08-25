@@ -50,10 +50,10 @@ using Fromage
         end
 
         @testset "every tracking parameter is a runs.csv column" begin
-            # `video_fps` is the one exception, and it is not a loophole: it is probed from the
-            # video by the gateway, never written by a user, and bounds-checks `fps`.
-            probed = Set([:video_fps])
-            @test Set(fieldnames(PT.Tuning)) ⊆ Set(VRuns.COLUMNS) ∪ probed
+            # No exceptions: `native_fps` used to be one — probed from the video, settable nowhere —
+            # and being unsettable is exactly what made a video that misreports its own rate
+            # untrackable. Every field is a column now, so `⊆` is the whole invariant.
+            @test Set(fieldnames(PT.Tuning)) ⊆ Set(VRuns.COLUMNS)
             @test Set(fieldnames(PT.Segment)) ⊆ Set(VRuns.COLUMNS)
 
             # reverse: everything `tracking_defaults` may set actually lands on a Tuning field

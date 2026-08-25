@@ -9,12 +9,25 @@
         @test only(runs).tuning.target_width == 30.0
     end
 
-    @testset "fps kwarg beats the probe" begin
-        # a.mp4 runs at 30 fps (the probe would impute 30); a global fps wins when the cell is
-        # blank, and still passes the ≤ video-frame-rate check
-        runs = check([runrow()]; defaults = (fps = 15,))
+    @testset "sample_fps kwarg beats the probe" begin
+        # a.mp4 runs at 30 fps (the probe would impute 30 through native_fps); a global sample_fps
+        # wins when the cell is blank, and still passes the ≤ native_fps check
+        runs = check([runrow()]; defaults = (sample_fps = 15,))
         @test clean(runs)
-        @test only(runs).tuning.fps == 15.0
+        @test only(runs).tuning.sample_fps == 15.0
+        @test only(runs).tuning.native_fps == 30.0      # untouched: it is the other rate
+    end
+
+    @testset "native_fps kwarg beats the probe, and moves sample_fps with it" begin
+        # The cascade runs the same way from a global default as from a cell: nothing here names a
+        # sampling rate, so it follows the declared native one rather than the probed 30.
+        runs = check([runrow()]; defaults = (native_fps = 25,))
+        @test clean(runs)
+        @test only(runs).tuning.native_fps == 25.0
+        @test only(runs).tuning.sample_fps == 25.0
+        # and a cell still wins over the global default, on either of them
+        runs = check([runrow(native_fps = "10")]; defaults = (native_fps = 25, sample_fps = 5))
+        @test only(runs).tuning.native_fps == 10.0 && only(runs).tuning.sample_fps == 5.0
     end
 
     @testset "window_size accepts a scalar or a (w, h) tuple" begin

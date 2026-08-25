@@ -4,7 +4,7 @@ using ImageFiltering: Kernel, imfilter!, Algorithm, NoPad
 using OffsetArrays: OffsetMatrix
 using PaddedViews: PaddedView
 using ..ShareIO: ShareIO
-using VideoIO: openvideo, AV_PIX_FMT_GRAY8, aspect_ratio, open_video_out, VideoWriter, VideoReader, close_video_out!, framerate, skipframes, gettime
+using VideoIO: openvideo, AV_PIX_FMT_GRAY8, aspect_ratio, open_video_out, VideoWriter, VideoReader, close_video_out!, skipframes, gettime
 using ImageDraw: draw!, CirclePointRadius, Path
 using FreeTypeAbstraction: renderstring!, FTFont
 using ColorTypes: Gray
@@ -30,8 +30,8 @@ const LEVEL_SMOOTH = 0.9
 const GATE_DECAY = 0.99
 
 # How many tracked frames form the rolling background model (mirrored by VerifyRuns' DEFAULTS, so
-# a blank csv cell and an omitted `track` kwarg agree). Counted at the tracking fps, so the model
-# spans background_length / fps seconds.
+# a blank csv cell and an omitted `track` kwarg agree). Counted at the sampling rate, so the model
+# spans background_length / sample_fps seconds.
 const DEFAULT_BACKGROUND_LENGTH = 250
 
 export track, ApriltagRectification, Segment, Tuning
@@ -76,12 +76,12 @@ include("diagnose.jl")
 include("apriltag.jl")
 
 
-# The sampler advances whole frames, so the only rates it can deliver are `vid_fps / skip`; this is
-# the stride nearest a request, and the rate it therefore yields. The single definition both the
+# The sampler advances whole frames, so the only rates it can deliver are `native_fps / skip`; this
+# is the stride nearest a request, and the rate it therefore yields. The single definition both the
 # sampler (`Video`) and the diagnostic writer derive from — the writer must declare a playback speed
 # in terms of the rate its frames actually arrive at, not the rate that was requested (#55).
-frame_skip(vid_fps, requested) = max(1, round(Int, vid_fps / min(requested, vid_fps)))
-effective_fps(vid_fps, requested) = vid_fps / frame_skip(vid_fps, requested)
+frame_skip(native_fps, sample_fps) = max(1, round(Int, native_fps / min(sample_fps, native_fps)))
+effective_fps(native_fps, sample_fps) = native_fps / frame_skip(native_fps, sample_fps)
 
 get_sigma(target_width) = target_width / 2sqrt(2log(2))
 
@@ -130,21 +130,26 @@ struct Video
     width::Int
     height::Int
     duration::Float64
-    fps::Float64
+    sample_fps::Float64
     # `Rational{Int}`, not a bare `Rational`: the unparameterised spelling is abstract, so the field
     # would be boxed and every read of it untyped. `VideoIO.aspect_ratio` returns
     # `Union{Rational{Int32}, Rational{Int64}}` and either converts on construction. Matches
     # `VerifyRuns.Frame.sar`, which holds the same quantity read from ffprobe instead.
     sar::Rational{Int}
 
-    # `fps` is a request, not a promise: the sampler advances whole frames, so the only rates it can
-    # deliver are `vid_fps / skip`. The sample count and every timestamp are derived from that
-    # EFFECTIVE rate, never from the request (#15, #17).
-    function Video(file, fps, start, stop, scale)
+    # `sample_fps` arrives as a request and is stored as a promise: the sampler advances whole
+    # frames, so the only rates it can deliver are `native_fps / skip`. The sample count and every
+    # timestamp are derived from that EFFECTIVE rate, never from the request (#15, #17).
+    #
+    # `native_fps` is NOT read from the container here, though it could be. It is a verified
+    # `Tuning` field — the rate the gateway probed, or the one `runs.csv` declared in its place —
+    # and asking the file again would give the native rate a second definition site, the exact
+    # shape of #140/#141: a run verified against one rate would then be sampled at another, and a
+    # declared rate would be silently ignored by the only code that matters.
+    function Video(file, native_fps, sample_fps, start, stop, scale)
         vid = open_gray_video(file)          # serialized open (openvideo isn't thread-safe); see OPENVIDEO_LOCK
-        vid_fps = framerate(vid)
-        skip = frame_skip(vid_fps, fps)
-        fps = vid_fps / skip                 # the rate actually delivered; `fps` means this from here on
+        skip = frame_skip(native_fps, sample_fps)
+        sample_fps = native_fps / skip       # the rate actually delivered; `sample_fps` means this from here on
         img = read(vid)
         t₀ = gettime(vid)
         # The tracked frame is the scaled one, so :width/:height are the WARPED extent, not the
@@ -157,15 +162,15 @@ struct Video
         # inside the window — cld(n, s) == fld(n - 1, s) + 1 — so the reads cannot run off the end.
         # The epsilon absorbs a duration that computes to 59.999999996 rather than 60; the `max`
         # makes a window shorter than one frame period yield the single frame `seek` lands on.
-        navailable = max(1, floor(Int, (stop - start) * vid_fps + 1e-9))
+        navailable = max(1, floor(Int, (stop - start) * native_fps + 1e-9))
         nframes = cld(navailable, skip)
         sar = aspect_ratio(vid)
-        new(vid, img, skip, nframes, scale, width, height, stop - start, fps, sar)
+        new(vid, img, skip, nframes, scale, width, height, stop - start, sample_fps, sar)
     end
 end
 
-function video(f, file, fps, start, stop, scale)
-    vid = Video(file, fps, start, stop, scale)
+function video(f, file, native_fps, sample_fps, start, stop, scale)
+    vid = Video(file, native_fps, sample_fps, start, stop, scale)
     return try
         f(vid)
     finally
@@ -360,8 +365,8 @@ function track!(coords, stack, guess, tr, vid, dia)
     end
 end
 
-function track_one(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia, initial_search_factor, scale, background_length)
-    video(file, fps, start, stop, scale) do vid
+function track_one(file, start, stop, target_width, start_location, window_size, darker_target, native_fps, sample_fps, dia, initial_search_factor, scale, background_length)
+    video(file, native_fps, sample_fps, start, stop, scale) do vid
         update_ratio!(dia, size(vid.img))
         subtract = background_length != 0
         tr = Tracker(vid, darker_target, target_width, window_size, (vid.height, vid.width), subtract)
@@ -370,7 +375,7 @@ function track_one(file, start, stop, target_width, start_location, window_size,
         guess = get_guess(start_location, stack, vid, darker_target, target_width, initial_search_factor, subtract)
         track!(coords, stack, guess, tr, vid, dia)
         # sample i is raw frame (i-1)*skip, i.e. start + (i-1)/effective_fps (#17)
-        return (range(start; step = 1 / vid.fps, length = vid.nframes), coords)
+        return (range(start; step = 1 / vid.sample_fps, length = vid.nframes), coords)
     end
 end
 
@@ -407,8 +412,8 @@ struct Segment
 end
 
 """
-    Tuning(target_width, window_size, darker_target, fps, video_fps, initial_search_factor,
-           scale, background_length)
+    Tuning(target_width, window_size, darker_target, sample_fps, native_fps,
+           initial_search_factor, scale, background_length)
 
 The run-level tracking parameters, every one of them concrete.
 
@@ -420,15 +425,20 @@ with no gateway behind it (the test suite) builds one explicitly; see `test/harn
 
 `window_size` is the search window scanned around the target's last known position, already imputed
 (`get_window`) rather than left blank — so there is one imputation rule, upstream, instead of a
-second one here. `fps` is the rate to track at and `video_fps` the video's own; the gateway probes
-the latter once, so tracking never opens a video merely to ask (see WHY-FRAMES-FAIL.md).
+second one here.
+
+The two rates are separate parameters and neither is derived from the other here. `native_fps` is
+the rate the video itself runs at — probed once by the gateway, or declared in `runs.csv` when the
+container reports it wrongly — and `sample_fps` the rate to sample it at, which the gateway has
+verified does not exceed it. Both arrive concrete: tracking never opens a video merely to ask what
+rate it runs at (see WHY-FRAMES-FAIL.md), and never re-derives a rate it was given.
 """
 struct Tuning
     target_width::Float64
     window_size::Union{Int, NTuple{2, Int}}
     darker_target::Bool
-    fps::Float64
-    video_fps::Float64
+    sample_fps::Float64
+    native_fps::Float64
     initial_search_factor::Float64
     scale::Float64
     background_length::Int
@@ -443,12 +453,12 @@ end
 # It used to live in VerifyRuns while `track` carried a second, different fallback
 # (`2 * target_width`) for the same field — so which window you got depended on whether you came
 # through the gateway. This is now the only rule.
-function get_window(target_width, fps, m, duration)
+function get_window(target_width, sample_fps, m, duration)
     σ = get_sigma(target_width)
     ws1 = 4ceil(Int, σ) + 1 # the window the target itself needs
 
-    speed = m / duration    # pixels per second
-    distance = speed / fps  # distance traveled per frame
+    speed = m / duration          # pixels per second
+    distance = speed / sample_fps # distance traveled per sampled frame
     ws2 = round(Int, 2distance)
 
     max(ws1, ws2)
@@ -466,9 +476,10 @@ _concat_timestamps(tss) = range(tss[1][1], step = step(tss[1]), length = sum(len
     track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnostic_file)
 
 Use a Difference of Gaussian (DoG) filter to track a target across the `segments` of one run,
-sampling `tuning.fps` frames per second (capped at the video's own rate, and rounded to the nearest
-rate reachable by skipping whole frames — `video_fps / skip`; the returned timestamps always
-describe the rate actually used, never the one requested).
+sampling `tuning.sample_fps` frames per second (which the gateway has capped at
+`tuning.native_fps`, and which is rounded here to the nearest rate reachable by skipping whole
+frames — `native_fps / skip`; the returned timestamps always describe the rate actually used, never
+the one requested).
 
 Returns `(ts, coords)`: timestamps and the target's per-frame position. With a `rectification`,
 `coords` are **real-world** coordinates (the rectification's `image2real` applied); with `nothing`,
@@ -484,8 +495,8 @@ are one continuous run, and a segment whose `start_location` is `missing` contin
 previous one ended.
 
 The target is detected against a rolling background model of the last `tuning.background_length`
-tracked frames (counted at the tracking fps, so the model spans `background_length / fps` seconds;
-memory scales with it); `background_length = 0` disables background subtraction entirely — the DoG
+tracked frames (counted at the sampling rate, so the model spans
+`background_length / sample_fps` seconds; memory scales with it); `background_length = 0` disables background subtraction entirely — the DoG
 filter runs on the raw frame, which suits clean high-contrast scenes but lets static dark clutter
 compete with the target.
 
@@ -498,9 +509,9 @@ There are no keyword arguments by design: everything this needs is a field of `S
 `Tuning`, both of which the runs gateway fills from verified values. See `Tuning`.
 """
 function track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnostic_file)
-    # As before (#55). Segments are assumed to share one native frame rate (see runs.md), so the
-    # run's `video_fps` — the first segment's, as the gateway probed it — is representative.
-    dia_fps = effective_fps(tuning.video_fps, tuning.fps)
+    # As before (#55). The segments of a run are pieces of one recording and share their specs
+    # (see runs.md), so the run's single `native_fps` describes every one of them.
+    dia_fps = effective_fps(tuning.native_fps, tuning.sample_fps)
 
     nsegments = length(segments)
     tss = Vector{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}(undef, nsegments)
@@ -521,7 +532,7 @@ function track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnos
         try
             for (i, s) in enumerate(segments)
                 tss[i], segs[i] = track_apriltag(s.file, s.start, s.stop, width, s.start_location,
-                    window, tuning.darker_target, tuning.fps, dia,
+                    window, tuning.darker_target, tuning.native_fps, tuning.sample_fps, dia,
                     rectification.reference, rectification.family,
                     (rectification.height, rectification.width), search,
                     tuning.scale, tuning.background_length)
@@ -538,7 +549,8 @@ function track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnos
         for (i, s) in enumerate(segments)
             loc = coalesce(s.start_location, end_location)
             tss[i], ijs[i] = track_one(s.file, s.start, s.stop, width, loc, window,
-                tuning.darker_target, tuning.fps, dia, search, tuning.scale, tuning.background_length)
+                tuning.darker_target, tuning.native_fps, tuning.sample_fps, dia, search,
+                tuning.scale, tuning.background_length)
             end_location = ijs[i][end]
         end
     end

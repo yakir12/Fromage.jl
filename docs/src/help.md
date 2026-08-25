@@ -32,7 +32,7 @@ You saw it in the [diagnostic video](results.md#The-diagnostic-video) — good, 
 1. **Wrong `target_width`.** Pause the run video, measure how many pixels wide the animal is, and put that in the `target_width` column. This is the single most important tuning parameter.
 2. **Wrong starting position.** Give the run an explicit `start_location` (see [where the tracker starts looking](runs.md#Where-the-tracker-starts-looking)).
 3. **Wrong contrast direction.** If your target is *lighter* than the background, set `darker_target` to `false`.
-4. **The animal moves fast between frames.** Increase `window_size`, or track at the video's full frame rate (don't lower `fps`).
+4. **The animal moves fast between frames.** Increase `window_size`, or track at the video's full frame rate (don't lower `sample_fps`).
 
 ## Iterating faster: run only part of the pipeline
 
@@ -53,18 +53,18 @@ Fromage.only_track("path/to/data"; runs_file = "runs.csv", run_ids = ["run1", "l
 
 ## Changing a default for all rows at once
 
-The default of every *tuning* column can be overridden globally from `main`, so you don't have to fill in the same value on every row. The hierarchy is: a csv cell always wins over a global default, which wins over the built-in default (including the value probed from the video, for `yadif` and `fps`):
+The default of every *tuning* column can be overridden globally from `main`, so you don't have to fill in the same value on every row. The hierarchy is: a csv cell always wins over a global default, which wins over the built-in default (including the value probed from the video, for `yadif` and `native_fps`):
 
 ```julia
 main("path/to/data";
      rectification_defaults = (n_corners = (5, 8), blur = 0),
-     tracking_defaults      = (target_width = 60, fps = 25))
+     tracking_defaults      = (target_width = 60, sample_fps = 25))
 ```
 
 - `rectification_defaults` may set: `checker_width`, `n_corners`, `temporal_step`, `radial_parameters`, `blur`, `yadif`, and — for `type = apriltag` rows — `apriltags`, `family`, `tag_cell_width`.
-- `tracking_defaults` may set: `target_width`, `window_size`, `darker_target`, `fps`, `initial_search_factor`, `scale`, `background_length`.
+- `tracking_defaults` may set: `target_width`, `window_size`, `darker_target`, `native_fps`, `sample_fps`, `initial_search_factor`, `scale`, `background_length`.
 
-Anything else (identities, file names, timestamps, `start_location`/`center`/`north`) is per-row only, and an unrecognized or unconvertible entry is rejected with an error before anything runs. Global values pass through the same validation as csv cells — e.g. a global `fps` must still not exceed each video's own frame rate. `only_rectify` and `only_track` accept their respective keyword (`rectification_defaults` / `tracking_defaults`).
+Anything else (identities, file names, timestamps, `start_location`/`center`/`north`) is per-row only, and an unrecognized or unconvertible entry is rejected with an error before anything runs. Global values pass through the same validation as csv cells — e.g. a global `sample_fps` must still not exceed each run's `native_fps`. `only_rectify` and `only_track` accept their respective keyword (`rectification_defaults` / `tracking_defaults`).
 
 ## Macs
 

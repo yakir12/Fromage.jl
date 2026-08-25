@@ -15,13 +15,20 @@ end
 # The globally overridable defaults: exactly the tracking tuning parameters. Identities and the
 # temporal window are inherently per-row. The caller replaces any of these via `load_runs`'
 # `defaults` kwarg (in Fromage: `main`'s `tracking_defaults`), and a csv cell always wins over the
-# replaced default (see parseto!). `fps = missing` means "imputed from the probed video", so a
-# caller-supplied fps beats the probe on every row whose cell is blank.
+# replaced default (see parseto!).
+#
+# The two rates are `missing` here because neither has a value that could be written down: they are
+# imputed, in a cascade this file only sets the top of. `native_fps` falls back to the rate the
+# video reports and `sample_fps` to whatever `native_fps` ended up being — so declaring only
+# `native_fps` (here or in a cell) moves both, which is the point of splitting them. Either way a
+# caller-supplied value beats the probe on every row whose cell is blank; see
+# read_video_metadata!.
 const DEFAULTS = (;
     target_width = 25.0,
     window_size = missing,
     darker_target = true,
-    fps = missing,
+    native_fps = missing,
+    sample_fps = missing,
     initial_search_factor = 4.0,
     scale = 1.0,
     background_length = PawsomeTracker.DEFAULT_BACKGROUND_LENGTH,
@@ -31,7 +38,8 @@ const DEFAULT_TYPES = (;
     target_width = Float64,
     window_size = Union{Int, NTuple{2, Int}},
     darker_target = Bool,
-    fps = Float64,
+    native_fps = Float64,
+    sample_fps = Float64,
     initial_search_factor = Float64,
     scale = Float64,
     background_length = Int,
@@ -41,8 +49,9 @@ resolve_defaults(overrides) = Parsing.resolve_defaults(overrides, DEFAULTS, DEFA
 
 # Every column maps to one `track` keyword (plus `run_id`/`path` for identity and path resolution).
 # The hardcoded defaults mirror `PawsomeTracker.track`'s own, so a blank cell behaves exactly as
-# omitting the argument would. `stop`/`fps` are left missing here and imputed from the probed video;
-# `window_size`/`start_location` stay missing and are omitted from the `track` call.
+# omitting the argument would. `stop`/`native_fps` are left missing here and imputed from the probed
+# video, and `sample_fps` from whatever `native_fps` resolves to; `window_size`/`start_location`
+# stay missing and are imputed later.
 function parse_run!(dict, row, defaults)
     parseto!(dict, row, :run_id, String, missing)               # all-or-nothing: blank only allowed when every row is blank (then imputed from the row number); see resolve_run_ids!
     parseto!(dict, row, :calibration_id, String)                # required: Fromage joins runs to rectifications on it
@@ -54,7 +63,8 @@ function parse_run!(dict, row, defaults)
     parseto!(dict, row, :start_location, NTuple{2, Int}, missing)
     parseto!(dict, row, :window_size, MyWindow, defaults.window_size)
     parseto!(dict, row, :darker_target, Bool, defaults.darker_target)
-    parseto!(dict, row, :fps, Float64, defaults.fps)             # imputed from video framerate when missing
+    parseto!(dict, row, :native_fps, Float64, defaults.native_fps)   # imputed from the video's own framerate when missing
+    parseto!(dict, row, :sample_fps, Float64, defaults.sample_fps)   # imputed from :native_fps when missing
     parseto!(dict, row, :initial_search_factor, Float64, defaults.initial_search_factor)
     parseto!(dict, row, :scale, Float64, defaults.scale)
     parseto!(dict, row, :background_length, Int, defaults.background_length)

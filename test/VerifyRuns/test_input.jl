@@ -15,6 +15,16 @@
         @test_throws "unrecognized column" VR.load_runs(DATADIR, csv)
     end
 
+    @testset "the split fps column is rejected with a hint" begin
+        # `fps` named two rates at once, so it could not be kept as a synonym for either: the
+        # message has to say which one the value was, or a run silently changes meaning.
+        csv = write_rows(joinpath(DATADIR, "fps_split.csv"), [["c1", "a.mp4", "15"]];
+                         header = ["calibration_id", "file", "fps"])
+        @test_throws "unrecognized column" VR.load_runs(DATADIR, csv)
+        @test_throws "sample_fps" VR.load_runs(DATADIR, csv)
+        @test_throws "native_fps" VR.load_runs(DATADIR, csv)
+    end
+
     @testset "the removed white_point column is now rejected by name (#19)" begin
         # It was accepted and validated but never read, so it was removed rather than implemented.
         # A csv that still carries it is rejected up front, naming the column — the migration is
