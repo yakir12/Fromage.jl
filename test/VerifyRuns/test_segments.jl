@@ -37,6 +37,28 @@
         @test flagged(df, 2, "run segments disagree on background_length")
     end
 
+    @testset "a native_fps declared on one segment governs the whole run" begin
+        # The segments of a run are pieces of one recording, so a rate declared on any of its rows
+        # is a claim about all of them. Left to the probe, the blank row would take its own file's
+        # 30 and the two would then read as disagreeing — which is what this is here to prevent.
+        runs = check([runrow(run_id = "n", file = ART.a, start = "0", stop = "4", native_fps = "15"),
+                      runrow(run_id = "n", file = ART.b, start = "0", stop = "4")])
+        @test clean(runs)
+        r = only(runs)
+        @test length(r.segments) == 2
+        @test r.tuning.native_fps == 15.0
+        @test r.tuning.sample_fps == 15.0        # carried through the cascade, once, for the run
+    end
+
+    @testset "segments cannot declare different native_fps" begin
+        # Both rows claim to describe the same recording, so the two claims cannot both hold and
+        # neither may quietly win.
+        df = check([runrow(run_id = "m", file = ART.a, native_fps = "15"),
+                    runrow(run_id = "m", file = ART.b, native_fps = "25")])
+        @test flagged(df, 1, "run segments disagree on native_fps")
+        @test flagged(df, 2, "run segments disagree on native_fps")
+    end
+
     @testset "segments must agree on the video's pixel dimensions" begin
         # width/height live on the run-level Source, so mixed-dimension segments are rejected
         df = check([runrow(run_id = "d", file = ART.a),

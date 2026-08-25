@@ -55,7 +55,7 @@ const DATADIR = mktempdir()
         # 250 is ~494 MB as N0f8 against ~1978 MB as Float32 — and its values come from an N0f8
         # decode, so the wider type buys no precision. Nothing else in the suite catches a
         # regression here: tracking accuracy is identical either way, which is the whole point.
-        vid = PT.Video(base_file, 25, 0, 2, 1.0)
+        vid = PT.Video(base_file, 25, 25, 0, 2, 1.0)   # (native_fps, sample_fps): the file's own rate, sampled whole
         try
             stack = PT.get_stack(vid, (vid.height, vid.width), (10, 10), 10)
             @test eltype(stack) == PT.Gray{PT.N0f8}
@@ -77,17 +77,17 @@ const DATADIR = mktempdir()
         @test tracking_rmse(ij, base_exp) < 1
     end
 
-    @testset "reduced fps tracks every other frame" begin
-        _, ij = track1(base_file; fps = 12.5)
+    @testset "reduced sample_fps tracks every other frame" begin
+        _, ij = track1(base_file; sample_fps = 12.5)
         @test length(ij) == 25
         @test tracking_rmse(ij, base_exp; skip = 2) < 1
     end
 
     @testset "timestamps are the true times of the sampled frames (#15, #17)" begin
         # The sampler can only stride whole frames, so the rates it can actually deliver are
-        # vid_fps/k. A requested fps in between must still yield a self-consistent track: sample i
-        # is raw frame (i-1)*skip, so its timestamp must be start + (i-1)*skip/vid_fps — no more
-        # frames than the video holds, and no timestamp implying a frame that was never read.
+        # native_fps/k. A requested sample_fps in between must still yield a self-consistent track:
+        # sample i is raw frame (i-1)*skip, so its timestamp must be start + (i-1)*skip/native_fps —
+        # no more frames than the video holds, and no timestamp implying a frame never read.
         v30, _ = make_target_video(DATADIR, "pt_fps30"; fps = 30, duration = 2)
         f30 = joinpath(DATADIR, only(v30))
         meta = probe_stream(f30)
@@ -97,10 +97,10 @@ const DATADIR = mktempdir()
         for requested in (30, 25, 20, 17, 12)
             skip = max(1, round(Int, meta.fps / requested))   # the stride the sampler can use
             effective = meta.fps / skip                       # the rate it therefore delivers
-            ts, ij = track1(f30; fps = requested, start_location = (55, 50), target_width = 10)
+            ts, ij = track1(f30; sample_fps = requested, start_location = (55, 50), target_width = 10)
 
-            @testset "fps = $requested (skip $skip, effective $(round(effective, digits = 2)))" begin
-                # must not run off the end of the video: #15's fps = 20 threw "Could not scale
+            @testset "sample_fps = $requested (skip $skip, effective $(round(effective, digits = 2)))" begin
+                # must not run off the end of the video: #15's sample_fps = 20 threw "Could not scale
                 # frame". Sample i reads raw frame (i-1)*skip, so it is that index — not the
                 # product of the count and the stride — which has to stay inside the video.
                 @test (length(ij) - 1) * skip < meta.nframes
@@ -174,36 +174,44 @@ const DATADIR = mktempdir()
         @test probe_stream(df).nframes == 25
     end
 
-    @testset "Tuning's video_fps is what the tracker believes, not the file" begin
-        # `Tuning.video_fps` is the rate the gateway probed — the tracker never reopens the video to
-        # ask. Handing it the true rate must be indistinguishable from the probe; handing it a wrong
-        # one must visibly change the diagnostic's declared playback rate, which is what proves the
-        # field is actually used rather than quietly re-read from the file.
-        df_read = joinpath(DATADIR, "vfps_read.mp4")
-        df_told = joinpath(DATADIR, "vfps_told.mp4")
-        df_lied = joinpath(DATADIR, "vfps_lied.mp4")
+    @testset "Tuning's native_fps is what the tracker believes, not the file" begin
+        # `Tuning.native_fps` is the rate the gateway settled — the probe's, or the one runs.csv
+        # declared in its place — and the tracker never opens the video to ask. base_file really
+        # runs at 25 fps for 2 s (50 frames), so declaring half that must halve the sample count and
+        # double the timestamp step, which is what proves the field is used rather than quietly
+        # re-read from the container.
+        ts, ij = track1(base_file; native_fps = 12.5)
+        @test length(ij) == 25
+        @test step(ts) ≈ 1 / 12.5
+        # …and the diagnostic's declared playback rate follows it, since that too is derived from
+        # the rate the tracker believes rather than the one the file states.
+        #
+        # 5, not 12.5: the writer decimates to land near DIAGNOSTIC_FPS, and at 12.5 it drops the
+        # stride from 2 to 1 and declares the same 25 fps the probed rate does — matching by
+        # coincidence and proving nothing.
+        df_read = joinpath(DATADIR, "nfps_read.mp4")
+        df_told = joinpath(DATADIR, "nfps_told.mp4")
+        df_slow = joinpath(DATADIR, "nfps_slow.mp4")
         track1(base_file; diagnostic_file = df_read)
-        track1(base_file; video_fps = 25, diagnostic_file = df_told)
-        # 30, not 50: at 50 the sampler picks skip = 2 and the effective rate lands back on 25, so
-        # the declared rate would match by coincidence and the test would prove nothing
-        track1(base_file; video_fps = 30, fps = 25, diagnostic_file = df_lied)
+        track1(base_file; native_fps = 25, diagnostic_file = df_told)   # the truth, said out loud
+        track1(base_file; native_fps = 5, diagnostic_file = df_slow)
         @test probe_stream(df_told).fps ≈ probe_stream(df_read).fps
-        @test probe_stream(df_lied).fps ≉ probe_stream(df_read).fps
+        @test probe_stream(df_slow).fps ≉ probe_stream(df_read).fps
     end
 
-    @testset "diagnostic playback speed holds for a non-divisor fps (#55)" begin
+    @testset "diagnostic playback speed holds for a non-divisor sample_fps (#55)" begin
         # The check above only covers a divisor rate, where requested == effective and the bug is
-        # invisible. The diagnostic declares its framerate from the fps it is handed, so handing it
+        # invisible. The diagnostic declares its framerate from the rate it is handed, so handing it
         # the *requested* rate made it claim the wrong speed: measured on this fixture before the
-        # fix, fps = 20 declared 2.67× and fps = 12 declared 1.6×, against a contract of 2×.
+        # fix, sample_fps = 20 declared 2.67× and 12 declared 1.6×, against a contract of 2×.
         v30, _ = make_target_video(DATADIR, "diag_fps30"; fps = 30, duration = 2)
         f30 = joinpath(DATADIR, only(v30))
         for requested in (30, 25, 20, 12)
             df = joinpath(DATADIR, "diag_$requested.mp4")
-            track1(f30; fps = requested, start_location = (55, 50), target_width = 10,
+            track1(f30; sample_fps = requested, start_location = (55, 50), target_width = 10,
                    diagnostic_file = df)
             s = probe_stream(df)
-            @testset "fps = $requested" begin
+            @testset "sample_fps = $requested" begin
                 @test s.nframes > 0
                 # playback duration × speedup == the real duration it covers, whatever rate the
                 # sampler actually delivered

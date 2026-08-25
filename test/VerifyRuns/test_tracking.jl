@@ -52,8 +52,8 @@
         @test tracking_rmse(ij, light_exp) < 1
     end
 
-    @testset "requested fps below the video's rate" begin
-        runs = check([runrow(file = only(base), fps = "12.5")])
+    @testset "requested sample_fps below the video's rate" begin
+        runs = check([runrow(file = only(base), sample_fps = "12.5")])
         @test clean(runs)
         _, ij = VR.track(only(runs), missing, nothing, nothing)
         @test length(ij) == 25                       # every other frame

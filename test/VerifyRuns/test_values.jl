@@ -69,17 +69,41 @@
     end
 
     @testset "the temporal window must contain at least one frame" begin
-        # 0.05 s at 5 fps → round(5 × 0.05) = 0 frames
-        @test flagged(check([runrow(stop = "0.05", fps = "5")]), 1, "too short to contain a single frame")
-        # 0.2 s at 5 fps → exactly one frame, allowed
-        @test clean(check([runrow(stop = "0.2", fps = "5")]))
+        # 0.05 s at 5 samples/s → round(5 × 0.05) = 0 frames
+        @test flagged(check([runrow(stop = "0.05", sample_fps = "5")]), 1, "too short to contain a single frame")
+        # 0.2 s at 5 samples/s → exactly one frame, allowed
+        @test clean(check([runrow(stop = "0.2", sample_fps = "5")]))
     end
 
-    @testset "fps must be positive and not exceed the video's rate" begin
-        @test flagged(check([runrow(fps = "0")]),  1, "fps must be larger than zero")
-        @test flagged(check([runrow(fps = "60")]), 1, "fps cannot exceed the video frame rate")
-        @test clean(check([runrow(fps = "30")]))   # == video rate is allowed
-        @test clean(check([runrow(fps = "10")]))   # below is fine
+    @testset "both rates must be larger than zero" begin
+        @test flagged(check([runrow(sample_fps = "0")]),  1, "sample_fps must be larger than zero")
+        @test flagged(check([runrow(native_fps = "0")]),  1, "native_fps must be larger than zero")
+        @test flagged(check([runrow(native_fps = "-5")]), 1, "native_fps must be larger than zero")
+    end
+
+    @testset "sample_fps cannot exceed native_fps" begin
+        @test flagged(check([runrow(sample_fps = "60")]), 1, "sample_fps cannot exceed native_fps")
+        @test clean(check([runrow(sample_fps = "30")]))   # == the video's own rate is allowed
+        @test clean(check([runrow(sample_fps = "10")]))   # below is fine
+        # bounded by the DECLARED rate, not the probed one: 20 is under the file's 30 and over the
+        # 15 this row says the file really runs at
+        @test flagged(check([runrow(native_fps = "15", sample_fps = "20")]), 1, "sample_fps cannot exceed native_fps")
+        @test clean(check([runrow(native_fps = "15", sample_fps = "15")]))
+    end
+
+    @testset "native_fps cannot exceed the rate the file reports" begin
+        # a.mp4 is 30 fps. `start`/`stop` stay in the file's own seconds whatever the declaration,
+        # so claiming 60 claims twice the frames the window holds and the sampler would run off the
+        # end of the video partway through the run.
+        msg = "native_fps cannot exceed the frame rate the video file reports"
+        @test flagged(check([runrow(native_fps = "60")]), 1, msg)
+        @test clean(check([runrow(native_fps = "30")]))   # == what the file reports
+        @test clean(check([runrow(native_fps = "15")]))   # below it: the case worth declaring
+        # The two bounds chain, which is the invariant that matters: sample_fps ≤ native_fps ≤ what
+        # the file reports, so no sampling rate above the file's own can reach the tracker.
+        # Inflating native_fps to carry a high sample_fps past the check above does not work —
+        # 40 ≤ 60 passes that one, and this rejects the row on the declaration instead.
+        @test flagged(check([runrow(native_fps = "60", sample_fps = "40")]), 1, msg)
     end
 
     @testset "temporal window" begin

@@ -487,10 +487,10 @@ diagnose_apriltag(file::AbstractString, ref, darker_target, fps) =
 # which the run's own resolution may differ from. `dia` is an AprilTag `Diagnostic`/`Dont` created and
 # closed by the caller, shared across a run's segments.
 function track_apriltag(file, start, stop, target_width, start_location, window_size, darker_target,
-                        fps, dia, ref::ReferenceFrame, family, ref_sz, initial_search_factor, scale, background_length)
+                        native_fps, sample_fps, dia, ref::ReferenceFrame, family, ref_sz, initial_search_factor, scale, background_length)
     ids = ref.ids
     ntags = length(ids)
-    video(file, fps, start, stop, scale) do vid
+    video(file, native_fps, sample_fps, start, stop, scale) do vid
         dets = [set_detector!(AprilTagDetector(family)) for _ in 1:ntags]   # one per tag
         try
             canvas = round.(Int, vid.scale .* ref_sz)      # the reference viewport, tracker-scaled
@@ -587,7 +587,7 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
             end
 
             # labeled from the effective rate, as in track_one (see the Video constructor)
-            return (range(start; step = 1 / vid.fps, length = n), coords)
+            return (range(start; step = 1 / vid.sample_fps, length = n), coords)
         finally
             foreach(freeDetector!, dets)
         end

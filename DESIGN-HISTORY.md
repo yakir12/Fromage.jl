@@ -305,16 +305,56 @@ is zero at `(1, 1)`.
 
 ## Tracking
 
-### `fps` is a request, not a promise (#15, #17)
+### `sample_fps` is a request, not a promise (#15, #17)
 
-The sampler advances whole frames, so the deliverable rates are `vid_fps / skip`. The sample count
-and every timestamp are derived from that **effective** rate. Deriving them from the request
-instead made a non-divisor `fps` either overrun the video, or label the track with times its
+The sampler advances whole frames, so the deliverable rates are `native_fps / skip`. The sample
+count and every timestamp are derived from that **effective** rate. Deriving them from the request
+instead made a non-divisor `sample_fps` either overrun the video, or label the track with times its
 frames were never taken at.
 
 Relatedly, sample *i* is raw frame `(i-1)·skip`, i.e. `start + (i-1)/effective_fps`. Spreading the
 samples evenly over `[start, stop]` instead pinned the last one to `stop`, stretching every
-timestamp by up to a frame period even when `fps` divided the rate evenly (#17).
+timestamp by up to a frame period even when the request divided the rate evenly (#17).
+
+(Both were `fps` at the time; see the entry below for why that one name became two.)
+
+### The video's own rate and the rate we sample it at are two parameters, not one
+
+`fps` named both. They are equal by default, which is why one column carried them for so long, and
+the moment they differ the single name has to mean one of them: the *request* in `runs.csv`, and
+the *video's own rate* in every expression that consumes it (`frame_skip`, the sample count, the
+timestamp step, the diagnostic's playback speed).
+
+The video's rate therefore had two definition sites — the gateway's ffprobe read, kept on the
+`Tuning` as `video_fps` and used only to declare the diagnostic's playback rate, and a second
+`VideoIO.framerate` call inside the `Video` constructor that the actual sampling used. That is the
+shape #140/#141 closed everywhere else, and it had the same consequence: a run was verified against
+one number and sampled at another, and there was no way to state the rate at all, so a video whose
+container misreports its own frame rate could not be tracked correctly by any combination of csv
+cells.
+
+The columns are now `native_fps` (what the video runs at — probed by default, declarable when the
+file is wrong) and `sample_fps` (what to track it at, defaulting to `native_fps`), and `Video` takes
+both rather than asking the container. Two consequences worth keeping:
+
+- **The cascade is one-directional.** `sample_fps` falls back to whatever `native_fps` resolved to,
+  never to the probe a second time — so declaring only `native_fps` moves both, which is what makes
+  "this file is really 25 fps" a one-cell statement.
+- **`native_fps` cannot exceed the probed rate.** `start`/`stop` stay in the file's own seconds, so
+  a higher declared rate claims more frames in the window than the file holds and the sampler runs
+  off the end mid-run. Verified in the gateway rather than left to fail as an EOF in the tracker:
+  the gateway's promise is that `track` cannot error, and a settable rate is only safe while that
+  promise holds. The declaration that matters — a file overstating its rate — is the other
+  direction, and is unrestricted.
+
+A rate declared on any row of a multi-segment run is spread across the run before the probe fills
+the blanks. Segments are pieces of one recording, so the claim is about all of them; without the
+spreading the blank rows would take their own files' probed rates and then read as *disagreeing*
+with the row that declared one. Two rows declaring different rates are rejected, since both claims
+describe the same recording. This is also what #95 chose not to enforce on the probed rate, for
+fear of rejecting one recording whose containers spell the same rate differently — that exposure is
+unchanged (the imputed rate has always reached the consistency check through the blank-cell path),
+and declaring the rate is now the way out of such a rejection rather than a way into one.
 
 ### The background stack stores `Gray{N0f8}`, and `detect` widens before subtracting (#27)
 

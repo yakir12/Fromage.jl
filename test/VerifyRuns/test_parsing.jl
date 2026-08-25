@@ -57,7 +57,8 @@
         # a coordinate that overflows Int64 is a graceful "wrong format", not an uncaught OverflowError
         @test flagged(check([runrow(start_location = "(10000000000000000000,1)")]), 1, "wrong start_location format")
         @test flagged(check([runrow(window_size = "wide")]),          1, "wrong window_size format")
-        @test flagged(check([runrow(fps = "fast")]),                  1, "wrong fps format")
+        @test flagged(check([runrow(native_fps = "fast")]),            1, "wrong native_fps format")
+        @test flagged(check([runrow(sample_fps = "fast")]),            1, "wrong sample_fps format")
         @test flagged(check([runrow(initial_search_factor = "x")]),   1, "wrong initial_search_factor format")
         @test flagged(check([runrow(scale = "big")]),                 1, "wrong scale format")
         @test flagged(check([runrow(darker_target = "maybe")]),       1, "wrong darker_target format")
@@ -77,7 +78,7 @@
         # with. Checked against the same function, fed from the run's own tuning and frame, so this
         # asserts the imputation ran with the right inputs rather than restating its result.
         @test r.tuning.window_size isa Int
-        @test r.tuning.window_size == PT.get_window(r.tuning.target_width, r.tuning.fps,
+        @test r.tuning.window_size == PT.get_window(r.tuning.target_width, r.tuning.sample_fps,
                                                     min(r.frame.height, r.frame.width),
                                                     VR.run_duration(r.segments))
         @test r.tuning.darker_target         == true

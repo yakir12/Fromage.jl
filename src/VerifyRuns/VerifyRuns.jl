@@ -18,7 +18,14 @@ export load_runs
 # Every column maps onto a field of `PawsomeTracker.Segment` or `PawsomeTracker.Tuning`, plus
 # `run_id` (identity / segment grouping) and `path` (path resolution). This is the full set of
 # recognized CSV columns; anything else is rejected as unrecognized.
-const COLUMNS = (:calibration_id, :comment, :run_id, :path, :file, :start, :stop, :target_width, :start_location, :window_size, :darker_target, :fps, :initial_search_factor, :scale, :background_length)
+const COLUMNS = (:calibration_id, :comment, :run_id, :path, :file, :start, :stop, :target_width, :start_location, :window_size, :darker_target, :native_fps, :sample_fps, :initial_search_factor, :scale, :background_length)
+
+# `fps` meant two different rates at once — the video's own and the one to sample it at — which is
+# why it is gone rather than kept as a synonym for either. A file that still has the column is
+# rejected with the hint below, since neither reading of it can be assumed (see runs.md).
+const RENAMED_COLUMNS = Dict(
+    :fps => "sample_fps — the video's own rate is native_fps",
+)
 
 include("types.jl")
 include("parsers.jl")
@@ -35,7 +42,7 @@ end
 # either one opens a video (#121).
 function parse_runs(data_path, file; defaults = (;), progress = true)
     defaults = resolve_defaults(defaults)   # fail fast on unknown keys / unconvertible values
-    csvrows = read_rows(file, COLUMNS, "runs")
+    csvrows = read_rows(file, COLUMNS, "runs"; renamed = RENAMED_COLUMNS)
 
     # parse each row to a Dict of parsed values + an :issues accumulator
     cs = @showprogress desc = "Parsing runs.csv..." enabled = progress tmap(r -> parse_row(r, defaults), collect(csvrows))
