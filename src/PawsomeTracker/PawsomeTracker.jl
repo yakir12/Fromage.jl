@@ -421,7 +421,8 @@ Deliberately without defaults, and `track` deliberately takes no keyword argumen
 values is decided in exactly one place — a csv cell, `VerifyRuns.DEFAULTS`, or the gateway's probe
 of the video — and giving them a second definition here is what let a global default and a verified
 value disagree, and what let an unverified value reach the tracker at all (#140, #141). A caller
-with no gateway behind it (the test suite) builds one explicitly; see `test/harness.jl`.
+with no gateway behind it (the test suite) builds one explicitly; see `tuning` in
+`test/fixtures.jl`.
 
 `window_size` is the search window scanned around the target's last known position, already imputed
 (`get_window`) rather than left blank — so there is one imputation rule, upstream, instead of a
