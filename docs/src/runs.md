@@ -44,7 +44,7 @@ beetle03.mp4,afternoon
 !!! note
     AprilTag drone tracking is configured entirely from `calibs.csv` — see [`type = apriltag`](calibs.md#Columns-for-type-apriltag) — so `runs.csv` has no `apriltags` column.
 
-!!! warning "Renamed in an upcoming release"
+!!! warning "Renamed in v0.2.0"
     The `fps` column has been **split in two**. It used to mean both "the rate this video runs at" and "the rate to track it at" — the same number by default, and impossible to separate when they differed. Track at a lower rate with [`sample_fps`](#Optional-columns), which is what a plain `fps` always meant; use [`native_fps`](#Optional-columns) to correct a video that misreports its own rate. A csv that still names `fps` is rejected up front with `unrecognized column/s in runs file: [:fps] (fps was renamed to sample_fps — the video's own rate is native_fps)`. Renaming the column to `sample_fps` reproduces exactly what you had.
 
 !!! note "Why `native_fps` cannot be raised"
