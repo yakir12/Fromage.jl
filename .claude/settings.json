@@ -1,0 +1,34 @@
+{
+    "$schema": "https://json.schemastore.org/claude-code-settings.json",
+    "permissions": {
+        "allow": [
+            "mcp__kaimon__ping",
+            "mcp__kaimon__investigate_environment",
+            "mcp__kaimon__usage_instructions",
+            "mcp__kaimon__usage_quiz",
+            "mcp__kaimon__tool_help",
+            "mcp__kaimon__search_code",
+            "mcp__kaimon__grep_code",
+            "mcp__kaimon__type_info",
+            "mcp__kaimon__search_methods",
+            "mcp__kaimon__document_symbols",
+            "mcp__kaimon__workspace_symbols",
+            "mcp__kaimon__goto_definition",
+            "mcp__kaimon__list_names",
+            "mcp__kaimon__qdrant_list_collections",
+            "mcp__kaimon__check_eval",
+            "mcp__kaimon__check_tests",
+            "mcp__kaimon__list_jobs",
+            "mcp__kaimon__server_log"
+        ]
+    },
+    "hooks": {
+        "PreToolUse": [{
+            "matcher": "Bash",
+            "hooks": [{ "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/prefer-kaimon-search.sh" }]
+        }],
+        "SessionStart": [{
+            "hooks": [{ "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/kaimon-session-start.sh", "timeout": 5 }]
+        }]
+    }
+}
