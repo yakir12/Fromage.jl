@@ -73,8 +73,12 @@ function rigid_align(A, B)
     mb = sum(B) / length(B)
     H = sum((B[i] - mb) * (A[i] - ma)' for i in eachindex(A))  # 2×2 cross-covariance
     F = svd(H)
-    R = F.U * F.Vt
-    det(R) < 0 && (R = F.U * SMatrix{2, 2, Float64}(1, 0, 0, -1) * F.Vt)   # reflection guard
+    # One assignment, not an assign-then-maybe-reassign. `R` is captured by the closure below, so
+    # writing to it twice makes Julia box it (`Core.Box`), which costs an allocation per call and
+    # leaves the captured value untyped. The ternary picks the value once and the box goes away —
+    # this is the only `Core.Box` the package had.
+    R0 = F.U * F.Vt
+    R = det(R0) < 0 ? F.U * SMatrix{2, 2, Float64}(1, 0, 0, -1) * F.Vt : R0   # reflection guard
     return p -> R * (p - ma) + mb
 end
 
