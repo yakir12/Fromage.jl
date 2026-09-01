@@ -1,6 +1,6 @@
 function i2r_centering(image2real, c)
     cxy = image2real(c)
-    Translation(-cxy) 
+    Translation(-cxy)
 end
 
 i2r_northing(_, _, ::Missing) = IdentityTransformation()

@@ -123,9 +123,9 @@ function inv_lens_distortion(v2, k, rstar)
     return SVector{2, Float64}(v2 * (r / rd))
 end
 
-# this is the inverse prespective map
+# this is the inverse perspective map
 depth(rc1, t, l) = -t/(l⋅rc1)
-function get_inv_prespective_map(inv_extrinsic)
+function get_inv_perspective_map(inv_extrinsic)
     function (rc)
         rc1 = push(rc, 1)
         t = inv_extrinsic.translation[3]
@@ -137,7 +137,7 @@ end
 
 function img2obj(intrinsic, extrinsic, scale, k)
     inv_extrinsic = inv(extrinsic)
-    inv_perspective_map = get_inv_prespective_map(inv_extrinsic)
+    inv_perspective_map = get_inv_perspective_map(inv_extrinsic)
     rstar = _first_critical(k)   # depends only on k; compute once, reuse per pixel
     inv_distort(rc) = inv_lens_distortion(rc, k, rstar)
     return inv(scale), inv_extrinsic, inv_perspective_map, inv_distort, inv(intrinsic)

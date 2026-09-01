@@ -396,7 +396,8 @@ const ROI_GROW = 250       # px the box expands on each side when the tag isn't 
 
 # search box (r1, c1, r2, c2) around a tag's `corners` ([col,row]), padded and clamped to the frame
 function tag_box(corners, sz)
-    cols = getindex.(corners, 1); rows = getindex.(corners, 2)
+    cols = first.(corners)
+    rows = last.(corners)
     (clamp(floor(Int, minimum(rows)) - ROI_MARGIN, 1, sz[1]), clamp(floor(Int, minimum(cols)) - ROI_MARGIN, 1, sz[2]),
      clamp(ceil(Int, maximum(rows)) + ROI_MARGIN, 1, sz[1]), clamp(ceil(Int, maximum(cols)) + ROI_MARGIN, 1, sz[2]))
 end
@@ -449,11 +450,11 @@ end
 function ApriltagScene(ref)
     m = DIAGNOSTIC_SIZE
     cm = [apply_h(ref.M, p) for p in ref.corners]           # tag corners in ground cm
-    xs = getindex.(cm, 1)
-    ys = getindex.(cm, 2)
-    extent = max(maximum(xs) - minimum(xs), maximum(ys) - minimum(ys))
+    xlo, xhi = extrema(first, cm)                           # one pass each, and no temporaries
+    ylo, yhi = extrema(last, cm)
+    extent = max(xhi - xlo, yhi - ylo)
     span = extent + 2 * 0.15 * extent                       # the tags' bounding box, plus a margin
-    return ApriltagScene(m, (minimum(xs) + maximum(xs)) / 2, (minimum(ys) + maximum(ys)) / 2, m / span)
+    return ApriltagScene(m, (xlo + xhi) / 2, (ylo + yhi) / 2, m / span)
 end
 
 canvas_prototype(s::ApriltagScene) = Matrix{Gray{N0f8}}(undef, s.m, s.m)

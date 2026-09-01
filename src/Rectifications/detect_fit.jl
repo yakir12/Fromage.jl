@@ -5,7 +5,10 @@ Wraps OpenCV function to auto-detect corners in an image.
 function _detect_corners(img, n_corners)
     gry = OpenCV.Mat(img)
     corners = Matrix{RowCol}(undef, n_corners)
-    ret, _ = OpenCV.findChessboardCorners(gry, OpenCV.Size{Int32}(n_corners...), OpenCV.Mat(reshape(reinterpret(Float32, corners), 2, 1, prod(n_corners))), OpenCV.CALIB_CB_ADAPTIVE_THRESH + OpenCV.CALIB_CB_NORMALIZE_IMAGE + OpenCV.CALIB_CB_FAST_CHECK)
+    flags = OpenCV.CALIB_CB_ADAPTIVE_THRESH + OpenCV.CALIB_CB_NORMALIZE_IMAGE + OpenCV.CALIB_CB_FAST_CHECK
+    ret, _ = OpenCV.findChessboardCorners(gry, OpenCV.Size{Int32}(n_corners...),
+                                          OpenCV.Mat(reshape(reinterpret(Float32, corners), 2, 1, prod(n_corners))),
+                                          flags)
     return ret ? corners : missing
 end
 
@@ -36,12 +39,12 @@ function fit_model(sz, objpoints, imgpointss, n_corners, radial_parameters, aspe
     # the single-frame fit well-posed
     nfiles == 1 && (flags += OpenCV.CALIB_FIX_PRINCIPAL_POINT)
 
-    OpenCV.calibrateCamera(OpenCV.InputArray[Float32.(reshape(stack(objpoints), 3, 1, :)) for _ in 1:nfiles], 
-                                                         OpenCV.InputArray[Float32.(reshape(stack(imgpoints), 2, 1, :)) for imgpoints in imgpointss], 
-                                                         OpenCV.Size{Int32}(sz...),  
-                                                         OpenCV.Mat(reshape(cammat, 1, 3, 3)), 
-                                                         OpenCV.Mat(reshape(dist, 1, 1, 5)), 
-                                                         OpenCV.InputArray[OpenCV.Mat(reshape(ri, 1, 1, 3)) for ri in r], 
+    OpenCV.calibrateCamera(OpenCV.InputArray[Float32.(reshape(stack(objpoints), 3, 1, :)) for _ in 1:nfiles],
+                                                         OpenCV.InputArray[Float32.(reshape(stack(imgpoints), 2, 1, :)) for imgpoints in imgpointss],
+                                                         OpenCV.Size{Int32}(sz...),
+                                                         OpenCV.Mat(reshape(cammat, 1, 3, 3)),
+                                                         OpenCV.Mat(reshape(dist, 1, 1, 5)),
+                                                         OpenCV.InputArray[OpenCV.Mat(reshape(ri, 1, 1, 3)) for ri in r],
                                                          OpenCV.InputArray[OpenCV.Mat(reshape(ti, 1, 1, 3)) for ti in t], flags, CRITERIA)
     return (k = dist[[1,2,5]], Rs = r, ts = t, frow = cammat[1,1], fcol = cammat[2,2], crow = cammat[3,1], ccol = cammat[3,2])
 end

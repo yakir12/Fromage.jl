@@ -295,8 +295,8 @@ function protect_target(stack, j, guess, radii, canvas2raw::Function, pad::Int)
     corners = (canvas2raw(guess .- radii), canvas2raw(guess .+ radii),
                canvas2raw((guess[1] - radii[1], guess[2] + radii[2])),
                canvas2raw((guess[1] + radii[1], guess[2] - radii[2])))
-    lo = floor.(Int, reduce((a, b) -> min.(a, b), corners)) .- pad
-    hi = ceil.(Int, reduce((a, b) -> max.(a, b), corners)) .+ pad
+    lo = floor.(Int, min.(corners...)) .- pad
+    hi = ceil.(Int, max.(corners...)) .+ pad
     protect = CartesianIndices(UnitRange.(lo, hi)) ∩ CartesianIndices(slice)
     return protect, slice[protect]
 end
@@ -317,8 +317,8 @@ function collect_stack(vid, sz, h, n_bkgd)
     return stack
 end
 
-_weightedmean(v) = mapreduce(+, zip(Iterators.product(parentindices(v)...), v)) do (rc, v)
-    RowCol(rc) * v
+_weightedmean(v) = mapreduce(+, zip(Iterators.product(parentindices(v)...), v)) do (rc, w)
+    RowCol(rc) * w                       # `w` is the per-element weight; `v` below is the array
 end / sum(v)
 
 # `tr` rather than seven of its fields: every call site already holds the `Tracker`, and spelling
