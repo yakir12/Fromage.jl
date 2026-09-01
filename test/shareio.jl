@@ -131,6 +131,35 @@ const S = ShareIO
         @test n[] == 1
     end
 
+    @testset "the transient predicate is a parameter, and open_gray_video widens it" begin
+        # `withretry(; transient = …)` is how PawsomeTracker.open_gray_video widens what counts as
+        # retryable: VideoIO reports an unreadable file, a share failure and a seek past the end
+        # alike as a bare ErrorException, so it passes `videoio_transient` instead of the default.
+        # That wiring had no test at all — the predicates were asserted, but nothing checked that
+        # `withretry` actually honours a non-default one.
+        n = Ref(0)
+        @test_throws ErrorException S.withretry(; tries = 3) do      # DEFAULT predicate
+            n[] += 1
+            error("VideoIO-style failure")
+        end
+        @test n[] == 1        # ErrorException is not transient by default: no retry
+
+        m = Ref(0)
+        @test_throws ErrorException S.withretry(; tries = 3, transient = S.videoio_transient) do
+            m[] += 1
+            error("VideoIO-style failure")
+        end
+        @test m[] == 3        # ...but it is under the widened predicate, so it retries
+
+        # and the widening is additive: what was already transient stays so
+        k = Ref(0)
+        @test_throws SystemError S.withretry(; tries = 2, transient = S.videoio_transient) do
+            k[] += 1
+            throw(SystemError("transient", 11))
+        end
+        @test k[] == 2
+    end
+
     @testset "withretry stops as soon as it succeeds" begin
         n = Ref(0)
         # fails twice, then succeeds — three calls total, and the value comes back
