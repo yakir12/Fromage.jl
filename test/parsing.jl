@@ -44,6 +44,52 @@ Base.convert(::Type{Int}, ::Boom) = error("boom")
         @test P.mytryparse(NTuple{2, Int}, "(10000000000000000000,1)") === nothing  # >Int64 overflows -> nothing, not a throw
     end
 
+    # `parseto!` and `set!` are the machinery every csv cell goes through, and they had no direct
+    # test: their behaviour was covered only through the ~20 "wrong X format" / "X is missing"
+    # message assertions in the two gateway suites. Those pin the messages; these pin the effects.
+    @testset "parseto!: what lands in the dict, and what lands in :issues" begin
+        fresh() = Dict{Symbol, Any}(:issues => String[])
+
+        # a filled, parseable cell: the value, and nothing reported
+        d = fresh(); P.parseto!(d, (; n = "42"), :n, Int)
+        @test d[:n] == 42
+        @test isempty(d[:issues])
+
+        # a filled cell that will not parse: the field is NULLED, and the issue names the column.
+        # The nulling is what stops later checks piling on the same row.
+        d = fresh(); P.parseto!(d, (; n = "not_a_number"), :n, Int)
+        @test d[:n] === missing
+        @test d[:issues] == ["wrong n format"]
+
+        # absent, with no default: reported as missing
+        d = fresh(); P.parseto!(d, (;), :n, Int)
+        @test d[:n] === missing
+        @test d[:issues] == ["n is missing"]
+
+        # absent, WITH a default: the default is taken and nothing is reported — this is the
+        # optional-field path, and it must not add an issue
+        d = fresh(); P.parseto!(d, (;), :n, Int, 7)
+        @test d[:n] == 7
+        @test isempty(d[:issues])
+
+        # a present-but-blank cell is an absent cell (DESIGN-HISTORY: "Cells are trimmed, and a
+        # blank cell is an absent cell"), so it takes the default rather than becoming ""
+        d = fresh(); P.parseto!(d, (; s = "   "), :s, String, "fallback")
+        @test d[:s] == "fallback"
+        @test isempty(d[:issues])
+    end
+
+    @testset "set!: a value passes through, `nothing` nulls and reports" begin
+        d = Dict{Symbol, Any}(:issues => String[])
+        P.set!(d, 5, :a, "unused when the value is there")
+        @test d[:a] == 5
+        @test isempty(d[:issues])
+
+        P.set!(d, nothing, :b, "b went wrong")
+        @test d[:b] === missing            # nulled, so later checks skip this field
+        @test d[:issues] == ["b went wrong"]
+    end
+
     @testset "resolve_defaults: rejected values vs. genuine errors" begin
         # A miniature whitelist standing in for a gateway's DEFAULTS/DEFAULT_TYPES pair.
         defaults = (; a = 1.0, n = 2, flag = true)
