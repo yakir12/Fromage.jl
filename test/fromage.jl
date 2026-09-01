@@ -5,6 +5,7 @@
 module FromageTests
 
 using Test
+using Random: Xoshiro
 using Fromage
 using DataFrames: DataFrame, nrow
 using StaticArrays: SVector
@@ -491,7 +492,9 @@ end
 @testset "calibs.csv and runs.csv must be coherent" begin
     dir = mktempdir()
     make_video(joinpath(dir, "cal.mp4"); size = (320, 240), duration = 2)
-    write(joinpath(dir, "broken.mp4"), rand(UInt8, 4096))   # unreadable: probing it is loud
+    # seeded, like every other fixture: random bytes are unreadable whatever they are, but an
+    # unseeded one cannot be reproduced from a failing log
+    write(joinpath(dir, "broken.mp4"), rand(Xoshiro(20260901), UInt8, 4096))   # unreadable: probing it is loud
     target, _ = make_target_video(dir, "coh")
     outdir = mktempdir()
 
