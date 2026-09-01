@@ -75,6 +75,16 @@ prevents an infinite release loop (bump commit → Test → AutoRelease → bump
 - Two pushes in quick succession are safe: when the first push's Test finishes, the
   guard sees that `main` has moved on and skips; only the newest push releases. The
   intermediate commit simply never gets its own version.
+- **...unless the newer push is one that skips the test workflow.** "Only the newest
+  push releases" assumes the newest push *runs* Test. A push touching only the
+  paths-ignored files — top-level `*.md` and the handful beside it — runs nothing, so
+  it cannot release. It has still moved `main` past the tested commit, which makes the
+  guard skip the release the *previous* push had earned. The result is a merge that is
+  green everywhere and never released, with nothing left to trigger a retry. **Avoid
+  pushing a docs-only change to `main` while a release is in flight** — wait for the
+  tag, or accept that the next `src/` or `docs/` push will release both together. This
+  happened on 2026-09-01: PR #163 merged, and a `CLAUDE.md` push landed before its Test
+  run had finished.
 
 ## Subtleties that will bite you if you refactor this
 
@@ -95,6 +105,17 @@ prevents an infinite release loop (bump commit → Test → AutoRelease → bump
 - The guard compares `github.event.workflow_run.head_sha` to `main`'s HEAD, and the
   branch + tag push is `--atomic`, so a race can at worst fail the push loudly —
   never half-release.
+- **AutoRelease reports `success` when it skips.** The guard sets an output and the
+  remaining steps report `skipped`, which is not a failure — so the job is green, every
+  workflow on the dashboard is green, and there is no tag and no release. A green run is
+  therefore *not* evidence that a release happened; the new tag is. Check
+  `gh api repos/yakir12/Fromage.jl/releases/latest --jq .tag_name`, or `version` in
+  `Project.toml` on `main`. (`gh release list --json` is not available on the `gh` in
+  this environment; `gh api` and `gh release view --json` are.)
+- **A skipped release cannot be rescued with `workflow_dispatch`.** AutoRelease requires
+  `github.event.workflow_run.event == 'push'`, so a hand-dispatched Test run finishes
+  green and triggers nothing at all. The only things that restart the chain are a real
+  push to `main` that Test actually runs on, or a manual release.
 - The bump `sed` assumes `Project.toml` has a top-level `version = "X.Y.Z"` line
   (it does; it's a standard Julia package). A `[workspace]` member with its own
   `version` line would not be touched (good), but keep the anchored `^version`
@@ -109,6 +130,14 @@ finish by hand — the steps are independent:
 gh release create vX.Y.Z --generate-notes     # if the release is missing
 gh workflow run Docs.yml --ref vX.Y.Z         # if /stable/ didn't advance
 ```
+
+**A merge went green but never released** (no new tag; AutoRelease reports success with
+its later steps `skipped`): `main` moved past the tested commit before that commit's Test
+run finished — usually because a docs-only push followed the merge. See the maintainer
+rule above. Nothing is broken and nothing needs undoing; the merge is on `main`, just
+unreleased. Land the next change that touches `src/` or `docs/` and its push runs Test,
+the guard passes, and one release carries both. Prefer that to a manual release: a
+hand-pushed tag races the bot for the next version number.
 
 **A bad version was released**: don't delete tags (users may have pinned them).
 Push a fix; the next green push releases the corrected version minutes later.
