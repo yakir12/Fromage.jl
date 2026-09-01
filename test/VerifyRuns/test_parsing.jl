@@ -48,6 +48,15 @@
         @test clean(check([runrow(path = "  ")]))
     end
 
+    @testset "a padded cell parses, end to end through the reader" begin
+        # The unit-level guarantee is in test/parsing.jl; this is the gateway path that a
+        # hand-edited spreadsheet actually takes. Both the clock and numeric spellings of the
+        # same instant must survive the same stray spaces.
+        @test clean(check([runrow(start = " 00:00:01 ", stop = " 00:00:04 ")]))
+        @test clean(check([runrow(start = " 1 ", stop = " 4 ")]))
+        @test only(check([runrow(start = " 00:00:01 ")])).segments[1].start == 1.0
+    end
+
     @testset "wrong formats" begin
         @test flagged(check([runrow(start = "not_a_time")]),          1, "wrong start format")
         @test flagged(check([runrow(stop = "nope")]),                 1, "wrong stop format")

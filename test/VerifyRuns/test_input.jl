@@ -15,6 +15,15 @@
         @test_throws "unrecognized column" VR.load_runs(DATADIR, csv)
     end
 
+    @testset "a header with stray whitespace is still recognized" begin
+        # `start ` used to arrive as Symbol("start ") and be rejected as an unrecognized column —
+        # a loud message for a cause the user cannot see in their spreadsheet. CSV strips header
+        # names now, which is the half no cell parser can reach.
+        csv = write_rows(joinpath(DATADIR, "padded_header.csv"), [["r", "c", ART.a, "1"]];
+                         header = [" run_id", "calibration_id ", " file ", "\tstart"])
+        @test clean(VR.load_runs(DATADIR, csv))
+    end
+
     @testset "the split fps column is rejected with a hint" begin
         # `fps` named two rates at once, so it could not be kept as a synonym for either: the
         # message has to say which one the value was, or a run silently changes meaning.
