@@ -17,15 +17,26 @@ using ..Rectifications: i2r_centering_northing
 # tag25h9 5×5 ⇒ 7, tag16h5 4×4 ⇒ 6. AprilTags reports each tag's four OUTER black-border corners
 # (`.p`, as [col, row]; the tag's unit square [-1, 1] maps to them), so corner-to-corner in real
 # units is `cells_across × cell_size`.
-const APRIL_FAMILIES = Dict("tag36h11" => AprilTags.tag36h11, "tag25h9" => AprilTags.tag25h9,
-                            "tag16h5" => AprilTags.tag16h5)
-const CELLS_ACROSS = Dict("tag36h11" => 8, "tag25h9" => 7, "tag16h5" => 6)
+# One table, not two keyed alike: `CELLS_ACROSS` used to be a second Dict over the same keys, so a
+# family added to one and not the other was a KeyError waiting at `canon_square`.
+const APRIL_FAMILIES = Dict(
+    "tag36h11" => (detector = AprilTags.tag36h11, cells = 8),
+    "tag25h9"  => (detector = AprilTags.tag25h9,  cells = 7),
+    "tag16h5"  => (detector = AprilTags.tag16h5,  cells = 6))
+
+const APRIL_FAMILY_NAMES = sort!(collect(keys(APRIL_FAMILIES)))
+
+# The sentence a user sees for an unrecognised family, in one place: it used to be written twice,
+# once here and once in the verification path, and the two spellings had to be kept identical by
+# hand.
+unknown_family_message(family) =
+    "unknown AprilTag family \"$family\" (supported: $(join(APRIL_FAMILY_NAMES, ", ")))"
 
 # The canonical tag corners in real-world units, in the detector's `.p` order, for a tag of
 # `family` whose single cell measures `cell` units. `CANON`/`TAG_SIZE_CM` are the default gauge —
 # tag36h11 at 12 cm/cell ⇒ a 96 cm black-border square — on which the geometry unit tests are built.
 function canon_square(family, cell)
-    h = CELLS_ACROSS[family] * cell / 2
+    h = APRIL_FAMILIES[family].cells * cell / 2
     SVector{2, Float64}[SVector(-h, h), SVector(h, h), SVector(h, -h), SVector(-h, -h)]
 end
 const TAG_SIZE_CM = 96.0
@@ -175,9 +186,9 @@ end
 
 # family CSV value → detector enum; also the validity gate for the `family` column.
 function april_family(family::AbstractString)
-    fam = get(APRIL_FAMILIES, family, nothing)
-    isnothing(fam) && error("unknown AprilTag family \"$family\" (supported: $(join(sort(collect(keys(APRIL_FAMILIES))), ", ")))")
-    return fam
+    entry = get(APRIL_FAMILIES, family, nothing)
+    isnothing(entry) && error(unknown_family_message(family))
+    return entry.detector
 end
 
 # Read the single frame at timestamp `t` (seconds), in the same orientation `track_apriltag` sees
@@ -202,7 +213,7 @@ end
 # exceptional condition, so it is reported rather than thrown.
 function reference_frame(file, extrinsic, ntags, family, tag_cell_width)
     valid_apriltag_family(family) ||
-        return "unknown AprilTag family \"$family\" (supported: $(join(APRIL_FAMILY_NAMES, ", ")))"
+        return unknown_family_message(family)
     # Serialize the WHOLE read + detect: the one-shot VideoIO read races under the callers' `tmap`,
     # and the AprilTag detector is not reentrant. Reference building is one-time setup over a handful
     # of calibs, so this costs essentially nothing.
@@ -283,7 +294,6 @@ end
 
 # ---- verification hooks (used by VerifyRectifications) ---------------------------------------
 # The families the `family` column may name, and a cheap validity predicate for it.
-const APRIL_FAMILY_NAMES = sort(collect(keys(APRIL_FAMILIES)))
 valid_apriltag_family(family) = haskey(APRIL_FAMILIES, family)
 
 # Does the extrinsic frame support a shared reference? Returns `nothing` on success or an issue
@@ -557,7 +567,7 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
                 if isnothing(H)
                     coords[i] = missing
                 else
-                    rc, guess = detect(guess, stack, i, tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, vid.scale, tr.bkgd_reduce, level)
+                    rc, guess = detect(guess, stack, i, tr, vid.scale, level)
                     coords[i] = img_to_cm(ref.M, rc)       # rc is reference px; ref.M is the fixed metric map
                 end
                 dia(slice(i), coords[i], H)
@@ -583,7 +593,7 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
                 if isnothing(H)
                     coords[i] = missing
                 else
-                    rc, guess = detect(guess, stack, j, tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, vid.scale, tr.bkgd_reduce, level)
+                    rc, guess = detect(guess, stack, j, tr, vid.scale, level)
                     coords[i] = img_to_cm(ref.M, rc)
                 end
                 dia(vid.img, coords[i], H)
