@@ -23,13 +23,21 @@ using Tables: Tables
 # cannot be reopened for writing, so the iterate-on-your-csv loop (edit calibs.csv, run again in the
 # same session) fails with "Invalid argument" (#133). These files are one row per run; reading them
 # whole costs nothing.
+# `stripwhitespace = true` trims surrounding whitespace off every unquoted cell AND off the header
+# names. The header half is the part only CSV can do: a column written `start ` used to arrive as
+# `Symbol("start ")` and be rejected as an unrecognized column, which is an invisible cause for a
+# loud message. The cell half overlaps with what the parsers already do — deliberately, because it
+# does NOT cover quoted cells. CSV treats quoting as "this is literal", so `" 00:01:30 "` written
+# with quotes still arrives padded, and the cell parsers keep their own `strip` for exactly that.
+# Two layers, neither redundant: this one reaches the header, that one reaches quoted cells.
+#
 # `renamed` maps a retired column name to a description of where its value went. A rename is the
 # one unrecognized column a user cannot debug from the message alone: their file was correct when
 # they wrote it, and "unrecognized column/s: [:checker_size]" tells them it is gone without telling
 # them what replaced it. Nothing else needs the map, so gateways that have retired no column pass none.
 function read_rows(file, columns, what; renamed = Dict{Symbol, String}())
     isfile(file) || error("$what `.csv` file missing")
-    rows = CSV.Rows(read(file))
+    rows = CSV.Rows(read(file); stripwhitespace = true)
     isempty(Tables.rows(rows)) && error("csv file is empty")
     unrecognized = setdiff(Tables.schema(rows).names, columns)
     if !isempty(unrecognized)

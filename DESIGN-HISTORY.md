@@ -881,6 +881,26 @@ wrong: "the parsers tolerate whitespace already" was true of every cell type exc
 had no test asserting it. `NTuple{2,Int}` had a surrounding-whitespace case from the start;
 `MyTemporal` did not, which is exactly why the gap survived. Both are pinned now.
 
+**The trimming is in two layers, and neither is redundant.** `read_rows` reads with
+`stripwhitespace = true`, and the cell parsers keep their own `strip`. Measured on CSV 0.10.16:
+
+| written in the csv | reader alone | parser alone |
+|---|---|---|
+| `␣00:01:30␣` unquoted | trimmed | trimmed |
+| `"␣00:01:30␣"` **quoted** | **untouched** | trimmed |
+| whitespace-only cell | becomes `missing` | `filled` already treated it as absent |
+| header `start␣` | **`:start`** | **unreachable** |
+
+CSV treats quoting as "this value is literal" and does not strip inside it, so the reader is not a
+superset of the parsers — dropping their `strip` would reintroduce the bug for any writer that
+quotes padded fields (LibreOffice's "quote all text cells" export does). Julia's own `CSV.write`
+does not quote them, and `test/harness.jl`'s `csvcell` quotes only on comma-or-quote, so the test
+fixtures exercise the unquoted path only.
+
+The header is the half that only the reader can fix, and it was its own latent bug: a column
+written `start ` arrived as `Symbol("start ")` and was rejected as an unrecognized column — a loud,
+accurate message about a cause invisible in the user's spreadsheet.
+
 ### `resolve_defaults` catches exactly two exceptions (#34)
 
 `convert` has no non-throwing counterpart, so validating caller-supplied defaults stays a caught
