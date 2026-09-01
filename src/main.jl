@@ -82,21 +82,6 @@ end
 build_rectifications(cs, rectification_diagnostics::Bool) =
     @showprogress desc = "Building rectifications" tmap(c -> Rectification(c; rectification_diagnostics), cs)
 
-# `rectification_defaults`/`tracking_defaults` globally replace the hardcoded defaults of the
-# tuning parameters (e.g. `rectification_defaults = (n_corners = (5, 8), blur = 0)`,
-# `tracking_defaults = (target_width = 60,)`). The hierarchy is: csv cell → these kwargs → the
-# hardcoded/probed defaults. Each gateway whitelists what may be set (see DEFAULTS in the
-# respective parsers.jl) and rejects anything else up front. `run_ids` restricts processing to
-# the named runs (only the rectifications those runs reference are built).
-#
-# `strict = false` reports every issue in both csv files and returns them for inspection rather
-# than aborting — a debugging mode (see the `only_*` entry points, which serve the same purpose by
-# narrowing instead). Nothing is rectified or tracked in that case.
-#
-# `rectification_diagnostics` saves each calibration's extrinsic frame, warped through the
-# rectification that was fit to it, to `results_dir/rectifications/<calibration_id>.jpg` — the same
-# "are the straight edges straight" check the diagnostic video offers, but available as soon as the
-# rectifications are built rather than after every run has been tracked.
 # Both csv files, validated as one dataset. The identities of BOTH are settled first — each file's
 # own, then the cross-file check that they describe the same thing — before either file's videos are
 # opened, so an incoherent pair costs no reads at all (#121, #122).
@@ -141,6 +126,51 @@ function load_dataset(data_path, calibs_file, runs_file, rectification_defaults,
     return VerifyRectifications.build_methods(calibs), VerifyRuns.build_runs(runs)
 end
 
+"""
+    main(data_path; calibs_file = "calibs.csv", runs_file = "runs.csv",
+         rectification_defaults = (;), tracking_defaults = (;), run_ids = nothing,
+         rectification_diagnostics = false, strict = true)
+
+Run the whole pipeline over the data folder `data_path`: validate `calibs.csv` and `runs.csv` as one
+dataset, build a rectification for each calibration, track every run through the one it names, and
+write the results.
+
+Returns a `DataFrame` with one row per run, carrying `run_id`, `calibration_id`, the built
+`rectification`, and `run` — the track itself, as `(timestamps, coordinates)`.
+
+Everything produced lands under `results_dir/`, created in the folder Julia was started in: one
+`<run_id>.csv` per run (a row per coordinate, with `time` in seconds into the video and `x`/`y` in
+the calibration's real-world unit, origin at its `center`), and `diagnostic.mp4`.
+
+# Keyword arguments
+
+- `calibs_file`, `runs_file`: the two csv file names, relative to `data_path`.
+
+- `rectification_defaults`, `tracking_defaults`: globally replace the hardcoded defaults of the
+  tuning parameters, e.g. `rectification_defaults = (n_corners = (5, 8), blur = 0)` or
+  `tracking_defaults = (target_width = 60,)`. The hierarchy is: csv cell → these keywords → the
+  hardcoded or probed default. Each gateway whitelists what may be set (see `DEFAULTS` in the
+  respective `parsers.jl`) and rejects anything else up front.
+
+- `run_ids`: restrict processing to the named runs. Only the rectifications those runs reference
+  are built. An id matching no row is an error, not a request for less (#21).
+
+- `rectification_diagnostics`: also save each calibration's extrinsic frame, warped through the
+  rectification fitted to it, to `results_dir/rectifications/<calibration_id>.jpg`. The same "are
+  the straight edges straight" check the diagnostic video offers, but available as soon as the
+  rectifications are built rather than after every run has been tracked. An `apriltag` calibration
+  has no fixed image→real map to warp through and quietly produces no image; its top-down
+  diagnostic is the per-run video instead.
+
+- `strict`: with `strict = false`, every issue in both csv files is reported and returned for
+  inspection rather than aborting, and **nothing is rectified or tracked**. The return is then
+  `(; calibs, runs)` — both annotated `DataFrame`s, each with an `issues` column — rather than the
+  runs frame described above. A dataset is accepted or rejected as a whole, so both files come back
+  even when only one was at fault. See also `only_track` and `only_rectify`, which serve the same
+  debugging purpose by narrowing instead.
+
+See also `only_track` and `only_rectify`, the two narrowing entry points.
+"""
 function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.csv",
         rectification_defaults = (;), tracking_defaults = (;), run_ids = nothing,
         rectification_diagnostics::Bool = false, strict::Bool = true)
@@ -184,6 +214,17 @@ end
 # Each diagnostic is named by its run's `run_id`, as in `main` — which is the row number when the
 # csv names no runs, and the run's own name when it does. Numbering by position instead would
 # rename every file as soon as `run_ids` filtered one out.
+"""
+    only_track(data_path; runs_file = "runs.csv", tracking_defaults = (;), run_ids = nothing)
+
+Track the runs in `runs.csv` without any calibration, and return the tracks. A debugging entry
+point: coordinates stay in image pixels because there is no rectification to carry them into
+real-world units, and with no calibration there is no scene centre either — a first segment with no
+`start_location` of its own falls back to the frame centre.
+
+Each run's diagnostic video is written to `results_dir/<run_id>.mp4`, named by `run_id` exactly as
+`main` names it (#68).
+"""
 function only_track(data_path::String; runs_file = "runs.csv", tracking_defaults = (;), run_ids = nothing)
     rs = gather_runs(data_path, runs_file, tracking_defaults, run_ids)
     # No calibration here, so no scene centre to fall back on and nothing to rectify through: a
@@ -192,6 +233,16 @@ function only_track(data_path::String; runs_file = "runs.csv", tracking_defaults
         r -> track(r, missing, nothing, joinpath(results_dir, string(r.run_id, ".mp4"))), rs)
 end
 
+"""
+    only_rectify(data_path; calibs_file = "calibs.csv", rectification_defaults = (;),
+                 calibration_ids = nothing, rectification_diagnostics = false)
+
+Build the rectifications described by `calibs.csv` and return them, without tracking anything. A
+debugging entry point: it exercises the whole calibration path — reads, corner detection, the fit —
+so a calibration can be checked before committing to a full run.
+
+`calibration_ids` narrows which are built; `rectification_diagnostics` is as in `main`.
+"""
 function only_rectify(data_path::String; calibs_file = "calibs.csv", rectification_defaults = (;),
         calibration_ids = nothing, rectification_diagnostics::Bool = false)
     cs = gather_rectifications(data_path, calibs_file, rectification_defaults, calibration_ids)
