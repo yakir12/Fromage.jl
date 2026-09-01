@@ -225,7 +225,20 @@ end
 # saving on the largest allocation in the program (a 1080p frame at background_length = 250 is
 # ~494 MB rather than ~1978 MB), losing nothing, since the values came from N0f8 to begin with. The
 # SIGNED buffer is `Tracker.img`, which receives the background-subtracted frame — see `detect` (#27).
+#
+# At `scale = 1` — the default, and what most runs use — the transform is the identity, and the
+# `WarpedView` then costs a bilinear interpolation lookup per element to return the value already
+# sitting in the array. `detect` reads a whole background window (`h`-sized, times every slice)
+# once per frame, so that is the package's hottest read: measured on a 79x79x250 window it is
+# 24.2 ms through the warp against 5.1 ms without it, bit-identical, and ~4x on `track` end to end.
+# The unit-scale stack therefore skips the layer entirely.
+#
+# Nothing else has to change for it. Every WRITE already reaches the storage through
+# `parent(parent(stack))` (`populate_slice!`, `protect_target`, `restore_background!`), and
+# `parent` of an `Array` is that array, so those keep landing on it with one layer fewer. `detect`
+# indexes the stack generically and simply stops paying for the warp.
 function build_stack(scale, sz, n_bkgd, pad_indices)
+    isone(scale) && return PaddedView(zero(Gray{N0f8}), Array{Gray{N0f8}}(undef, sz..., n_bkgd), pad_indices)
     tform = LinearMap(SDiagonal(SVector{3, Float64}(1/scale, 1/scale, 1)))
     PaddedView(zero(Gray{N0f8}), WarpedView(Array{Gray{N0f8}}(undef, sz..., n_bkgd), tform; fillvalue = zero(Gray{N0f8})), pad_indices)
 end

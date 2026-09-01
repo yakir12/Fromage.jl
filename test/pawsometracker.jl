@@ -7,6 +7,8 @@ module PawsomeTrackerTests
 using Test
 using Fromage.PawsomeTracker: track
 using Fromage: PawsomeTracker
+# `Gray`/`N0f8` through the submodule, as test/apriltag.jl does — they are not test deps.
+using Fromage.PawsomeTracker: Gray, N0f8
 const PT = PawsomeTracker
 
 # `track` takes no keyword arguments; `track1`/`tuning`/`segments` (test/fixtures.jl) build its
@@ -22,6 +24,29 @@ storage(a) = parent(a) === a ? a : storage(parent(a))
 const DATADIR = mktempdir()
 
 @testset "PawsomeTracker" begin
+    # The unit-scale stack skips the WarpedView the scaled one needs. That is only sound if it
+    # reads identically to the warped construction it replaces, so assert exactly that rather than
+    # the presence or absence of a layer — the layer count is the mechanism, the values are the
+    # claim. `storage` still has to reach the array, since every write goes through it.
+    @testset "the unit-scale stack returns its stored values, unresampled" begin
+        sz, n = (24, 31), 4
+        pad = ((-3):(sz[1] + 3), (-3):(sz[2] + 3), 1:n)
+        stack = PT.build_stack(1.0, sz, n, pad)
+        frames = rand(Gray{N0f8}, sz..., n)
+        storage(stack) .= frames
+
+        # The write path reaches the array through `parent(parent(...))`, so a stack with one view
+        # fewer still has to land there — `parent` of an Array is that array.
+        @test storage(stack) === parent(parent(stack))
+        @test axes(stack) == pad
+        # The claim the speedup rests on: at unit scale a read is the stored value itself, not an
+        # interpolation of it. A resampling stack would return values near these, not equal to them.
+        @test stack[1:sz[1], 1:sz[2], :] == frames
+        @test stack[0, 0, 1] == zero(Gray{N0f8})     # padding still reads as the fill value
+        # A scaled stack keeps the warp, and its canvas is the scaled one.
+        @test size(PT.build_stack(0.5, sz, n, pad), 3) == n
+    end
+
     base, base_exp = make_target_video(DATADIR, "pt_base")
     light, light_exp = make_target_video(DATADIR, "pt_light"; darker_target = false)
     seg, seg_exp = make_target_video(DATADIR, "pt_seg"; nsegments = 3)
@@ -58,8 +83,8 @@ const DATADIR = mktempdir()
         vid = PT.Video(base_file, 25, 25, 0, 2, 1.0)   # (native_fps, sample_fps): the file's own rate, sampled whole
         try
             stack = PT.get_stack(vid, (vid.height, vid.width), (10, 10), 10)
-            @test eltype(stack) == PT.Gray{PT.N0f8}
-            @test eltype(storage(stack)) == PT.Gray{PT.N0f8}   # ...and so is the array underneath
+            @test eltype(stack) == Gray{N0f8}
+            @test eltype(storage(stack)) == Gray{N0f8}   # ...and so is the array underneath
 
             # ...while the buffer receiving the BACKGROUND-SUBTRACTED frame stays Float32: that
             # difference is negative for a darker target, and N0f8 wraps silently rather than
