@@ -85,14 +85,21 @@
     end
 
     @testset "inv_lens_distortion beyond the fold" begin
-        # NOTE: the clamp warning uses `maxlog = 1`, so it fires only once per process.
-        # This must be the FIRST beyond-fold call in the suite — the round-trips above stay
-        # in range, so no earlier clamp consumes the single allowed warning.
+        # `maxlog = 1` on the clamp warning is per LOGGER, not per process: the limit lives in
+        # the active logger's `message_limits`, and `@test_logs` installs a fresh `TestLogger`
+        # for the duration, which therefore starts with an unspent budget. So this testset does
+        # not have to run before any other beyond-fold call, and the suite may be reordered
+        # freely. (It previously carried a NOTE claiming the opposite, which pinned this testset
+        # to first place in the whole suite for no reason.) The second `@test_logs` below is
+        # what holds that property honest — under a process-wide limit it would fail.
         k = (-0.5,)
         rstar = R._first_critical(k)
         g(r) = r * R.lens_distortion_factor(r, k)
         v2 = SVector(g(rstar) * 1.2, 0.0)   # distorted radius past the invertible branch
         clamped = @test_logs (:warn,) R.inv_lens_distortion(v2, k, rstar)
+        # ...and again: a second capture of the SAME callsite must still see the warning, which
+        # is the order-independence this testset relies on.
+        @test_logs (:warn,) R.inv_lens_distortion(v2, k, rstar)
         @test norm(clamped) ≈ rstar               # radius clamped to the fold
         @test clamped[2] == 0.0                    # direction of v2 preserved (on the +x axis)
         @test clamped[1] > 0
