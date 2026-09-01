@@ -45,7 +45,11 @@ using Fromage
             # silently beats an earlier one — a way to override a verified value with an
             # unverified one.
             for m in methods(PT.track)
-                @test isempty(Base.kwarg_decl(m))
+                # per-method testset: the invariant is about WHICH method grew a keyword, so a
+                # failure has to name it rather than the line the loop sits on
+                @testset "$(basename(string(m.file))):$(m.line)" begin
+                    @test isempty(Base.kwarg_decl(m))
+                end
             end
         end
 
@@ -69,7 +73,9 @@ using Fromage
             # data — it is the one thing here `main` legitimately defaults.
             allowed = Set(VRect.COLUMNS) ∪ Set([:width, :height, :ntags, :rectification_diagnostics])
             for f in builders, m in methods(f)
-                @test Set(Base.kwarg_decl(m)) ⊆ allowed
+                @testset "$(nameof(f)) @ $(basename(string(m.file))):$(m.line)" begin
+                    @test Set(Base.kwarg_decl(m)) ⊆ allowed
+                end
             end
 
             # reverse: everything `rectification_defaults` may set reaches a builder. `apriltags`
@@ -86,7 +92,9 @@ using Fromage
             # apriltag method forwarded none of it, so even a correct keyword was a silent no-op.
             @test !isempty(methods(Fromage.Rectifications.Rectification))
             for m in methods(Fromage.Rectifications.Rectification)
-                @test Base.kwarg_decl(m) == [:rectification_diagnostics]
+                @testset "$(basename(string(m.file))):$(m.line)" begin
+                    @test Base.kwarg_decl(m) == [:rectification_diagnostics]
+                end
             end
         end
     end

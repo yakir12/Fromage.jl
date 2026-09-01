@@ -158,7 +158,9 @@
             # include the required calibration fields so the structure check passes and the row
             # reaches the ImageSize validation under test.
             MAT.matwrite(p, merge(Dict("ImageSize" => val), MATLAB_CALIB_FIELDS))
-            @test VRect.matlab_dimension(MAT.matread(p)) isa String
+            @testset "$nm" begin
+                @test VRect.matlab_dimension(MAT.matread(p)) isa String
+            end
         end
         # end-to-end: such a file is flagged, and load_rectifications does not throw
         @test flagged(check([matlabrow(matlab_file = "badimsize_three_elem.mat")]), 1, "ImageSize is malformed")
