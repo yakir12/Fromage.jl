@@ -97,22 +97,23 @@ const S = ShareIO
     end
 
     @testset "retries actually happen, with backoff" begin
-        # What this is about is the ATTEMPT COUNT, so count attempts rather than infer them from
-        # elapsed time: the command appends a line per run, and `tries = 3` must produce three.
-        # The previous version timed the call and asserted `t ≥ 0.6` — the exact sum of the two
-        # sleeps, with no margin — which made a test of "did it retry" depend on the scheduler,
-        # and would have passed a version that slept without retrying at all.
-        mktemp() do path, io
-            close(io)
-            @test_throws S.ShareReadError S.capture(`sh -c "echo x >> $path; exit 1"`,
-                                                    "it failed"; tries = 3)
-            @test countlines(path) == 3
+        # What this is about is the ATTEMPT COUNT, so count attempts instead of inferring them
+        # from elapsed time. The count is asserted on `withretry`, which is where retrying is
+        # implemented — `capture` is a one-line delegation to it — so this needs no subprocess and
+        # makes no assumption about the platform's shell.
+        n = Ref(0)
+        @test_throws SystemError S.withretry(; tries = 3) do
+            n[] += 1
+            throw(SystemError("transient", 11))
         end
+        @test n[] == 3
 
-        # The backoff itself is only observable through the clock, so one loose bound stays: with
-        # no sleeping at all three `false` spawns land near zero, so 0.3s (against an expected
-        # 0.2 + 0.4) catches a removed backoff with room to spare. It deliberately does NOT pin
-        # the schedule — src/shareio.jl states that, and DESIGN-HISTORY says why those values.
+        # `capture`'s own retrying is covered through the clock, which is the only way the sleeps
+        # are observable: with no backoff three `false` spawns land near zero, so 0.3s (against an
+        # expected 0.2 + 0.4) catches a removed backoff with room to spare. The previous version
+        # asserted `t ≥ 0.6` — the exact sum, with no margin — and a test of "did it retry" should
+        # not sit on the scheduler's exact output. It deliberately does NOT pin the schedule:
+        # src/shareio.jl states that, and DESIGN-HISTORY says why those values were chosen.
         t = @elapsed @test_throws S.ShareReadError S.capture(`false`, "it failed"; tries = 3)
         @test t ≥ 0.3
     end
