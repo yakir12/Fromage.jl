@@ -8,7 +8,7 @@ using Test
 using StaticArrays
 using LinearAlgebra
 # the geometry is internal to the submodule; import the (non-exported) names directly
-using Fromage.PawsomeTracker: CANON, apply_h, homography_dlt, place_square, fit_metric,
+using Fromage.PawsomeTracker: CANON, apply_h, homography_dlt, place_square, fit_metric, rigid_align,
     _worst_side, ReferenceFrame, register,
     RegisteredWarp, build_stack, canvas2raw, Gray, N0f8, METRIC_FIT_TOLERANCE
 
@@ -33,6 +33,25 @@ const TAGS_CM = [[CENTERS[i] + rot(ANGLES[i]) * c for c in CANON] for i in 1:4]
 project(H) = [[apply_h(H, c) for c in tc] for tc in TAGS_CM]
 
 @testset "AprilTag geometry" begin
+
+    @testset "rigid_align recovers a rotation and never mirrors" begin
+        # Kabsch with a reflection guard: it must recover a genuine rotation+translation exactly,
+        # and must REFUSE to mirror — a reflected target is not reachable by a rigid map, so the
+        # best proper rotation is the right answer there rather than an exact fit. `rigid_align`
+        # is otherwise only covered through place_square and fit_metric.
+        src = SVector{2,Float64}[SVector(0, 0), SVector(1, 0), SVector(1, 1), SVector(0, 1)]
+        R, t = rot(0.7), SVector(3.0, -2.0)
+        dst = [R * p + t for p in src]
+        f = rigid_align(src, dst)
+        @test all(f(src[i]) ≈ dst[i] for i in eachindex(src))     # exact on a true rigid motion
+
+        # the recovered linear part is a proper rotation (det +1), both here and on a mirrored
+        # target, which is what the guard is for
+        lin(g) = hcat(g(SVector(1.0, 0.0)) - g(SVector(0.0, 0.0)), g(SVector(0.0, 1.0)) - g(SVector(0.0, 0.0)))
+        @test det(lin(f)) ≈ 1
+        mirrored = [SVector(p[2], p[1]) for p in src]              # swaps handedness
+        @test det(lin(rigid_align(src, mirrored))) ≈ 1
+    end
 
     @testset "homography_dlt recovers a known homography" begin
         pts = SVector{2,Float64}[SVector(1400, 880), SVector(1500, 890), SVector(1490, 970), SVector(1395, 965), SVector(1445, 925)]
