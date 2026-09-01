@@ -48,18 +48,28 @@ function apply_video_metadata!(g, m::NamedTuple)
     return
 end
 
-function findfirstkey(d, k)
-    if d isa AbstractDict
-        haskey(d, k) && return k => d[k]          # check current level first
-        for v in values(d)
-            r = findfirstkey(v, k)
-            r === nothing || return r
-        end
-    elseif d isa AbstractVector || d isa Tuple
-        for v in d
-            r = findfirstkey(v, k)
-            r === nothing || return r
-        end
+# Depth-first search for `k` through a nested .mat structure, returning the VALUE or `nothing`.
+# Three methods rather than one `isa` chain: the containers a .mat can nest are exactly these, and
+# anything else is a leaf that cannot hold the key.
+#
+# `nothing` is an unambiguous "absent" here because a .mat value is never `nothing` — MAT.jl yields
+# numbers, arrays, strings and dicts. (It used to return `k => value`, and both callers immediately
+# threw the key away with `last`.)
+findfirstkey(::Any, _) = nothing
+
+function findfirstkey(d::AbstractDict, k)
+    haskey(d, k) && return d[k]                   # check current level first
+    for v in values(d)
+        r = findfirstkey(v, k)
+        isnothing(r) || return r
+    end
+    return nothing
+end
+
+function findfirstkey(d::Union{AbstractVector, Tuple}, k)
+    for v in d
+        r = findfirstkey(v, k)
+        isnothing(r) || return r
     end
     return nothing
 end
@@ -69,11 +79,10 @@ end
 # (InexactError/MethodError) or a silently-wrong dimension. matlab stores ImageSize as [height, width];
 # we return (width, height).
 function matlab_dimension(dict)
-    res = findfirstkey(dict, "ImageSize")
-    if isnothing(res)
+    imagesize = findfirstkey(dict, "ImageSize")
+    if isnothing(imagesize)
         return "matlab file does not contain any image size; file might not be a calibration file"
     end
-    imagesize = last(res)
     # Every assumption about this `Any` is checked up front rather than by catching its failure: a
     # two-element collection whose entries are exact integers (matlab stores them as Float64). The
     # eltype guard is what makes `Int(width)` total, and what stops a two-character String
@@ -157,24 +166,28 @@ function apply_matlab_metadata!(g::AbstractDataFrame, structure_issue::String)
     push!.(g.issues, structure_issue)
 end
 
-function apply_matlab_metadata!(g::AbstractDataFrame, m::NamedTuple)
-    if m.n_extrinsics isa String
-        blank!(g, :extrinsic_index)
-        push!.(g.issues, m.n_extrinsics)
-    else
-        g.n_extrinsics .= m.n_extrinsics
-    end
-    if m.dimension isa String
-        push!.(g.issues, m.dimension)
-    else
-        # Cross-check the .mat's ImageSize against each row's source-video frame size (:dimension, set
-        # by read_video_metadata!). Skip rows whose video read failed — :dimension missing, already flagged.
-        for r in eachrow(g)
-            if !ismissing(r.dimension) && r.dimension != m.dimension
-                push!(r.issues, "matlab ImageSize $(m.dimension) does not match the source video dimensions $(r.dimension)")
-            end
+# Each half of the payload is either the value or an issue string, and gateway.jl states the rule
+# for exactly that shape: "`read` returns either the metadata or an issue string, and `apply!`
+# dispatches on which". The outer method already obeyed it; these two now do as well.
+apply_extrinsic_count!(g::AbstractDataFrame, issue::String) =
+    (blank!(g, :extrinsic_index); push!.(g.issues, issue); nothing)
+apply_extrinsic_count!(g::AbstractDataFrame, n) = (g.n_extrinsics .= n; nothing)
+
+apply_matlab_dimension!(g::AbstractDataFrame, issue::String) = (push!.(g.issues, issue); nothing)
+function apply_matlab_dimension!(g::AbstractDataFrame, dim)
+    # Cross-check the .mat's ImageSize against each row's source-video frame size (:dimension, set
+    # by read_video_metadata!). Skip rows whose video read failed — :dimension missing, already flagged.
+    for r in eachrow(g)
+        if !ismissing(r.dimension) && r.dimension != dim
+            push!(r.issues, "matlab ImageSize $dim does not match the source video dimensions $(r.dimension)")
         end
     end
+    return nothing
+end
+
+function apply_matlab_metadata!(g::AbstractDataFrame, m::NamedTuple)
+    apply_extrinsic_count!(g, m.n_extrinsics)
+    apply_matlab_dimension!(g, m.dimension)
 end
 
 # A matlab calibration file holds one extrinsic pose per calibration image: TranslationVectors and
@@ -184,7 +197,7 @@ end
 function matlab_extrinsic_count(dict)
     counts = Int[]
     for k in ("TranslationVectors", "RotationVectors")
-        vecs = last(findfirstkey(dict, k))
+        vecs = findfirstkey(dict, k)
         # `size(vecs, 1)` is only meaningful for an array; a scalar, a string or a nested dict is a
         # malformed field, and is rejected up front rather than caught.
         vecs isa AbstractArray || return "matlab $k is malformed (expected an N×3 matrix)"

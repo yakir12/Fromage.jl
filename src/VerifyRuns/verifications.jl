@@ -72,7 +72,10 @@ function resolve_native_fps!(df::AbstractDataFrame)
 end
 
 # window_size is either an Int side length or an (w, h) tuple; "non-positive" covers both shapes.
-window_nonpositive(x) = x isa Tuple ? any(≤(0), x) : x ≤ 0
+# Two methods rather than a runtime `isa`: the field's own type is `Union{Int, NTuple{2,Int}}`, and
+# a union of concrete types is exactly what dispatch is for.
+window_nonpositive(x::Tuple) = any(≤(0), x)
+window_nonpositive(x) = x ≤ 0
 
 # Run-level fields, as opposed to the per-segment file/start/stop/start_location: the whole run
 # shares one value (they end up in the run's `Tuning`), so segments of one run must agree on them —
