@@ -97,19 +97,38 @@ const S = ShareIO
     end
 
     @testset "retries actually happen, with backoff" begin
-        # tries = 3 ⇒ two failed attempts, sleeping 0.2s then 0.4s before the last one throws.
-        t = @elapsed try
-            S.capture(`false`, "it failed"; tries = 3)
-        catch
+        # What this is about is the ATTEMPT COUNT, so count attempts instead of inferring them
+        # from elapsed time. The count is asserted on `withretry`, which is where retrying is
+        # implemented — `capture` is a one-line delegation to it — so this needs no subprocess and
+        # makes no assumption about the platform's shell.
+        n = Ref(0)
+        @test_throws SystemError S.withretry(; tries = 3) do
+            n[] += 1
+            throw(SystemError("transient", 11))
         end
-        @test t ≥ 0.6
+        @test n[] == 3
+
+        # `capture`'s own retrying is covered through the clock, which is the only way the sleeps
+        # are observable: with no backoff three `false` spawns land near zero, so 0.3s (against an
+        # expected 0.2 + 0.4) catches a removed backoff with room to spare. The previous version
+        # asserted `t ≥ 0.6` — the exact sum, with no margin — and a test of "did it retry" should
+        # not sit on the scheduler's exact output. It deliberately does NOT pin the schedule:
+        # src/shareio.jl states that, and DESIGN-HISTORY says why those values were chosen.
+        t = @elapsed @test_throws S.ShareReadError S.capture(`false`, "it failed"; tries = 3)
+        @test t ≥ 0.3
     end
 
     @testset "a non-transient failure is not retried" begin
-        # A MethodError is a caller's bug, not a flaky share. It must escape on the first attempt:
-        # were it (wrongly) retried, tries = 4 would sleep 0.2 + 0.4 + 0.8s first.
-        t = @elapsed @test_throws MethodError S.withretry(() -> nothing + nothing)
-        @test t < 0.2
+        # A MethodError is a caller's bug, not a flaky share, so it must escape on the FIRST
+        # attempt. Asserted by counting calls rather than by timing the escape: the old
+        # `t < 0.2` measured a fresh `withretry` specialisation, so first-call compilation sat
+        # inside the measurement, and it would have passed a version that retried quickly.
+        n = Ref(0)
+        @test_throws MethodError S.withretry() do
+            n[] += 1
+            nothing + nothing
+        end
+        @test n[] == 1
     end
 
     @testset "withretry stops as soon as it succeeds" begin
