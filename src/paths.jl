@@ -7,16 +7,19 @@ using Dates: format, now, @dateformat_str
 
 # Every output lands under this folder, created in the folder Julia was started in (see
 # docs/src/results.md): the tracks, the diagnostic videos, and the issue frames below.
-const results_dir = "results_dir"
+# The BINDING is upper-case like every other constant here; the VALUE is the folder name users
+# see on disk and in the docs, and must not change — renaming it would relocate every existing
+# user's output.
+const RESULTS_DIR = "results_dir"
 
 # One warped extrinsic frame per calibration, written only when a caller asks for them (`main`'s
 # `rectification_diagnostics`). Derived here like every other output location, so there is still one
 # string to change.
-const rectifications_dir = joinpath(results_dir, "rectifications")
+const RECTIFICATIONS_DIR = joinpath(RESULTS_DIR, "rectifications")
 
 # The parent of the per-run issue folders (see `run_issues_dir`), and the default a caller who names
 # no folder of their own gets.
-const DEFAULT_ISSUES_DIR = joinpath(results_dir, "issues")
+const DEFAULT_ISSUES_DIR = joinpath(RESULTS_DIR, "issues")
 
 # One folder per verification run, named for the moment the run started, so a run's folder holds
 # exactly what that run dumped — with nothing deleted to keep it that way. Fromage never removes

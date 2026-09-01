@@ -17,7 +17,7 @@ include("gateway.jl")
 include("VerifyRectifications/VerifyRectifications.jl")
 include("VerifyRuns/VerifyRuns.jl")
 
-using .Paths: results_dir, DEFAULT_ISSUES_DIR
+using .Paths: RESULTS_DIR, DEFAULT_ISSUES_DIR
 using .Gateway: verify_cross_references!
 using .Rectifications: Rectification
 using .PawsomeTracker: track

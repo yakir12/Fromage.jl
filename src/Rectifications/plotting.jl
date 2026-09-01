@@ -29,7 +29,7 @@ end
 function _diagnostic(rectification_diagnostics, file, extrinsic, calibration_id, width, height, ratio, real2image)
     rectification_diagnostics || return
     imgw = warp_extrinsic(file, extrinsic, width, height, get_warp(ratio, real2image))
-    mkpath(rectifications_dir)
-    FileIO.save(joinpath(rectifications_dir, string(calibration_id, ".jpg")), parent(imgw))
+    mkpath(RECTIFICATIONS_DIR)
+    FileIO.save(joinpath(RECTIFICATIONS_DIR, string(calibration_id, ".jpg")), parent(imgw))
     return
 end
