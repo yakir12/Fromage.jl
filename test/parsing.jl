@@ -21,6 +21,18 @@ Base.convert(::Type{Int}, ::Boom) = error("boom")
         @test P.mytryparse(P.MyTemporal, "garbage")  === nothing
     end
 
+    # A stray space around a hand-edited cell must not decide whether it parses. Base's Float64
+    # parser skips surrounding whitespace and its Time parser does not, so the clock form used to
+    # be rejected as "wrong format" while the identical value written as a number was accepted.
+    @testset "MyTemporal: surrounding whitespace is trimmed" begin
+        @test P.mytryparse(P.MyTemporal, " 00:01:30 ") == 90.0   # the regression
+        @test P.mytryparse(P.MyTemporal, "\t00:01:30\n") == 90.0
+        @test P.mytryparse(P.MyTemporal, " 12.5 ")     == 12.5
+        @test P.mytryparse(P.MyTemporal, " 9 ")        == 9.0
+        @test P.mytryparse(P.MyTemporal, "  ")         === nothing   # blank stays absent, not 0
+        @test P.mytryparse(P.MyTemporal, " 00:0x:30 ") === nothing   # trimming does not rescue junk
+    end
+
     @testset "NTuple{2,Int}: accepted forms and rejects" begin
         @test P.mytryparse(NTuple{2, Int}, "(7,10)")      == (7, 10)
         @test P.mytryparse(NTuple{2, Int}, "[250, 1]")    == (250, 1)   # bracket form

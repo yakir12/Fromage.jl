@@ -868,6 +868,19 @@ missed duplicate. A present-but-blank cell is treated exactly like an absent one
 field reports "is missing" rather than silently becoming an empty string, and an optional field
 falls back to its default.
 
+**Where the trimming actually happens matters, and `MyTemporal` had to be fixed for it.** The rule
+above was implemented by trimming in the `String` parser and otherwise relying on Base, whose
+numeric parsers skip surrounding whitespace on their own. `Time` is the exception: `tryparse(Time,
+" 00:01:30 ")` is `nothing` where `tryparse(Float64, " 12.5 ")` is `12.5`. So a temporal cell fell
+through both branches of `mytryparse(::Type{MyTemporal}, …)` and was reported as "wrong start
+format" — while the *same instant written as a number, with the same stray spaces*, parsed fine.
+A hand-edited spreadsheet cell was enough to trigger it.
+
+`MyTemporal` now trims for itself. The general lesson is the one the comment above it had got
+wrong: "the parsers tolerate whitespace already" was true of every cell type except the one that
+had no test asserting it. `NTuple{2,Int}` had a surrounding-whitespace case from the start;
+`MyTemporal` did not, which is exactly why the gap survived. Both are pinned now.
+
 ### `resolve_defaults` catches exactly two exceptions (#34)
 
 `convert` has no non-throwing counterpart, so validating caller-supplied defaults stays a caught
