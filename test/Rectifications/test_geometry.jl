@@ -63,9 +63,9 @@
     @testset "depth & inverse perspective" begin
         # depth(rc1, t, l) = -t / (l⋅rc1)
         @test R.depth(SVector(1.0, 2.0, 1.0), 5.0, SVector(0.0, 0.0, 2.0)) ≈ -2.5
-        # get_inv_prespective_map: rc ↦ d·[rc; 1] with d from the extrinsic's last row & z-translation
+        # get_inv_perspective_map: rc ↦ d·[rc; 1] with d from the extrinsic's last row & z-translation
         inv_extrinsic = AffineMap(SMatrix{3,3}(1.0I), SVector(0.0, 0.0, 5.0))
-        f = R.get_inv_prespective_map(inv_extrinsic)
+        f = R.get_inv_perspective_map(inv_extrinsic)
         rc = SVector(1.0, 2.0)
         out = f(rc)
         rc1 = SVector(1.0, 2.0, 1.0)

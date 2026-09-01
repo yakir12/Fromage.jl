@@ -201,7 +201,10 @@ function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.c
 
     mktempdir() do path
         transform!(runs, :run_id => (x -> joinpath.(path, string.(x, ".mp4"))) => :diagnostic_file)
-        runs.run .= @showprogress desc = "Building runs" tmap((r, c, rectification, diagnostic_file) -> track(r, c.source.center, rectification, diagnostic_file), runs.r, runs.c, runs.rectification, runs.diagnostic_file)
+        build_run(r, c, rectification, diagnostic_file) =
+            track(r, c.source.center, rectification, diagnostic_file)
+        runs.run .= @showprogress desc = "Building runs" tmap(
+            build_run, runs.r, runs.c, runs.rectification, runs.diagnostic_file)
         concatenate(path, runs.diagnostic_file)
         select!(runs, Not(:diagnostic_file))
     end

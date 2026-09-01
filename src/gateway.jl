@@ -193,7 +193,7 @@ function report_issues(df::AbstractDataFrame, idcol, csv_name, what, strict; men
     ids = df[!, idcol]
     msg = join([string(mention(i, id) ? "row $i ($idcol: $id)" : "row $i", ": ", join(issues, ", "))
                 for (i, (id, issues)) in enumerate(zip(ids, df.issues)) if !isempty(issues)], '\n')
-    println('\n' * "The following are issues with the $csv_name file:\n" * msg)
+    println("\nThe following are issues with the $csv_name file:\n", msg)
     strict && error("there were issues with the $what (see above)")
     return true
 end
