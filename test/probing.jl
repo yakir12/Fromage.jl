@@ -48,10 +48,12 @@ const SR = Fromage.ShareIO.ShareReadError
         @test f isa Dict{String, String}          # the probe itself did not fail...
         @test !haskey(f, "width")                 # ...it just had no video stream to describe
         for gateway in (Fromage.VerifyRectifications, Fromage.VerifyRuns)
-            issue = gateway.probe_video(audio_only)
-            @test issue isa String
-            @test startswith(issue, "issue reading from video file")
-            @test occursin("no usable video stream", issue)
+            @testset "$(nameof(gateway))" begin
+                issue = gateway.probe_video(audio_only)
+                @test issue isa String
+                @test startswith(issue, "issue reading from video file")
+                @test occursin("no usable video stream", issue)
+            end
         end
     end
 
@@ -121,7 +123,9 @@ const SR = Fromage.ShareIO.ShareReadError
         paff = Dict("r_frame_rate" => "50/1", "avg_frame_rate" => "25/1", "field_order" => "tt")
         @test P.native_framerate(paff) == 25.0
         for order in ("bb", "tb", "bt")            # every interlaced order, not just the tt case
-            @test P.native_framerate(merge(paff, Dict("field_order" => order))) == 25.0
+            @testset "field_order = $order" begin
+                @test P.native_framerate(merge(paff, Dict("field_order" => order))) == 25.0
+            end
         end
         # NTSC 60i, where neither rate is a whole number
         @test P.native_framerate(Dict("r_frame_rate" => "60000/1001",
@@ -141,8 +145,10 @@ const SR = Fromage.ShareIO.ShareReadError
         # avg_frame_rate only ever CONFIRMS the halving: where it is nonsense (a raw .dv stream
         # reports 60000/1 for it), undefined or absent, r_frame_rate stands.
         for avg in ("60000/1", "N/A", "0/0", "")
-            @test P.native_framerate(Dict("r_frame_rate" => "25/1", "avg_frame_rate" => avg,
-                                          "field_order" => "tt")) == 25.0
+            @testset "avg_frame_rate = $(repr(avg))" begin
+                @test P.native_framerate(Dict("r_frame_rate" => "25/1", "avg_frame_rate" => avg,
+                                              "field_order" => "tt")) == 25.0
+            end
         end
         # An unparseable r_frame_rate stays `nothing`, so probe_video reports malformed output.
         @test P.native_framerate(Dict("r_frame_rate" => "N/A", "field_order" => "tt")) === nothing

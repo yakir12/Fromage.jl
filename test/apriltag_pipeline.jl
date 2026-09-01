@@ -116,14 +116,18 @@ end
                                yaw = deg2rad(15sin(2π*(k-1)/11)), cx = CENTRE, cy = CENTRE)
         v = make_apriltag_video(mktempdir(), "analytic"; nframes = 8, tw = TARGET_WIDTH, pose)
         for k in 1:8
-            img = render_pose(Fixtures.draw_disc(ground, v.groundpath[k]..., TARGET_WIDTH),
-                              v.poses[k], FRAME, FRAME)
-            p = v.image_xy(k)
-            box = CartesianIndices((round(Int, p[2]) - 20:round(Int, p[2]) + 20,
-                                    round(Int, p[1]) - 20:round(Int, p[1]) + 20))
-            dark = [i for i in box if img[i] < 0x40]     # the disc, with the tags out of the box
-            centroid = SVector(sum(i -> i[2], dark) / length(dark), sum(i -> i[1], dark) / length(dark))
-            @test norm(centroid - p) < 0.5
+            # per-frame testset: eight frames differ only by pose, so a failure has to say which
+            # one drifted — and a throw inside the render is attributed to its frame too
+            @testset "frame $k" begin
+                img = render_pose(Fixtures.draw_disc(ground, v.groundpath[k]..., TARGET_WIDTH),
+                                  v.poses[k], FRAME, FRAME)
+                p = v.image_xy(k)
+                box = CartesianIndices((round(Int, p[2]) - 20:round(Int, p[2]) + 20,
+                                        round(Int, p[1]) - 20:round(Int, p[1]) + 20))
+                dark = [i for i in box if img[i] < 0x40]     # the disc, with the tags out of the box
+                centroid = SVector(sum(i -> i[2], dark) / length(dark), sum(i -> i[1], dark) / length(dark))
+                @test norm(centroid - p) < 0.5
+            end
         end
         # and the reference-space position really is pose-independent
         @test v.expected_ref(3) ≈ pose_apply(v.poses[1], v.ground_xy(3))
