@@ -14,7 +14,7 @@ function concatenate(path, files)
     open(list, "w") do io
         foreach(f -> println(io, "file '", concat_escape(f), "'"), files)
     end
-    out = joinpath(results_dir, "diagnostic.mp4")
+    out = joinpath(RESULTS_DIR, "diagnostic.mp4")
     ffmpeg_exe(` -y -loglevel error -f concat -safe 0 -i $list -c copy $out`)
 end
 
@@ -26,7 +26,7 @@ end
 # A `missing` coordinate (AprilTag tracking, where a frame's target couldn't be localized) keeps its
 # `time` with empty `x`/`y`, so the time axis stays intact and the gaps are explicit.
 function save2csv(run_id, (ts, coords))
-    open(joinpath(results_dir, string(run_id, ".csv")), "w") do io
+    open(joinpath(RESULTS_DIR, string(run_id, ".csv")), "w") do io
         println(io, "time,x,y")
         for (t, c) in zip(ts, coords)
             if ismissing(c)
@@ -60,7 +60,7 @@ end
 # set of things to build.
 function gather_rectifications(data_path, calibs_file, defaults, calibration_ids = nothing;
         strict = true)
-    mkpath(results_dir)
+    mkpath(RESULTS_DIR)
     # `issues_dir` is left at its default, which Paths derives from `results_dir` — the frames a
     # failing calibration dumps land under the same output folder as everything else.
     cs = load_rectifications(joinpath(data_path, calibs_file); defaults, strict)
@@ -69,7 +69,7 @@ function gather_rectifications(data_path, calibs_file, defaults, calibration_ids
 end
 
 function gather_runs(data_path, runs_file, defaults, run_ids = nothing; strict = true)
-    mkpath(results_dir)
+    mkpath(RESULTS_DIR)
     rs = load_runs(joinpath(data_path, runs_file); defaults, strict)
     rs isa AbstractDataFrame && return rs
     return filter_ids!(rs::Vector{Run}, run_ids, :run_id, "run_ids")
@@ -174,7 +174,7 @@ See also `only_track` and `only_rectify`, the two narrowing entry points.
 function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.csv",
         rectification_defaults = (;), tracking_defaults = (;), run_ids = nothing,
         rectification_diagnostics::Bool = false, strict::Bool = true)
-    mkpath(results_dir)
+    mkpath(RESULTS_DIR)
     cs, rs = load_dataset(data_path, calibs_file, runs_file, rectification_defaults,
                           tracking_defaults, strict)
 
@@ -230,7 +230,7 @@ function only_track(data_path::String; runs_file = "runs.csv", tracking_defaults
     # No calibration here, so no scene centre to fall back on and nothing to rectify through: a
     # first segment with no start_location of its own falls through to the frame centre.
     return @showprogress desc = "Building runs" tmap(
-        r -> track(r, missing, nothing, joinpath(results_dir, string(r.run_id, ".mp4"))), rs)
+        r -> track(r, missing, nothing, joinpath(RESULTS_DIR, string(r.run_id, ".mp4"))), rs)
 end
 
 """
