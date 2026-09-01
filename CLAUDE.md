@@ -341,6 +341,13 @@ of those is "done" on its own, and none of them should be reported as done.
   or `.copier-answers.yml` skip the test workflow and are not released. Anything under `src/` or
   `docs/` does release — so batch a `docs/src/` correction into the PR that needs it, or it costs
   a second version bump.
+- The `gh` on this machine is old (2.23.0, from early 2023), so a few flags you might expect are
+  missing: `gh pr checks --json` and `gh release list --json` are not available, while `gh api`,
+  `gh run list --json` and `gh release view --json` are. `gh pr checks <n> --watch` works and is
+  the easy way to follow a PR. When polling `gh` in a loop, it helps to run the query once on its
+  own first — an unsupported flag swallowed by `2>/dev/null` becomes a watcher that polls forever
+  and says nothing, which is hard to tell from a slow CI run. A first-iteration heartbeat line
+  makes that distinction visible if you would rather not pre-check.
 
 ---
 
