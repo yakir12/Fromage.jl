@@ -117,7 +117,7 @@ function get_guess(::Missing, stack, vid, darker_target, target_width, initial_s
     guess = sz .÷ 2
     window_size = fix_window_size(floor(Int, min(sz...) / initial_search_factor))
     tr = Tracker(vid, darker_target, target_width, window_size, sz, subtract)
-    _, guess = detect(guess, stack, 1, tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, vid.scale, tr.bkgd_reduce)
+    _, guess = detect(guess, stack, 1, tr, vid.scale)
     return guess
 end
 
@@ -321,7 +321,12 @@ _weightedmean(v) = mapreduce(+, zip(Iterators.product(parentindices(v)...), v)) 
     RowCol(rc) * v
 end / sum(v)
 
-function detect(guess, stack, j, h, img, radii, buff, kernel, sz, scale, bkgd_reduce = maximum, level = Ref(0.0))
+# `tr` rather than seven of its fields: every call site already holds the `Tracker`, and spelling
+# out `tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, tr.bkgd_reduce` at each of them is five
+# copies of one list to keep in step. `Tuning` and `Segment` exist so run-level values travel as one
+# typed object; this is the one hot path that undid that.
+function detect(guess, stack, j, tr::Tracker, scale, level = Ref(0.0))
+    h, img, radii, buff, kernel, sz, bkgd_reduce = tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, tr.bkgd_reduce
     slice = selectdim(stack, 3, j)
     bkgd_indices = CartesianIndices(UnitRange.(guess .- h, guess .+ h)) ∩ CartesianIndices(Base.OneTo.(sz))
     if isnothing(bkgd_reduce)      # subtraction off: the DoG runs on the raw slice
@@ -360,7 +365,7 @@ end
 function track!(coords, stack, guess, tr, vid, dia)
     level = Ref(0.0)                 # running response level for detect's confidence gate
     for i in axes(stack, 3)
-        coords[i], guess = detect(guess, stack, i, tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, vid.scale, tr.bkgd_reduce, level)
+        coords[i], guess = detect(guess, stack, i, tr, vid.scale, level)
         dia(selectdim(parent(parent(stack)), 3, i), round.(Int, Tuple(coords[i])))
     end
     n_bkgd = size(stack, 3)
@@ -372,7 +377,7 @@ function track!(coords, stack, guess, tr, vid, dia)
             protect, keep = protect_target(stack, j, guess, tr.radii, vid.scale)
         end
         populate_slice!(stack, j, vid)
-        coords[i], guess = detect(guess, stack, j, tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, vid.scale, tr.bkgd_reduce, level)
+        coords[i], guess = detect(guess, stack, j, tr, vid.scale, level)
         dia(selectdim(parent(parent(stack)), 3, j), round.(Int, Tuple(coords[i])))
         subtract && restore_background!(stack, j, protect, keep)
     end
