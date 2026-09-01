@@ -87,8 +87,12 @@ frame_center(f::Frame) = (round(Int, f.width * f.sar / 2), f.height ÷ 2)
 #
 # The `copy` is what makes this a query rather than an edit: a `Run` describes what the csv said,
 # and tracking it must leave it alone (#23).
+# AprilTag mode carries every segment's own start_location through untouched: segments do not chain
+# there (DESIGN-HISTORY), so there is nothing to impute. Selected by the rectification's TYPE rather
+# than by an `isa` inside the general method.
+resolved_segments(r::Run, _, ::ApriltagRectification) = r.segments
+
 function resolved_segments(r::Run, center, rectification)
-    rectification isa ApriltagRectification && return r.segments
     out = copy(r.segments)
     s = out[1]
     out[1] = Segment(s.file, s.start, s.stop,
