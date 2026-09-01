@@ -24,18 +24,24 @@ tosecond(x::T) where {T <: TimePeriod} = Float64(x / convert(T, Second(1)))
 tosecond(x::Time) = tosecond(x - Time(0))
 
 # A temporal cell: either a plain number of seconds ("9", "12.5") or a clock time ("00:01:30").
+#
+# Trimmed here rather than relying on the parsers: `tryparse(Float64, …)` skips surrounding
+# whitespace and `tryparse(Time, …)` does not, so " 00:01:30 " fell through both branches and was
+# reported as "wrong start format" while " 12.5 " — the same cell written as a number, with the
+# same stray spaces — parsed fine. `Time` is the only cell type Base leaves untrimmed.
 struct MyTemporal end
 function mytryparse(::Type{MyTemporal}, x)
-    seconds = tryparse(Float64, x)
+    s = strip(string(x))
+    seconds = tryparse(Float64, s)
     isnothing(seconds) || return seconds
-    time = tryparse(Time, x)
+    time = tryparse(Time, s)
     isnothing(time) || return tosecond(time)
     return nothing
 end
 
-# Trim surrounding whitespace from hand-edited CSV cells; the numeric and tuple/time parsers
-# tolerate it already. `String(...)` and not just `strip`, whose SubString the `::String` fields
-# won't accept.
+# Trim surrounding whitespace from hand-edited CSV cells; the numeric and tuple parsers tolerate it
+# already, and `MyTemporal` trims for itself because Base's `Time` parser does not. `String(...)`
+# and not just `strip`, whose SubString the `::String` fields won't accept.
 mytryparse(::Type{String}, x) = String(strip(string(x)))
 
 function set!(dict, y, k, _)
