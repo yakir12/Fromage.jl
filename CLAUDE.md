@@ -260,7 +260,9 @@ find the tests → check `DESIGN-HISTORY.md` for prior art → short plan → im
 
 **Modify code:** understand the current implementation and *why* it is that way; identify the
 affected tests and docs; make the change; run the relevant suite; run a representative example;
-reindex the touched files; summarise validation.
+reindex the touched files; summarise validation. That is the *investigation* half — deliver the
+result through §6's workflow (branch → validate → PR → CI → merge → post-merge → cleanup), which
+is where a change is actually finished.
 
 **Refactor:** first establish that a refactor is actually needed and whether behaviour must stay
 identical. For anything significant, fan out over implementation / tests / docs / performance in
@@ -277,15 +279,68 @@ recording the rationale in `DESIGN-HISTORY.md`.
 
 ## 6. Git, CI and releases
 
-- **Every branch starts from `main`.** Stacked PRs do not retarget when the parent is
-  squash-merged — a PR has been lost that way. Rebase onto `main` instead of stacking.
+### The standard workflow for a fix
+
+Follow this for every code fix, bug fix, refactor or other code change, unless told otherwise.
+
+**A request to implement a fix authorizes the whole sequence** — branch, commit, push, open the PR,
+merge, clean up — without asking again at each step. Absent such a request, do not commit or push.
+Two points are hard approval gates (steps 7 and 10): a failure there is evidence that the plan was
+wrong, and pushing through it is how a bad change lands anyway.
+
+**One fix, one branch, one PR.** Never combine unrelated fixes into a branch or PR. Never stack:
+a PR does not retarget when its parent is squash-merged, and one has been lost that way — every
+branch starts from `main`, and if `main` has moved, rebase onto it rather than stacking.
+
+1. **Branch.** `git checkout main && git pull`, then a new branch off it, named for the fix.
+2. **Implement.** Only what the fix needs, plus what implementing it turns up as directly related.
+3. **Validate locally.** The threaded full suite is the gate:
+   `JULIA_NUM_THREADS=auto julia --project -e 'using Pkg; Pkg.test()'` (~8.3 min; baseline 1414
+   passes at v0.2.4). Kaimon's `run_tests` caps at 10 minutes, so a coverage run must go
+   through Bash. Also `format_code` after a large edit, and reindex every file you changed (§2).
+   **JET runs only on the pinned Julia 1.11** — on a 1.12 local run a leaked `Union` passes here
+   and fails in CI. Treat that as a known blind spot, not a green light.
+4. **Fix what fails, without asking.** Iterate until the suite is green, or until you cannot make
+   confident progress. Only the second case is worth interrupting the user for.
+5. **Open the PR** — only once step 3 is green. State the problem, the solution, and the tradeoffs
+   or limitations. Report the actual line delta against the estimate honestly: extracting shared
+   code costs lines here, deleting a structure saves them.
+6. **Watch the PR's CI** (`gh pr checks --watch`). **`TestOnPRs` triggers only on `src/**`,
+   `test/**`, `*.toml` and `.github/workflows/**`** — a docs-only or top-level-`*.md` PR
+   legitimately has *no* PR checks. Absent checks there is expected, not something to wait on.
+7. **A red PR CI is an approval gate.** Investigate the root cause, determine the fix, explain the
+   reasoning — and **ask before changing anything to make CI pass.**
+8. **Merge only after every required check has passed.**
+9. **Watch what the merge triggers.** The task is not done at merge. The chain is
+   `push to main → Test (full matrix) → AutoRelease (bump, tag, GitHub release) → Docs on the new
+   tag → /stable/ advances`. Expect **15–35 minutes**; the Intel macOS runner is the usual long
+   pole, and "nothing has happened yet" is almost always queue time. `Lint` is deliberately *not*
+   gating, so a dead link does not block a release.
+10. **A red post-merge workflow is an approval gate**, on the same terms as step 7.
+11. **Clean up.** `git checkout main && git pull` — the bot's bump commit leaves local `main` one
+    behind after every release, and the pull brings the new tag too — then delete the **local** fix
+    branch. Only the local one: the repository deletes merged branches on the remote by itself, so
+    `git push origin --delete <branch>` just fails with "remote ref does not exist". Don't run it.
+
+**Done means all of it:** local validation green, PR CI green, merged, post-merge automation green,
+the release and version bump actually completed, cleanup done, and no remaining failure
+attributable to the fix. Code written, local tests passing, a PR open, or even a PR merged — none
+of those is "done" on its own, and none of them should be reported as done.
+
+### Facts the workflow depends on
+
 - **Green CI on `main` *is* the release.** Every passing push to `main` is patch-bumped, tagged
-  and released, and `/stable/` docs advance with it. `#minor` / `#major` in the *head* commit
-  message changes the bump. See `RELEASING.md`; never release by hand.
+  and released, and `/stable/` docs advance with it. The *head* commit message controls the bump.
+  See `RELEASING.md`; never release by hand, and never edit `version` in `Project.toml` — the bot
+  owns it.
+- **Never let a skip-CI or version-bump token appear in a commit message or PR body**, even when
+  writing *about* them — GitHub honours them from the body, and a push that silently ran no
+  workflows has already happened once. Paraphrase instead ("the skip-CI token"); `RELEASING.md`
+  has the detail.
 - Pushes touching only top-level `*.md`, `LICENSE`, `.gitignore`, `codecov.yml`, `.lychee.toml`
   or `.copier-answers.yml` skip the test workflow and are not released. Anything under `src/` or
-  `docs/` does release.
-- Commit or push **only when asked**.
+  `docs/` does release — so batch a `docs/src/` correction into the PR that needs it, or it costs
+  a second version bump.
 
 ---
 
