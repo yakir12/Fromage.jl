@@ -6,6 +6,7 @@ module ApriltagTests
 
 using Test
 using StaticArrays
+using Random: Xoshiro
 using LinearAlgebra
 # the geometry is internal to the submodule; import the (non-exported) names directly
 using Fromage.PawsomeTracker: CANON, apply_h, homography_dlt, place_square, fit_metric, rigid_align,
@@ -115,7 +116,11 @@ project(H) = [[apply_h(H, c) for c in tc] for tc in TAGS_CM]
         # decoder, so nothing is quantised in production. Float32-precision ground data would be
         # rounded on write and the exactness assertions below would measure that rounding rather
         # than the registration they are here to test (#27).
-        ground = rand(Gray{N0f8}, 100, 120)
+        # Seeded: the assertions below are exact-copy invariants that hold for ANY array, so the
+        # values are incidental — but an unseeded fixture makes a failure irreproducible from
+        # the log, which is the hazard DESIGN-HISTORY's "corrupt-video fixture is deterministic"
+        # entry already records once.
+        ground = Gray{N0f8}.(rand(Xoshiro(20260901), N0f8, 100, 120))
         offs = [(0, 0), (5, 7), (10, 3)]                                   # (row, col) crop offsets
         Hc, Wc = 60, 70
         Hinv(o) = SMatrix{3,3,Float64}(1, 0, 0, 0, 1, 0, -o[2], -o[1], 1)  # ref (x,y) → frame (x,y)

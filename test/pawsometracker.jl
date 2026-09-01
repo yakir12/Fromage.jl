@@ -9,6 +9,7 @@ using Fromage.PawsomeTracker: track
 using Fromage: PawsomeTracker
 # `Gray`/`N0f8` through the submodule, as test/apriltag.jl does — they are not test deps.
 using Fromage.PawsomeTracker: Gray, N0f8
+using Random: Xoshiro
 const PT = PawsomeTracker
 
 # `track` takes no keyword arguments; `track1`/`tuning`/`segments` (test/fixtures.jl) build its
@@ -32,7 +33,7 @@ const DATADIR = mktempdir()
         sz, n = (24, 31), 4
         pad = ((-3):(sz[1] + 3), (-3):(sz[2] + 3), 1:n)
         stack = PT.build_stack(1.0, sz, n, pad)
-        frames = rand(Gray{N0f8}, sz..., n)
+        frames = Gray{N0f8}.(rand(Xoshiro(20260901), N0f8, sz..., n))   # seeded: a failure must reproduce
         storage(stack) .= frames
 
         # The write path reaches the array through `parent(parent(...))`, so a stack with one view
