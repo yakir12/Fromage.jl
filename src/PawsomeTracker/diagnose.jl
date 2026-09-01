@@ -24,8 +24,6 @@ diagnostic_framerate(fps, skip) = DIAGNOSTIC_SPEEDUP * fps / skip
 # is H.264, whose crf option these settings configure.
 const DIAGNOSTIC_ENCODER = (crf = 23, preset = "veryfast")
 
-abstract type Diagnosis end
-
 # All three diagnostics do the same thing with a tracked frame: on every `skip`-th one, render it to
 # a canvas, ring the target, trail the last TRACE_BUFFER_SIZE marks behind it, stamp the run's label
 # (#22) and write. What differs is only how the frame becomes a canvas and where the target lands on
@@ -34,11 +32,14 @@ abstract type Diagnosis end
 # A scene is a callable `(frame, point, extra...) -> (canvas, ij)`, where `ij` may be `missing` on a
 # frame the mode cannot locate the target in (the marker and trace are then skipped, the frame is
 # still written). `canvas_prototype(scene)` gives the writer its frame size and element type.
-struct Diagnostic{S} <: Diagnosis
+struct Diagnostic{S}
     label::String
     writer::VideoWriter
     trace::CircularBuffer{CartesianIndex{2}}
-    state::Ref{Int}
+    # `Base.RefValue`, not `Ref`, for the same reason as `RawScene.ratio` below: `Ref` is
+    # abstract, so the field would be boxed. The constructor's `Ref(0)` already makes a
+    # `RefValue{Int}` — only the declaration was loose.
+    state::Base.RefValue{Int}
     skip::Int
     color::Gray{N0f8}
     radius::Int
@@ -79,7 +80,7 @@ function (dia::Diagnostic)(frame, point, extra...)
     return nothing
 end
 
-Base.close(dia::Diagnosis) = close_video_out!(dia.writer)
+Base.close(dia::Diagnostic) = close_video_out!(dia.writer)
 
 struct Dont end
 # `file` (the diagnostic_file) is nothing: no diagnostic video requested, whatever the rectification.
