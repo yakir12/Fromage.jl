@@ -17,3 +17,6 @@ coverage:
 ignore:
   - "src/VerifyRectifications/precompile.jl"
   - "src/VerifyRuns/precompile.jl"
+
+# the following is an attempt by me to minimize the amount of emails I get about this
+comment: false
