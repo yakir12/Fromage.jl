@@ -373,13 +373,15 @@ function track!(coords, stack, guess, tr, vid, dia)
     for i in n_bkgd + 1:vid.nframes
         next!(vid)
         j = mod1(i, n_bkgd)
-        if subtract
-            protect, keep = protect_target(stack, j, guess, tr.radii, vid.scale)
-        end
+        # Assigned unconditionally so the restore below is guarded by the VALUE rather than by a
+        # second reading of `subtract`. The two are equivalent at runtime, but only this form lets
+        # the compiler see it: under the `if` the variables were merely *maybe* undefined at the
+        # restore, which JET reports (and which no test could ever trip, since one flag drives both).
+        protect, keep = subtract ? protect_target(stack, j, guess, tr.radii, vid.scale) : (nothing, nothing)
         populate_slice!(stack, j, vid)
         coords[i], guess = detect(guess, stack, j, tr, vid.scale, level)
         dia(selectdim(parent(parent(stack)), 3, j), round.(Int, Tuple(coords[i])))
-        subtract && restore_background!(stack, j, protect, keep)
+        isnothing(protect) || restore_background!(stack, j, protect, keep)
     end
 end
 

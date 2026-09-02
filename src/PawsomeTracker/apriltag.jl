@@ -586,9 +586,13 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
                     lastHinv = inv(R)
                     H = ref.M * R
                 end
-                if subtract
-                    protect, keep = protect_target(stack, j, guess, tr.radii, canvas2raw(lastHinv, vid.scale), PROTECT_PAD)
-                end
+                # Unconditional assignment, restore guarded by the value — the same pattern as in
+                # `track!`, and for the same reason: under the `if`, both were only maybe-defined
+                # at the restore. The ternary is lazy, so `lastHinv` is still read only when
+                # `subtract`, exactly as before.
+                protect, keep = subtract ?
+                    protect_target(stack, j, guess, tr.radii, canvas2raw(lastHinv, vid.scale), PROTECT_PAD) :
+                    (nothing, nothing)
                 populate_slice!(stack, j, vid)
                 warp.Hinvs[j] = lastHinv
                 if isnothing(H)
@@ -598,7 +602,7 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
                     coords[i] = img_to_cm(ref.M, rc)
                 end
                 dia(vid.img, coords[i], H)
-                subtract && restore_background!(stack, j, protect, keep)
+                isnothing(protect) || restore_background!(stack, j, protect, keep)
             end
 
             # labeled from the effective rate, as in track_one (see the Video constructor)
