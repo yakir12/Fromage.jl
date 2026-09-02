@@ -58,7 +58,7 @@ const DATADIR = mktempdir()
         # no second fallback inside `track` any more for it to disagree with
         _, ij = track1(base_file; start_location = (55, 50), target_width = 10)
         @test length(ij) == 50                       # the full 2 s at 25 fps
-        @test tracking_rmse(ij, base_exp) < 1
+        @test tracking_rmse(ij, base_exp) < 0.5      # 0.139 px, identical on linux/macOS/windows
     end
 
     @testset "tracking is deterministic" begin
@@ -114,13 +114,13 @@ const DATADIR = mktempdir()
 
     @testset "defaults (frame-center start)" begin
         _, ij = track1(base_file)
-        @test tracking_rmse(ij, base_exp) < 1
+        @test tracking_rmse(ij, base_exp) < 0.5      # 0.144 px, identical on linux/macOS/windows
     end
 
     @testset "reduced sample_fps tracks every other frame" begin
         _, ij = track1(base_file; sample_fps = 12.5)
         @test length(ij) == 25
-        @test tracking_rmse(ij, base_exp; skip = 2) < 1
+        @test tracking_rmse(ij, base_exp; skip = 2) < 0.5   # 0.158 px, identical on all three
     end
 
     @testset "timestamps are the true times of the sampled frames (#15, #17)" begin
@@ -158,7 +158,7 @@ const DATADIR = mktempdir()
 
     @testset "lighter target on dark background" begin
         _, ij = track1(joinpath(DATADIR, only(light)); darker_target = false)
-        @test tracking_rmse(ij, light_exp) < 1
+        @test tracking_rmse(ij, light_exp) < 0.5     # 0.144 px, identical on linux/macOS/windows
     end
 
     @testset "segmented (vector) track" begin
@@ -166,6 +166,10 @@ const DATADIR = mktempdir()
         sls[1] = (55, 50)                            # later segments continue from the previous one
         _, ij = track1(joinpath.(DATADIR, seg); start_location = sls)
         @test length(ij) == 50
+        # stays at 1: measured 0.594 px (identical on all three platforms), the largest of any
+        # tracking site — the segment seams are where the tracker is genuinely least accurate, and
+        # 1.7x headroom is already the tightest here. Tightening this one buys nothing and would
+        # be the first to break on an ffmpeg change.
         @test tracking_rmse(ij, seg_exp) < 1
     end
 
@@ -174,10 +178,10 @@ const DATADIR = mktempdir()
         # frame); the clean synthetic scene must track just as well without a background model
         _, ij = track1(base_file; start_location = (55, 50), target_width = 10, background_length = 0)
         @test length(ij) == 50
-        @test tracking_rmse(ij, base_exp) < 1
+        @test tracking_rmse(ij, base_exp) < 0.5      # 0.202 px, identical on linux/macOS/windows
         # a short window exercises the rolling phase (50 frames > 30-slice stack) with subtraction on
         _, ij = track1(base_file; start_location = (55, 50), target_width = 10, background_length = 30)
-        @test tracking_rmse(ij, base_exp) < 1
+        @test tracking_rmse(ij, base_exp) < 1        # unmeasured cross-platform — see the probe
     end
 
     @testset "a long-stationary target is not absorbed into the background" begin
@@ -187,7 +191,7 @@ const DATADIR = mktempdir()
         paused, paused_exp = make_target_video(DATADIR, "pt_pause"; duration = 30, pause = (8, 25))
         _, ij = track1(joinpath(DATADIR, only(paused)); start_location = (55, 50), target_width = 10)
         @test length(ij) == 750
-        @test tracking_rmse(ij, paused_exp) < 1
+        @test tracking_rmse(ij, paused_exp) < 1      # unmeasured cross-platform — see the probe
     end
 
     @testset "diagnostic file plays at 2× real time" begin

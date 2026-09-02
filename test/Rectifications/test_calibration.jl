@@ -89,10 +89,14 @@
         ktrue = (0.05, 0.0, 0.0)
         views = make_views(fx, ktrue)                            # aspect = 1 ⇒ fy = fx
         res = R.fit_model((W, H), objpoints, views, n_corners, 1, 1.0)
-        @test res.frow ≈ fx atol = 3.0
-        @test res.fcol ≈ fx atol = 3.0
-        @test res.crow ≈ cx atol = 3.0
-        @test res.ccol ≈ cy atol = 3.0
+        # 1.0, not 3.0: measured 0.313 px on the focal lengths and 0.472 px on the centre, on
+        # linux, Intel macOS and windows. The only cross-platform variation anywhere in these
+        # numbers is ~2e-10 on the focal lengths — OpenCV's iterative fit landing on a different
+        # last bit — so 2.1x headroom is set to absorb a future OpenCV_jll bump, not the platform.
+        @test res.frow ≈ fx atol = 1.0
+        @test res.fcol ≈ fx atol = 1.0
+        @test res.crow ≈ cx atol = 1.0
+        @test res.ccol ≈ cy atol = 1.0
         @test res.k[1] ≈ ktrue[1] atol = 0.01
         @test res.k[2] == 0.0 && res.k[3] == 0.0                 # higher coeffs fixed, not garbage
         @test reproj_rms(res, views) < 0.2                       # sub-pixel fit

@@ -49,16 +49,16 @@ function tracking_residuals(dir)
     f = joinpath(dir, only(base))
 
     _, ij = track1(f; start_location = (55, 50), target_width = 10)
-    row("pawsometracker: explicit start_location", tracking_rmse(ij, base_exp), 1)
+    row("pawsometracker: explicit start_location", tracking_rmse(ij, base_exp), 0.5)
 
     _, ij = track1(f)
-    row("pawsometracker: frame-centre default", tracking_rmse(ij, base_exp), 1)
+    row("pawsometracker: frame-centre default", tracking_rmse(ij, base_exp), 0.5)
 
     _, ij = track1(f; sample_fps = 12.5)
-    row("pawsometracker: sample_fps 12.5 (skip 2)", tracking_rmse(ij, base_exp; skip = 2), 1)
+    row("pawsometracker: sample_fps 12.5 (skip 2)", tracking_rmse(ij, base_exp; skip = 2), 0.5)
 
     _, ij = track1(joinpath(dir, only(light)); darker_target = false)
-    row("pawsometracker: lighter target", tracking_rmse(ij, light_exp), 1)
+    row("pawsometracker: lighter target", tracking_rmse(ij, light_exp), 0.5)
 
     _, ij = track1(joinpath.(dir, seg))
     row("pawsometracker: segmented (3 files)", tracking_rmse(ij, seg_exp), 1)
@@ -66,7 +66,19 @@ function tracking_residuals(dir)
     # same arguments as the assertion this mirrors — start_location and target_width included,
     # without which the frame-centre search makes this a different measurement entirely
     _, ij = track1(f; start_location = (55, 50), target_width = 10, background_length = 0)
-    row("pawsometracker: background_length = 0", tracking_rmse(ij, base_exp), 1)
+    row("pawsometracker: background_length = 0", tracking_rmse(ij, base_exp), 0.5)
+
+    # background_length = 30: the rolling phase with subtraction on, which the 0 case above does
+    # not exercise. Added after the first cross-platform run, which tightened every site it
+    # covered and left this one at 1 for want of a number.
+    _, ij = track1(f; start_location = (55, 50), target_width = 10, background_length = 30)
+    row("pawsometracker: background_length = 30", tracking_rmse(ij, base_exp), 1)
+
+    # the long-stationary target (30 s, an 8-25 s pause): the protect_target path, and the slowest
+    # site here by far -- 750 frames against everything else's 50.
+    paused, paused_exp = make_target_video(dir, "tol_pause"; duration = 30, pause = (8, 25))
+    _, ij = track1(joinpath(dir, only(paused)); start_location = (55, 50), target_width = 10)
+    row("pawsometracker: long-stationary (paused)", tracking_rmse(ij, paused_exp), 1)
 
     # determinism, which is the one property asserted without a tolerance
     _, a = track1(f; start_location = (55, 50), target_width = 10)
@@ -140,10 +152,10 @@ function calibration_residuals()
         [project(Xo, Rmat, t, fx, fx, cx, cy, ktrue) for Xo in objpoints]
     end
     res = R.fit_model((W, H), objpoints, views, n_corners, 1, 1.0)
-    row("test_calibration: |frow - fx|", abs(res.frow - fx), 3.0)
-    row("test_calibration: |fcol - fy|", abs(res.fcol - fx), 3.0)
-    row("test_calibration: |crow - cx|", abs(res.crow - cx), 3.0)
-    row("test_calibration: |ccol - cy|", abs(res.ccol - cy), 3.0)
+    row("test_calibration: |frow - fx|", abs(res.frow - fx), 1.0)
+    row("test_calibration: |fcol - fy|", abs(res.fcol - fx), 1.0)
+    row("test_calibration: |crow - cx|", abs(res.crow - cx), 1.0)
+    row("test_calibration: |ccol - cy|", abs(res.ccol - cy), 1.0)
 end
 
 # ---------------------------------------------------------------------------------------------
