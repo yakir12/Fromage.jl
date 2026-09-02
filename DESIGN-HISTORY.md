@@ -1028,10 +1028,29 @@ Three loops that built their names by interpolation (`"vm_$name.csv"`) gained a 
 instead: the variable existed only to name a file, and two of the three loops had no per-iteration
 testset at all, so a failure did not say which case produced it.
 
-### JET runs only on the pinned Julia minor
+### JET runs on an allowlist of Julia minors, not on all of them
 
 JET couples to compiler internals, so a new Julia release must not be able to break the suite
-through it.
+through it. The gate in `runtests.jl` is therefore an allowlist — currently `(1.11, 1.12)`, both
+already in the CI matrix — and not a lower bound: a minor nobody has vetted runs no JET at all,
+rather than running it and going red for a reason no change in this repo caused.
+
+It was a single pin (1.11) until 1.12 was shown to be clean. Keeping it a single pin had a cost
+that only showed up when someone looked: 1.12's inference reported `protect` and `keep` as
+possibly-undefined in both tracking loops, and 1.11 did not, so the finding sat in `main`
+invisible to CI. It was real, if unreachable — the variables were assigned under `if subtract` and
+used under a second `subtract` test, and nothing but the correlation between two reads of one flag
+made that safe. No test could have tripped it, because no execution can.
+
+So the two halves belong together: the loops now assign unconditionally
+(`protect, keep = subtract ? … : (nothing, nothing)`) and guard the restore on the value
+(`isnothing(protect) || …`), which states the correlation instead of implying it; and 1.12 joined
+the allowlist so that this class of finding surfaces in CI rather than on whoever happens to run
+JET locally. Adding a further minor means checking it is clean first, then listing it.
+
+The unconditional assignment is free. The `Union{Nothing,…}` union-splits, leaving no union in the
+loop body, and costs nothing when `subtract` is off — measured against the alternative of an
+always-concrete empty region, which allocates an empty slice every frame instead.
 
 ### The precompile workloads are excluded from coverage
 

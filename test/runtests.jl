@@ -10,8 +10,11 @@ include("harness.jl")
 
 @testset "Fromage (consolidated)" begin
     include("quality.jl")
-    # Only on the pinned CI minor — see the header of jet.jl.
-    VERSION.major == 1 && VERSION.minor == 11 && include("jet.jl")
+    # Only on the minors JET is known-good on — see the header of jet.jl. An ALLOWLIST, not a
+    # lower bound: a Julia minor nobody has checked yet drops off it and runs no JET at all, which
+    # is the point. Both entries are in the CI matrix already ("1.11" and "1", the latter being
+    # 1.12 today), so this costs no extra job — it just stops 1.12 from skipping the analysis.
+    VERSION.major == 1 && VERSION.minor in (11, 12) && include("jet.jl")
     include("shareio.jl")
     include("parsing.jl")
     include("probing.jl")

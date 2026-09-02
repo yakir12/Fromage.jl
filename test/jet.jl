@@ -1,7 +1,14 @@
 # JET static analysis: abstract interpretation of the whole package, reporting only what
 # originates in Fromage's own modules (dependencies produce plenty of noise of their own).
-# Included from runtests.jl only on the pinned Julia minor: JET couples to compiler internals,
-# so a new Julia release must not be able to break the suite through JET.
+# Included from runtests.jl only on an ALLOWLIST of Julia minors: JET couples to compiler
+# internals, so a new Julia release must not be able to break the suite through JET. An unlisted
+# minor runs no JET at all rather than running it and risking a red suite nobody caused.
+#
+# The list is (1.11, 1.12), both already in the CI matrix. 1.12 was added once it was clean: it
+# reported `protect`/`keep` as maybe-undefined in the two tracking loops, which 1.11 did not, and
+# which was a genuine (if unreachable) correlated-guard weakness rather than a JET artefact. With
+# that fixed, running here is what stops it — and anything else 1.12's inference can see — from
+# coming back unnoticed. Adding a new minor means checking it is clean FIRST, then listing it.
 using JET: JET, @test_opt
 using Fromage: Fromage, Rectifications, PawsomeTracker
 using StaticArrays: SVector, SMatrix
