@@ -14,7 +14,7 @@
             dy = image2real(p0 + SVector(0.0, 1.0)) - image2real(p0)
             @test hypot(dx...) ≈ scale             # one pixel in x ⇒ `scale` in world units
             @test hypot(dy...) ≈ scale * aspect    # one pixel in y ⇒ `scale·aspect`
-            # the constructor returns (; image2real, real2image, ratio, width, height)
+            # the builder returns a StaticRectification, so these five are its fields
             @test rect.real2image(rect.image2real(p0)) ≈ p0    # the two maps are inverses
             @test rect.ratio == scale
             @test (rect.width, rect.height) == (640, 480)

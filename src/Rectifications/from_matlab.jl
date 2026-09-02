@@ -36,5 +36,5 @@ function from_matlab(; file, extrinsic, calibration_id, matlab_file, extrinsic_i
     # real-world unit step at the origin spans 1/ratio pixels
     ratio = 1 / norm(real2image(SVector(1.0, 0.0)) - real2image(SVector(0.0, 0.0)))
     _diagnostic(rectification_diagnostics, file, extrinsic, calibration_id, width, height, ratio, real2image)
-    return (; image2real, real2image, ratio, width, height)
+    return StaticRectification(image2real, real2image, ratio, width, height)
 end

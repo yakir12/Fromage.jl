@@ -12,6 +12,6 @@ function from_scale(; file, extrinsic, calibration_id, scale, aspect, center, no
     # builders hand `_diagnostic`. This used to repeat that function's body inline, and computed the
     # warp transform on every call whether or not a diagnostic was wanted.
     _diagnostic(rectification_diagnostics, file, extrinsic, calibration_id, width, height, scale, real2image)
-    return (; image2real, real2image, ratio = scale, width, height)
+    return StaticRectification(image2real, real2image, scale, width, height)
 end
 

@@ -74,7 +74,7 @@ Open the frame and look at it — a blurry, over-exposed, or half-out-of-shot bo
 | --- | --- |
 | `run_id`, `calibration_id` | the identifiers from the csv files. |
 | `run` | the track: a tuple `(ts, coords)` of timestamps (seconds into the video) and the target's **real-world** coordinates — the same data as the track file. |
-| `rectification` | the calibration: a named tuple whose `image2real` function converts pixel coordinates to real-world coordinates; `real2image` is its inverse. |
+| `rectification` | the calibration: a `StaticRectification`, whose `image2real` function converts pixel coordinates to real-world coordinates and whose `real2image` is its inverse. Drone runs instead carry an `ApriltagRectification`, which registers each frame against a shared reference and so has no single `real2image`. |
 | `r`, `c` | the parsed run and calibration entries (all the resolved parameter values). |
 
 For example:
