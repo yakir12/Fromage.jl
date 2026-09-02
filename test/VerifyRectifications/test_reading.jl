@@ -146,10 +146,13 @@
         # creates the :scale column) must not make verifications! throw `column :scale not found`.
         csv = write_rows(joinpath(DATADIR, "videoonly.csv"), [videorow()])   # no fillers
         # Assert the RESULT, not `(expr; true)`: that form can only ever Error, never Fail, and
-        # discarded what the call returned. A clean load under `strict = false` returns the built
-        # methods -- the annotated DataFrame comes back only when something was wrong -- so the
-        # video-only csv having loaded IS the built vector.
-        @test VRect.load_rectifications(DATADIR, csv; strict = false) isa Vector{VRect.RectificationMethod}
+        # discarded what the call returned. Both entry points are asserted, because the two halves
+        # of "it loaded" are now separate: `load_rectifications` builds (and would have thrown), and
+        # `check_rectifications` returns the annotated frame with nothing flagged -- unconditionally,
+        # which is exactly what the old `strict = false` did NOT do.
+        @test VRect.load_rectifications(DATADIR, csv) isa Vector{VRect.RectificationMethod}
+        df = VRect.check_rectifications(DATADIR, csv)
+        @test all(isempty, df.issues)                 # the frame comes back either way; nothing flagged
     end
 
     @testset "malformed ImageSize is flagged, never thrown" begin

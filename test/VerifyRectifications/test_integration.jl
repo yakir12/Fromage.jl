@@ -10,8 +10,8 @@ using StaticArrays: SVector
     @testset "only_scale, with and without center/north" begin
         for (name, r) in (("cn", scalerow()), ("nocn", scalerow(center = missing, north = missing)))
             @testset "$name" begin
-                cs = check([r])
-                @test cs isa Vector                          # clean load ⇒ structs, not an issues df
+                cs = check([r]; strict = true)
+                @test cs isa Vector                          # the building entry point yields structs
                 rect = Rectification(only(cs); rectification_diagnostics = false)
                 p = [100.0, 120.0]
                 @test rect.real2image(rect.image2real(p)) ≈ p    # the maps invert each other
@@ -24,7 +24,7 @@ using StaticArrays: SVector
     @testset "video, with and without center/north" begin
         for (name, r) in (("cn", videorow()), ("nocn", videorow(center = missing, north = missing)))
             @testset "$name" begin
-                cs = check([r])
+                cs = check([r]; strict = true)
                 @test cs isa Vector
                 rect = Rectification(only(cs); rectification_diagnostics = false)           # full pipeline: reads, detects, fits
                 @test rect.image2real isa Function
@@ -37,7 +37,7 @@ using StaticArrays: SVector
     @testset "matlab ⇒ rectification read from the .mat parameters" begin
         # consistent.mat is a fronto-parallel pinhole (see make_matlab_consistent): pose 1 sits at
         # Z = 100 with f = 500, so one pixel spans Z/f = 0.2 of the .mat's world units.
-        cs = check([matlabrow(matlab_file = ART.consistent_mat)])
+        cs = check([matlabrow(matlab_file = ART.consistent_mat)]; strict = true)
         @test cs isa Vector
         @test only(cs) isa VRect.MATLAB
         rect = Rectification(only(cs); rectification_diagnostics = false)
@@ -51,7 +51,7 @@ using StaticArrays: SVector
         # both window bounds blank is a valid, supported configuration: it selects the
         # Video{Missing} variant, whose Rectification fits pose + focal from the single extrinsic
         # frame and disregards lens aberrations (zero distortion).
-        cs = check([videorow(start = missing, stop = missing)])
+        cs = check([videorow(start = missing, stop = missing)]; strict = true)
         @test cs isa Vector
         c = only(cs)
         @test c isa VRect.Video{Missing}
@@ -66,7 +66,7 @@ using StaticArrays: SVector
         # with that: a misspelled keyword vanished on every type, and on `apriltag` — which
         # forwards nothing — even a correctly spelled `rectification_diagnostics = true` was a
         # no-op. Every spelling mistake is now loud.
-        c = only(check([videorow()]))
+        c = only(check([videorow()]; strict = true))
 
         # a misspelling leaves the required keyword unassigned rather than disappearing
         @test_throws UndefKeywordError Rectification(c; rectifcation_diagnostics = false)

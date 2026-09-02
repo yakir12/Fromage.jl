@@ -13,7 +13,7 @@ using PrecompileTools: @setup_workload, @compile_workload
 using ProgressMeter: ProgressMeter, @showprogress
 using Tables: Tables
 
-export load_runs
+export load_runs, check_runs
 
 # Every column maps onto a field of `PawsomeTracker.Segment` or `PawsomeTracker.Tuning`, plus
 # `run_id` (identity / segment grouping) and `path` (path resolution). This is the full set of
@@ -31,8 +31,12 @@ include("types.jl")
 include("parsers.jl")
 include("verifications.jl")
 
-function load_runs(file; strict = true, defaults = (;), progress = true)
-    load_runs(dirname(file), file; strict, defaults, progress)
+function load_runs(file; defaults = (;), progress = true)
+    load_runs(dirname(file), file; defaults, progress)
+end
+
+function check_runs(file; defaults = (;), progress = true)
+    check_runs(dirname(file), file; defaults, progress)
 end
 
 # Read the csv and settle its identities: parse every cell, then the first tier of verification
@@ -71,23 +75,35 @@ build_runs(df) = Run[Run(g) for g in groupby(df, :run_id)]
 
 # `defaults` globally replaces the hardcoded fallbacks of the whitelisted tracking parameters
 # (see DEFAULTS in parsers.jl); the hierarchy is csv cell → `defaults` → hardcoded/probed value.
-function load_runs(data_path, file; strict = true, defaults = (;), progress = true)
+# Build the runs, or throw. Always returns `Vector{Run}` — see `check_runs` for the report.
+#
+# The first-tier gate. This is going to abort whatever the videos say, so it aborts here rather than
+# spending minutes of reads on a report that would be discarded.
+#
+# Only identity issues open this gate. A malformed `start` in one row does not make the other rows'
+# videos less worth checking, so it rides along to the full report rather than cutting the run short.
+function load_runs(data_path, file; defaults = (;), progress = true)
     df, identities_ok = parse_runs(data_path, file; defaults, progress)
-
-    # The first-tier gate. Under `strict` the run is going to abort whatever the videos say, so it
-    # aborts here rather than spending minutes of reads on a report that would be discarded. Without
-    # it the rows stay and are quarantined instead: every second-tier stage skips flagged rows, so
-    # the rest of the file is still validated and the caller gets one combined report at the end.
-    #
-    # Only identity issues open this gate. A malformed `start` in one row does not make the other
-    # rows' videos less worth checking, so it rides along to the full report rather than cutting the
-    # run short.
-    identities_ok || (strict && report_runs(df, true))
-
+    identities_ok || report_runs(df, true)
     verifications!(df, data_path; progress)
-
-    report_runs(df, strict) && return df
+    report_runs(df, true)
     return build_runs(df)
+end
+
+# Validate and report, never throw. Always returns the annotated DataFrame, `:issues` and all —
+# including when nothing was wrong, which is what makes this type-stable where the old
+# `strict = false` was not: that returned the built runs on a clean file and the frame on a dirty
+# one, so the return type depended on the data.
+#
+# No first-tier abort here: nothing is going to be built, so the rows stay and are quarantined
+# instead. Every second-tier stage skips flagged rows, so the rest of the file is still validated
+# and the caller gets one combined report at the end.
+function check_runs(data_path, file; defaults = (;), progress = true)
+    df, identities_ok = parse_runs(data_path, file; defaults, progress)
+    identities_ok || report_runs(df, false)
+    verifications!(df, data_path; progress)
+    report_runs(df, false)
+    return df
 end
 
 include("precompile.jl")   # build-time workload; excluded from coverage

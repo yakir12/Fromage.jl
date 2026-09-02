@@ -146,9 +146,13 @@ column `verifications!` references — no column-completing filler rows are need
 # `issues_dir` defaults to a fresh temp dir so failure scenarios (which now dump the failing
 # extrinsic frame) don't write into the test's working directory; a test that inspects the dumped
 # frames passes an explicit path.
+# `strict` selects the ENTRY POINT, not a flag inside one, and the non-strict branch keeps the
+# old data-dependent shape for the suite's benefit — see the fuller note in VerifyRuns' helpers.
 function check(name, rows; strict = false, header = HEADER, defaults = (;), issues_dir = mktempdir())
     csv = write_rows(joinpath(DATADIR, name), rows; header)
-    VRect.load_rectifications(DATADIR, csv; strict, defaults, issues_dir)
+    strict && return VRect.load_rectifications(DATADIR, csv; defaults, issues_dir)
+    df = VRect.check_rectifications(DATADIR, csv; defaults, issues_dir)
+    return any(!isempty, df.issues) ? df : VRect.build_methods(df)
 end
 
 # Each scenario is loaded as its own csv, so the name only has to be unique within DATADIR — the
