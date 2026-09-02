@@ -1,0 +1,48 @@
+name: Tolerance residuals
+
+# Print the residual behind every empirical tolerance in the test suite, on each platform the
+# package is tested on. Asserts nothing and gates nothing.
+#
+# Why it exists: every tolerance comment in `test/` states a value measured on one developer
+# machine — one FFMPEG_jll, one OpenCV_jll, one AprilTags_jll. Those values were verified
+# bit-identical across processes and thread counts there, which says nothing about the macOS and
+# Windows runners, where the native libraries differ. Before tightening any bound, run this and
+# compare: a bound is only as good as the worst platform it has to hold on.
+#
+# Manual dispatch only. It is not on push or pull_request because it is a measurement, not a check,
+# and running it per-push would cost matrix minutes for output nobody reads.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Julia version"
+        required: false
+        default: "1"
+
+permissions:
+  contents: read
+
+jobs:
+  residuals:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false        # one platform failing must not hide the others' numbers
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: ${{ inputs.version }}
+          arch: default
+      - uses: julia-actions/cache@v3
+      - uses: julia-actions/julia-buildpkg@v1
+      - name: Measure
+        # Threaded, matching how the suite itself runs on CI — the residuals were verified
+        # thread-independent locally, and this is where that would show up if it were not true
+        # somewhere else.
+        env:
+          JULIA_NUM_THREADS: "auto"
+        run: julia --project=test test/tolerance_residuals.jl

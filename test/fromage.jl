@@ -202,7 +202,14 @@ end
     ground_disp = hypot((groundpath[end] .- groundpath[1])...)
     @test hypot((present[end] - present[1])...) ≈ ground_disp rtol = 0.05
     a, b = present[1], present[end]; d = (b - a) ./ hypot((b - a)...)
-    @test maximum(abs((p - a)[1] * d[2] - (p - a)[2] * d[1]) for p in present) < 3   # within 3 cm of the line
+    # Straightness, in GROUND PIXELS — not cm. The fixture sets `tag_cell_width` to the same value
+    # as its `TAG_CELL` ground-pixel cell, which makes one recovered metric unit exactly one ground
+    # pixel (`rect.ratio` measures 1.0000019); "cm" is only the unit label the pipeline carries.
+    # Measured max deviation from the tracked chord: 0.091 here, 0.115 on the 300-frame occluded
+    # flight below — bit-identical over 5 runs and at 1, 2 and 32 threads. Half a ground pixel is
+    # ~4x that, which survives a detector or encoder rebuild while still failing a track that has
+    # actually bent; `< 3` passed a track wandering a full pixel off its own chord.
+    @test maximum(abs((p - a)[1] * d[2] - (p - a)[2] * d[1]) for p in present) < 0.5
     # the no-subtraction path (background_length = 0) through track_apriltag: the 2-slice
     # registered stack still cancels the pan, and the same displacement contract holds
     _, xy0 = track1(joinpath(dir, vid); rectification = rect,
@@ -244,7 +251,8 @@ end
     ground_disp = hypot((groundpath[pidx[end]] .- groundpath[pidx[1]])...)
     @test hypot((present[end] - present[1])...) ≈ ground_disp rtol = 0.05
     a, b = present[1], present[end]; d = (b - a) ./ hypot((b - a)...)
-    @test maximum(abs((p - a)[1] * d[2] - (p - a)[2] * d[1]) for p in present) < 3
+    # ground pixels, as above; measured 0.115 on this 300-frame flight with tag occlusions
+    @test maximum(abs((p - a)[1] * d[2] - (p - a)[2] * d[1]) for p in present) < 0.5
 end
 
 @testset "AprilTag: a segmented run, with one diagnostic spanning both segments" begin
@@ -285,7 +293,12 @@ end
     # duration — the contract that was never checked for a spanning diagnostic
     @test isfile(diag) && filesize(diag) > 0
     s = probe_stream(diag)
-    @test s.nframes / s.fps * 2 ≈ (nA + nB) / 25 rtol = 0.05
+    # An exact frame count, not a tolerance: this is integer arithmetic, and the regression the
+    # testset exists to catch is a frame DROPPED at the segment join. `rtol = 0.05` on 3.2 s admits
+    # ±0.16 s while one diagnostic frame is 2/25 = 0.08 s, so it passed a diagnostic that was a
+    # whole frame short — measured 0.0 residual, and vacuous anyway.
+    @test s.nframes == (nA + nB) ÷ 2
+    @test s.fps ≈ 25 rtol = 1e-6
 end
 
 @testset "the AprilTag diagnostic carries the run's label (#22)" begin

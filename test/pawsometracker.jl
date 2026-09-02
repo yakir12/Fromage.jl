@@ -61,6 +61,20 @@ const DATADIR = mktempdir()
         @test tracking_rmse(ij, base_exp) < 1
     end
 
+    @testset "tracking is deterministic" begin
+        # Same file, same Segment and Tuning, same coordinates — bit for bit, whatever
+        # JULIA_NUM_THREADS is. Measured over separate processes and at 1, 2, 4, 8 and 32 threads:
+        # every coordinate identical, every RMSE identical to the last Float64 digit.
+        #
+        # Asserted as EQUALITY, with no tolerance, and that is the point. Every other accuracy
+        # assertion in the suite bounds a residual, so nondeterminism entering the threaded
+        # read/detect/track path would surface as an intermittent tolerance failure that nobody
+        # can reproduce. This fails immediately instead, and names the cause.
+        _, a = track1(base_file; start_location = (55, 50), target_width = 10)
+        _, b = track1(base_file; start_location = (55, 50), target_width = 10)
+        @test a == b
+    end
+
     @testset "start_location's declared type is what is actually supported (#18)" begin
         # The union names only what has a get_guess method behind it, so an unsupported type is
         # rejected when the Segment is built rather than dying once the video is open. Reinstating
