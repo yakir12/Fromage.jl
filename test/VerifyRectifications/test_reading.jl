@@ -125,14 +125,13 @@
         # tmap wraps a failure in a TaskFailedException only when it actually spawned; the same
         # error arrives bare when the work ran inline. Both shapes must reach the same verdict.
         bare = ErrorException("boom")
-        wrapped = try fetch(Threads.@spawn error("boom")) catch e; e end
-        @test wrapped isa TaskFailedException
+        wrapped = (@test_throws TaskFailedException fetch(Threads.@spawn error("boom"))).value
         @test VRect._unwrap_task(wrapped) isa ErrorException
         @test VRect._detection_failure(VRect._unwrap_task(wrapped))
         @test VRect._unwrap_task(bare) === bare
         @test VRect._unwrap_task(CompositeException([bare])) === bare
         # an interrupt raised inside a task still refuses classification once unwrapped
-        interrupted = try fetch(Threads.@spawn throw(InterruptException())) catch e; e end
+        interrupted = (@test_throws TaskFailedException fetch(Threads.@spawn throw(InterruptException()))).value
         @test !VRect._detection_failure(VRect._unwrap_task(interrupted))
     end
 
