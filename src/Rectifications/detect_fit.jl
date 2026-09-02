@@ -46,5 +46,9 @@ function fit_model(sz, objpoints, imgpointss, n_corners, radial_parameters, aspe
                                                          OpenCV.Mat(reshape(dist, 1, 1, 5)),
                                                          OpenCV.InputArray[OpenCV.Mat(reshape(ri, 1, 1, 3)) for ri in r],
                                                          OpenCV.InputArray[OpenCV.Mat(reshape(ti, 1, 1, 3)) for ti in t], flags, CRITERIA)
-    return (k = dist[[1,2,5]], Rs = r, ts = t, frow = cammat[1,1], fcol = cammat[2,2], crow = cammat[3,1], ccol = cammat[3,2])
+    # `k` as an NTuple, not a Vector: it is a fixed-length model parameter, and the concrete type
+    # is what lets `lens_distortion_factor`'s `evalpoly` unroll without allocating. `dist` always
+    # holds all three radial slots — `radial_parameters < 3` fixes the unfitted ones at zero rather
+    # than omitting them (see CALIB_FIX_K above).
+    return (k = (dist[1], dist[2], dist[5]), Rs = r, ts = t, frow = cammat[1,1], fcol = cammat[2,2], crow = cammat[3,1], ccol = cammat[3,2])
 end

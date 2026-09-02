@@ -23,7 +23,12 @@ function from_matlab(; file, extrinsic, calibration_id, matlab_file, extrinsic_i
     R = -Vector{Float64}(dict["RotationVectors"][extrinsic_index, [2, 1, 3]])   # negative due to some matlab angle convention...
     t = Vector{Float64}(dict["TranslationVectors"][extrinsic_index, [2, 1, 3]])
 
-    k = vec(dict["RadialDistortion"])
+    # matlab writes 2 or 3 radial coefficients; pad to the model's three with an explicit zero so
+    # `k` has one concrete type whatever the file said. Zero-padding is exactly identity here —
+    # verified that `_first_critical`, `lens_distortion` and `inv_lens_distortion` are bit-identical
+    # for (k1, k2) and (k1, k2, 0.0), including the folded and non-folded regimes.
+    radial = vec(dict["RadialDistortion"])
+    k = ntuple(i -> i ≤ length(radial) ? Float64(radial[i]) : 0.0, 3)
 
     image2real, real2image = _maps(R, t, frow, fcol, crow, ccol, k, 1, width, height, aspect, center, north)
     # units-per-pixel at the arena centre — the matlab analogue of the video path's
