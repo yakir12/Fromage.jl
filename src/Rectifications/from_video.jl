@@ -62,15 +62,18 @@ end
 The radial distortion factor `f(r) = 1 + k₁r² + k₂r⁴ + k₃r⁶` for up to 3 radial coefficients, so that
 `lens_distortion(v, k) == v * f(|v|)`. Single source of truth shared by the forward and inverse distortion.
 """
-function lens_distortion_factor(r, k)
-    f = 1.0
-    r2p = 1.0
-    for ki in k
-        r2p *= r^2
-        f += ki * r2p
-    end
-    return f
-end
+# `evalpoly` rather than a hand-rolled accumulation: it is Base's Horner, which is both shorter and
+# marginally better conditioned than summing monomials (~2.7x lower relative error at three
+# coefficients; the two never differ by more than 1 ulp, and the round trip through
+# `inv_lens_distortion` is bit-identical at 1.34e-11 px).
+#
+# This is only free because `k` is an NTuple — see the two producers, `fit_model` and `from_matlab`.
+# Splatting a Vector here builds a `Tuple{Float64, Vararg{Float64}}`, which is not concrete: it
+# heap-allocates and dispatches at runtime, measured at 120x per call and 15x on a full frame warp.
+# A Vector `k` still WORKS, and the tests pass tuples of every length including `()`, so nothing
+# breaks — it would just be slow, and silently: `test/jet.jl` runs JET's error analysis, not
+# `report_opt`, so a runtime dispatch here would not turn CI red.
+lens_distortion_factor(r, k) = evalpoly(r^2, (1.0, k...))
 
 """
     lens_distortion
