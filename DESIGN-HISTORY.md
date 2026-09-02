@@ -228,6 +228,27 @@ travel together as `_source(c.source)`.
 `VerifyRectifications`: this module owns the concept and the builders, the gateway owns the types
 the dispatch is on.
 
+What the four builders *return* is `StaticRectification`, a struct, and was for a long time an
+anonymous `(; image2real, real2image, ratio, width, height)` NamedTuple written out at three
+separate return sites. One shape, three definition sites, kept in step by hand — the same argument
+as #140/#141, and the same failure mode: a builder could drift a field name or drop one and nothing
+would say so until a caller reached for it. The struct also gives the exported concept a name, so a
+signature can finally say "a rectification"; `Rectification` was a function with no type behind it.
+
+The name marks the real distinction, which is *not* the one the old duck-typing implied. The two
+rectification shapes were never interchangeable: `ApriltagRectification` has **no `real2image`** at
+all, and carries `reference` and `family` that the builders' shape lacks. They overlap on four
+fields, not five. "Static" is what the builders' path actually is — the camera does not move, so a
+single fixed map pair describes the whole run — against the AprilTag path, which re-registers every
+frame against a shared reference and therefore has no one inverse map to offer.
+
+`track` still selects between the two with `rectification isa ApriltagRectification` rather than by
+dispatch, which reads against the rule two sections up. It is deliberate: the two paths share a
+six-line preamble (`dia_fps`, the segment count, the pre-scaled `width`/`window`/`search`), so
+dispatching means either duplicating that across two methods or threading eight locals into a
+helper. Both are harder to read than the branch. The rule exists to serve clarity; here it would
+cost it.
+
 ### The extrinsics-only rectification is selected by absence, and never flagged
 
 Which constructor a rectification gets is decided *solely* by whether the calibs row has an

@@ -216,7 +216,7 @@ function _rectification(file, extrinsic, calibration_id, imgpointss, width, heig
     image2real, real2image = _maps(R, t, frow, fcol, crow, ccol, k, checker_width, width, height, aspect, center, north)
     ratio = checker_width/checker_width_pixel(extrinsic_corners, n_corners)
     _diagnostic(rectification_diagnostics, file, extrinsic, calibration_id, width, height, ratio, real2image)
-    return (; image2real, real2image, ratio, width, height)
+    return StaticRectification(image2real, real2image, ratio, width, height)
 end
 
 # Assemble the image ↔ real transform pair from one camera pose: the intrinsics
