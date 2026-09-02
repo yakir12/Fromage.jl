@@ -69,3 +69,18 @@ load_capturing(rows; kw...) = capturing(() -> check(rows; kw...))
 
 # A clean load returns Vector{Run}; a load with issues returns a DataFrame carrying :issues.
 clean(x) = x isa Vector{VR.Run}
+
+# Every tracking case loads exactly one run and asserts the gateway accepted it, so both live here
+# rather than at fourteen call sites. `clean` is checked before `only`, which on a rejected load
+# would be `only(::DataFrame)` — a MethodError naming nothing useful. The explicit `error` says what
+# actually happened; the load's own report has already been printed above it.
+function loaded(rows)
+    runs = check(rows)
+    @test clean(runs)
+    clean(runs) || error("the gateway rejected these rows — see its report above")
+    return only(runs)
+end
+
+# ...and most of those cases go straight on to track it and look at the coordinates. `center` is what
+# Fromage passes from the rectification; `missing` is the frame-centre fallback.
+tracked(rows; center = missing) = last(VR.track(loaded(rows), center, nothing, nothing))

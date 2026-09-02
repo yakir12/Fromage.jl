@@ -6,7 +6,6 @@ using StaticArrays
 using LinearAlgebra
 using CoordinateTransformations
 using Rotations
-using Logging
 using MAT
 
 # Most of the submodule's functions are internal (not exported); reach them through the module.

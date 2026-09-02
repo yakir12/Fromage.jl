@@ -145,7 +145,11 @@
         # parse_row back-fills every COLUMNS entry with missing, so a video-only CSV (which never
         # creates the :scale column) must not make verifications! throw `column :scale not found`.
         csv = write_rows(joinpath(DATADIR, "videoonly.csv"), [videorow()])   # no fillers
-        @test (VRect.load_rectifications(DATADIR, csv; strict = false); true)
+        # Assert the RESULT, not `(expr; true)`: that form can only ever Error, never Fail, and
+        # discarded what the call returned. A clean load under `strict = false` returns the built
+        # methods -- the annotated DataFrame comes back only when something was wrong -- so the
+        # video-only csv having loaded IS the built vector.
+        @test VRect.load_rectifications(DATADIR, csv; strict = false) isa Vector{VRect.RectificationMethod}
     end
 
     @testset "malformed ImageSize is flagged, never thrown" begin
