@@ -11,15 +11,18 @@ const S = ShareIO
 
 @testset "ShareIO" begin
 
-    grab(f) = try f(); nothing catch e; e end
-    share_failed = grab(() -> S.capture(`false`, "it failed"; tries = 1))
-    io_error     = grab(() -> read(`__no_such_executable__`))   # spawn failure
-    system_error = grab(() -> read("/nonexistent/nope", 6))     # file-level failure
-
     @testset "istransient classifies what may be retried" begin
-        @test share_failed isa S.ShareReadError && S.istransient(share_failed)
-        @test io_error isa Base.IOError && S.istransient(io_error)
-        @test system_error isa SystemError && S.istransient(system_error)
+        # `@test_throws` returns its `Pass`, and `.value` is the exception it caught — so one line
+        # both asserts the type and hands the object over. The hand-rolled `try/catch` helper this
+        # replaces asserted nothing: a call that stopped throwing would have returned `nothing` and
+        # the `isa` below would have carried the whole claim.
+        share_failed = (@test_throws S.ShareReadError S.capture(`false`, "it failed"; tries = 1)).value
+        io_error     = (@test_throws Base.IOError read(`__no_such_executable__`)).value    # spawn failure
+        system_error = (@test_throws SystemError read("/nonexistent/nope", 6)).value       # file-level failure
+
+        @test S.istransient(share_failed)
+        @test S.istransient(io_error)
+        @test S.istransient(system_error)
 
         # Not transient, and the whole point of #25: a bare `catch` swallowed Ctrl-C for the entire
         # backoff sequence. A caller's bug must surface at once, too.
@@ -38,9 +41,9 @@ const S = ShareIO
         # The bug this replaced: a `ProcessFailedException` holds an exit code and nothing else, so
         # a share that dropped the connection under an open() was reported as a corrupt file.
         # stderr is the only thing that tells those apart, so it must survive.
-        e = grab(() -> S.capture(`sh -c 'echo "Resource temporarily unavailable" >&2; exit 245'`,
-                                 "ffmpeg could not read the frame at 12.5s"; tries = 1))
-        @test e isa S.ShareReadError
+        e = (@test_throws S.ShareReadError S.capture(
+            `sh -c 'echo "Resource temporarily unavailable" >&2; exit 245'`,
+            "ffmpeg could not read the frame at 12.5s"; tries = 1)).value
         @test e.exitcode == 245
         @test e.signal == 0
         @test e.message == "Resource temporarily unavailable"
@@ -57,12 +60,12 @@ const S = ShareIO
         # this change both arrived as a bare ProcessFailedException and were reported identically,
         # as "the file is corrupt" — which was a guess, and for the share a wrong one. The noisy
         # "[in#0 @ 0xADDR]" prefix and the restating follow-up lines are dropped.
-        share = grab(() -> S.capture(
+        share = (@test_throws S.ShareReadError S.capture(
             `sh -c 'printf "[in#0 @ 0x1bc6a800] Error opening input: Resource temporarily unavailable\nError opening input file /a/b.MP4.\n" >&2; exit 245'`,
-            "ffmpeg could not read the frame at 1.0s"; tries = 1))
-        broken = grab(() -> S.capture(
+            "ffmpeg could not read the frame at 1.0s"; tries = 1)).value
+        broken = (@test_throws S.ShareReadError S.capture(
             `sh -c 'printf "[in#0 @ 0x8755b40] moov atom not found\nError opening input file /a/c.MP4.\n" >&2; exit 183'`,
-            "ffmpeg could not read the frame at 1.0s"; tries = 1))
+            "ffmpeg could not read the frame at 1.0s"; tries = 1)).value
         @test share.message == "Error opening input: Resource temporarily unavailable"
         @test broken.message == "moov atom not found"
         @test sprint(showerror, share) != sprint(showerror, broken)
@@ -80,8 +83,8 @@ const S = ShareIO
         # kill as the raw wait status (9 << 8 = 2304) in the exit code instead. The share is a
         # Linux mount and the signal branch is what production exercises; all Windows owes us is
         # that the kill still arrives as a legible `ShareReadError` rather than a silent success.
-        e = grab(() -> S.capture(`sh -c 'kill -9 $$'`, "ffmpeg could not read it"; tries = 1))
-        @test e isa S.ShareReadError
+        e = (@test_throws S.ShareReadError S.capture(`sh -c 'kill -9 $$'`,
+                                                     "ffmpeg could not read it"; tries = 1)).value
         if Sys.isunix()
             @test e.signal == 9
             @test occursin("killed by signal 9", sprint(showerror, e))
