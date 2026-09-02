@@ -14,66 +14,48 @@
     seg2,  seg2_exp  = make_target_video("t_seg2"; sar = 2//1, nsegments = 3)
 
     @testset "defaults: imputed stop/fps/window, frame-center start" begin
-        runs = check([runrow(file = only(base))])
-        @test clean(runs)
-        _, ij = VR.track(only(runs), missing, nothing, nothing)
+        ij = tracked([runrow(file = only(base))])
         @test length(ij) == 50                       # stop imputed from the full 2 s at 25 fps
         @test tracking_rmse(ij, base_exp) < 1
     end
 
     @testset "start_location sources" begin
         # explicit CSV cell
-        runs = check([runrow(file = only(base), start_location = "(55, 50)")])
-        @test clean(runs)
-        _, ij = VR.track(only(runs), missing, nothing, nothing)
+        ij = tracked([runrow(file = only(base), start_location = "(55, 50)")])
         @test tracking_rmse(ij, base_exp) < 1
         # the `center` keyword (what Fromage passes from the rectification)
-        runs = check([runrow(file = only(base))])
-        @test clean(runs)
-        _, ij = VR.track(only(runs), (55, 50), nothing, nothing)
+        ij = tracked([runrow(file = only(base))]; center = (55, 50))
         @test tracking_rmse(ij, base_exp) < 1
     end
 
     @testset "window_size sources" begin
-        runs = check([runrow(file = only(base), window_size = "31")])
-        @test clean(runs)
-        _, ij = VR.track(only(runs), missing, nothing, nothing)
+        ij = tracked([runrow(file = only(base), window_size = "31")])
         @test tracking_rmse(ij, base_exp) < 1
-        runs = check([runrow(file = only(base), window_size = "(31, 21)")])
-        @test clean(runs)
-        _, ij = VR.track(only(runs), missing, nothing, nothing)
+        ij = tracked([runrow(file = only(base), window_size = "(31, 21)")])
         @test tracking_rmse(ij, base_exp) < 1
     end
 
     @testset "lighter target on dark background" begin
-        runs = check([runrow(file = only(light), darker_target = "false")])
-        @test clean(runs)
-        _, ij = VR.track(only(runs), missing, nothing, nothing)
+        ij = tracked([runrow(file = only(light), darker_target = "false")])
         @test tracking_rmse(ij, light_exp) < 1
     end
 
     @testset "requested sample_fps below the video's rate" begin
-        runs = check([runrow(file = only(base), sample_fps = "12.5")])
-        @test clean(runs)
-        _, ij = VR.track(only(runs), missing, nothing, nothing)
+        ij = tracked([runrow(file = only(base), sample_fps = "12.5")])
         @test length(ij) == 25                       # every other frame
         @test tracking_rmse(ij, base_exp; skip = 2) < 1
     end
 
     @testset "start/stop sub-window" begin
         # the start_location must be where the target is at t = start (frame 10), not at t = 0
-        runs = check([runrow(file = only(base), start = "0.4", stop = "1.6", start_location = "(32, 50)")])
-        @test clean(runs)
-        _, ij = VR.track(only(runs), missing, nothing, nothing)
+        ij = tracked([runrow(file = only(base), start = "0.4", stop = "1.6", start_location = "(32, 50)")])
         @test length(ij) == 30
         @test tracking_rmse(ij, base_exp; offset = 10) < 1
     end
 
     @testset "downscaled tracking (scale = 0.5)" begin
         # coordinates come back in the *original* stored-frame pixels regardless of scale
-        runs = check([runrow(file = only(base), scale = "0.5")])
-        @test clean(runs)
-        _, ij = VR.track(only(runs), missing, nothing, nothing)
+        ij = tracked([runrow(file = only(base), scale = "0.5")])
         @test tracking_rmse(ij, base_exp) < 1
     end
 
@@ -83,9 +65,7 @@
         # is a 10 px disc, so scale 0.1 is the smallest legal value (a 10×10 working frame). The
         # tolerance is loose because precision at the boundary is inherently about 1/scale — the
         # assertion is that the track stays within the target's own radius rather than wandering.
-        runs = check([runrow(file = only(base), target_width = "10", scale = "0.1")])
-        @test clean(runs)
-        _, ij = VR.track(only(runs), missing, nothing, nothing)
+        ij = tracked([runrow(file = only(base), target_width = "10", scale = "0.1")])
         @test tracking_rmse(ij, base_exp) < 5
     end
 
@@ -95,14 +75,10 @@
             @testset "$label" begin
                 # explicit display-space start_location; for sar 2 its x (55) exceeds the *stored*
                 # width (50) — valid, because bounds are display-space (width × sar)
-                runs = check([runrow(file = only(files), start_location = "(55, 50)")])
-                @test clean(runs)
-                _, ij = VR.track(only(runs), missing, nothing, nothing)
+                ij = tracked([runrow(file = only(files), start_location = "(55, 50)")])
                 @test tracking_rmse(ij, exp) < 1
                 # frame-center default must be the *display* center, sar-corrected
-                runs = check([runrow(file = only(files))])
-                @test clean(runs)
-                _, ij = VR.track(only(runs), missing, nothing, nothing)
+                ij = tracked([runrow(file = only(files))])
                 @test tracking_rmse(ij, exp) < 1
             end
         end
@@ -111,9 +87,7 @@
         @test flagged(check([runrow(file = only(sar05), start_location = "(150, 50)")]), 1, "start_location is outside the frame")
         @test clean(check([runrow(file = only(sar2),  start_location = "(80, 50)")]))
         # anamorphic and downscaled at once
-        runs = check([runrow(file = only(sar2), start_location = "(55, 50)", scale = "0.5")])
-        @test clean(runs)
-        _, ij = VR.track(only(runs), missing, nothing, nothing)
+        ij = tracked([runrow(file = only(sar2), start_location = "(55, 50)", scale = "0.5")])
         @test tracking_rmse(ij, sar2_exp) < 1
     end
 
@@ -122,17 +96,13 @@
         # from where the previous segment ended (keyframe-aligned 17 + 17 + 16 frames)
         rows = [runrow(run_id = "s", file = f, start_location = i == 1 ? "(55, 50)" : missing)
                 for (i, f) in enumerate(seg)]
-        runs = check(rows)
-        @test clean(runs)
-        r = only(runs)
+        r = loaded(rows)
         @test length(r.segments) == 3
         _, ij = VR.track(r, missing, nothing, nothing)
         @test length(ij) == 50
         @test tracking_rmse(ij, seg_exp) < 1
         # anamorphic segmented run, frame-center start
-        runs = check([runrow(run_id = "s2", file = f) for f in seg2])
-        @test clean(runs)
-        _, ij = VR.track(only(runs), missing, nothing, nothing)
+        ij = tracked([runrow(run_id = "s2", file = f) for f in seg2])
         @test tracking_rmse(ij, seg2_exp) < 1.5
     end
 end
