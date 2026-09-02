@@ -7,6 +7,14 @@
 # bit-identical across processes and thread counts *there*, which says nothing about the macOS and
 # Windows runners. A bound is only as good as the worst platform it has to hold on.
 #
+# What the first two dispatches found: linux, Intel macOS and Windows agree BIT-IDENTICALLY on every
+# tracking and centre residual, and differ by ~2e-10 on the two focal lengths (OpenCV's iterative
+# fit). Architecture is the axis that actually moves them -- an aarch64 (Apple Silicon) run came in
+# ~1e-5 off on the tracking sites, presumably a different FFMPEG_jll render of the synthetic disc.
+# Still four orders of magnitude inside the bounds, but it is why these say "measured", not
+# "identical". What NO dispatch has measured is a jll VERSION bump: every runner resolves the same
+# versions on the same day, so the headroom left in each bound is sized for that, not for this.
+#
 #     julia --project=test test/tolerance_residuals.jl
 #
 # or, on the CI matrix, through the ToleranceResiduals workflow (manual dispatch).
@@ -72,13 +80,13 @@ function tracking_residuals(dir)
     # not exercise. Added after the first cross-platform run, which tightened every site it
     # covered and left this one at 1 for want of a number.
     _, ij = track1(f; start_location = (55, 50), target_width = 10, background_length = 30)
-    row("pawsometracker: background_length = 30", tracking_rmse(ij, base_exp), 1)
+    row("pawsometracker: background_length = 30", tracking_rmse(ij, base_exp), 0.5)
 
     # the long-stationary target (30 s, an 8-25 s pause): the protect_target path, and the slowest
     # site here by far -- 750 frames against everything else's 50.
     paused, paused_exp = make_target_video(dir, "tol_pause"; duration = 30, pause = (8, 25))
     _, ij = track1(joinpath(dir, only(paused)); start_location = (55, 50), target_width = 10)
-    row("pawsometracker: long-stationary (paused)", tracking_rmse(ij, paused_exp), 1)
+    row("pawsometracker: long-stationary (paused)", tracking_rmse(ij, paused_exp), 0.5)
 
     # determinism, which is the one property asserted without a tolerance
     _, a = track1(f; start_location = (55, 50), target_width = 10)
