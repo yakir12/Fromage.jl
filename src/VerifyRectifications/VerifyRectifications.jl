@@ -19,7 +19,7 @@ using PrecompileTools: @setup_workload, @compile_workload
 using ProgressMeter: ProgressMeter, @showprogress
 using Tables: Tables
 
-export load_rectifications
+export load_rectifications, check_rectifications
 
 const COLUMNS = (:comment, :calibration_id, :path, :file, :matlab_file, :start, :stop, :extrinsic, :checker_width, :center, :north, :n_corners, :scale, :type, :temporal_step, :radial_parameters, :blur, :extrinsic_index, :aspect, :yadif, :apriltags, :family, :tag_cell_width)
 
@@ -38,10 +38,12 @@ include("verifications.jl")
 # detection is dumped for inspection (see `verifications!`). Every run writes into a new time-stamped
 # folder of its own inside it, so what a run dumped is exactly what its folder holds; nothing here is
 # ever deleted, including anything the user keeps in the folder they name.
-function load_rectifications(file; strict = true, defaults = (;), issues_dir = DEFAULT_ISSUES_DIR,
-        progress = true)
-    data_path = dirname(file)
-    load_rectifications(data_path, file; strict, defaults, issues_dir, progress)
+function load_rectifications(file; defaults = (;), issues_dir = DEFAULT_ISSUES_DIR, progress = true)
+    load_rectifications(dirname(file), file; defaults, issues_dir, progress)
+end
+
+function check_rectifications(file; defaults = (;), issues_dir = DEFAULT_ISSUES_DIR, progress = true)
+    check_rectifications(dirname(file), file; defaults, issues_dir, progress)
 end
 
 # `defaults` globally replaces the hardcoded fallbacks of the whitelisted rectification parameters
@@ -78,18 +80,27 @@ report_calibs(df, strict) = report_issues(df, :calibration_id, "calibs.csv", "ca
 # load_runs), so the clean-path return type doesn't vary with the mix of kinds.
 build_methods(df) = RectificationMethod[RectificationMethod(r) for r in eachrow(df)]
 
-function load_rectifications(data_path, file; strict = true, defaults = (;), issues_dir = DEFAULT_ISSUES_DIR,
+# Build the rectification methods, or throw. Always returns `Vector{RectificationMethod}`.
+# The first-tier gate; see the matching comment in `load_runs`. This aborts before a single video is
+# probed or corner-detected.
+function load_rectifications(data_path, file; defaults = (;), issues_dir = DEFAULT_ISSUES_DIR,
         progress = true)
     df, identities_ok = parse_rectifications(data_path, file; defaults, progress)
-
-    # The first-tier gate; see the matching comment in `load_runs`. Under `strict` this aborts
-    # before a single video is probed or corner-detected.
-    identities_ok || (strict && report_calibs(df, true))
-
+    identities_ok || report_calibs(df, true)
     verifications!(df, data_path, issues_dir; progress)
-
-    report_calibs(df, strict) && return df
+    report_calibs(df, true)
     return build_methods(df)
+end
+
+# Validate and report, never throw. Always returns the annotated DataFrame — see `check_runs` for
+# why that unconditional return is the point.
+function check_rectifications(data_path, file; defaults = (;), issues_dir = DEFAULT_ISSUES_DIR,
+        progress = true)
+    df, identities_ok = parse_rectifications(data_path, file; defaults, progress)
+    identities_ok || report_calibs(df, false)
+    verifications!(df, data_path, issues_dir; progress)
+    report_calibs(df, false)
+    return df
 end
 
 include("precompile.jl")   # build-time workload; excluded from coverage

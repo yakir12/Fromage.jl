@@ -342,17 +342,18 @@ end
         println(io, "calibration_id,type,file,extrinsic,apriltags,family,tag_cell_width")
         println(io, "drone,apriltag,$vid,0,6,tag36h11,12")
     end
-    verify() = Fromage.VerifyRectifications.load_rectifications(dir, joinpath(dir, "calibs.csv"); strict = false, issues_dir = idir)
+    # named for what it does here; `verify` is now an exported entry point of its own
+    check_calibs() = Fromage.VerifyRectifications.check_rectifications(dir, joinpath(dir, "calibs.csv"); issues_dir = idir)
     run_dirs() = filter(isdir, readdir(idir; join = true))
     frames(d) = filter(endswith(".png"), readdir(d; join = true))
 
-    df = verify()
+    df = check_calibs()
     @test any(m -> occursin("only 4 of 6 AprilTags", m), only(df.issues))
     @test any(m -> occursin("saved the extrinsic frame", m), only(df.issues))
     first_run = only(run_dirs())
     @test length(frames(first_run)) == 1 && filesize(only(frames(first_run))) > 0
 
-    df2 = verify()
+    df2 = check_calibs()
     @test any(m -> occursin("saved the extrinsic frame", m), only(df2.issues))
     both = run_dirs()
     @test length(both) == 2 && first_run in both       # the second run added a folder, it didn't replace one
@@ -470,9 +471,10 @@ end
     @test probe_stream(joined).nframes == 10
 end
 
-# `strict = false` is the debugging mode: report everything wrong with both files and hand them
-# back, rather than stopping at the first one (#121).
-@testset "main(strict = false) reports both files instead of aborting" begin
+# `verify` is the debugging entry point: report everything wrong with both files and hand them
+# back, rather than stopping at the first one (#121). It replaced `main(strict = false)`, whose
+# return type depended on whether the data happened to be clean.
+@testset "verify reports both files instead of aborting" begin
     dir = mktempdir()
     make_video(joinpath(dir, "cal.mp4"); size = (320, 240), duration = 2)
     target, _ = make_target_video(dir, "nonstrict")
@@ -491,7 +493,7 @@ end
 
     # A dataset is accepted or rejected as a whole, so both tables come back annotated — handing
     # back built runs whose calibration was just rejected would imply a usability they lack (#122).
-    out = cd(() -> main(dir; strict = false), outdir)
+    out = cd(() -> verify(dir), outdir)
     @test out.calibs isa DataFrame
     @test out.runs isa DataFrame
     @test hasproperty(out.calibs, :issues)

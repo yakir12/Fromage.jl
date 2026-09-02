@@ -21,15 +21,15 @@ using .Paths: RESULTS_DIR, DEFAULT_ISSUES_DIR
 using .Gateway: verify_cross_references!
 using .Rectifications: Rectification
 using .PawsomeTracker: track
-using .VerifyRectifications: load_rectifications, RectificationMethod
-using .VerifyRuns: load_runs, Run
+using .VerifyRectifications: load_rectifications
+using .VerifyRuns: load_runs
 
-using DataFrames: AbstractDataFrame, DataFrame, Not, leftjoin!, select!, transform!
+using DataFrames: DataFrame, Not, leftjoin!, select!, transform!
 using FFMPEG: ffmpeg_exe
 using OhMyThreads: tforeach, tmap
 using ProgressMeter: @showprogress
 
-export main
+export main, verify
 
 include("main.jl")
 

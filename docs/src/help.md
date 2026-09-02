@@ -36,7 +36,23 @@ You saw it in the [diagnostic video](results.md#The-diagnostic-video) — good, 
 
 ## Iterating faster: run only part of the pipeline
 
-While you're getting the csv files right, you don't have to run everything every time. Two helpers run only one half of the pipeline (both still run the full validation of their csv file):
+While you're getting the csv files right, you don't have to run everything every time.
+
+To check both csv files without processing anything, use `verify`:
+
+```julia
+out = Fromage.verify("path/to/data")
+out.calibs      # calibs.csv, annotated with an `issues` column
+out.runs        # runs.csv, likewise
+```
+
+It reports everything wrong with both files in one pass and never throws, so you can fix a whole
+dataset in one sitting rather than one error per run. Both tables come back whether or not anything
+was wrong — a dataset is accepted or rejected as a whole — so `all(isempty, out.calibs.issues)` is
+the question to ask. Nothing is rectified or tracked. (`main` is the one that does the work; it
+aborts on any issue.)
+
+Two more helpers run only one half of the pipeline (both still run the full validation of their csv file):
 
 ```julia
 # only build calibrations (all of them, or a subset of calibration_ids):

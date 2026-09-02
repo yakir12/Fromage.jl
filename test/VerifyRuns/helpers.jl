@@ -53,9 +53,20 @@ runrow(; kw...) = _merge((run_id = "r", calibration_id = "c", file = ART.a); kw.
 # Run + assert.
 # ---------------------------------------------------------------------------
 
+# `strict` selects the ENTRY POINT, not a flag inside one: `load_runs` builds or throws,
+# `check_runs` always hands back the annotated DataFrame.
+#
+# The non-strict branch then does something the production API deliberately no longer does: hand
+# back the built runs when nothing was flagged, and the frame when something was. That shape — the
+# return type depending on the DATA — is exactly what splitting `strict` removed, and it is kept
+# HERE, in test plumbing, only because ~280 scenario assertions read as
+# `only(check([runrow(...)])).tuning.x` and are about the parsed values, not about which entry point
+# produced them. `test_integration.jl` and `test_reading.jl` assert the real entry points directly.
 function check(name, rows; strict = false, header = HEADER, defaults = (;))
     csv = write_rows(joinpath(DATADIR, name), rows; header)
-    VR.load_runs(DATADIR, csv; strict, defaults)
+    strict && return VR.load_runs(DATADIR, csv; defaults)
+    df = VR.check_runs(DATADIR, csv; defaults)
+    return any(!isempty, df.issues) ? df : VR.build_runs(df)
 end
 
 # Each scenario is loaded as its own csv, so the name only has to be unique within DATADIR — the

@@ -33,8 +33,9 @@ function buildrow(header; kw...)
     return [get(kw, Symbol(c), missing) for c in header]
 end
 
-# A load with issues returns a DataFrame carrying :issues (non-strict); a clean one returns the
-# built objects, so anything that isn't a DataFrame is unflagged by definition.
+# `check_*` always returns the DataFrame carrying :issues; `load_*` returns the built objects (and
+# would have thrown if anything were flagged), so anything that isn't a DataFrame is unflagged by
+# definition.
 flagged(x, r, sub) = x isa AbstractDataFrame && any(m -> occursin(sub, m), x.issues[r])
 
 "Run `f`, returning (its result, what it printed to stdout). Routed through a temp file because

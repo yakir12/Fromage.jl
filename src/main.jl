@@ -52,27 +52,23 @@ function filter_ids!(xs, requested, id, what)
     return filter!(x -> getfield(x, id) ∈ requested, xs)
 end
 
-# The three entry points open the same way: make the results directory, load the csv the caller
-# named, and drop everything the caller did not ask for. The loaders return the annotated DataFrame
-# only under `strict = false`; on the default strict path they return the run/rectification vectors
-# — asserted so the union doesn't leak downstream (JET flags e.g. `length(::DataFrame)` otherwise).
-# Under `strict = false` that DataFrame is handed straight back, unfiltered: it is a report, not a
-# set of things to build.
-function gather_rectifications(data_path, calibs_file, defaults, calibration_ids = nothing;
-        strict = true)
+# The building entry points open the same way: make the results directory, load the csv the caller
+# named, and drop everything the caller did not ask for. `load_*` builds or throws, so there is one
+# return type and nothing to assert — the `isa AbstractDataFrame` test and the
+# `::Vector{RectificationMethod}` assertion that used to sit here existed only because a `strict`
+# keyword chose the return type at runtime (JET flags e.g. `length(::DataFrame)` otherwise).
+function gather_rectifications(data_path, calibs_file, defaults, calibration_ids = nothing)
     mkpath(RESULTS_DIR)
     # `issues_dir` is left at its default, which Paths derives from `results_dir` — the frames a
     # failing calibration dumps land under the same output folder as everything else.
-    cs = load_rectifications(joinpath(data_path, calibs_file); defaults, strict)
-    cs isa AbstractDataFrame && return cs
-    return filter_ids!(cs::Vector{RectificationMethod}, calibration_ids, :calibration_id, "calibration_ids")
+    cs = load_rectifications(joinpath(data_path, calibs_file); defaults)
+    return filter_ids!(cs, calibration_ids, :calibration_id, "calibration_ids")
 end
 
-function gather_runs(data_path, runs_file, defaults, run_ids = nothing; strict = true)
+function gather_runs(data_path, runs_file, defaults, run_ids = nothing)
     mkpath(RESULTS_DIR)
-    rs = load_runs(joinpath(data_path, runs_file); defaults, strict)
-    rs isa AbstractDataFrame && return rs
-    return filter_ids!(rs::Vector{Run}, run_ids, :run_id, "run_ids")
+    rs = load_runs(joinpath(data_path, runs_file); defaults)
+    return filter_ids!(rs, run_ids, :run_id, "run_ids")
 end
 
 # `rectification_diagnostics` travels from here to `_diagnostic` unchanged — same name, same `Bool`
@@ -90,11 +86,18 @@ build_rectifications(cs, rectification_diagnostics::Bool) =
 # which validate one file end to end: the cross-file check has to happen between the tiers, and it
 # needs both files parsed to run at all.
 #
-# Returns the built vectors, or — under `strict = false`, when anything was wrong with the pair —
-# both annotated DataFrames instead. Both, not just the offending one: a dataset is accepted or
-# rejected as a whole, and runs whose calibration was rejected are not buildable anyway.
-function load_dataset(data_path, calibs_file, runs_file, rectification_defaults, tracking_defaults,
-        strict)
+# Both csv files, validated as one dataset, up to but not including the decision of what to do about
+# what was found. Returns both annotated DataFrames and whether anything was wrong; the two callers
+# below differ only in that decision, which is why the pipeline itself lives here once.
+#
+# The identities of BOTH files are settled first — each file's own, then the cross-file check that
+# they describe the same thing — before either file's videos are opened, so an incoherent pair costs
+# no reads at all (#121, #122).
+#
+# The two loaders are driven a tier at a time rather than through `load_rectifications`/`load_runs`,
+# which validate one file end to end: the cross-file check has to happen between the tiers, and it
+# needs both files parsed to run at all.
+function _validate_dataset(data_path, calibs_file, runs_file, rectification_defaults, tracking_defaults)
     calibs, calibs_ids_ok = VerifyRectifications.parse_rectifications(
         data_path, joinpath(data_path, calibs_file); defaults = rectification_defaults)
     runs, runs_ids_ok = VerifyRuns.parse_runs(
@@ -105,13 +108,13 @@ function load_dataset(data_path, calibs_file, runs_file, rectification_defaults,
     # validated; otherwise asking for one run would fail the calibrations it did not ask for.
     coherent = verify_cross_references!(calibs, runs, :calibration_id, "calibs.csv", "runs.csv")
 
-    # The first-tier gate, across both files. Both are reported before the throw, so a user fixing a
-    # dataset sees everything the csv text can tell them in one pass rather than one file's problems
-    # per run.
+    # The first-tier gate, across both files. Both are reported before the caller decides, so a user
+    # fixing a dataset sees everything the csv text can tell them in one pass rather than one file's
+    # problems per run.
+    tier1_bad = false
     if !(calibs_ids_ok && runs_ids_ok && coherent)
-        bad = VerifyRectifications.report_calibs(calibs, false)
-        bad |= VerifyRuns.report_runs(runs, false)
-        bad && strict && error("there were issues with the data (see above)")
+        tier1_bad = VerifyRectifications.report_calibs(calibs, false)
+        tier1_bad |= VerifyRuns.report_runs(runs, false)
     end
 
     VerifyRectifications.verifications!(calibs, data_path, DEFAULT_ISSUES_DIR)
@@ -119,17 +122,30 @@ function load_dataset(data_path, calibs_file, runs_file, rectification_defaults,
 
     bad = VerifyRectifications.report_calibs(calibs, false)
     bad |= VerifyRuns.report_runs(runs, false)
-    if bad
-        strict && error("there were issues with the data (see above)")
-        return calibs, runs
-    end
+    return calibs, runs, (bad || tier1_bad)
+end
+
+# Build both, or throw. Always returns the two vectors.
+function load_dataset(data_path, calibs_file, runs_file, rectification_defaults, tracking_defaults)
+    calibs, runs, bad = _validate_dataset(data_path, calibs_file, runs_file,
+                                          rectification_defaults, tracking_defaults)
+    bad && error("there were issues with the data (see above)")
     return VerifyRectifications.build_methods(calibs), VerifyRuns.build_runs(runs)
+end
+
+# Validate and report, never throw. Always returns both annotated DataFrames — both, not just the
+# offending one: a dataset is accepted or rejected as a whole, and runs whose calibration was
+# rejected are not buildable anyway.
+function check_dataset(data_path, calibs_file, runs_file, rectification_defaults, tracking_defaults)
+    calibs, runs, _ = _validate_dataset(data_path, calibs_file, runs_file,
+                                        rectification_defaults, tracking_defaults)
+    return calibs, runs
 end
 
 """
     main(data_path; calibs_file = "calibs.csv", runs_file = "runs.csv",
          rectification_defaults = (;), tracking_defaults = (;), run_ids = nothing,
-         rectification_diagnostics = false, strict = true)
+         rectification_diagnostics = false)
 
 Run the whole pipeline over the data folder `data_path`: validate `calibs.csv` and `runs.csv` as one
 dataset, build a rectification for each calibration, track every run through the one it names, and
@@ -162,28 +178,17 @@ the calibration's real-world unit, origin at its `center`), and `diagnostic.mp4`
   has no fixed image→real map to warp through and quietly produces no image; its top-down
   diagnostic is the per-run video instead.
 
-- `strict`: with `strict = false`, every issue in both csv files is reported and returned for
-  inspection rather than aborting, and **nothing is rectified or tracked**. The return is then
-  `(; calibs, runs)` — both annotated `DataFrame`s, each with an `issues` column — rather than the
-  runs frame described above. A dataset is accepted or rejected as a whole, so both files come back
-  even when only one was at fault. See also `only_track` and `only_rectify`, which serve the same
-  debugging purpose by narrowing instead.
+Issues in either csv abort the run. To inspect a dataset instead of processing it, call [`verify`](@ref),
+which reports everything wrong with both files and returns them for inspection without building
+anything.
 
 See also `only_track` and `only_rectify`, the two narrowing entry points.
 """
 function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.csv",
         rectification_defaults = (;), tracking_defaults = (;), run_ids = nothing,
-        rectification_diagnostics::Bool = false, strict::Bool = true)
+        rectification_diagnostics::Bool = false)
     mkpath(RESULTS_DIR)
-    cs, rs = load_dataset(data_path, calibs_file, runs_file, rectification_defaults,
-                          tracking_defaults, strict)
-
-    # `strict = false` is for looking at a dataset, not processing one: if anything was wrong the
-    # two annotated DataFrames come back instead of built objects, so there is nothing to rectify or
-    # track — a report, not a degraded run.
-    if cs isa AbstractDataFrame || rs isa AbstractDataFrame
-        return (; calibs = cs, runs = rs)
-    end
+    cs, rs = load_dataset(data_path, calibs_file, runs_file, rectification_defaults, tracking_defaults)
 
     # Coherence guarantees every calibration is used, so with no `run_ids` this keeps all of them;
     # with one, it drops the calibrations the surviving runs no longer reference.
@@ -217,6 +222,34 @@ end
 # Each diagnostic is named by its run's `run_id`, as in `main` — which is the row number when the
 # csv names no runs, and the run's own name when it does. Numbering by position instead would
 # rename every file as soon as `run_ids` filtered one out.
+"""
+    verify(data_path; calibs_file = "calibs.csv", runs_file = "runs.csv",
+           rectification_defaults = (;), tracking_defaults = (;))
+
+Validate `calibs.csv` and `runs.csv` in `data_path` as one dataset and report everything wrong with
+them, **without building or tracking anything**. For looking at a dataset rather than processing it;
+[`main`](@ref) is the one that does the work and aborts on any issue.
+
+Returns `(; calibs, runs)`: both annotated `DataFrame`s, each carrying an `issues` column. Both come
+back, not just the offending one — a dataset is accepted or rejected as a whole, and runs whose
+calibration was rejected are not buildable anyway. They come back the same way whether or not
+anything was wrong, so the return type never depends on the data; `isempty` on the `issues` column
+is the question to ask.
+
+Every row is validated, including rows `main`'s `run_ids` would have narrowed away: narrowing
+decides what gets built, never what gets checked. There is correspondingly no `run_ids` here.
+
+See also `only_track` and `only_rectify`, which serve the same debugging purpose by narrowing
+instead.
+"""
+function verify(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.csv",
+        rectification_defaults = (;), tracking_defaults = (;))
+    mkpath(RESULTS_DIR)
+    calibs, runs = check_dataset(data_path, calibs_file, runs_file,
+                                 rectification_defaults, tracking_defaults)
+    return (; calibs, runs)
+end
+
 """
     only_track(data_path; runs_file = "runs.csv", tracking_defaults = (;), run_ids = nothing)
 

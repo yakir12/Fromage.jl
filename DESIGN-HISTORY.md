@@ -249,6 +249,37 @@ dispatching means either duplicating that across two methods or threading eight 
 helper. Both are harder to read than the branch. The rule exists to serve clarity; here it would
 cost it.
 
+### `main` processes, `verify` reports — a flag no longer picks the return type
+
+`main` used to take `strict::Bool`, and so did `load_runs`/`load_rectifications` beneath it. It did
+not merely change behaviour, it changed the **return type**, and not even consistently: under
+`strict = false` a *dirty* file came back as the annotated `DataFrame` and a *clean* one as the
+built vector. The return type therefore depended on the data, not just the flag, which is why
+nobody could write a signature for it.
+
+The cost was visible at every call site. `main.jl` carried `cs isa AbstractDataFrame && return cs`
+followed by `cs::Vector{RectificationMethod}` — an `isa` test and a type assertion whose only job
+was to stop the union leaking far enough for JET to complain about `length(::DataFrame)`. The test
+suite had a matching assertion recording the asymmetry as intended behaviour.
+
+Split in two, by what the caller actually wants:
+
+- `main` / `load_dataset` / `load_runs` / `load_rectifications` — **build, or throw.** One return
+  type. The first-tier identity gate still aborts before any video is opened, because the run is
+  going to fail whatever the videos say (#121, #122).
+- `verify` / `check_dataset` / `check_runs` / `check_rectifications` — **report, never throw.**
+  Always the annotated DataFrame, *including when nothing was wrong*. That unconditional return is
+  the point: it is what makes the type independent of the data. There is no first-tier abort here,
+  since nothing is going to be built and the rest of the file is still worth validating.
+
+Both share `_validate_dataset`, so the pipeline itself is written once and the two entry points
+differ only in what they do about what it found.
+
+`strict` is gone rather than deprecated. It was a keyword on a lab tool with a handful of users, and
+leaving a forwarding shim would have preserved the one thing worth removing: a Bool that reads as
+"be strict" but means "and also hand me back a different type". `verify` also takes no `run_ids` —
+narrowing decides what gets built, never what gets checked, so validation was always over every row.
+
 ### The extrinsics-only rectification is selected by absence, and never flagged
 
 Which constructor a rectification gets is decided *solely* by whether the calibs row has an
