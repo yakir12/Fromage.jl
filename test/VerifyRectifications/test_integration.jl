@@ -7,22 +7,22 @@ using StaticArrays: SVector
 
 @testset "integration: clean loads build Rectifications" begin
 
-    @testset "only_scale, with and without center/north" begin
-        for (name, r) in (("cn", scalerow()), ("nocn", scalerow(center = missing, north = missing)))
+    @testset "uniform, with and without center/north" begin
+        for (name, r) in (("cn", uniformrow()), ("nocn", uniformrow(center = missing, north = missing)))
             @testset "$name" begin
                 cs = check([r]; strict = true)
                 @test cs isa Vector                          # the building entry point yields structs
                 rect = Rectification(only(cs); rectification_diagnostics = false)
                 p = [100.0, 120.0]
                 @test rect.real2image(rect.image2real(p)) ≈ p    # the maps invert each other
-                @test rect.ratio == 9.5                          # only_scale carries the scale through
+                @test rect.ratio == 9.5                          # uniform carries the pixel_width through
                 @test (rect.width, rect.height) == (640, 480)    # probed source-video frame size
             end
         end
     end
 
     @testset "video, with and without center/north" begin
-        for (name, r) in (("cn", videorow()), ("nocn", videorow(center = missing, north = missing)))
+        for (name, r) in (("cn", checkerboardrow()), ("nocn", checkerboardrow(center = missing, north = missing)))
             @testset "$name" begin
                 cs = check([r]; strict = true)
                 @test cs isa Vector
@@ -47,14 +47,14 @@ using StaticArrays: SVector
         @test (rect.width, rect.height) == (640, 480)
     end
 
-    @testset "video without a calibs window ⇒ extrinsics-only rectification" begin
+    @testset "checkerboard without an intrinsic window ⇒ extrinsics-only rectification" begin
         # both window bounds blank is a valid, supported configuration: it selects the
-        # Video{Missing} variant, whose Rectification fits pose + focal from the single extrinsic
+        # Checkerboard{Missing} variant, whose Rectification fits pose + focal from the single extrinsic
         # frame and disregards lens aberrations (zero distortion).
-        cs = check([videorow(start = missing, stop = missing)]; strict = true)
+        cs = check([checkerboardrow(intrinsic_start = missing, intrinsic_stop = missing)]; strict = true)
         @test cs isa Vector
         c = only(cs)
-        @test c isa VRect.Video{Missing}
+        @test c isa VRect.Checkerboard{Missing}
         rect = Rectification(c; rectification_diagnostics = false)
         @test rect.image2real isa Function
         @test rect.real2image isa Function
@@ -66,7 +66,7 @@ using StaticArrays: SVector
         # with that: a misspelled keyword vanished on every type, and on `apriltag` — which
         # forwards nothing — even a correctly spelled `rectification_diagnostics = true` was a
         # no-op. Every spelling mistake is now loud.
-        c = only(check([videorow()]; strict = true))
+        c = only(check([checkerboardrow()]; strict = true))
 
         # a misspelling leaves the required keyword unassigned rather than disappearing
         @test_throws UndefKeywordError Rectification(c; rectifcation_diagnostics = false)

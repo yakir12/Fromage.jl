@@ -16,7 +16,7 @@ const R = Rectifications
     include("Rectifications/test_lens_distortion.jl")
     include("Rectifications/test_geometry.jl")
     include("Rectifications/test_vf.jl")
-    include("Rectifications/test_from_scale.jl")
+    include("Rectifications/test_from_uniform.jl")
     include("Rectifications/test_from_matlab.jl")
 
     # Tier 2 — OpenCV-backed corner detection & camera-model fit (synthetic data, no video).

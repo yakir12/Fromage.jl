@@ -318,7 +318,7 @@ end
 
 "A `Tuning` for `file`, with the gateway's own imputations for anything not named."
 function tuning(file; target_width = 25.0, window_size = missing, darker_target = true,
-                native_fps = missing, sample_fps = missing, initial_search_factor = 4.0, scale = 1.0,
+                native_fps = missing, sample_fps = missing, initial_search_factor = 4.0, downscale = 1.0,
                 background_length = PawsomeTracker.DEFAULT_BACKGROUND_LENGTH,
                 duration = missing)
     m = probe_stream(file)
@@ -329,7 +329,7 @@ function tuning(file; target_width = 25.0, window_size = missing, darker_target 
     ws = coalesce(window_size,
                   get_window(target_width, sfps, min(m.width, m.height),
                              coalesce(duration, m.nframes / m.fps)))
-    return Tuning(target_width, ws, darker_target, sfps, nfps, initial_search_factor, scale,
+    return Tuning(target_width, ws, darker_target, sfps, nfps, initial_search_factor, downscale,
                   background_length)
 end
 

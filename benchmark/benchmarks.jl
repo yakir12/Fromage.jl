@@ -55,11 +55,11 @@ lens["_first_critical"] = @benchmarkable R._first_critical($K)
 lens["forward, 640 px"] = @benchmarkable [R.lens_distortion(v, $K) for v in $PIXELS]
 lens["inverse, 640 px"] = @benchmarkable [R.inv_lens_distortion(v, $K, $RSTAR) for v in $PIXELS]
 
-# An only_scale rectification: no video is read unless `rectification_diagnostics` asks for one, so
+# A uniform rectification: no video is read unless `rectification_diagnostics` asks for one, so
 # this is a pure pair of coordinate maps.
-const RECT = R.from_scale(; file = "unread.mp4", extrinsic = 0, calibration_id = "bench",
+const RECT = R.from_uniform(; file = "unread.mp4", extrinsic = 0, calibration_id = "bench",
                           rectification_diagnostics = false,
-    scale = 0.05, aspect = 1.0, center = missing, north = missing, width = 640, height = 480)
+    pixel_width = 0.05, aspect = 1.0, center = missing, north = missing, width = 640, height = 480)
 const IMAGE_PTS = vec([SVector(float(r), float(c)) for r in 1:16:480, c in 1:16:640])
 const REAL_PTS = map(RECT.image2real, IMAGE_PTS)
 
@@ -112,7 +112,7 @@ const MAIN_DIR = let dir = mktempdir()
     make_checkerboard_video(joinpath(dir, "board.mp4"), png)
     target, _ = make_target_video(dir, "run")
     write(joinpath(dir, "calibs.csv"),
-        "calibration_id,file,type,extrinsic,start,stop,checker_width\nc1,board.mp4,video,1,0,4,4\n")
+        "calibration_id,file,type,extrinsic,intrinsic_start,intrinsic_stop,checker_width\nc1,board.mp4,checkerboard,1,0,4,4\n")
     write(joinpath(dir, "runs.csv"),
         "calibration_id,file,start_location\nc1,$(only(target)),\"(55, 50)\"\n")
     dir
@@ -130,8 +130,8 @@ const GATEWAY_DIR = let dir = mktempdir(), n = 200
         "run_id,calibration_id,file,start_location\n" *
         join(["r$i,c$(i % 5),nope_$i.mp4,\"(55, 50)\"" for i in 1:n], '\n') * "\n")
     write(joinpath(dir, "calibs.csv"),
-        "calibration_id,type,file,extrinsic,scale\n" *
-        join(["c$i,only_scale,nope_$i.mp4,1,2" for i in 0:4], '\n') * "\n")
+        "calibration_id,type,file,extrinsic,pixel_width\n" *
+        join(["c$i,uniform,nope_$i.mp4,1,2" for i in 0:4], '\n') * "\n")
     dir
 end
 

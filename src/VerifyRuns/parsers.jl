@@ -30,7 +30,7 @@ const DEFAULTS = (;
     native_fps = missing,
     sample_fps = missing,
     initial_search_factor = 4.0,
-    scale = 1.0,
+    downscale = 1.0,
     background_length = PawsomeTracker.DEFAULT_BACKGROUND_LENGTH,
 )
 
@@ -41,7 +41,7 @@ const DEFAULT_TYPES = (;
     native_fps = Float64,
     sample_fps = Float64,
     initial_search_factor = Float64,
-    scale = Float64,
+    downscale = Float64,
     background_length = Int,
 )
 
@@ -66,7 +66,7 @@ function parse_run!(dict, row, defaults)
     parseto!(dict, row, :native_fps, Float64, defaults.native_fps)   # imputed from the video's own framerate when missing
     parseto!(dict, row, :sample_fps, Float64, defaults.sample_fps)   # imputed from :native_fps when missing
     parseto!(dict, row, :initial_search_factor, Float64, defaults.initial_search_factor)
-    parseto!(dict, row, :scale, Float64, defaults.scale)
+    parseto!(dict, row, :downscale, Float64, defaults.downscale)
     parseto!(dict, row, :background_length, Int, defaults.background_length)
 end
 

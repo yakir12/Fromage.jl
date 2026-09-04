@@ -28,8 +28,8 @@ const CRITERIA = OpenCV.TermCriteria(OpenCV.TERM_CRITERIA_EPS + OpenCV.TERM_CRIT
 """
     StaticRectification(image2real, real2image, ratio, width, height)
 
-One calibration's fixed image ↔ real map pair, as `from_video`, `from_extrinsic`, `from_matlab` and
-`from_scale` return it. "Static" is the contrast with `PawsomeTracker.ApriltagRectification`: the
+One calibration's fixed image ↔ real map pair, as `from_checkerboard`, `from_extrinsic`,
+`from_matlab` and `from_uniform` return it. "Static" is the contrast with `PawsomeTracker.ApriltagRectification`: the
 camera does not move, so a single pair of maps describes the whole run, where the AprilTag path
 re-registers every frame against a shared reference.
 
@@ -53,8 +53,8 @@ end
 
 include("detect_fit.jl")
 include("center_north.jl")
-include("from_scale.jl")
-include("from_video.jl")
+include("from_uniform.jl")
+include("from_checkerboard.jl")
 include("from_matlab.jl")
 include("plotting.jl")
 
@@ -63,7 +63,7 @@ include("plotting.jl")
 
 The image ↔ real map pair for one verified calibration `c`, chosen by `c`'s type. The methods live
 in `VerifyRectifications`, which owns those types; each reads `c`'s fields and calls one of the
-builders here — `from_video`, `from_extrinsic`, `from_matlab`, `from_scale` — or
+builders here — `from_checkerboard`, `from_extrinsic`, `from_matlab`, `from_uniform` — or
 `PawsomeTracker.ApriltagRectification`, by keyword. Declared here because this module owns the
 concept and `Fromage` reaches for the name through it.
 """

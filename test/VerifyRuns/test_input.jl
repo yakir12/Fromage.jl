@@ -34,6 +34,18 @@
         @test_throws "native_fps" VR.load_runs(DATADIR, csv)
     end
 
+    @testset "the renamed scale column points at downscale, never pixel_width" begin
+        # `scale` existed in BOTH csv files meaning unrelated things, so the two gateways carry
+        # separate RENAMED_COLUMNS tables. Pointing a runs.csv at calibs.csv's replacement would be
+        # worse than the generic message: it names a column this file does not even have.
+        csv = write_rows(joinpath(DATADIR, "scale_renamed.csv"), [["c1", "a.mp4", "0.5"]];
+                         header = ["calibration_id", "file", "scale"])
+        @test_throws "unrecognized column" VR.load_runs(DATADIR, csv)
+        @test_throws "scale was renamed to downscale" VR.load_runs(DATADIR, csv)
+        err = try VR.load_runs(DATADIR, csv) catch e; sprint(showerror, e) end
+        @test !occursin("pixel_width", err)
+    end
+
     @testset "the removed white_point column is now rejected by name (#19)" begin
         # It was accepted and validated but never read, so it was removed rather than implemented.
         # A csv that still carries it is rejected up front, naming the column — the migration is

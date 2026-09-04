@@ -20,12 +20,12 @@
         @test VRect.matlab_dimension(MAT.matread(joinpath(DATADIR, ART.nested_mat))) == (640, 480)
     end
 
-    @testset "corrupt video is flagged for both video and only_scale" begin
+    @testset "corrupt video is flagged for both video and uniform" begin
         # probe_video's catch returns the message string; assert it directly, then end-to-end through
         # load_rectifications for both types (both reach probe_video via read_video_metadata!).
         @test VRect.probe_video(joinpath(DATADIR, ART.corrupt)) isa String
-        @test flagged(check([videorow(file = ART.corrupt)]), 1, "issue reading from video file")
-        @test flagged(check([scalerow(file = ART.corrupt)]), 1, "issue reading from video file")
+        @test flagged(check([checkerboardrow(file = ART.corrupt)]), 1, "issue reading from video file")
+        @test flagged(check([uniformrow(file = ART.corrupt)]), 1, "issue reading from video file")
     end
 
     @testset "non-mat file is flagged" begin
@@ -46,11 +46,11 @@
         @test ismissing(df.matlab_file[1])
     end
 
-    @testset "unreadable only_scale file is now always opened (no lazy skip)" begin
+    @testset "unreadable uniform file is now always opened (no lazy skip)" begin
         # Every row now reads its source video to fill the shared Source width/height/aspect, so a
-        # corrupt only_scale video is flagged even when center/north are absent (a lazy skip
+        # corrupt uniform video is flagged even when center/north are absent (a lazy skip
         # optimization is gone).
-        df = check([scalerow(file = ART.corrupt, center = missing, north = missing)])
+        df = check([uniformrow(file = ART.corrupt, center = missing, north = missing)])
         @test flagged(df, 1, "issue reading from video file")
     end
 
@@ -93,8 +93,8 @@
 
         # likewise a video read (dimension) applied across spellings: an out-of-bounds center is caught
         # on both rows from the one read.
-        df = check([videorow(calibration_id = "v1", path = ".",   center = (9000, 9000)),
-                    videorow(calibration_id = "v2", path = "./.", center = (9000, 9000))])
+        df = check([checkerboardrow(calibration_id = "v1", path = ".",   center = (9000, 9000)),
+                    checkerboardrow(calibration_id = "v2", path = "./.", center = (9000, 9000))])
         @test flagged(df, 1, "center cannot be larger than the dimensions")
         @test flagged(df, 2, "center cannot be larger than the dimensions")
     end
@@ -143,8 +143,8 @@
 
     @testset "single-type CSV (no per-type fillers) loads" begin
         # parse_row back-fills every COLUMNS entry with missing, so a video-only CSV (which never
-        # creates the :scale column) must not make verifications! throw `column :scale not found`.
-        csv = write_rows(joinpath(DATADIR, "videoonly.csv"), [videorow()])   # no fillers
+        # creates the :pixel_width column) must not make verifications! throw `column :pixel_width not found`.
+        csv = write_rows(joinpath(DATADIR, "videoonly.csv"), [checkerboardrow()])   # no fillers
         # Assert the RESULT, not `(expr; true)`: that form can only ever Error, never Fail, and
         # discarded what the call returned. Both entry points are asserted, because the two halves
         # of "it loaded" are now separate: `load_rectifications` builds (and would have thrown), and

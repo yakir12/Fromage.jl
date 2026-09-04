@@ -162,17 +162,17 @@ end
 # however, are read off a GUI (Gimp, Photoshop) by hand, so they are:
 # 1. pixel coordinates with width first and height second, (w, h)
 # 2. at an aspect ratio of 1, whatever `aspect` says
-function from_video(; file, extrinsic, calibration_id, start, stop, temporal_step, yadif, blur,
+function from_checkerboard(; file, extrinsic, calibration_id, intrinsic_start, intrinsic_stop, temporal_step, yadif, blur,
         width, height, n_corners, checker_width, aspect, radial_parameters, center, north,
         rectification_diagnostics::Bool)
     vf = _vf(yadif, blur)
-    intrinsic_task = Threads.@spawn extract_intrinsics(file, start, stop, temporal_step, vf, width, height, n_corners)
+    intrinsic_task = Threads.@spawn extract_intrinsics(file, intrinsic_start, intrinsic_stop, temporal_step, vf, width, height, n_corners)
     extrinsic_corners = get_corners(file, extrinsic, vf, width, height, n_corners)
     # Fetched before the extrinsic frame is judged, so the spawned scan is awaited on every path out
     # of here. Throwing first left its `tmap` of ffmpeg reads running against the share after the
     # call had already failed, and dropped its exception silently — an unfetched failed Task is
     # never reported. There is nothing to cancel (Julia has no task cancellation) and nothing to
-    # gain from failing sooner: the scan is bounded by the calibs window, and in the pipeline this
+    # gain from failing sooner: the scan is bounded by the intrinsic window, and in the pipeline this
     # error is close to unreachable, `verify_extrinsics!` having already rejected such a row.
     imgpointss = fetch(intrinsic_task)
     ismissing(extrinsic_corners) && error("no corners detected at extrinsic time stamp")
@@ -186,7 +186,8 @@ Extrinsics-only rectification: no intrinsic-calibration window exists, so the ca
 focal length) are fit from the single extrinsic frame with every lens-distortion coefficient fixed
 at zero — the map is effectively the board-plane homography, disregarding lens aberrations.
 
-Selected *solely* by the CSV row having no calibs window (both `start` and `stop` blank). Such a
+Selected *solely* by the CSV row having no intrinsic window (both `intrinsic_start` and
+`intrinsic_stop` blank). Such a
 row may still carry `temporal_step`/`radial_parameters`, which are then silently ignored rather
 than flagged; everything else (`yadif`, `blur`, `n_corners`, `checker_width`, `aspect`, `center`,
 `north`) is honoured as usual. Filling only one of the two bounds is rejected upstream. See
@@ -221,7 +222,7 @@ end
 
 # Assemble the image ↔ real transform pair from one camera pose: the intrinsics
 # (frow/fcol/crow/ccol), the extrinsic pose (R, t), the radial distortion k and the real-unit
-# scale. Shared by the video paths above (parameters fit by fit_model) and the matlab path
+# scale. Shared by the checkerboard paths above (parameters fit by fit_model) and the matlab path
 # (parameters read from the .mat file; see from_matlab.jl).
 function _maps(R, t, frow, fcol, crow, ccol, k, checker_width, width, height, aspect, center, north)
     intrinsic, extrinsic_transform, scale = obj2img(R, t, frow, fcol, crow, ccol, checker_width)

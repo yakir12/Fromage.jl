@@ -65,8 +65,8 @@ using Fromage
         end
 
         @testset "every rectification parameter is a calibs.csv column" begin
-            builders = [Fromage.Rectifications.from_video, Fromage.Rectifications.from_extrinsic,
-                        Fromage.Rectifications.from_matlab, Fromage.Rectifications.from_scale,
+            builders = [Fromage.Rectifications.from_checkerboard, Fromage.Rectifications.from_extrinsic,
+                        Fromage.Rectifications.from_matlab, Fromage.Rectifications.from_uniform,
                         PT.ApriltagRectification]
             # width/height are probed from the video; `ntags` is the `apriltags` column under the
             # name the builder gives it; `rectification_diagnostics` is a caller instruction, not

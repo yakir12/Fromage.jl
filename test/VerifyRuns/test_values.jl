@@ -33,22 +33,22 @@
         @test flagged(check([runrow(initial_search_factor = "0")]),   1, "initial_search_factor must be larger than zero")
     end
 
-    @testset "scale must be in (0, 1]" begin
-        @test flagged(check([runrow(scale = "0")]),    1, "scale must be larger than zero")
-        @test flagged(check([runrow(scale = "-0.5")]), 1, "scale must be larger than zero")
+    @testset "downscale must be in (0, 1]" begin
+        @test flagged(check([runrow(downscale = "0")]),    1, "downscale must be larger than zero")
+        @test flagged(check([runrow(downscale = "-0.5")]), 1, "downscale must be larger than zero")
         # > 1 would artificially enlarge the frames
-        @test flagged(check([runrow(scale = "1.5")]),  1, "scale cannot be larger than one")
-        @test clean(check([runrow(scale = "1")]))      # exactly one (no scaling) is allowed
-        @test clean(check([runrow(scale = "0.5")]))
+        @test flagged(check([runrow(downscale = "1.5")]),  1, "downscale cannot be larger than one")
+        @test clean(check([runrow(downscale = "1")]))      # exactly one (no scaling) is allowed
+        @test clean(check([runrow(downscale = "0.5")]))
     end
 
     @testset "the scaled target width must span at least one pixel" begin
         # each factor is individually valid; the product is degenerate
-        @test flagged(check([runrow(target_width = "2", scale = "0.1")]), 1, "smaller than one pixel")
-        # scale omitted (defaults to 1): a sub-pixel target_width alone also trips it
+        @test flagged(check([runrow(target_width = "2", downscale = "0.1")]), 1, "smaller than one pixel")
+        # downscale omitted (defaults to 1): a sub-pixel target_width alone also trips it
         @test flagged(check([runrow(target_width = "0.5")]),              1, "smaller than one pixel")
         # exactly one pixel is allowed
-        @test clean(check([runrow(target_width = "2", scale = "0.5")]))
+        @test clean(check([runrow(target_width = "2", downscale = "0.5")]))
     end
 
     @testset "background_length is 0 (no subtraction) or at least 25" begin

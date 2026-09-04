@@ -89,10 +89,10 @@ get_sigma(target_width) = target_width / 2sqrt(2log(2))
 #
 # `oddify` rounds an even side up, but NOT because the kernels need an odd window, as this used to
 # claim. `detect` scans `guess ± radii`, which spans `2r + 1` — odd whatever it is handed — and
-# `radii` is `window_size ÷ 2`, for which `oddify(l) ÷ 2 == l ÷ 2` at every `l`. So at `scale = 1`
-# and `sar = 1` it provably changes nothing. It only bites once the side is rescaled (`scale`) or
-# the column extent divided (`sar`), where the extra pixel survives the rounding often enough to
-# shift a radius by one — in about a fifth of sizes, and for no reason anyone can now state.
+# `radii` is `window_size ÷ 2`, for which `oddify(l) ÷ 2 == l ÷ 2` at every `l`. So at
+# `downscale = 1` and `sar = 1` it provably changes nothing. It only bites once the side is rescaled
+# (`downscale`) or the column extent divided (`sar`), where the extra pixel survives the rounding
+# often enough to shift a radius by one — in about a fifth of sizes, and for no reason anyone can now state.
 # Removing it would change tracking on scaled or anamorphic runs, so it stays until that is a
 # deliberate call rather than a side effect of a comment fix.
 oddify(l::Int) = l + iseven(l)
@@ -100,13 +100,13 @@ fix_window_size((w, h)::NTuple{2, Int}) = (oddify(h), oddify(w))
 fix_window_size(l::Int) = (oddify(l), oddify(l))
 
 function get_guess(start_index::RowCol, _, vid, _, _, _, _)
-    guess = round.(Int, Tuple(vid.scale * start_index))
+    guess = round.(Int, Tuple(vid.downscale * start_index))
     return guess
 end
 
 function get_guess(start_xy::NTuple{2, Int}, _, vid, _, _, _, _)
     x, y = start_xy
-    guess = round.(Int, vid.scale .* (y, x / vid.sar))
+    guess = round.(Int, vid.downscale .* (y, x / vid.sar))
     return guess
 end
 
@@ -117,7 +117,7 @@ function get_guess(::Missing, stack, vid, darker_target, target_width, initial_s
     guess = sz .÷ 2
     window_size = fix_window_size(floor(Int, min(sz...) / initial_search_factor))
     tr = Tracker(vid, darker_target, target_width, window_size, sz, subtract)
-    _, guess = detect(guess, stack, 1, tr, vid.scale)
+    _, guess = detect(guess, stack, 1, tr, vid.downscale)
     return guess
 end
 
@@ -126,7 +126,7 @@ struct Video
     img::PermutedDimsArray{Gray{N0f8}, 2, (2, 1), (2, 1), Matrix{Gray{N0f8}}}
     skip::Int
     nframes::Int
-    scale::Float64
+    downscale::Float64
     width::Int
     height::Int
     duration::Float64
@@ -146,7 +146,7 @@ struct Video
     # and asking the file again would give the native rate a second definition site, the exact
     # shape of #140/#141: a run verified against one rate would then be sampled at another, and a
     # declared rate would be silently ignored by the only code that matters.
-    function Video(file, native_fps, sample_fps, start, stop, scale)
+    function Video(file, native_fps, sample_fps, start, stop, downscale)
         vid = open_gray_video(file)          # serialized open (openvideo isn't thread-safe); see OPENVIDEO_LOCK
         skip = frame_skip(native_fps, sample_fps)
         sample_fps = native_fps / skip       # the rate actually delivered; `sample_fps` means this from here on
@@ -155,7 +155,7 @@ struct Video
         # The tracked frame is the scaled one, so :width/:height are the WARPED extent, not the
         # video's. `WarpedView`'s axes depend only on `axes(img)` and the transform, so wrapping the
         # frame we already hold measures it without decoding or allocating a second one.
-        height, width = size(WarpedView(img, LinearMap(1/scale); fillvalue = zero(eltype(img))))
+        height, width = size(WarpedView(img, LinearMap(1/downscale); fillvalue = zero(eltype(img))))
         seek(vid, start + t₀)
         # Frames the window holds at the video's own rate, then how many of them the stride visits.
         # Sample i reads raw frame (i-1)*skip, and `cld` is exactly the count keeping that index
@@ -165,12 +165,12 @@ struct Video
         navailable = max(1, floor(Int, (stop - start) * native_fps + 1e-9))
         nframes = cld(navailable, skip)
         sar = aspect_ratio(vid)
-        new(vid, img, skip, nframes, scale, width, height, stop - start, sample_fps, sar)
+        new(vid, img, skip, nframes, downscale, width, height, stop - start, sample_fps, sar)
     end
 end
 
-function video(f, file, native_fps, sample_fps, start, stop, scale)
-    vid = Video(file, native_fps, sample_fps, start, stop, scale)
+function video(f, file, native_fps, sample_fps, start, stop, downscale)
+    vid = Video(file, native_fps, sample_fps, start, stop, downscale)
     return try
         f(vid)
     finally
@@ -226,20 +226,20 @@ end
 # ~494 MB rather than ~1978 MB), losing nothing, since the values came from N0f8 to begin with. The
 # SIGNED buffer is `Tracker.img`, which receives the background-subtracted frame — see `detect` (#27).
 #
-# At `scale = 1` — the default, and what most runs use — the transform is the identity, and the
+# At `downscale = 1` — the default, and what most runs use — the transform is the identity, and the
 # `WarpedView` then costs a bilinear interpolation lookup per element to return the value already
 # sitting in the array. `detect` reads a whole background window (`h`-sized, times every slice)
 # once per frame, so that is the package's hottest read: measured on a 79x79x250 window it is
 # 24.2 ms through the warp against 5.1 ms without it, bit-identical, and ~4x on `track` end to end.
-# The unit-scale stack therefore skips the layer entirely.
+# The stack at `downscale = 1` therefore skips the layer entirely.
 #
 # Nothing else has to change for it. Every WRITE already reaches the storage through
 # `parent(parent(stack))` (`populate_slice!`, `protect_target`, `restore_background!`), and
 # `parent` of an `Array` is that array, so those keep landing on it with one layer fewer. `detect`
 # indexes the stack generically and simply stops paying for the warp.
-function build_stack(scale, sz, n_bkgd, pad_indices)
-    isone(scale) && return PaddedView(zero(Gray{N0f8}), Array{Gray{N0f8}}(undef, sz..., n_bkgd), pad_indices)
-    tform = LinearMap(SDiagonal(SVector{3, Float64}(1/scale, 1/scale, 1)))
+function build_stack(downscale, sz, n_bkgd, pad_indices)
+    isone(downscale) && return PaddedView(zero(Gray{N0f8}), Array{Gray{N0f8}}(undef, sz..., n_bkgd), pad_indices)
+    tform = LinearMap(SDiagonal(SVector{3, Float64}(1/downscale, 1/downscale, 1)))
     PaddedView(zero(Gray{N0f8}), WarpedView(Array{Gray{N0f8}}(undef, sz..., n_bkgd), tform; fillvalue = zero(Gray{N0f8})), pad_indices)
 end
 
@@ -260,7 +260,7 @@ n_background(vid, background_length) =
 
 function get_stack(vid, sz, h, n_bkgd::Int)
     pad_indices = UnitRange.(((1 .- h)..., 1), ((sz .+ h)..., n_bkgd))
-    build_stack(vid.scale, size(vid.img), n_bkgd, pad_indices)
+    build_stack(vid.downscale, size(vid.img), n_bkgd, pad_indices)
 end
 
 function get_stack(vid, sz, h, n_bkgd::Int, tform::Transformation)
@@ -277,10 +277,10 @@ populate_slice!(stack, i, vid) = copy!(selectdim(parent(parent(stack)), 3, i), v
 # that slice is restored to the pre-target background the evicted frame held there. By induction
 # the history never contains the target. (The prefill in collect_stack is unprotected: absorption
 # needs the stationary spell to exceed the whole background window within the rolling phase.)
-function protect_target(stack, j, guess, radii, scale)
+function protect_target(stack, j, guess, radii, downscale)
     slice = selectdim(parent(parent(stack)), 3, j)
-    protect = CartesianIndices(UnitRange.(round.(Int, (guess .- radii) ./ scale),
-                                          round.(Int, (guess .+ radii) ./ scale))) ∩ CartesianIndices(slice)
+    protect = CartesianIndices(UnitRange.(round.(Int, (guess .- radii) ./ downscale),
+                                          round.(Int, (guess .+ radii) ./ downscale))) ∩ CartesianIndices(slice)
     return protect, slice[protect]
 end
 
@@ -325,7 +325,7 @@ end / sum(v)
 # out `tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, tr.bkgd_reduce` at each of them is five
 # copies of one list to keep in step. `Tuning` and `Segment` exist so run-level values travel as one
 # typed object; this is the one hot path that undid that.
-function detect(guess, stack, j, tr::Tracker, scale, level = Ref(0.0))
+function detect(guess, stack, j, tr::Tracker, downscale, level = Ref(0.0))
     h, img, radii, buff, kernel, sz, bkgd_reduce = tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, tr.bkgd_reduce
     slice = selectdim(stack, 3, j)
     bkgd_indices = CartesianIndices(UnitRange.(guess .- h, guess .+ h)) ∩ CartesianIndices(Base.OneTo.(sz))
@@ -351,21 +351,21 @@ function detect(guess, stack, j, tr::Tracker, scale, level = Ref(0.0))
     peak = maximum(v)
     if peak < GATE_FRACTION * level[]
         level[] *= GATE_DECAY
-        return RowCol(guess) / scale, guess
+        return RowCol(guess) / downscale, guess
     end
     level[] = level[] == 0 ? peak : LEVEL_SMOOTH * level[] + (1 - LEVEL_SMOOTH) * peak
     coord = _weightedmean(v)
     if any(isnan, coord)
-        return RowCol(guess) / scale, guess
+        return RowCol(guess) / downscale, guess
     end
     guess = Tuple(round.(Int, coord))
-    return coord / scale, guess
+    return coord / downscale, guess
 end
 
 function track!(coords, stack, guess, tr, vid, dia)
     level = Ref(0.0)                 # running response level for detect's confidence gate
     for i in axes(stack, 3)
-        coords[i], guess = detect(guess, stack, i, tr, vid.scale, level)
+        coords[i], guess = detect(guess, stack, i, tr, vid.downscale, level)
         dia(selectdim(parent(parent(stack)), 3, i), round.(Int, Tuple(coords[i])))
     end
     n_bkgd = size(stack, 3)
@@ -377,16 +377,16 @@ function track!(coords, stack, guess, tr, vid, dia)
         # second reading of `subtract`. The two are equivalent at runtime, but only this form lets
         # the compiler see it: under the `if` the variables were merely *maybe* undefined at the
         # restore, which JET reports (and which no test could ever trip, since one flag drives both).
-        protect, keep = subtract ? protect_target(stack, j, guess, tr.radii, vid.scale) : (nothing, nothing)
+        protect, keep = subtract ? protect_target(stack, j, guess, tr.radii, vid.downscale) : (nothing, nothing)
         populate_slice!(stack, j, vid)
-        coords[i], guess = detect(guess, stack, j, tr, vid.scale, level)
+        coords[i], guess = detect(guess, stack, j, tr, vid.downscale, level)
         dia(selectdim(parent(parent(stack)), 3, j), round.(Int, Tuple(coords[i])))
         isnothing(protect) || restore_background!(stack, j, protect, keep)
     end
 end
 
-function track_one(file, start, stop, target_width, start_location, window_size, darker_target, native_fps, sample_fps, dia, initial_search_factor, scale, background_length)
-    video(file, native_fps, sample_fps, start, stop, scale) do vid
+function track_one(file, start, stop, target_width, start_location, window_size, darker_target, native_fps, sample_fps, dia, initial_search_factor, downscale, background_length)
+    video(file, native_fps, sample_fps, start, stop, downscale) do vid
         update_ratio!(dia, size(vid.img))
         subtract = background_length != 0
         tr = Tracker(vid, darker_target, target_width, window_size, (vid.height, vid.width), subtract)
@@ -433,7 +433,7 @@ end
 
 """
     Tuning(target_width, window_size, darker_target, sample_fps, native_fps,
-           initial_search_factor, scale, background_length)
+           initial_search_factor, downscale, background_length)
 
 The run-level tracking parameters, every one of them concrete.
 
@@ -461,7 +461,7 @@ struct Tuning
     sample_fps::Float64
     native_fps::Float64
     initial_search_factor::Float64
-    scale::Float64
+    downscale::Float64
     background_length::Int
 end
 
@@ -504,8 +504,8 @@ the one requested).
 
 Returns `(ts, coords)`: timestamps and the target's per-frame position. With a `rectification`,
 `coords` are **real-world** coordinates (the rectification's `image2real` applied); with `nothing`,
-they are raw `(row, col)` pixels in the original frame — `tuning.scale` trades precision for speed,
-and coordinates are always reported unscaled.
+they are raw `(row, col)` pixels in the original frame — `tuning.downscale` trades precision for
+speed, and coordinates are always reported unscaled.
 
 An `ApriltagRectification` selects AprilTag mode (drone footage): every background-stack slice is
 lazily warped into the rectification's shared reference, so drone motion is removed at lookup time
@@ -539,9 +539,9 @@ function track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnos
 
     # Every segment scales these three the same way, so they are computed once rather than per
     # segment inside the loops below.
-    width = tuning.scale * tuning.target_width
-    window = round.(Int, tuning.scale .* fix_window_size(tuning.window_size))
-    search = tuning.scale * tuning.initial_search_factor
+    width = tuning.downscale * tuning.target_width
+    window = round.(Int, tuning.downscale .* fix_window_size(tuning.window_size))
+    search = tuning.downscale * tuning.initial_search_factor
 
     # AprilTag mode: every segment registers to the SAME shared reference (the tags are stationary
     # across the whole run) and is tracked independently from its own start_location, a missing one
@@ -556,7 +556,7 @@ function track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnos
                     window, tuning.darker_target, tuning.native_fps, tuning.sample_fps, dia,
                     rectification.reference, rectification.family,
                     (rectification.height, rectification.width), search,
-                    tuning.scale, tuning.background_length)
+                    tuning.downscale, tuning.background_length)
             end
         finally
             close(dia)
@@ -571,7 +571,7 @@ function track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnos
             loc = coalesce(s.start_location, end_location)
             tss[i], ijs[i] = track_one(s.file, s.start, s.stop, width, loc, window,
                 tuning.darker_target, tuning.native_fps, tuning.sample_fps, dia, search,
-                tuning.scale, tuning.background_length)
+                tuning.downscale, tuning.background_length)
             end_location = ijs[i][end]
         end
     end

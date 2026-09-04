@@ -3,12 +3,12 @@
     # asserted issue is the only thing under test (other checks pass).
 
     @testset "wrong type value" begin
-        df = check([videorow(type = "bogus")])
+        df = check([checkerboardrow(type = "bogus")])
         @test flagged(df, 1, "wrong type")
     end
 
     @testset "wrong type with no other columns short-circuits" begin
-        # A bad type skips parse_{video,matlab,only_scale}!, which are the only emitters of the
+        # A bad type skips parse_{video,matlab,uniform}!, which are the only emitters of the
         # per-field "… is missing" issues. So a sparse bad-type row (only :type set) should come out
         # with *just* "wrong type" — no cascade of missing-field issues — and load without error.
         df = check([row(type = "bogus")])
@@ -18,12 +18,12 @@
     end
 
     @testset "missing required fields" begin
-        @test flagged(check([videorow(calibration_id = missing)]), 1, "calibration_id is missing")
-        @test flagged(check([videorow(file = missing)]),           1, "file is missing")
-        @test flagged(check([scalerow(scale = missing)]),          1, "scale is missing")
-        @test flagged(check([videorow(extrinsic = missing)]),      1, "extrinsic is missing")
-        # parse_matlab! / parse_only_scale! are separate hand-written field lists; assert the required
-        # fields shared with video are wired in those branches too (not just in parse_video!).
+        @test flagged(check([checkerboardrow(calibration_id = missing)]), 1, "calibration_id is missing")
+        @test flagged(check([checkerboardrow(file = missing)]),           1, "file is missing")
+        @test flagged(check([uniformrow(pixel_width = missing)]),          1, "pixel_width is missing")
+        @test flagged(check([checkerboardrow(extrinsic = missing)]),      1, "extrinsic is missing")
+        # parse_matlab! / parse_uniform! are separate hand-written field lists; assert the required
+        # fields shared with checkerboard are wired in those branches too (not just in parse_checkerboard!).
         @test flagged(check([matlabrow(calibration_id = missing)]), 1, "calibration_id is missing")
         @test flagged(check([matlabrow(file = missing)]),           1, "file is missing")
         # matlab_file (the .mat) is the matlab-only required path field, separate from the source video `file`
@@ -32,50 +32,50 @@
         @test flagged(check([matlabrow(extrinsic_index = missing)]), 1, "extrinsic_index is missing")
         # extrinsic is now mandatory for ALL types (it lives in the shared Source struct), not just video
         @test flagged(check([matlabrow(extrinsic = missing)]),      1, "extrinsic is missing")
-        @test flagged(check([scalerow(extrinsic = missing)]),       1, "extrinsic is missing")
-        @test flagged(check([scalerow(calibration_id = missing)]),  1, "calibration_id is missing")
-        @test flagged(check([scalerow(file = missing)]),            1, "file is missing")
+        @test flagged(check([uniformrow(extrinsic = missing)]),       1, "extrinsic is missing")
+        @test flagged(check([uniformrow(calibration_id = missing)]),  1, "calibration_id is missing")
+        @test flagged(check([uniformrow(file = missing)]),            1, "file is missing")
     end
 
     @testset "blank (whitespace-only) cell is treated as missing" begin
         # a required field reports "is missing" rather than silently becoming an empty string
-        @test flagged(check([videorow(calibration_id = "   ")]), 1, "calibration_id is missing")
-        @test flagged(check([videorow(file = "   ")]),           1, "file is missing")
+        @test flagged(check([checkerboardrow(calibration_id = "   ")]), 1, "calibration_id is missing")
+        @test flagged(check([checkerboardrow(file = "   ")]),           1, "file is missing")
         # an optional field falls back to its default ("." for path) and still resolves
-        @test clean(check([videorow(path = "  ")]))
+        @test clean(check([checkerboardrow(path = "  ")]))
     end
 
     @testset "wrong formats" begin
-        @test flagged(check([videorow(center = "abc")]),            1, "wrong center format")
+        @test flagged(check([checkerboardrow(center = "abc")]),            1, "wrong center format")
         # a coordinate that overflows Int64 must be a graceful "wrong format", not an uncaught OverflowError
-        @test flagged(check([videorow(center = "(10000000000000000000,1)", north = missing)]), 1, "wrong center format")
-        @test flagged(check([videorow(north = "1;2")]),             1, "wrong north format")
-        @test flagged(check([videorow(extrinsic = "not_a_time")]),  1, "wrong extrinsic format")
-        @test flagged(check([videorow(n_corners = "five")]),        1, "wrong n_corners format")
-        @test flagged(check([videorow(checker_width = "big")]),      1, "wrong checker_width format")
-        @test flagged(check([videorow(radial_parameters = "2.5")]), 1, "wrong radial_parameters format")
-        @test flagged(check([videorow(aspect = "wide")]),           1, "wrong aspect format")
+        @test flagged(check([checkerboardrow(center = "(10000000000000000000,1)", north = missing)]), 1, "wrong center format")
+        @test flagged(check([checkerboardrow(north = "1;2")]),             1, "wrong north format")
+        @test flagged(check([checkerboardrow(extrinsic = "not_a_time")]),  1, "wrong extrinsic format")
+        @test flagged(check([checkerboardrow(n_corners = "five")]),        1, "wrong n_corners format")
+        @test flagged(check([checkerboardrow(checker_width = "big")]),      1, "wrong checker_width format")
+        @test flagged(check([checkerboardrow(radial_parameters = "2.5")]), 1, "wrong radial_parameters format")
+        @test flagged(check([checkerboardrow(aspect = "wide")]),           1, "wrong aspect format")
         # malformed center/north on the non-video types (same shared parseto!/mytryparse path, for symmetry)
         @test flagged(check([matlabrow(center = "abc")]), 1, "wrong center format")
-        @test flagged(check([scalerow(north = "1;2")]),   1, "wrong north format")
+        @test flagged(check([uniformrow(north = "1;2")]),   1, "wrong north format")
         # extrinsic_index must parse as an Int (matlab only)
         @test flagged(check([matlabrow(extrinsic_index = "two")]), 1, "wrong extrinsic_index format")
     end
 
-    @testset "start/stop must be paired (both directions)" begin
-        @test flagged(check([videorow(start = "00:00:02", stop = missing)]),     1, "both present or both missing")
-        @test flagged(check([videorow(start = missing, stop = "00:00:08")]),     1, "both present or both missing")
+    @testset "intrinsic_start/intrinsic_stop must be paired (both directions)" begin
+        @test flagged(check([checkerboardrow(intrinsic_start = "00:00:02", intrinsic_stop = missing)]),     1, "both present or both missing")
+        @test flagged(check([checkerboardrow(intrinsic_start = missing, intrinsic_stop = "00:00:08")]),     1, "both present or both missing")
     end
 
     @testset "a filled column irrelevant to the row's type is flagged" begin
-        @test flagged(check([videorow(scale = 9.5)]),         1, "scale is not used by type video")
-        @test flagged(check([videorow(extrinsic_index = 1)]), 1, "extrinsic_index is not used by type video")
+        @test flagged(check([checkerboardrow(pixel_width = 9.5)]),         1, "pixel_width is not used by type checkerboard")
+        @test flagged(check([checkerboardrow(extrinsic_index = 1)]), 1, "extrinsic_index is not used by type checkerboard")
         @test flagged(check([matlabrow(checker_width = 4)]),   1, "checker_width is not used by type matlab")
-        @test flagged(check([scalerow(n_corners = (5, 8))]),  1, "n_corners is not used by type only_scale")
+        @test flagged(check([uniformrow(n_corners = (5, 8))]),  1, "n_corners is not used by type uniform")
         # blank cells in irrelevant columns stay fine — mixed-type CSVs share one header
-        @test clean(check([videorow(), matlabrow(), scalerow()]))
+        @test clean(check([checkerboardrow(), matlabrow(), uniformrow()]))
         # a bad type still short-circuits: no irrelevant-column cascade on top of "wrong type"
-        df = check([videorow(type = "bogus")])
+        df = check([checkerboardrow(type = "bogus")])
         @test flagged(df, 1, "wrong type")
         @test !flagged(df, 1, "is not used by type")
     end
@@ -85,26 +85,26 @@
         # ignored — so it looked exactly like a wrong-type column and made a filled comment a hard
         # error under the default strict mode. It must be accepted on every type.
         note = "measured the board twice; second run looked better"
-        @test clean(check([videorow(comment = note)]))
+        @test clean(check([checkerboardrow(comment = note)]))
         @test clean(check([matlabrow(comment = note)]))
-        @test clean(check([scalerow(comment = note)]))
+        @test clean(check([uniformrow(comment = note)]))
         # a comment on one row of a mixed-type file, blank on the others, is also fine
-        @test clean(check([videorow(), matlabrow(comment = note), scalerow()]))
+        @test clean(check([checkerboardrow(), matlabrow(comment = note), uniformrow()]))
         # and the check it was caught by still works — the exemption is for `comment` alone
-        @test flagged(check([videorow(comment = note, scale = 9.5)]),
-                      1, "scale is not used by type video")
+        @test flagged(check([checkerboardrow(comment = note, pixel_width = 9.5)]),
+                      1, "pixel_width is not used by type checkerboard")
     end
 
     @testset "north without center" begin
         # verify_center2north is called from a separate branch of parse_row per type; assert all three
-        # call sites, not just video (the matlab/only_scale wiring was the original 2.1 bug).
-        @test flagged(check([videorow(center = missing, north = (250, 1))] ), 1, "supplying north without center")
+        # call sites, not just video (the matlab/uniform wiring was the original 2.1 bug).
+        @test flagged(check([checkerboardrow(center = missing, north = (250, 1))] ), 1, "supplying north without center")
         @test flagged(check([matlabrow(center = missing, north = (160, 1))]), 1, "supplying north without center")
-        @test flagged(check([scalerow(center = missing, north = (320, 1))]),  1, "supplying north without center")
+        @test flagged(check([uniformrow(center = missing, north = (320, 1))]),  1, "supplying north without center")
     end
 
     @testset "defaults applied (with correct values) when optional fields omitted" begin
-        df = check([videorow(n_corners = missing, checker_width = missing,
+        df = check([checkerboardrow(n_corners = missing, checker_width = missing,
                              temporal_step = missing, radial_parameters = missing, blur = missing)])
         @test df.n_corners[1]         == (7, 10)
         @test df.checker_width[1]      == 4.0
@@ -115,28 +115,28 @@
 
     @testset "whitespace is trimmed from string fields" begin
         # a stray space in a hand-edited cell must not break matching.
-        @test clean(check([videorow(type = "video ")]))          # "video " -> video, not "wrong type"
-        @test clean(check([videorow(file = " " * ART.board)]))    # " board.mp4" still resolves
+        @test clean(check([checkerboardrow(type = "checkerboard ")]))   # "checkerboard " -> checkerboard, not "wrong type"
+        @test clean(check([checkerboardrow(file = " " * ART.board)]))    # " board.mp4" still resolves
         # leading/trailing space on an id is trimmed, so two such ids collide and the repeat is caught
-        df = check([videorow(calibration_id = "dup",  extrinsic = "00:00:01"),
-                    videorow(calibration_id = "dup ", extrinsic = "00:00:03")])
+        df = check([checkerboardrow(calibration_id = "dup",  extrinsic = "00:00:01"),
+                    checkerboardrow(calibration_id = "dup ", extrinsic = "00:00:03")])
         @test flagged(df, 2, "calibration_id must not repeat")
     end
 
     @testset "calibration_id must be usable as a file name" begin
         # Since #101 it names the diagnostic image `rectification_diagnostics` writes.
-        @test flagged(check([videorow(calibration_id = "a/b")]), 1, "calibration_id")
-        @test flagged(check([videorow(calibration_id = "a:b")]), 1, "calibration_id")
-        @test clean(check([videorow(calibration_id = "morning's board")]))
+        @test flagged(check([checkerboardrow(calibration_id = "a/b")]), 1, "calibration_id")
+        @test flagged(check([checkerboardrow(calibration_id = "a:b")]), 1, "calibration_id")
+        @test clean(check([checkerboardrow(calibration_id = "morning's board")]))
     end
 
     @testset "extrinsic accepts seconds and HH:MM:SS" begin
-        @test clean(check([videorow(extrinsic = "1.0")]))
-        @test clean(check([videorow(extrinsic = "00:00:01")]))
+        @test clean(check([checkerboardrow(extrinsic = "1.0")]))
+        @test clean(check([checkerboardrow(extrinsic = "00:00:01")]))
     end
 
     @testset "type defaults to video when column absent or empty" begin
-        @test VRect.parse_row((file = "x.mp4", extrinsic = "00:00:01"))[:type] == "video"
-        @test VRect.parse_row((type = missing, file = "x.mp4"))[:type] == "video"
+        @test VRect.parse_row((file = "x.mp4", extrinsic = "00:00:01"))[:type] == "checkerboard"
+        @test VRect.parse_row((type = missing, file = "x.mp4"))[:type] == "checkerboard"
     end
 end
