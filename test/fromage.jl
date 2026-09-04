@@ -313,7 +313,7 @@ end
         tag_cell_width = 8, center = missing, north = missing, width = 480, height = 480)
 
     # the label is the diagnostic file's name — which `main` sets to the run_id
-    dia = PT.diagnose_apriltag(joinpath(dir, "run7.mp4"), rect.reference, true, 25)
+    dia = PT.diagnose_apriltag(joinpath(dir, "run7.mp4"), rect, true, 25)
     @test dia.label == "run7"
     close(dia)
 

@@ -258,6 +258,11 @@ function reference_ratio(ref::ReferenceFrame)
     return cm / px
 end
 
+# The (x, y) ↔ (y, x) reordering between the metric frame and the real-coordinate convention, held
+# as a transformation rather than spelled inline, so the gauge below composes into a single
+# invertible map instead of a one-way closure.
+const XY_SWAP = LinearMap(SMatrix{2, 2, Float64}(0, 1, 1, 0))
+
 # The cm → real gauge: `track_apriltag` already maps each frame to metric ground cm (x, y); this
 # applies the `center`/`north` origin and orientation, exactly as the video pipeline's centre/north
 # does, and returns real coordinates as `(y, x)` (matching every other rectification's `image2real`,
@@ -273,8 +278,11 @@ function apriltag_image2real(M, center, north, width, height, aspect)
     # gauge points to the shared centre/north helpers pins the SAME north convention as the video path.
     f = p -> (cm = apply_h(M, SVector(Float64(p[1]), Float64(p[2]))); SVector(cm[2], cm[1]))
     centering, northing = i2r_centering_northing(f, c, n)
-    gauge = northing ∘ centering
-    return cm -> gauge(SVector(Float64(cm[2]), Float64(cm[1])))     # raw cm (x, y) → gauged real (y, x)
+    # Composed, not wrapped in a closure over `gauge`: `∘` collapses these to ONE concrete
+    # `AffineMap` whether or not `north` was given, which makes the gauge both type-stable and —
+    # the reason this matters — invertible. `ApriltagScene` runs it backwards, real → cm, to sample
+    # the source frame for every canvas pixel.
+    return northing ∘ centering ∘ XY_SWAP                          # raw cm (x, y) → gauged real (y, x)
 end
 
 # Build the AprilTag rectification from a verified `type = apriltag` calibs row.
@@ -436,55 +444,70 @@ function detect_tags_roi!(dets, img, ids, boxes, sz)
 end
 
 # Diagnostic scene for AprilTag mode: a top-down rectified video. Each frame is warped into a fixed
-# cm canvas through that frame's own image→cm homography, so a correct rectification renders the
+# canvas through that frame's own image→cm homography, so a correct rectification renders the
 # ground plane stationary (the tags stop moving) while the beetle dot follows the target — letting
 # the user judge both rectification quality and tracking at a glance. The canvas covers the
-# reference tags' cm bounding box (plus a margin) at a fixed pixel size, with square pixels.
-struct ApriltagScene
+# reference tags' bounding box (plus a margin) at a fixed pixel size, with square pixels.
+#
+# The canvas is laid out in the calibration's GAUGED real frame, not in the raw metric frame the tag
+# fit happens to land in. That distinction is the whole point of the scene holding a gauge:
+# `fit_metric` pins its cm frame to the lowest-numbered tag's BODY, so turning that one board 90°
+# between two field days turned the entire canvas 90° with it, and two runs over the same terrain
+# did not line up however carefully `center`/`north` were placed. `center`/`north` name physical
+# points, so gauging by them makes the canvas comparable across calibrations — and matches what
+# `RectifiedScene` has always done for the video path. See DESIGN-HISTORY.md.
+struct ApriltagScene{G, U}
     m::Int
-    xc::Float64                                   # canvas ↔ cm: centre (cm) …
+    xc::Float64                                   # canvas ↔ real: centre (real units) …
     yc::Float64
-    ppc::Float64                                  # … and pixels-per-cm
+    ppc::Float64                                  # … and pixels per real unit
+    gauge::G                                      # raw cm (x, y) → gauged real (y, x)
+    ungauge::U                                    # and back, for sampling the source frame
 end
 
-function ApriltagScene(ref)
+function ApriltagScene(ref, image2real)
     m = DIAGNOSTIC_SIZE
-    cm = [apply_h(ref.M, p) for p in ref.corners]           # tag corners in ground cm
-    xlo, xhi = extrema(first, cm)                           # one pass each, and no temporaries
-    ylo, yhi = extrema(last, cm)
+    pts = [image2real(apply_h(ref.M, p)) for p in ref.corners]   # tag corners in gauged real (y, x)
+    ylo, yhi = extrema(first, pts)                          # one pass each, and no temporaries
+    xlo, xhi = extrema(last, pts)
     extent = max(xhi - xlo, yhi - ylo)
     span = extent + 2 * 0.15 * extent                       # the tags' bounding box, plus a margin
-    return ApriltagScene(m, (xlo + xhi) / 2, (ylo + yhi) / 2, m / span)
+    return ApriltagScene(m, (xlo + xhi) / 2, (ylo + yhi) / 2, m / span, image2real, inv(image2real))
 end
 
 canvas_prototype(s::ApriltagScene) = Matrix{Gray{N0f8}}(undef, s.m, s.m)
 update_ratio!(::ApriltagScene, _) = nothing
 
-# canvas pixel (row i, col j) ↔ ground cm (x, y), square pixels centred on (xc, yc)
-_canvas_to_cm(s::ApriltagScene, i, j) = SVector(s.xc + (j - s.m/2)/s.ppc, s.yc + (i - s.m/2)/s.ppc)
-_cm_to_canvas(s::ApriltagScene, cm) = CartesianIndex(round(Int, (cm[2]-s.yc)*s.ppc + s.m/2),
-                                                     round(Int, (cm[1]-s.xc)*s.ppc + s.m/2))
+# canvas pixel (row i, col j) ↔ gauged real (y, x), square pixels centred on (xc, yc). Real is
+# (y, x)-ordered — every rectification's `image2real` convention — so the row reads component 1 and
+# the column component 2. With `north` given, `i2r_northing` puts it on the negative first axis,
+# which is up the canvas.
+_canvas_to_real(s::ApriltagScene, i, j) = SVector(s.yc + (i - s.m/2)/s.ppc, s.xc + (j - s.m/2)/s.ppc)
+_real_to_canvas(s::ApriltagScene, r) = CartesianIndex(round(Int, (r[1]-s.yc)*s.ppc + s.m/2),
+                                                      round(Int, (r[2]-s.xc)*s.ppc + s.m/2))
 
-# Warp `frame` into the cm canvas via this frame's image→cm homography `H`. `beetle` is `missing` on
+# Warp `frame` into the canvas via this frame's image→cm homography `H`. `beetle` is `missing` on
 # frames without a full tag set, and `H` is `nothing` when there is no map at all — then every canvas
 # pixel reads out of bounds and the frame comes out filled.
 function (s::ApriltagScene)(frame, beetle, H)
     Hinv = isnothing(H) ? nothing : inv(H)
-    # output canvas (i,j) → source image (row,col): canvas→cm→image (cm→image is inv(H))
+    # output canvas (i,j) → source image (row,col): canvas→real→cm→image (cm→image is inv(H))
     tf = idx -> begin
         isnothing(Hinv) && return SVector(-1.0, -1.0)           # no map → fill (out of bounds)
-        c = _canvas_to_cm(s, idx[1], idx[2]); v = Hinv * SVector(c[1], c[2], 1.0)
+        c = s.ungauge(_canvas_to_real(s, idx[1], idx[2])); v = Hinv * SVector(c[1], c[2], 1.0)
         SVector(v[2]/v[3], v[1]/v[3])                           # (row, col) = (img_y, img_x)
     end
     # `convert` rather than a broadcast, for the reason given at RectifiedScene: `frame` is a stack
     # slice in the prefill loop and `vid.img` in the rolling one, both `Gray{N0f8}` already.
     wimg = warp(convert(AbstractArray{Gray{N0f8}}, frame), tf, (1:s.m, 1:s.m); fillvalue = zero(Gray{N0f8}))
-    return wimg, ismissing(beetle) ? missing : _cm_to_canvas(s, beetle)
+    return wimg, ismissing(beetle) ? missing : _real_to_canvas(s, s.gauge(beetle))
 end
 
+# Takes the whole rectification, not just its `reference`: the scene needs the `center`/`north` gauge
+# too, and passing the one object keeps the two halves of the map from drifting apart at the call site.
 diagnose_apriltag(::Nothing, _, _, _) = Dont()
-diagnose_apriltag(file::AbstractString, ref, darker_target, fps) =
-    Diagnostic(file, darker_target, fps, ApriltagScene(ref);
+diagnose_apriltag(file::AbstractString, rectification, darker_target, fps) =
+    Diagnostic(file, darker_target, fps, ApriltagScene(rectification.reference, rectification.image2real);
                radius = max(2, DIAGNOSTIC_SIZE ÷ 60), font = DIAGNOSTIC_SIZE ÷ 16)
 
 # Track the beetle across drone footage in a single pass, in the REFERENCE frame's coordinates: the

@@ -22,6 +22,8 @@ The coordinates are already fully converted — lens distortion, perspective, an
 
 `main` also writes `results_dir/diagnostic.mp4`: every run rendered top-down through its calibration into a fixed 540×540 canvas, with a circle around the tracked position, a trailing trace, and the run's `run_id` as a label — one run after the other, playing at 2× real time (≈24 fps regardless of the run's `sample_fps`).
 
+The canvas is oriented by the calibration's `north`, pointing up. Give two calibrations of the same arena a `center` and a `north` on the same physical landmarks and their segments come out in the same orientation, so you can compare them directly. Without a `north`, each calibration is oriented however its own calibration frame happened to fall — for `apriltag` calibrations that means the orientation of one tag board, which is easy to change between field days without noticing.
+
 This is what a healthy run looks like — the circle sits on the animal for the whole run, and the trace grows behind it from the centre of the arena to the edge (one complete run, looping):
 
 ![A complete run from the diagnostic video, looping: the arena viewed top-down, with a white circle following the tracked beetle while the trailing trace grows from the centre to the edge](assets/tracking-run.webp)

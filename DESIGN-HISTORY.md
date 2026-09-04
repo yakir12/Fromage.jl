@@ -638,6 +638,39 @@ The first frame of a run uses a full-frame scan, not an ROI around the reference
 `start` can be far from the calibration's extrinsic frame, so the (stationary) tags may sit
 anywhere in it.
 
+### The AprilTag diagnostic is gauged by center/north, not by the tag fit
+
+`ApriltagScene` used to build its canvas straight from `ref.M`, the raw metric map. That looked
+harmless — the canvas has to be *some* frame, and the tags' cm bounding box is a natural one — but
+it made the rendered world depend on something the user never chose.
+
+`fit_metric` pins its gauge by rigidly mapping the lowest-numbered tag's square onto the canonical
+square, so the whole cm frame is bolted to **that one board's body**. Two drone calibrations of the
+same arena, two field days: the boards sat in the same four physical spots (positions agreed to
+~7 cm once expressed in a common frame), but the board carrying id 0 had been turned 90° in place
+and the other three ids had been shuffled between the remaining spots. The metric fit was perfect
+both times — the centre-to-north distance came out 546.0 cm and 549.9 cm — yet the two diagnostic
+segments rendered the terrain 89.6° apart, and read as mirrored. No `center`/`north` could fix it,
+because the scene never saw them: `track` passed `rectification.reference` and the gauge lived in
+the sibling field `rectification.image2real`.
+
+The scene now takes the whole rectification and lays its canvas out in gauged real coordinates.
+`center`/`north` name physical points, so two calibrations that agree about them agree about the
+canvas — which is what `RectifiedScene` had always done on the video path. The framing still
+follows the tags' bounding box, so the diagnostic keeps its resolution and its job of showing
+whether the tags stand still.
+
+This changes rendering **only for calibrations that supply `north`**. With `north` missing the
+rotation is the identity and the gauge's translation is absorbed by centring on the bounding box,
+so the canvas is unchanged pixel for pixel — asserted directly against the old formula in
+`test/apriltag.jl`.
+
+Making it work meant `apriltag_image2real` returning `northing ∘ centering ∘ XY_SWAP` instead of a
+closure wrapping the same composition. The scene has to run the gauge *backwards* to sample the
+source frame, and a closure cannot be inverted. `∘` collapses the three into one concrete
+`AffineMap` whether or not `north` was given, so this also removed the small type instability the
+old two-branch closure carried.
+
 ### Segments do not chain their start locations
 
 Each AprilTag segment relocates on its own from its own `start_location`, and a missing one falls

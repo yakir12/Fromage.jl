@@ -549,7 +549,7 @@ function track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnos
     # diagnostic spans all of them.
     if rectification isa ApriltagRectification
         segs = Vector{Vector{Union{Missing, RowCol}}}(undef, nsegments)
-        dia = diagnose_apriltag(diagnostic_file, rectification.reference, tuning.darker_target, dia_fps)
+        dia = diagnose_apriltag(diagnostic_file, rectification, tuning.darker_target, dia_fps)
         try
             for (i, s) in enumerate(segments)
                 tss[i], segs[i] = track_apriltag(s.file, s.start, s.stop, width, s.start_location,
