@@ -14,7 +14,7 @@ const VRect = VerifyRectifications
 # ---------------------------------------------------------------------------
 
 # The first `board_t` seconds show the (padded, 500×376) checkerboard, the rest is cornerless
-# testsrc footage: an extrinsic inside the board portion detects fine while a calibs window over
+# testsrc footage: an extrinsic inside the board portion detects fine while an intrinsic window over
 # the tail does not — this drives verify_intrinsics! (which needs ≥ 3 detectable-corner frames).
 function make_mixed_video(path, png; board_t = 2, total = VIDEO_DURATION)
     rest = total - board_t
@@ -69,8 +69,8 @@ make_matlab_consistent(path; f = 500.0, Z = 100.0) = (MAT.matwrite(path, Dict("c
 
 # Kept as short as the tests allow: ffmpeg encoding dominates artifact setup, so shorter videos
 # load faster. Two floors now apply: (1) the largest `extrinsic` time stamp any *clean* row uses,
-# since verify_extrinsics! seeks there (s_ok extracts at 00:00:03); and (2) the baseline videorow's
-# calibs window, which IS validated against the duration (stop ≤ duration) — its window is
+# since verify_extrinsics! seeks there (s_ok extracts at 00:00:03); and (2) the baseline checkerboardrow's
+# intrinsic window, which IS validated against the duration (intrinsic_stop ≤ duration) — its window is
 # 0…4 s, so the video must be longer than 4 s. 5 s satisfies both with a 1 s margin.
 const VIDEO_DURATION = 5
 
@@ -100,8 +100,8 @@ end
 # ---------------------------------------------------------------------------
 
 const HEADER = ["calibration_id", "path", "file", "matlab_file", "type", "extrinsic", "extrinsic_index",
-                "start", "stop", "center", "north", "n_corners",
-                "checker_width", "scale", "temporal_step", "radial_parameters", "blur",
+                "intrinsic_start", "intrinsic_stop", "center", "north", "n_corners",
+                "checker_width", "pixel_width", "temporal_step", "radial_parameters", "blur",
                 "yadif", "aspect", "apriltags", "family", "tag_cell_width", "comment"]
 
 row(; kw...) = buildrow(HEADER; kw...)
@@ -112,15 +112,15 @@ _merge(base; kw...) = row(; merge(base, values(kw))...)
 
 # Clean baseline rows per rectification type; override any field via keyword to isolate one issue.
 # (Each scenario is loaded as its own single-row CSV, so there is no cross-row coupling.)
-videorow(; kw...) = _merge((calibration_id = "v", path = ".", file = ART.board, type = "video",
-                            extrinsic = "00:00:01", start = "00:00:00", stop = "00:00:04",
+checkerboardrow(; kw...) = _merge((calibration_id = "v", path = ".", file = ART.board, type = "checkerboard",
+                            extrinsic = "00:00:01", intrinsic_start = "00:00:00", intrinsic_stop = "00:00:04",
                             center = (250, 180), north = (250, 1), n_corners = (5, 8),
                             checker_width = 4, temporal_step = 2, radial_parameters = 1, blur = 0); kw...)
 matlabrow(; kw...) = _merge((calibration_id = "m", path = ".", file = ART.video, matlab_file = ART.good_mat,
                              type = "matlab", extrinsic = "00:00:01", extrinsic_index = 1,
                              center = (160, 120), north = (160, 1)); kw...)
-scalerow(; kw...) = _merge((calibration_id = "s", path = ".", file = ART.video, type = "only_scale",
-                            extrinsic = "00:00:01", scale = 9.5, center = (320, 240), north = (320, 1)); kw...)
+uniformrow(; kw...) = _merge((calibration_id = "s", path = ".", file = ART.video, type = "uniform",
+                            extrinsic = "00:00:01", pixel_width = 9.5, center = (320, 240), north = (320, 1)); kw...)
 # An apriltag row. ART.video holds no tags, so verify_apriltag_extrinsics! always flags such a row
 # and `check` therefore returns the annotated DataFrame rather than a Vector. That suits the tests
 # that use it: they assert on PARSED values, and defaults resolution happens at parse time — long
@@ -129,10 +129,10 @@ scalerow(; kw...) = _merge((calibration_id = "s", path = ".", file = ART.video, 
 apriltagrow(; kw...) = _merge((calibration_id = "a", path = ".", file = ART.video, type = "apriltag",
                                extrinsic = "00:00:01"); kw...)
 
-# mixed.mp4: checkerboard for 0–2 s, testsrc after; extrinsic sits on the board, the calibs window
+# mixed.mp4: checkerboard for 0–2 s, testsrc after; extrinsic sits on the board, the intrinsic window
 # is chosen per test (inside/outside the board portion) to exercise the intrinsic-window check.
-mixedrow(; kw...) = _merge((calibration_id = "x", path = ".", file = ART.mixed, type = "video",
-                            extrinsic = "00:00:01", start = "0", stop = "1.8",
+mixedrow(; kw...) = _merge((calibration_id = "x", path = ".", file = ART.mixed, type = "checkerboard",
+                            extrinsic = "00:00:01", intrinsic_start = "0", intrinsic_stop = "1.8",
                             center = (250, 180), north = (250, 1), n_corners = (5, 8),
                             checker_width = 4, temporal_step = 0.9, radial_parameters = 1, blur = 0); kw...)
 

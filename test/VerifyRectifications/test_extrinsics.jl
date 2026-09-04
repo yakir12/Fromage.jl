@@ -1,16 +1,16 @@
 @testset "extrinsic corner detection" begin
     @testset "checkerboard -> corners detected (no issue)" begin
         # board.mp4 is a checkerboard with n_corners (5,8); detection succeeds, row stays clean.
-        @test clean(check([videorow()]))
+        @test clean(check([checkerboardrow()]))
     end
 
     @testset "corner detection with blur > 0" begin
         # exercises the gblur branch of `extract`; detection still succeeds on the checkerboard.
-        @test clean(check([videorow(blur = 1)]))
+        @test clean(check([checkerboardrow(blur = 1)]))
     end
 
     @testset "blank video -> no corners detected" begin
-        df = check([videorow(file = ART.video, n_corners = (5, 8))])
+        df = check([checkerboardrow(file = ART.video, n_corners = (5, 8))])
         @test flagged(df, 1, "no corners detected")
     end
 
@@ -39,7 +39,7 @@
         # verify_extrinsics! used to be the only frame-reading check that did not skip flagged
         # rows, so a file the probe had already rejected was re-read here and reported a second
         # time. One unreadable file is one issue.
-        df = check([videorow(file = ART.corrupt)])
+        df = check([checkerboardrow(file = ART.corrupt)])
         @test flagged(df, 1, "issue reading from video file")
         @test !flagged(df, 1, "issue with corner detection")
         @test length(df.issues[1]) == 1
@@ -59,7 +59,7 @@
         idir = mktempdir()
         # a file of the caller's own proves the folder they named is only ever added to (#86)
         touch(joinpath(idir, "stale.png"))
-        df = check([videorow(file = ART.video, n_corners = (5, 8))]; issues_dir = idir)
+        df = check([checkerboardrow(file = ART.video, n_corners = (5, 8))]; issues_dir = idir)
         @test flagged(df, 1, "no corners detected")
         @test flagged(df, 1, "saved the extrinsic frame")          # the message points at the file
         @test isfile(joinpath(idir, "stale.png"))                  # nothing of the caller's is removed

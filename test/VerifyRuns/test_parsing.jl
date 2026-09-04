@@ -69,7 +69,7 @@
         @test flagged(check([runrow(native_fps = "fast")]),            1, "wrong native_fps format")
         @test flagged(check([runrow(sample_fps = "fast")]),            1, "wrong sample_fps format")
         @test flagged(check([runrow(initial_search_factor = "x")]),   1, "wrong initial_search_factor format")
-        @test flagged(check([runrow(scale = "big")]),                 1, "wrong scale format")
+        @test flagged(check([runrow(downscale = "big")]),                 1, "wrong downscale format")
         @test flagged(check([runrow(darker_target = "maybe")]),       1, "wrong darker_target format")
     end
 
@@ -92,7 +92,7 @@
                                                     VR.run_duration(r.segments))
         @test r.tuning.darker_target         == true
         @test r.tuning.initial_search_factor == 4.0
-        @test r.tuning.scale                 == 1.0
+        @test r.tuning.downscale                 == 1.0
     end
 
     @testset "start/stop accept seconds and HH:MM:SS" begin

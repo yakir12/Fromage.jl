@@ -179,7 +179,7 @@ This is the axis that most often slips. New and modified code must read like the
 **Do:**
 
 - **Multiple dispatch instead of branching on a flag or a symbol.** Rectification builders are
-  chosen by *type*, not by an `if method == "video"` chain (DESIGN-HISTORY, "Rectification
+  chosen by *type*, not by an `if method == "checkerboard"` chain (DESIGN-HISTORY, "Rectification
   builders take keywords, and are chosen by type"). Follow that pattern.
 - **Type stability.** JET runs on the whole package in CI; a `Union{Nothing,Float64}` accumulator
   or an untyped struct field will show up there. Check with `@code_warntype` /

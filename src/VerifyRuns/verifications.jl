@@ -94,7 +94,7 @@ window_nonpositive(x) = x ≤ 0
 # through the blank-cell imputation of what is now `sample_fps`. What has changed is that a run can
 # now say what its rate is and be believed, which is the way out of such a rejection.
 const SHARED_PARAMS = (:target_width, :window_size, :darker_target, :native_fps, :sample_fps,
-    :initial_search_factor, :scale, :background_length, :dimension, :sar)
+    :initial_search_factor, :downscale, :background_length, :dimension, :sar)
 
 # ---- first tier: identity ---------------------------------------------------------------------
 # Everything here reads `run_id` and `calibration_id` and nothing else — no filesystem, no decoding.
@@ -172,16 +172,16 @@ function verifications!(df::AbstractDataFrame, data_path; progress = true)
     # never delivered. Both sides may have come from the csv, and the check is the same either way.
     verify!(df, (s, n) -> s > n, "sample_fps cannot exceed native_fps", :sample_fps, :native_fps)
     verify!(df, ≤(0), "initial_search_factor must be larger than zero", :initial_search_factor)
-    verify!(df, ≤(0), "scale must be larger than zero", :scale)
-    # scale is a downsampling factor; > 1 would artificially enlarge the frames for no benefit.
-    verify!(df, >(1), "scale cannot be larger than one", :scale)
+    verify!(df, ≤(0), "downscale must be larger than zero", :downscale)
+    # A downsampling factor; > 1 would artificially enlarge the frames for no benefit.
+    verify!(df, >(1), "downscale cannot be larger than one", :downscale)
     # The tracker works in the scaled frame, so it is the *scaled* target width that must span at
     # least one pixel — each factor can be individually fine while their product is degenerate.
     # Below roughly half a pixel the tracker stops finding the target at all, and does NOT throw, so
     # without this check the result is a plausible-looking track of nothing (#24). The check uses
-    # the *declared* target_width, so over-declaring it permits a scale too small for the real
+    # the *declared* target_width, so over-declaring it permits a downscale too small for the real
     # target.
-    verify!(df, (tw, sc) -> tw * sc < 1, "scaled target width (target_width × scale) is smaller than one pixel", :target_width, :scale)
+    verify!(df, (tw, sc) -> tw * sc < 1, "scaled target width (target_width × downscale) is smaller than one pixel", :target_width, :downscale)
     # 0 is a real mode (no background subtraction); 1–24 is a background model too short to model
     # anything, and negatives are nonsense — the predicate covers both.
     verify!(df, b -> b != 0 && b < 25, "background_length must be 0 (disables background subtraction) or at least 25", :background_length)

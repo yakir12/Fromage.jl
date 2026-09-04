@@ -53,7 +53,7 @@ function _tuning(g::AbstractDataFrame, frame::Frame, segments::Vector{Segment})
     window_size = @coalesce g.window_size[1] get_window(target_width, sample_fps,
         min(frame.height, frame.width), run_duration(segments))
     return Tuning(target_width, window_size, g.darker_target[1], sample_fps, g.native_fps[1],
-        g.initial_search_factor[1], g.scale[1], g.background_length[1])
+        g.initial_search_factor[1], g.downscale[1], g.background_length[1])
 end
 
 # Build the run for one `run_id` group (rows in CSV order, one row per segment). The identity

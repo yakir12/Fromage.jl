@@ -43,7 +43,7 @@ function apply_video_metadata!(g, m::NamedTuple)
     g.height .= m.height
     # aspect is imputed only when the CSV left it blank — a user-supplied value wins.
     g.aspect .= coalesce.(g.aspect, m.aspect)
-    g.type[1] == "video" || return                     # yadif (interlacing) is a video-only field
+    g.type[1] == "checkerboard" || return                     # yadif (interlacing) is a checkerboard-only field
     g.yadif  .= coalesce.(g.yadif,  m.yadif)
     return
 end
@@ -290,7 +290,7 @@ end
 function verify_extrinsics!(df::AbstractDataFrame, run_dir; progress = true)
     # :file is the canonical resolved path, so grouping on it corner-detects a file reached via different
     # spellings once per (extrinsic, blur, n_corners).
-    videos = subset(df, :type => ByRow(passmissing(==("video"))); view = true, skipmissing = true)
+    checkerboards = subset(df, :type => ByRow(passmissing(==("checkerboard"))); view = true, skipmissing = true)
     # Rows already flagged are skipped, as in verify_intrinsics! and verify_apriltag_extrinsics!.
     # This check was the only one of the three that re-scanned them, and it cost twice over: a row
     # whose probe failed was read again — four ffmpeg attempts, ShareIO's retry — and reported a
@@ -302,7 +302,7 @@ function verify_extrinsics!(df::AbstractDataFrame, run_dir; progress = true)
     # refuses to classify as a detection failure, so it would escape the tmap and abort the whole
     # verification. :width/:height are dropped as well, so that stays impossible even if a later
     # change lets an unflagged row through without them.
-    clean = subset(videos, :issues => ByRow(isempty); view = true)
+    clean = subset(checkerboards, :issues => ByRow(isempty); view = true)
     usable = dropmissing(clean, [:file, :extrinsic, :blur, :n_corners, :width, :height]; view = true)
     gs = groupby(usable, [:file, :extrinsic, :yadif, :blur, :width, :height, :n_corners])
     ks = collect(keys(gs))
@@ -317,43 +317,43 @@ function verify_extrinsics!(df::AbstractDataFrame, run_dir; progress = true)
 end
 
 # The camera-model fit needs at least 3 frames with detectable corners sampled from the
-# [start, stop] window — the "temporal_step too short" check only guarantees 3 *sampled* frames, not
-# 3 *detectable* ones. Detection stops as soon as 3 succeed, so a good window costs ~3 frame reads
+# [intrinsic_start, intrinsic_stop] window — the "temporal_step too short" check only guarantees
+# 3 *sampled* frames, not 3 *detectable* ones. Detection stops as soon as 3 succeed, so a good window costs ~3 frame reads
 # and only a genuinely bad one scans to the end. Frames are read in parallel batches of 4, which is
 # the only thing bounding the concurrent opens: the global read limiter this used to name
 # (`READ_SEM`) was measured against the real share, found to prevent nothing, and deleted — see
 # WHY-FRAMES-FAIL.md.
-function intrinsic_issue(file, start, stop, temporal_step, yadif, blur, width, height, n_corners)
+function intrinsic_issue(file, intrinsic_start, intrinsic_stop, temporal_step, yadif, blur, width, height, n_corners)
     vf = _vf(yadif, blur)
     found = 0
     try
-        for batch in Iterators.partition(start:temporal_step:stop, 4)
+        for batch in Iterators.partition(intrinsic_start:temporal_step:intrinsic_stop, 4)
             corners = tmap(t -> get_corners(file, t, vf, width, height, n_corners), collect(batch))
             found += count(!ismissing, corners)
             found ≥ 3 && return nothing
         end
-        return "fewer than 3 frames with detectable corners in the calibs window"
+        return "fewer than 3 frames with detectable corners in the intrinsic window"
     catch e
         # the reads run under `tmap`, so unwrap before classifying (see _unwrap_task) — and report
         # the original rather than a nested TaskFailedException dump
         err = _unwrap_task(e)
         _detection_failure(err) || rethrow()
-        return "issue with corner detection in the calibs window: $(_failure_message(err))"
+        return "issue with corner detection in the intrinsic window: $(_failure_message(err))"
     end
 end
 
 function verify_intrinsics!(df::AbstractDataFrame; progress = true)
     # Rows already flagged are skipped: a failed probe, extrinsic or window check implies this
     # (expensive) scan would fail too — re-running it wastes frame reads and re-reports noise.
-    # A missing calibs window (both bounds blank) is skipped like everywhere else.
-    videos = subset(df, :type => ByRow(passmissing(==("video"))); view = true, skipmissing = true)
-    clean = subset(videos, :issues => ByRow(isempty); view = true)
-    usable = dropmissing(clean, [:file, :start, :stop, :temporal_step, :width, :height, :n_corners]; view = true)
-    gs = groupby(usable, [:file, :start, :stop, :temporal_step, :yadif, :blur, :width, :height, :n_corners])
-    issues = @showprogress desc = "Validating intrinsics..." enabled = progress tmap(k -> intrinsic_issue(k.file, k.start, k.stop, k.temporal_step, k.yadif, k.blur, k.width, k.height, k.n_corners), keys(gs))
+    # A missing intrinsic window (both bounds blank) is skipped like everywhere else.
+    checkerboards = subset(df, :type => ByRow(passmissing(==("checkerboard"))); view = true, skipmissing = true)
+    clean = subset(checkerboards, :issues => ByRow(isempty); view = true)
+    usable = dropmissing(clean, [:file, :intrinsic_start, :intrinsic_stop, :temporal_step, :width, :height, :n_corners]; view = true)
+    gs = groupby(usable, [:file, :intrinsic_start, :intrinsic_stop, :temporal_step, :yadif, :blur, :width, :height, :n_corners])
+    issues = @showprogress desc = "Validating intrinsics..." enabled = progress tmap(k -> intrinsic_issue(k.file, k.intrinsic_start, k.intrinsic_stop, k.temporal_step, k.yadif, k.blur, k.width, k.height, k.n_corners), keys(gs))
     for (g, issue) in zip(gs, issues)
         if !isnothing(issue)
-            blank!(g, :start, :stop)
+            blank!(g, :intrinsic_start, :intrinsic_stop)
             push!.(g.issues, issue)
         end
     end
@@ -394,10 +394,10 @@ end
 
 function verify_unique_calibrations!(df::AbstractDataFrame)
     # What makes two rectifications "the same" is type-dependent, so partition by :type:
-    #   * matlab / only_scale: identical on *every* field (calibration_id and issues aside).
-    #   * video: identical on the identity key below. The remaining parameters are NOT part of
-    #     identity (one video can carry several rectifications differing only in, say, blur), but
-    #     two same-identity rows still *should* agree on them — when they don't, the duplicate also
+    #   * matlab / uniform: identical on *every* field (calibration_id and issues aside).
+    #   * checkerboard: identical on the identity key below. The remaining parameters are NOT part of
+    #     identity (one checkerboard video can carry several rectifications differing only in, say,
+    #     blur), but two same-identity rows still *should* agree on them — when they don't, the duplicate also
     #     gets a conflicting-parameters issue.
     # :file is already the canonical resolved path, so equivalent spellings compare equal with no
     # per-call realpath.
@@ -406,17 +406,17 @@ function verify_unique_calibrations!(df::AbstractDataFrame)
     # offending field nulled to `missing`, which can collapse two genuinely distinct rows into a
     # spurious "duplicate". Such rows are already reported anyway.
     candidates = @view df[isempty.(df.issues), :]
-    isvideo = coalesce.(candidates.type .== "video", false)
+    ischeckerboard = coalesce.(candidates.type .== "checkerboard", false)
 
-    # matlab / only_scale: same iff every compared field matches, so the grouping key is every
+    # matlab / uniform: same iff every compared field matches, so the grouping key is every
     # column that is not :calibration_id or :issues. :type is among them, so the two kinds never
     # group together.
-    for g in groupby(@view(candidates[.!isvideo, :]), Not(:calibration_id, :issues))
+    for g in groupby(@view(candidates[.!ischeckerboard, :]), Not(:calibration_id, :issues))
         reject_duplicates!(df, g)
     end
 
     other = [:checker_width, :n_corners, :temporal_step, :radial_parameters, :blur, :yadif, :aspect]
-    for g in groupby(@view(candidates[isvideo, :]), [:file, :start, :stop, :extrinsic, :center, :north])
+    for g in groupby(@view(candidates[ischeckerboard, :]), [:file, :intrinsic_start, :intrinsic_stop, :extrinsic, :center, :north])
         dups = reject_duplicates!(df, g)
         if !isempty(dups) && any(c -> !allequal(g[!, c]), other)
             push!.(df[dups, :issues], "same rectification with conflicting parameters")
@@ -461,7 +461,7 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = DEFAULT_I
     df.north[ismissing.(df.center)] .= missing
 
     verify!(df, ≤(0), "aspect must be larger than zero", :aspect)
-    verify!(df, ≤(0), "scale must be larger than zero", :scale)
+    verify!(df, ≤(0), "pixel_width must be larger than zero", :pixel_width)
     verify!(df, ≤(0), "extrinsic_index must be larger than zero", :extrinsic_index)
     verify!(df, (i, n) -> i > n, "extrinsic_index exceeds the number of extrinsics in the matlab file", :extrinsic_index, :n_extrinsics)
     verify!(df, ≤(0), "checker_width must be larger than zero", :checker_width)
@@ -479,20 +479,20 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = DEFAULT_I
     # strictly before: seeking at exactly the duration yields no frame at all
     verify!(df, (e, d) -> e ≥ d, "extrinsic must come before the video duration", :extrinsic, :duration)
     # The intrinsic-calibration window must be sane and lie within the video. These run before the
-    # temporal_step checks and null start/stop on failure, so a bad window does not also trip the
-    # misleading "temporal_step too short" message (skipped once either bound is missing).
-    verify!(df, <(0), "start must be larger than or equal to zero", :start)
-    verify!(df, (a, o) -> a ≥ o, "start must come before stop", :start, :stop)
-    verify!(df, (o, d) -> o > d, "stop can not come after video duration", :stop, :duration)
+    # temporal_step checks and null intrinsic_start/intrinsic_stop on failure, so a bad window does
+    # not also trip the misleading "temporal_step too short" message (skipped once either bound is missing).
+    verify!(df, <(0), "intrinsic_start must be larger than or equal to zero", :intrinsic_start)
+    verify!(df, (a, o) -> a ≥ o, "intrinsic_start must come before intrinsic_stop", :intrinsic_start, :intrinsic_stop)
+    verify!(df, (o, d) -> o > d, "intrinsic_stop can not come after video duration", :intrinsic_stop, :duration)
 
     verify!(df, ≤(0), "temporal_step must be larger than zero", :temporal_step)
-    verify!(df, (t, a, o) -> (o - a) ÷ t + 1 < 3, "temporal_step too short (results in less than 3 intrinsic images)", :temporal_step, :start, :stop)
+    verify!(df, (t, a, o) -> (o - a) ÷ t + 1 < 3, "temporal_step too short (results in less than 3 intrinsic images)", :temporal_step, :intrinsic_start, :intrinsic_stop)
 
     # the extrinsic time stamp must actually yield a detectable frame; only meaningful once the
     # time stamp itself has been range-checked above
     verify_extrinsics!(df, run_dir; progress)
 
-    # the calibs window must actually contain ≥ 3 detectable-corner frames; runs after
+    # the intrinsic window must actually contain ≥ 3 detectable-corner frames; runs after
     # verify_extrinsics! so rows whose extrinsic already failed are skipped, not re-scanned
     verify_intrinsics!(df; progress)
 

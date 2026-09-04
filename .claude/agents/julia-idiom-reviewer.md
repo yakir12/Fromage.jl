@@ -12,7 +12,7 @@ enough of the surrounding module to judge whether the new code reads like its ne
 
 ## What must hold
 
-**Dispatch, not branching.** Behaviour selected by type, not by an `if method == "video"` chain
+**Dispatch, not branching.** Behaviour selected by type, not by an `if method == "checkerboard"` chain
 or a symbol flag. Rectification builders are the reference pattern.
 
 **Type stability.** No `Union{Nothing,T}` accumulators, no abstract or untyped struct fields, no

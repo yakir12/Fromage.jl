@@ -23,13 +23,13 @@
         @test VRect.parse_sample_aspect("N/A") == 1.0   # undefined -> default 1
     end
 
-    @testset "missing yadif/width/height are imputed onto the Video struct" begin
-        # A clean load returns Vector{Video}; with the columns left blank they are filled from the probe.
+    @testset "missing yadif/width/height are imputed onto the Checkerboard struct" begin
+        # A clean load returns Vector{Checkerboard}; with the columns left blank they are filled from the probe.
         probed = VRect.probe_video(joinpath(DATADIR, ART.board))
-        result = check([videorow()])
+        result = check([checkerboardrow()])
         @test result isa Vector
         v = first(result)
-        @test v.yadif == false                       # board is progressive (yadif stays on Video)
+        @test v.yadif == false                       # board is progressive (yadif stays on Checkerboard)
         @test v.source.width == probed.width
         @test v.source.height == probed.height
         @test v.source.aspect == 1.0                 # square pixels -> SAR 1:1
@@ -39,7 +39,7 @@
         # board is progressive, but an explicit yadif cell must be kept verbatim, not overwritten.
         # width/height have no CSV column, so they always come from the probe (the real frame size).
         probed = VRect.probe_video(joinpath(DATADIR, ART.board))
-        result = check([videorow(yadif = true)])
+        result = check([checkerboardrow(yadif = true)])
         @test result isa Vector
         v = first(result)
         @test v.yadif == true                         # provided, not the probed false
@@ -48,28 +48,28 @@
     end
 
     @testset "a non-boolean yadif is a parse issue, never thrown" begin
-        @test flagged(check([videorow(yadif = "maybe")]), 1, "wrong yadif format")
+        @test flagged(check([checkerboardrow(yadif = "maybe")]), 1, "wrong yadif format")
     end
 
     @testset "a CSV-supplied aspect wins over the probe" begin
         # board.mp4 has square pixels (probe aspect 1.0); an explicit CSV aspect must be kept verbatim.
-        result = check([videorow(aspect = 2.0)])
+        result = check([checkerboardrow(aspect = 2.0)])
         @test result isa Vector
         @test first(result).source.aspect == 2.0
     end
 
-    @testset "only_scale and matlab rows now carry imputed width/height (but not yadif)" begin
+    @testset "uniform and matlab rows now carry imputed width/height (but not yadif)" begin
         # width/height live in the shared Source struct, so they are imputed from the source video for
         # every type now; yadif (interlacing) remains a video-only field. The clean load returns the
         # structs, so inspect c[1].source.width/height.
         probed = VRect.probe_video(joinpath(DATADIR, ART.video))   # video.mp4: 640×480
-        for (name, r) in (("scale", scalerow()), ("matlab", matlabrow()))
+        for (name, r) in (("pixel_width", uniformrow()), ("matlab", matlabrow()))
             @testset "$name" begin
                 c = check([r])
                 @test c isa Vector
                 @test c[1].source.width  == probed.width
                 @test c[1].source.height == probed.height
-                @test !hasproperty(c[1], :yadif)                 # yadif is only on the Video struct
+                @test !hasproperty(c[1], :yadif)                 # yadif is only on the Checkerboard struct
             end
         end
     end

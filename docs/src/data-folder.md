@@ -56,7 +56,7 @@ A csv file is just a table saved as plain text — you can edit it in Excel, Goo
 
 ### Writing timestamps
 
-Timestamps (`start`, `stop`, `extrinsic`) are either a number of seconds (e.g. `12.345`) or a clock time `HH:MM:SS.mmm` (e.g. `00:02:09.123`; milliseconds optional).
+Timestamps (`start`, `stop`, `intrinsic_start`, `intrinsic_stop`, `extrinsic`) are either a number of seconds (e.g. `12.345`) or a clock time `HH:MM:SS.mmm` (e.g. `00:02:09.123`; milliseconds optional).
 
 !!! danger "The most common timestamp mistake"
     Always write all three clock parts: `01:30` means **1 hour 30 minutes**, *not* 1 minute 30 seconds. If in doubt, use plain seconds.

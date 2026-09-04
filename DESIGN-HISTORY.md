@@ -888,6 +888,59 @@ Windows.
 Fromage removes nothing from the issues folder, including anything of the user's that happens to
 live there. Cleaning it out is their call.
 
+### The csv vocabulary was disambiguated in one migration (v0.2.23)
+
+Four names in the two csv files were changed at once, because each of them meant more than one
+thing and the user edits both files side by side.
+
+`scale` was the worst: a *spatial downsampling factor* in `runs.csv` and *real-world units per
+pixel* in `calibs.csv`. Unrelated quantities, one word, and the same
+`"scale must be larger than zero"` message written out in both gateways. It is now `downscale`
+(runs) and `pixel_width` (calibs). Note this was **not** the `checker_size` failure mode: that was
+one column in *one* file serving two row types, where a single default could not serve both, and
+the mechanical hazard is absent here — `calibs.csv`'s `scale` was never in `DEFAULTS` (it is
+inherently per-row), so no global default could ever land on the wrong one. The case for splitting
+it was legibility, not a live bug.
+
+`pixel_width` was picked over any other spelling because it makes the calibs unit columns one rule
+instead of three names: `checker_width`, `tag_cell_width` and `pixel_width` are each *the
+real-world width of the thing this calibration type measures*, and each is the column that decides
+what unit your tracks come out in.
+
+`type = video` distinguished nothing. Every kind of calibration here is anchored to a source video
+— `apriltag` reads one, `matlab` reads one for its frame size, and so does `only_scale` — so the
+name said only what was true of all four. The checkerboard is what makes that one particular, hence
+`type = checkerboard`. Renaming it orphaned nothing, but renaming `scale` *did* orphan
+`type = only_scale`, which then pointed at a column no longer in the file; it became `type =
+uniform`, named for the map it produces (a uniform scaling, no camera model) rather than for an
+absence.
+
+`start`/`stop` in `calibs.csv` are the window in which the board is waved to fit the lens model —
+not the span of a run to track, which is what `runs.csv` calls `start`/`stop`. They are now
+`intrinsic_start`/`intrinsic_stop`, which also gives the codebase a name for a concept it had been
+describing three different ways ("the calibs window", "the intrinsic window", "the time window
+during which the checkerboard is being moved around"). `Checkerboard{Missing}` — the extrinsics-only
+case — now reads as exactly what it is: a calibration with no intrinsic window.
+
+Two things this deliberately did **not** do. `extrinsic` was left alone even though the word covers
+a timestamp, a pose and (as `extrinsic_index`) an image index: those last two are the same role
+addressed two ways, so the fix was to name the concept — *the extrinsic frame* — in prose rather
+than to break another column. And `runs.csv`'s own `start`/`stop` did not move: they are the
+ordinary reading, and `Segment` is unaffected.
+
+One PR, one version bump, one migration. Split across releases it would have meant editing every
+`calibs.csv` on the share more than once. Old names are rejected the way `fps` and `checker_size`
+already were — `RENAMED_COLUMNS` per gateway, surfaced by `read_rows` before any row parses — with
+a new `RENAMED_TYPES` beside it for the two retired `type` *values*, which the column-level table
+structurally cannot see. Without that table a migrating file's commonest value produced the file's
+least useful message: a bare `"wrong type"`.
+
+The rename could not stop at the csv: `test/quality.jl` requires every `Tuning` field to be a
+`runs.csv` column and every builder keyword to be a `calibs.csv` column (#140/#141), so each rename
+was forced through `Tuning`, the `RectificationMethod` structs and the builders. That is the
+invariant working as intended — it is what makes "the csv column and the code field are the same
+name" a fact rather than an aspiration.
+
 ---
 
 ## Error handling

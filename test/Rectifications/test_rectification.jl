@@ -62,10 +62,10 @@
         run(`$(R.FFMPEG.ffmpeg()) -y -hide_banner -loglevel error -framerate 10 -f rawvideo -pix_fmt gray -s $(Wimg)x$(Himg) -i $raw -c:v libx264 -crf 0 -pix_fmt yuv420p $vid`)
 
         # frames 0..10 (t = 0.05..1.05) drive the intrinsics; frame 11 (t = 1.15) is the extrinsic
-        extrinsic_t, start, stop, step = 1.15, 0.05, 1.05, 0.1
+        extrinsic_t, intrinsic_start, intrinsic_stop, step = 1.15, 0.05, 1.05, 0.1
         # The two `missing`s used to be positional here, and nothing said which was `yadif` and
         # which was `blur`.
-        common = (; file = vid, extrinsic = extrinsic_t, calibration_id = "c1", start, stop, temporal_step = step,
+        common = (; file = vid, extrinsic = extrinsic_t, calibration_id = "c1", intrinsic_start, intrinsic_stop, temporal_step = step,
                   yadif = missing, blur = missing, width = Wimg, height = Himg, n_corners,
                   checker_width, aspect = 1.0, radial_parameters = 1)
 
@@ -73,7 +73,7 @@
         # results_dir, which is relative to the working directory, hence the `cd`.
         outdir = mktempdir()
         # center = missing ⇒ defaults to the frame centre (the intended behaviour)
-        rect = cd(() -> R.from_video(; common..., center = missing, north = missing,
+        rect = cd(() -> R.from_checkerboard(; common..., center = missing, north = missing,
                                      rectification_diagnostics = true), outdir)
         image2real = rect.image2real
         ext_corners = R.get_corners(vid, extrinsic_t, missing, Wimg, Himg, n_corners)
@@ -93,7 +93,7 @@
         end
 
         @testset "extrinsics-only constructor (single frame, zero distortion)" begin
-            # no calibs window: pose + focal fit from the extrinsic frame alone, distortion pinned
+            # no intrinsic window: pose + focal fit from the extrinsic frame alone, distortion pinned
             # at zero. The rendered clip is a pure pinhole with the principal point at the frame
             # centre, so the single-view fit (which fixes the principal point there) is well-posed.
             rect0 = R.from_extrinsic(; rectification_diagnostics = false, file = vid, extrinsic = extrinsic_t, calibration_id = "c0", yadif = missing,
@@ -107,7 +107,7 @@
 
         @testset "center defaults to frame centre" begin
             # explicit frame-centre pixel must reproduce the center = missing result exactly
-            i2r_explicit = R.from_video(; rectification_diagnostics = false, common..., center = SVector(Wimg / 2, Himg / 2),
+            i2r_explicit = R.from_checkerboard(; rectification_diagnostics = false, common..., center = SVector(Wimg / 2, Himg / 2),
                                         north = missing).image2real
             @test all(a ≈ b for (a, b) in zip(map(image2real, ext_corners),
                                               map(i2r_explicit, ext_corners)))

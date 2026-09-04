@@ -25,11 +25,11 @@ storage(a) = parent(a) === a ? a : storage(parent(a))
 const DATADIR = mktempdir()
 
 @testset "PawsomeTracker" begin
-    # The unit-scale stack skips the WarpedView the scaled one needs. That is only sound if it
+    # The stack at `downscale = 1` skips the WarpedView the scaled one needs. That is only sound if it
     # reads identically to the warped construction it replaces, so assert exactly that rather than
     # the presence or absence of a layer — the layer count is the mechanism, the values are the
     # claim. `storage` still has to reach the array, since every write goes through it.
-    @testset "the unit-scale stack returns its stored values, unresampled" begin
+    @testset "the stack at `downscale = 1` returns its stored values, unresampled" begin
         sz, n = (24, 31), 4
         pad = ((-3):(sz[1] + 3), (-3):(sz[2] + 3), 1:n)
         stack = PT.build_stack(1.0, sz, n, pad)

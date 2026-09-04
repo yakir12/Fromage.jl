@@ -20,7 +20,7 @@ Among the things checked:
 - numeric parameters are within their valid ranges;
 - `calibration_id`s are unique, and no two calibrations are effectively identical duplicates;
 - a filled cell in a column that the row's `type` doesn't use is flagged (it usually means the `type` itself is wrong);
-- the checkerboard is detected at the `extrinsic` timestamp, and — when a calibration window is given — at least 3 sampled frames within [`start`, `stop`] have a detectable board (this is the expensive part of validation — it reads real frames);
+- the checkerboard is detected at the `extrinsic` timestamp, and — when a calibration window is given — at least 3 sampled frames within the intrinsic window [`intrinsic_start`, `intrinsic_stop`] have a detectable board (this is the expensive part of validation — it reads real frames);
 - for an `apriltag` calibration, at least `apriltags` tags of the chosen `family` are detected at the `extrinsic` frame and their metric fit converges;
 - segments of a multi-video run agree on all their shared parameters;
 - every `calibration_id` used in `runs.csv` exists in `calibs.csv`.
@@ -78,7 +78,7 @@ main("path/to/data";
 ```
 
 - `rectification_defaults` may set: `checker_width`, `n_corners`, `temporal_step`, `radial_parameters`, `blur`, `yadif`, and — for `type = apriltag` rows — `apriltags`, `family`, `tag_cell_width`.
-- `tracking_defaults` may set: `target_width`, `window_size`, `darker_target`, `native_fps`, `sample_fps`, `initial_search_factor`, `scale`, `background_length`.
+- `tracking_defaults` may set: `target_width`, `window_size`, `darker_target`, `native_fps`, `sample_fps`, `initial_search_factor`, `downscale`, `background_length`.
 
 Anything else (identities, file names, timestamps, `start_location`/`center`/`north`) is per-row only, and an unrecognized or unconvertible entry is rejected with an error before anything runs. Global values pass through the same validation as csv cells — e.g. a global `sample_fps` must still not exceed each run's `native_fps`. `only_rectify` and `only_track` accept their respective keyword (`rectification_defaults` / `tracking_defaults`).
 
@@ -87,7 +87,7 @@ Anything else (identities, file names, timestamps, `start_location`/`center`/`no
 What matters is the CPU, not the macOS version (as of July 2026):
 
 - **Intel Macs** (`x86_64`): everything works — the full test suite runs on every commit on an Intel macOS runner.
-- **Apple Silicon Macs** (M1/M2/M3/…, `aarch64`) running the native arm64 Julia: everything works **except the AprilTag functionality** — `type = apriltag` calibrations and drone tracking fail with `UndefVarError: libapriltag not defined`. The cause is upstream: `AprilTags_jll` ships no `aarch64-apple-darwin` binaries, so the AprilTag C library can never load. Checkerboard (`video`), `only_scale`, and `matlab` calibrations, and all tracking of ordinary (fixed-camera) runs, are unaffected.
+- **Apple Silicon Macs** (M1/M2/M3/…, `aarch64`) running the native arm64 Julia: everything works **except the AprilTag functionality** — `type = apriltag` calibrations and drone tracking fail with `UndefVarError: libapriltag not defined`. The cause is upstream: `AprilTags_jll` ships no `aarch64-apple-darwin` binaries, so the AprilTag C library can never load. `checkerboard`, `uniform`, and `matlab` calibrations, and all tracking of ordinary (fixed-camera) runs, are unaffected.
 - **Workaround on Apple Silicon**: install the **Intel (x86_64) Julia binary** and run it under Rosetta 2 — Julia then pulls the `x86_64-apple-darwin` artifacts for all binary dependencies, AprilTags included. Slower, but functional.
 
 Linux and Windows (x64) are fully tested in CI.

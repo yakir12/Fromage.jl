@@ -12,10 +12,10 @@
     open(csv, "w") do io
         # Minimal header (other columns are back-filled by parse_row); one row per type so all four
         # parse branches and the type-specific verifications compile. All point at a nonexistent file.
-        println(io, "calibration_id,file,matlab_file,type,extrinsic,extrinsic_index,scale")
-        println(io, "v,nope.mp4,,video,1,,")
+        println(io, "calibration_id,file,matlab_file,type,extrinsic,extrinsic_index,pixel_width")
+        println(io, "v,nope.mp4,,checkerboard,1,,")
         println(io, "m,nope.mp4,nope.mat,matlab,1,1,")
-        println(io, "s,nope.mp4,,only_scale,1,,9.5")
+        println(io, "s,nope.mp4,,uniform,1,,9.5")
         println(io, "a,nope.mp4,,apriltag,1,,")
     end
     @compile_workload begin

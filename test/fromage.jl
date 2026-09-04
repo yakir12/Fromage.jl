@@ -27,8 +27,8 @@ using ..Harness: capturing
     # defaults (the hardcoded n_corners (7, 10) would fail detection on the 5×8 board, so a clean
     # run proves the kwargs propagated into both gateways)
     open(joinpath(dir, "calibs.csv"), "w") do io
-        println(io, "calibration_id,file,type,extrinsic,start,stop,checker_width")
-        println(io, "c1,board.mp4,video,1,0,4,4")
+        println(io, "calibration_id,file,type,extrinsic,intrinsic_start,intrinsic_stop,checker_width")
+        println(io, "c1,board.mp4,checkerboard,1,0,4,4")
     end
     open(joinpath(dir, "runs.csv"), "w") do io
         println(io, "calibration_id,file,start_location")
@@ -79,14 +79,14 @@ using ..Harness: capturing
 end
 
 @testset "only_rectify / only_track (partial pipeline)" begin
-    # The two iterate-on-your-csv helpers, each over the cheapest possible inputs: an only_scale
+    # The two iterate-on-your-csv helpers, each over the cheapest possible inputs: a uniform
     # calibration (no checkerboard detection) and the shared known-trajectory disc video.
     dir = mktempdir()
     make_video(joinpath(dir, "cal.mp4"); size = (320, 240), duration = 2)
     target, expected = make_target_video(dir, "solo")
     open(joinpath(dir, "calibs.csv"), "w") do io
-        println(io, "calibration_id,type,file,extrinsic,scale")
-        println(io, "c1,only_scale,cal.mp4,1,2")
+        println(io, "calibration_id,type,file,extrinsic,pixel_width")
+        println(io, "c1,uniform,cal.mp4,1,2")
     end
     open(joinpath(dir, "runs.csv"), "w") do io
         # background_length = 0 rides along to prove the column flows csv → gateway → track
@@ -98,14 +98,14 @@ end
     calibs = cd(() -> Fromage.only_rectify(dir), outdir)
     @test length(calibs) == 1
     rect = only(calibs)
-    @test rect.ratio == 2                           # the csv's scale
+    @test rect.ratio == 2                           # the csv's pixel_width
     @test (rect.width, rect.height) == (320, 240)
     p = SVector(7.0, 11.0)
     @test rect.real2image(rect.image2real(p)) ≈ p   # the two maps are inverses
     # off by default, and off means no trace at all — not even the folder
     @test !ispath(joinpath(outdir, "results_dir", "rectifications"))
 
-    # on request, one image per calibration here too — this time through the only_scale builder
+    # on request, one image per calibration here too — this time through the uniform builder
     diagdir = mktempdir()
     cd(() -> Fromage.only_rectify(dir; rectification_diagnostics = true), diagdir)
     scalejpg = joinpath(diagdir, "results_dir", "rectifications", "c1.jpg")
@@ -147,8 +147,8 @@ end
     make_video(joinpath(dir, "cal.mp4"); size = (320, 240), duration = 2)
     target, _ = make_target_video(dir, "idf")
     open(joinpath(dir, "calibs.csv"), "w") do io
-        println(io, "calibration_id,type,file,extrinsic,scale")
-        println(io, "c1,only_scale,cal.mp4,1,2")
+        println(io, "calibration_id,type,file,extrinsic,pixel_width")
+        println(io, "c1,uniform,cal.mp4,1,2")
     end
     open(joinpath(dir, "runs.csv"), "w") do io
         println(io, "run_id,calibration_id,file,start_location")
@@ -405,7 +405,7 @@ end
 end
 
 @testset "diagnostic video: multi-run, mixed calibrations" begin
-    # All three rectification kinds in one pipeline run: two only_scale rectifications on
+    # All three rectification kinds in one pipeline run: two uniform rectifications on
     # different-sized source videos — the case the fixed canvas exists for, since a mixed-resolution
     # diagnostic cannot be stream-copied — plus a matlab rectification read from a .mat file.
     dir = mktempdir()
@@ -420,9 +420,9 @@ end
         "RadialDistortion" => [0.0, 0.0])))
     targets = [make_target_video(dir, "t$i") for i in 1:4]
     open(joinpath(dir, "calibs.csv"), "w") do io
-        println(io, "calibration_id,type,file,extrinsic,scale,matlab_file,extrinsic_index")
-        println(io, "c1,only_scale,cal_big.mp4,1,1,,")
-        println(io, "c2,only_scale,cal_small.mp4,1,1,,")
+        println(io, "calibration_id,type,file,extrinsic,pixel_width,matlab_file,extrinsic_index")
+        println(io, "c1,uniform,cal_big.mp4,1,1,,")
+        println(io, "c2,uniform,cal_small.mp4,1,1,,")
         println(io, "m1,matlab,cal_big.mp4,1,,cal.mat,1")
     end
     calib_ids = ("c1", "c1", "c2", "m1")
@@ -479,9 +479,9 @@ end
     make_video(joinpath(dir, "cal.mp4"); size = (320, 240), duration = 2)
     target, _ = make_target_video(dir, "nonstrict")
     open(joinpath(dir, "calibs.csv"), "w") do io
-        println(io, "calibration_id,type,file,extrinsic,scale")
-        println(io, "c1,only_scale,cal.mp4,1,2")
-        println(io, "c1,only_scale,cal.mp4,1,2")     # duplicate id: a first-tier failure
+        println(io, "calibration_id,type,file,extrinsic,pixel_width")
+        println(io, "c1,uniform,cal.mp4,1,2")
+        println(io, "c1,uniform,cal.mp4,1,2")     # duplicate id: a first-tier failure
     end
     open(joinpath(dir, "runs.csv"), "w") do io
         println(io, "calibration_id,file,start_location")
@@ -515,7 +515,7 @@ end
 
     @testset "a calibration no run uses is rejected, before anything is opened" begin
         write(joinpath(dir, "calibs.csv"),
-              "calibration_id,type,file,extrinsic,scale\nc1,only_scale,cal.mp4,1,2\nc2,only_scale,broken.mp4,1,2\n")
+              "calibration_id,type,file,extrinsic,pixel_width\nc1,uniform,cal.mp4,1,2\nc2,uniform,broken.mp4,1,2\n")
         write(joinpath(dir, "runs.csv"),
               "calibration_id,file,start_location\nc1,$(only(target)),\"(55, 50)\"\n")
         _, out = capturing() do
@@ -533,7 +533,7 @@ end
 
     @testset "a run naming a calibration that does not exist is rejected, and both files reported" begin
         write(joinpath(dir, "calibs.csv"),
-              "calibration_id,type,file,extrinsic,scale\nc1,only_scale,cal.mp4,1,2\n")
+              "calibration_id,type,file,extrinsic,pixel_width\nc1,uniform,cal.mp4,1,2\n")
         write(joinpath(dir, "runs.csv"),
               "calibration_id,file,start_location\nc9,$(only(target)),\"(55, 50)\"\n")
         _, out = capturing() do
@@ -558,7 +558,7 @@ end
     t1, _ = make_target_video(dir, "n1")
     t2, _ = make_target_video(dir, "n2")
     write(joinpath(dir, "calibs.csv"),
-          "calibration_id,type,file,extrinsic,scale\nc1,only_scale,cal1.mp4,1,2\nc2,only_scale,cal2.mp4,1,2\n")
+          "calibration_id,type,file,extrinsic,pixel_width\nc1,uniform,cal1.mp4,1,2\nc2,uniform,cal2.mp4,1,2\n")
     write(joinpath(dir, "runs.csv"),
           "run_id,calibration_id,file,start_location\n" *
           "r1,c1,$(only(t1)),\"(55, 50)\"\nr2,c2,$(only(t2)),\"(55, 50)\"\n")

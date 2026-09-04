@@ -327,19 +327,19 @@ register(ref::ReferenceFrame, corners) = homography_dlt(corners, ref.corners)
 # are visible immediately. Coordinate bridge: the stack works in scaled (row, col) ("canvas"), the
 # homographies in (x, y) = (col, row) stored px — hence the flips.
 struct RegisteredWarp <: Transformation
-    scale::Float64
+    downscale::Float64
     # NB the length parameter: the abstract `SMatrix{3, 3, Float64}` boxes every per-lookup load,
     # costing two orders of magnitude in detect's background reduce
     Hinvs::Vector{SMatrix{3, 3, Float64, 9}}
 end
 function (w::RegisteredWarp)(x::SVector{3})
-    p = apply_h(w.Hinvs[Int(x[3])], SVector(x[2], x[1]) / w.scale)
+    p = apply_h(w.Hinvs[Int(x[3])], SVector(x[2], x[1]) / w.downscale)
     return SVector(p[2], p[1], x[3])
 end
 
 # the per-slice canvas → raw-frame (row, col) mapping (RegisteredWarp's 2D core), as a closure
 # for the registered protect_target
-canvas2raw(Hinv, scale) = rc -> (p = apply_h(Hinv, SVector(rc[2], rc[1]) ./ scale); (p[2], p[1]))
+canvas2raw(Hinv, downscale) = rc -> (p = apply_h(Hinv, SVector(rc[2], rc[1]) ./ downscale); (p[2], p[1]))
 
 # raw px padded around the protected target region, absorbing the one frame of drone motion the
 # registered protect_target approximates over (see its docstring in PawsomeTracker.jl)
@@ -390,7 +390,7 @@ apriltag_guess(start_location::Missing, stack, vid, darker_target, target_width,
 function apriltag_guess(start_xy::NTuple{2, Int}, _, vid, _, _, _, _, seedR)
     x, y = start_xy
     p = apply_h(seedR, SVector(x / vid.sar, Float64(y)))
-    return round.(Int, vid.scale .* (p[2], p[1]))
+    return round.(Int, vid.downscale .* (p[2], p[1]))
 end
 
 # ---- local ROI search --------------------------------------------------------------------------
@@ -525,17 +525,17 @@ diagnose_apriltag(file::AbstractString, rectification, darker_target, fps) =
 # which the run's own resolution may differ from. `dia` is an AprilTag `Diagnostic`/`Dont` created and
 # closed by the caller, shared across a run's segments.
 function track_apriltag(file, start, stop, target_width, start_location, window_size, darker_target,
-                        native_fps, sample_fps, dia, ref::ReferenceFrame, family, ref_sz, initial_search_factor, scale, background_length)
+                        native_fps, sample_fps, dia, ref::ReferenceFrame, family, ref_sz, initial_search_factor, downscale, background_length)
     ids = ref.ids
     ntags = length(ids)
-    video(file, native_fps, sample_fps, start, stop, scale) do vid
+    video(file, native_fps, sample_fps, start, stop, downscale) do vid
         dets = [set_detector!(AprilTagDetector(family)) for _ in 1:ntags]   # one per tag
         try
-            canvas = round.(Int, vid.scale .* ref_sz)      # the reference viewport, tracker-scaled
+            canvas = round.(Int, vid.downscale .* ref_sz)      # the reference viewport, tracker-scaled
             subtract = background_length != 0              # off ⇒ raw-slice detect, no protect/restore
             tr = Tracker(vid, darker_target, target_width, window_size, canvas, subtract)
             n_bkgd = n_background(vid, background_length)
-            warp = RegisteredWarp(vid.scale, Vector{SMatrix{3, 3, Float64, 9}}(undef, n_bkgd))
+            warp = RegisteredWarp(vid.downscale, Vector{SMatrix{3, 3, Float64, 9}}(undef, n_bkgd))
             stack = get_stack(vid, tr.sz, tr.h, n_bkgd, warp)
             n = vid.nframes
             sz = size(vid.img)                             # raw frame size (row, col)
@@ -591,7 +591,7 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
                 if isnothing(H)
                     coords[i] = missing
                 else
-                    rc, guess = detect(guess, stack, i, tr, vid.scale, level)
+                    rc, guess = detect(guess, stack, i, tr, vid.downscale, level)
                     coords[i] = img_to_cm(ref.M, rc)       # rc is reference px; ref.M is the fixed metric map
                 end
                 dia(slice(i), coords[i], H)
@@ -614,14 +614,14 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
                 # at the restore. The ternary is lazy, so `lastHinv` is still read only when
                 # `subtract`, exactly as before.
                 protect, keep = subtract ?
-                    protect_target(stack, j, guess, tr.radii, canvas2raw(lastHinv, vid.scale), PROTECT_PAD) :
+                    protect_target(stack, j, guess, tr.radii, canvas2raw(lastHinv, vid.downscale), PROTECT_PAD) :
                     (nothing, nothing)
                 populate_slice!(stack, j, vid)
                 warp.Hinvs[j] = lastHinv
                 if isnothing(H)
                     coords[i] = missing
                 else
-                    rc, guess = detect(guess, stack, j, tr, vid.scale, level)
+                    rc, guess = detect(guess, stack, j, tr, vid.downscale, level)
                     coords[i] = img_to_cm(ref.M, rc)
                 end
                 dia(vid.img, coords[i], H)

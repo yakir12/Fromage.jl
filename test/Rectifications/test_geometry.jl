@@ -80,16 +80,16 @@
         frow, fcol, crow, ccol = 800.0, 810.0, 320.0, 240.0
         checker_width = 0.025
         k = (0.05, -0.01)
-        intrinsic, extrinsic, scale = R.obj2img(Rvec, t, frow, fcol, crow, ccol, checker_width)
+        intrinsic, extrinsic, pixel_width = R.obj2img(Rvec, t, frow, fcol, crow, ccol, checker_width)
         inv_scale, inv_extrinsic, _, inv_distort, inv_intrinsic =
-            R.img2obj(intrinsic, extrinsic, scale, k)
+            R.img2obj(intrinsic, extrinsic, pixel_width, k)
         # img2obj hands back genuine inverses of obj2img's components
         for p in (SVector(0.0, 0.0), SVector(123.0, -45.0))
             @test (inv_intrinsic ∘ intrinsic)(p) ≈ p atol = 1e-9
         end
         for p in (SVector(0.1, 0.2, 0.3), SVector(-1.0, 2.0, 5.0))
             @test (inv_extrinsic ∘ extrinsic)(p) ≈ p atol = 1e-9
-            @test (inv_scale ∘ scale)(p) ≈ p atol = 1e-9
+            @test (inv_scale ∘ pixel_width)(p) ≈ p atol = 1e-9
         end
         # inv_distort inverts the forward radial map
         v = SVector(0.2, -0.1)

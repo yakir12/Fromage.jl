@@ -1,6 +1,6 @@
 # The rectification diagnostic image, end to end: the warp transform, the warped extrinsic frame,
 # and the save that `rectification_diagnostics` asks for. `_diagnostic` used to sit at the bottom of
-# from_video.jl even though every builder calls it and both its helpers live here.
+# from_checkerboard.jl even though every builder calls it and both its helpers live here.
 
 function get_warp(ratio, real2image)
     D = LinearMap(SDiagonal{2}(ratio*I))

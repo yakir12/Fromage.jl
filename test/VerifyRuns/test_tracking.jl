@@ -53,19 +53,19 @@
         @test tracking_rmse(ij, base_exp; offset = 10) < 1
     end
 
-    @testset "downscaled tracking (scale = 0.5)" begin
-        # coordinates come back in the *original* stored-frame pixels regardless of scale
-        ij = tracked([runrow(file = only(base), scale = "0.5")])
+    @testset "downscaled tracking (downscale = 0.5)" begin
+        # coordinates come back in the *original* stored-frame pixels regardless of downscale
+        ij = tracked([runrow(file = only(base), downscale = "0.5")])
         @test tracking_rmse(ij, base_exp) < 1
     end
 
-    @testset "the smallest permitted scale still finds the target (#24)" begin
-        # The rejection side of the `target_width × scale ≥ 1` guard is covered in test_values.jl;
+    @testset "the smallest permitted downscale still finds the target (#24)" begin
+        # The rejection side of the `target_width × downscale ≥ 1` guard is covered in test_values.jl;
         # this is the guarantee it is *for*: right at the boundary the target is still found. base
-        # is a 10 px disc, so scale 0.1 is the smallest legal value (a 10×10 working frame). The
-        # tolerance is loose because precision at the boundary is inherently about 1/scale — the
+        # is a 10 px disc, so downscale 0.1 is the smallest legal value (a 10×10 working frame). The
+        # tolerance is loose because precision at the boundary is inherently about 1/downscale — the
         # assertion is that the track stays within the target's own radius rather than wandering.
-        ij = tracked([runrow(file = only(base), target_width = "10", scale = "0.1")])
+        ij = tracked([runrow(file = only(base), target_width = "10", downscale = "0.1")])
         @test tracking_rmse(ij, base_exp) < 5
     end
 
@@ -87,7 +87,7 @@
         @test flagged(check([runrow(file = only(sar05), start_location = "(150, 50)")]), 1, "start_location is outside the frame")
         @test clean(check([runrow(file = only(sar2),  start_location = "(80, 50)")]))
         # anamorphic and downscaled at once
-        ij = tracked([runrow(file = only(sar2), start_location = "(55, 50)", scale = "0.5")])
+        ij = tracked([runrow(file = only(sar2), start_location = "(55, 50)", downscale = "0.5")])
         @test tracking_rmse(ij, sar2_exp) < 1
     end
 

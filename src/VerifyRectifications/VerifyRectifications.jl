@@ -2,7 +2,7 @@ module VerifyRectifications
 
 using ..ShareIO: ShareReadError
 using ..Rectifications: get_corners, _vf, extrinsic_gray_frame, from_extrinsic, from_matlab,
-    from_scale, from_video
+    from_uniform, from_checkerboard
 import ..Rectifications: Rectification
 using ..PawsomeTracker: PawsomeTracker, ApriltagRectification
 using FileIO: FileIO
@@ -21,13 +21,22 @@ using Tables: Tables
 
 export load_rectifications, check_rectifications
 
-const COLUMNS = (:comment, :calibration_id, :path, :file, :matlab_file, :start, :stop, :extrinsic, :checker_width, :center, :north, :n_corners, :scale, :type, :temporal_step, :radial_parameters, :blur, :extrinsic_index, :aspect, :yadif, :apriltags, :family, :tag_cell_width)
+const COLUMNS = (:comment, :calibration_id, :path, :file, :matlab_file, :intrinsic_start, :intrinsic_stop, :extrinsic, :checker_width, :center, :north, :n_corners, :pixel_width, :type, :temporal_step, :radial_parameters, :blur, :extrinsic_index, :aspect, :yadif, :apriltags, :family, :tag_cell_width)
 
 # Columns retired by a rename, and where each one's value went. Surfaced by `read_rows` when an
 # old csv still names them — the file-level error fires before any row is parsed, so this is the
 # only place such a user is reachable.
+#
+# The v0.2.23 three. `scale` is the one to be careful with: runs.csv has a `scale` column too, and
+# it meant something else entirely (a downsampling factor, now `downscale`). The two gateways keep
+# separate tables so a calibs.csv naming `scale` is never pointed at `downscale`, or the reverse.
+# `start`/`stop` moved because runs.csv uses those names for the span of a run to TRACK, which is
+# not this window — this one is when the checkerboard is being waved to fit the lens model.
 const RENAMED_COLUMNS = Dict(
     :checker_size => "checker_width — or tag_cell_width on `type = apriltag` rows",
+    :scale => "pixel_width (and `type = only_scale` is now `type = uniform`)",
+    :start => "intrinsic_start",
+    :stop => "intrinsic_stop",
 )
 
 include("types.jl")
