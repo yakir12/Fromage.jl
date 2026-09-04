@@ -89,7 +89,7 @@ Required: `calibration_id`, `file` (the drone footage — a video where the tags
 | `family` | `tag36h11` | the AprilTag family; one of `tag36h11`, `tag25h9`, `tag16h5`. |
 | `tag_cell_width` | `12` | the real-world size of a single tag **cell** (e.g. cm). The black-border square is `cells × tag_cell_width`, where `cells` is 8 for `tag36h11`, 7 for `tag25h9`, 6 for `tag16h5`. **Track coordinates come out in this unit.** |
 | `center` | — | `"(x, y)"` pixel of the arena's origin **in the `extrinsic` frame**, as displayed. Becomes the origin of the real-world coordinates. |
-| `north` | — | `"(x, y)"` pixel due north of `center` in the `extrinsic` frame, as displayed; rotates the coordinates so north is consistent. Requires `center`. |
+| `north` | — | `"(x, y)"` pixel due north of `center` in the `extrinsic` frame, as displayed; rotates the coordinates so north is consistent, and orients the [diagnostic video](results.md#The-diagnostic-video) the same way. Worth setting whenever you want to compare two calibrations of one arena: without it, the orientation follows whichever tag board carries the lowest id. Requires `center`. |
 | `path` | `.` | the **folder** containing `file`, relative to the csv file. Just the folder — the file name belongs in `file`, not here. |
 
 !!! warning "Renamed in v0.1.58"
