@@ -191,7 +191,7 @@ Selected *solely* by the CSV row having no intrinsic window (both `intrinsic_sta
 row may still carry `temporal_step`/`radial_parameters`, which are then silently ignored rather
 than flagged; everything else (`yadif`, `blur`, `n_corners`, `checker_width`, `aspect`, `center`,
 `north`) is honoured as usual. Filling only one of the two bounds is rejected upstream. See
-DESIGN-HISTORY.md for why this asymmetry is deliberate.
+DECISIONS.md for why this asymmetry is deliberate.
 """
 function from_extrinsic(; file, extrinsic, yadif, blur, width, height, n_corners, checker_width,
         aspect, center, north, rectification_id, rectification_diagnostics::Bool)

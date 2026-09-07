@@ -48,7 +48,7 @@ single implementation · type piracy or methods added to `Base` on foreign types
 threaded through keywords · missing docstrings on exported or non-obvious functions, or ones
 that omit units · comment density and naming that diverge from the surrounding file.
 
-Before calling something unidiomatic, check `DESIGN-HISTORY.md`: several odd-looking shapes are
+Before calling something unidiomatic, check `DECISIONS.md`: several odd-looking shapes are
 deliberate, and it names the alternative that was tried and the bug that killed it. Cite the
 entry if the code is defensible.
 

@@ -72,7 +72,7 @@ Base.convert(::Type{Int}, ::Boom) = error("boom")
         @test d[:n] == 7
         @test isempty(d[:issues])
 
-        # a present-but-blank cell is an absent cell (DESIGN-HISTORY: "Cells are trimmed, and a
+        # a present-but-blank cell is an absent cell (DECISIONS: "Cells are trimmed, and a
         # blank cell is an absent cell"), so it takes the default rather than becoming ""
         d = fresh(); P.parseto!(d, (; s = "   "), :s, String, "fallback")
         @test d[:s] == "fallback"

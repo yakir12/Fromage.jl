@@ -28,10 +28,11 @@ pkg> add https://github.com/yakir12/Fromage.jl
 
 ## Development
 
-Comments in `src/` and `test/` describe what the code does now. The reasoning behind the
-non-obvious choices — the alternatives that were tried, and the bugs that ruled them out — lives in
-[DESIGN-HISTORY.md](DESIGN-HISTORY.md). Read it before changing anything that looks gratuitously
-complicated; it is usually load-bearing.
+Comments in `src/` and `test/` describe what the code does now. [CONTEXT.md](CONTEXT.md) is the
+domain model — what a run, a rectification, a frame and a space are, and the rules that decide a
+name. The reasoning behind the non-obvious choices — the alternatives that were tried, and the bugs
+that ruled them out — lives in [DECISIONS.md](DECISIONS.md); read that before removing anything that
+looks gratuitously complicated, because it is usually load-bearing.
 
 Releases are automatic: every push to `main` that passes CI is patch-bumped, tagged, and
 released, and the stable docs advance with it. Put `#minor` or `#major` in the commit message

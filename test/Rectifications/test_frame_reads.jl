@@ -4,7 +4,7 @@
 # limiter are all exercised through the one entry point production uses — `_frame_at`.
 #
 # Deliberately says nothing about *how* the read is bounded. The limiter is an implementation
-# detail (see DESIGN-HISTORY.md); what must hold is that reads under concurrency are correct.
+# detail (see DECISIONS.md); what must hold is that reads under concurrency are correct.
 
 @testset "frame reads" begin
 

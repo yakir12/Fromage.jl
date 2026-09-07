@@ -19,12 +19,21 @@ follow this file. Rule 6 below exists because that has actually gone wrong.
 
 1. **Verify, don't assume.** Before claiming behaviour: run it, inspect the type, list the
    methods, read the test, look at the output. Source-reading is a hypothesis, not evidence.
-2. **Read `DESIGN-HISTORY.md` before changing anything that looks gratuitously complicated.**
-   It is usually load-bearing. `src/` and `test/` comments say what the code *does*;
-   DESIGN-HISTORY says *why*, with the bug that ruled out the obvious alternative. Entries cite
-   issue numbers (`git log --grep '#nn'`). Two long-form investigations sit beside it:
-   `CIFS-SHARE-INVESTIGATION.md` and `WHY-FRAMES-FAIL.md` (the share's EAGAIN failures and why
-   the retry loop stays).
+2. **Three files, three trigger conditions. Two of them are not optional.**
+   - **`CONTEXT.md` — read it before *naming* anything**, and before proposing that a term is
+     ambiguous. It is the domain model: what a run, segment, track, session, rectification,
+     calibration, frame and space are, the seven coordinate spaces and their axis orders, and the
+     rules that decide a name. Most terminology questions are already answered there, including
+     which words were deliberately left alone.
+   - **`DECISIONS.md` — read it before *removing* anything**, or anything that looks gratuitously
+     complicated. It is usually load-bearing: it records what was tried, measured and not kept, so
+     you do not re-add a parallel layer that was benchmarked away. Entries cite issue numbers
+     (`git log --grep '#nn'`).
+   - `src/` and `test/` comments say what the code *does*. That is the default home for mechanism —
+     if a fact has a line of code to sit beside, it belongs there, not in either file above.
+
+   Two long-form investigations sit beside them: `CIFS-SHARE-INVESTIGATION.md` and
+   `WHY-FRAMES-FAIL.md` (the share's EAGAIN failures and why the retry loop stays).
 3. **Small, targeted changes.** No broad refactors, no API rewrites, unless asked.
 4. **State uncertainty.** "I did not verify X" beats a confident guess. Don't overstate.
 5. **Behaviour changes come with tests.** Bugs come with a reproduction *first*, then a
@@ -45,6 +54,8 @@ follow this file. Rule 6 below exists because that has actually gone wrong.
 
 | Path | What lives there |
 |---|---|
+| `CONTEXT.md` | The domain model: what the words mean, the coordinate spaces, the naming rules |
+| `DECISIONS.md` | What was tried, measured and **not kept**, plus hazards with no code to sit beside |
 | `src/Fromage.jl` | Module root; **include order is load-bearing** (documented in the file) |
 | `src/paths.jl`, `shareio.jl`, `parsing.jl`, `probing.jl`, `gateway.jl` | Shared plumbing: output folders, retrying share reads, CSV-cell machinery, ffprobe, the csv → verified DataFrame pipeline |
 | `src/main.jl` | The end-to-end entry point (`main`, the only export) |
@@ -179,7 +190,7 @@ This is the axis that most often slips. New and modified code must read like the
 **Do:**
 
 - **Multiple dispatch instead of branching on a flag or a symbol.** Rectification builders are
-  chosen by *type*, not by an `if method == "checkerboard"` chain (DESIGN-HISTORY, "Rectification
+  chosen by *type*, not by an `if method == "checkerboard"` chain (DECISIONS, "Rectification
   builders take keywords, and are chosen by type"). Follow that pattern.
 - **Type stability.** JET runs on the whole package in CI; a `Union{Nothing,Float64}` accumulator
   or an untyped struct field will show up there. Check with `@code_warntype` /
@@ -233,7 +244,7 @@ Project agents live in `.claude/agents/`:
 |---|---|
 | `implementation-scout` | Where does this live, what calls it, which types and methods are on the path |
 | `test-auditor` | What covers this, what doesn't, which tests will break, what regression test is missing |
-| `docs-auditor` | Which docs/examples/docstrings this changes, and whether DESIGN-HISTORY needs an entry |
+| `docs-auditor` | Which docs/examples/docstrings this changes, and whether DECISIONS needs an entry |
 | `numerics-auditor` | What are the mathematical and floating-point assumptions, and the right tolerances |
 | `performance-auditor` | Allocations, type instability, threading, scaling |
 | `julia-idiom-reviewer` | Is this diff idiomatic Julia, and does it satisfy this repo's invariants |
@@ -256,7 +267,7 @@ Rules:
 ## 5. Workflows
 
 **Investigate** → discover (`search_code`) → confirm (`grep_code`) → inspect types/methods →
-find the tests → check `DESIGN-HISTORY.md` for prior art → short plan → implement → validate.
+find the tests → check `DECISIONS.md` for prior art → short plan → implement → validate.
 
 **Modify code:** understand the current implementation and *why* it is that way; identify the
 affected tests and docs; make the change; run the relevant suite; run a representative example;
@@ -271,7 +282,7 @@ removes a trap is a good change.
 
 **Scientific / numerical changes:** state the mathematical, numerical, parameter and data
 assumptions explicitly; validate them where practical; never change scientific behaviour without
-recording the rationale in `DESIGN-HISTORY.md`.
+recording the rationale in `DECISIONS.md`.
 
 **Can't reproduce?** Say so plainly, and list what you tried.
 
