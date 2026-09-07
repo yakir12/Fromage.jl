@@ -73,6 +73,48 @@ knowing about before the next pass over this vocabulary:
 frame-rate family are untouched: every one of them is about images, which is what the word now
 means.
 
+### The six coordinate spaces, their axis orders, and why nothing says "cm" (v0.2.26)
+
+Six spaces, and every conversion between them is somewhere in `src/`. Nothing stated them in one
+place, and two of the six use `(x, y)` while four use `(row, col)` — which is the shape of a bug
+that has already happened once (see `Segment`'s constructor, and #18).
+
+| space | what it is | axis order |
+|---|---|---|
+| **stored** | pixels as encoded in the file; what ffprobe reports | `(row, col)` |
+| **display** | stored corrected by `sar` — what an image viewer shows. `center`, `north`, `start_location` and `window_size` are written here | **`(x, y)`** |
+| **scaled** | after `downscale`; what the tracker's buffers cover | `(row, col)` |
+| **canvas** | a fixed-size render target (the diagnostic's square, the AprilTag reference viewport) | `(row, col)` |
+| **reference** | the AprilTag shared space every run frame registers into | `(row, col)` |
+| **metric** | AprilTag ground units straight out of the tag fit, before the centre/north gauge | **`(x, y)`** |
+| **real** | the output: metric after the gauge, or `image2real` for the fixed maps | `(y, x)` |
+
+`display` ↔ `stored` is `sar`; `scaled` is `downscale`; `metric` → `real` is `XY_SWAP` composed with
+centering and northing — which is exactly why those two differ in axis order and why the swap is a
+named constant rather than an inline reversal.
+
+**Why nothing says "cm" any more.** The AprilTag path asserted centimetres in 27 places, including a
+function called `img_to_cm` and the user-facing `track` docstring ("metric ground coordinates"). But
+`tag_cell_width` is *the real-world size of a tag cell in whatever unit the user measured it in* —
+`rectifications.md` says so and says the track comes out in that unit. Measure a tag cell in inches
+and the output is inches, so every one of those claims was false for a legal configuration. They now
+say **ground** (`img_to_ground`, "ground units", "raw ground (x, y)"). This is the same class of
+error as the "~372 opens per run" one: a statement only writable because a word had drifted.
+
+Three things deliberately keep the word:
+
+- `TAG_SIZE_CM` and `CANON` — the default gauge the geometry unit tests are built on, which really
+  is 12 cm/cell.
+- The test fixtures, whose `tag_cell_width` really is in cm. `test/fromage.jl` already noted that
+  *"'cm' is only the unit label the pipeline carries"*.
+- **"metric" as the name of the space.** In vision a *metric* reconstruction is one where true
+  distances are recoverable, as opposed to projective or affine. It has never meant SI, so it is the
+  correct word and was never the problem.
+
+"native image space" is gone as a seventh name for `stored`, and "real" versus "real-world" needed
+no work: the codebase already used the long form in prose and the short form to match
+`image2real`/`real2image`.
+
 ### "Run" means an experimental run, and nothing else (v0.2.25)
 
 **A run is one repeat of an experiment** — one trial, one animal crossing the arena once. It is an
