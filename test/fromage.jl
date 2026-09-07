@@ -43,7 +43,7 @@ using ..Harness: capturing
 
     @test runs isa DataFrame
     @test nrow(runs) == 1
-    t, xy = only(runs.run)                          # track returns (timestamps, REAL-WORLD coords)
+    t, xy = only(runs.track)                          # track returns (timestamps, REAL-WORLD coords)
     @test length(xy) == 50                          # the full 2 s at 25 fps
     # ground truth is the analytic pixel path pushed through the same rectification
     real_expected(i; kw...) = Tuple(only(runs.rectification).image2real(SVector(expected(i; kw...)...)))
@@ -192,7 +192,7 @@ end
     rect = only(runs.rectification)
     @test rect isa Fromage.PawsomeTracker.ApriltagRectification   # the joined rectification is the apriltag kind
     @test rect.ratio > 0
-    ts, xy = only(runs.run)
+    ts, xy = only(runs.track)
     @test length(xy) == nframes
     @test !any(ismissing, xy)                          # every frame held all four tags (no gaps)
     # tag_cell_width = 8 ⇒ one metric unit = one ground pixel, so the tracked path is directly
@@ -344,33 +344,33 @@ end
     end
     # named for what it does here; `verify` is now an exported entry point of its own
     check_calibs() = Fromage.VerifyRectifications.check_rectifications(dir, joinpath(dir, "rectifications.csv"); issues_dir = idir)
-    run_dirs() = filter(isdir, readdir(idir; join = true))
+    session_dirs() = filter(isdir, readdir(idir; join = true))
     frames(d) = filter(endswith(".png"), readdir(d; join = true))
 
     df = check_calibs()
     @test any(m -> occursin("only 4 of 6 AprilTags", m), only(df.issues))
     @test any(m -> occursin("saved the extrinsic frame", m), only(df.issues))
-    first_run = only(run_dirs())
-    @test length(frames(first_run)) == 1 && filesize(only(frames(first_run))) > 0
+    first_session = only(session_dirs())
+    @test length(frames(first_session)) == 1 && filesize(only(frames(first_session))) > 0
 
     df2 = check_calibs()
     @test any(m -> occursin("saved the extrinsic frame", m), only(df2.issues))
-    both = run_dirs()
-    @test length(both) == 2 && first_run in both       # the second run added a folder, it didn't replace one
+    both = session_dirs()
+    @test length(both) == 2 && first_session in both       # the second run added a folder, it didn't replace one
     @test all(d -> length(frames(d)) == 1, both)       # each folder holds only its own run's frame
-    @test isfile(only(frames(first_run)))              # the first run's frame survived the second run
+    @test isfile(only(frames(first_session)))              # the first run's frame survived the second run
     @test read(keepsake, String) == "hands off"        # and so did the user's file
 end
 
 @testset "issue folders never collide" begin
-    # run_issues_dir names a folder for the second the run started and counts past any folder that
+    # session_issues_dir names a folder for the second the run started and counts past any folder that
     # second already has, which is what keeps back-to-back runs apart. It only names the folder —
     # save_issue_frame creates it — so a run with nothing to report leaves the issues folder alone.
     P = Fromage.Paths
     d = mktempdir()
-    a = P.run_issues_dir(d); mkpath(a)
-    b = P.run_issues_dir(d); mkpath(b)
-    c = P.run_issues_dir(d)
+    a = P.session_issues_dir(d); mkpath(a)
+    b = P.session_issues_dir(d); mkpath(b)
+    c = P.session_issues_dir(d)
     @test allunique((a, b, c))
     @test all(==(d) ∘ dirname, (a, b, c))
     @test !ispath(c)

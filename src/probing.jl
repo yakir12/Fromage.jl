@@ -20,8 +20,8 @@ using FFMPEG: ffprobe
 #
 # The read goes through `ShareIO.capture`, which retries transient share failures and keeps
 # ffprobe's stderr. Both matter here, and neither used to happen. This stage opens the share ~386
-# times per run across the two gateways — more often than the frame-read path everybody worried
-# about — and had no retry whatsoever, so a single EAGAIN aborted the run at verification, before
+# times per SESSION across the two gateways — more often than the frame-read path everybody worried
+# about — and had no retry whatsoever, so a single EAGAIN aborted the whole session at verification, before
 # any work was done. It also sent stderr to `devnull`, leaving the failure describable only by its
 # exception type, and it was described as a corrupt file. See WHY-FRAMES-FAIL.md.
 function probe_fields(file, entries)

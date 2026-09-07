@@ -48,8 +48,10 @@ export track, ApriltagRectification, Segment, Tuning
 # WHY-FRAMES-FAIL.md first.
 const OPENVIDEO_LOCK = ReentrantLock()
 
-# The open is retried like every other read of the share (see `ShareIO`). This path had no retry
-# and ~372 opens per run.
+# The open is retried like every other read of the share (see `ShareIO`). This path had no retry,
+# and it is ONE open per run — ~372 of them in the reference session, which has 372 runs
+# (CIFS-SHARE-INVESTIGATION.md). This used to read "~372 opens per run", which is the ratio
+# backwards by a factor of 372.
 #
 # `transient` is widened because VideoIO reports an unreadable file, a share failure and a seek past
 # the end alike as a plain `ErrorException` — there is no exit code to inspect, as there is for the

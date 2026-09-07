@@ -1,6 +1,21 @@
-# A verified run: everything `PawsomeTracker.track` needs, guaranteed not to error. A run is one or
-# more segment videos sharing a `run_id`, held as a vector of `PawsomeTracker.Segment` in CSV order
-# — a single-video run being the one-element case.
+# WHAT A RUN IS
+#
+# One repeat of an experiment. Experiments answer scientific questions through repetition, and each
+# repeat is a run: one trial, one animal crossing the arena once. A run is an event in the world,
+# not a file — Fromage meets it twice, as the `runs.csv` rows that describe it and as the TRACK it
+# yields.
+#
+# A run may be split across several video files (the camera divided one recording), and each piece
+# is a SEGMENT. They are one run because they share a `run_id`. Three consequences follow, and each
+# is enforced somewhere below: one timeline (`_concat_timestamps` — the segments' timestamps are one
+# clock), one set of run-level parameters (`verify_run_consistency!`), and one track file
+# (`save2csv` writes `<run_id>.csv`).
+#
+# The word is NOT used for an execution of Fromage — that is a SESSION (see `session_issues_dir` in
+# paths.jl) — and not for the track itself, which `main` returns in a column called `track`.
+#
+# A verified run: everything `PawsomeTracker.track` needs, guaranteed not to error. It is held as a
+# vector of `PawsomeTracker.Segment` in CSV order, a single-video run being the one-element case.
 #
 # `run_id` names the run and `rectification_id` names the rectification it uses (Fromage joins the two
 # on it, so a run without one has nothing to rectify against); neither is forwarded to `track`.

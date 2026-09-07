@@ -1,6 +1,8 @@
 # runs.csv — your run videos
 
-`runs.csv` describes your **runs**: the videos of an animal (or any other target) moving through the arena. One row per run video. (A run split across multiple video files uses several rows — see [Runs that span multiple videos](#Runs-that-span-multiple-videos) below.)
+`runs.csv` describes your **runs**. A run is **one repeat of your experiment** — one trial, one animal crossing the arena once. One row per run video. (A run split across multiple video files uses several rows — see [Runs that span multiple videos](#Runs-that-span-multiple-videos) below.)
+
+Each run yields one **track**: the target's position over time, written to `results_dir/<run_id>.csv`. A run has one timeline, one set of tuning parameters, and one track file, however many video files it was recorded across.
 
 Not sure about the general formatting rules (timestamps, coordinates, blank cells)? See [the data folder](data-folder.md#Rules-both-csv-files-share) first.
 

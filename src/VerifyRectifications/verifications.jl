@@ -262,14 +262,14 @@ function extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
     end
 end
 
-# Save the frame that failed detection into this run's issues folder (created on demand) for the
+# Save the frame that failed detection into this session's issues folder (created on demand) for the
 # user to inspect, named by the video and extrinsic timestamp — e.g. `board_t1.0s.png`. `get_frame`
 # reads the frame lazily; best effort throughout, returning `nothing` if anything goes wrong.
-function save_issue_frame(run_dir, file, extrinsic, get_frame)
+function save_issue_frame(session_dir, file, extrinsic, get_frame)
     try
         image = get_frame()
-        mkpath(run_dir)
-        path = joinpath(run_dir, string(first(splitext(basename(file))), "_t", extrinsic, "s.png"))
+        mkpath(session_dir)
+        path = joinpath(session_dir, string(first(splitext(basename(file))), "_t", extrinsic, "s.png"))
         FileIO.save(path, image)
         return path
     catch e
@@ -287,7 +287,7 @@ function note_saved_frame(issue, saved)
     return string(issue, " — saved the extrinsic frame to ", saved, " for inspection")
 end
 
-function verify_extrinsics!(df::AbstractDataFrame, run_dir; progress = true)
+function verify_extrinsics!(df::AbstractDataFrame, session_dir; progress = true)
     # :file is the canonical resolved path, so grouping on it corner-detects a file reached via different
     # spellings once per (extrinsic, blur, n_corners).
     checkerboards = subset(df, :type => ByRow(passmissing(==("checkerboard"))); view = true, skipmissing = true)
@@ -310,7 +310,7 @@ function verify_extrinsics!(df::AbstractDataFrame, run_dir; progress = true)
     for (g, k, issue) in zip(gs, ks, issues)
         isnothing(issue) && continue
         # dump the frame the detector saw (deinterlaced/blurred) so the user can see what went wrong
-        saved = save_issue_frame(run_dir, k.file, k.extrinsic, () -> extrinsic_gray_frame(k.file, k.extrinsic, _vf(k.yadif, k.blur), k.width, k.height))
+        saved = save_issue_frame(session_dir, k.file, k.extrinsic, () -> extrinsic_gray_frame(k.file, k.extrinsic, _vf(k.yadif, k.blur), k.width, k.height))
         blank!(g, :extrinsic)
         push!.(g.issues, note_saved_frame(issue, saved))
     end
@@ -363,7 +363,7 @@ end
 # `family` must be detectable and their metric fit must converge (coplanar, not mis-detected). Reads
 # real frames, so it runs only on otherwise-clean apriltag rows, grouped so one physical file is
 # checked once per (extrinsic, apriltags, family, tag_cell_width).
-function verify_apriltag_extrinsics!(df::AbstractDataFrame, run_dir; progress = true)
+function verify_apriltag_extrinsics!(df::AbstractDataFrame, session_dir; progress = true)
     tags = subset(df, :type => ByRow(passmissing(==("apriltag"))); view = true, skipmissing = true)
     clean = subset(tags, :issues => ByRow(isempty); view = true)
     usable = dropmissing(clean, [:file, :extrinsic, :apriltags, :family, :tag_cell_width]; view = true)
@@ -373,7 +373,7 @@ function verify_apriltag_extrinsics!(df::AbstractDataFrame, run_dir; progress = 
     for (g, k, issue) in zip(gs, ks, issues)
         isnothing(issue) && continue
         # dump the extrinsic frame the tag detector saw so the user can see what went wrong
-        saved = save_issue_frame(run_dir, k.file, k.extrinsic, () -> collect(PawsomeTracker.read_frame_at(k.file, k.extrinsic)))
+        saved = save_issue_frame(session_dir, k.file, k.extrinsic, () -> collect(PawsomeTracker.read_frame_at(k.file, k.extrinsic)))
         blank!(g, :extrinsic)
         push!.(g.issues, note_saved_frame(issue, saved))
     end
@@ -430,11 +430,12 @@ end
 function verifications!(df::AbstractDataFrame, data_path, issues_dir = DEFAULT_ISSUES_DIR;
         progress = true)
 
-    # This run's frames go in a folder of their own, named for the moment the run started, so the
-    # folder reflects only this run without anything being deleted to make that true — `issues_dir`
-    # itself is the caller's, and Fromage only ever adds to it (#86). save_issue_frame creates the
-    # folder on the first frame it dumps, so a run that finds nothing to report writes nothing.
-    run_dir = run_issues_dir(issues_dir)
+    # This SESSION's frames go in a folder of their own, named for the moment it started, so the
+    # folder reflects only this session without anything being deleted to make that true —
+    # `issues_dir` itself is the caller's, and Fromage only ever adds to it (#86). save_issue_frame
+    # creates the folder on the first frame it dumps, so a session that finds nothing to report
+    # writes nothing. (A `Run` is an experimental run; this folder is per execution — see paths.jl.)
+    session_dir = session_issues_dir(issues_dir)
 
     # The resolved :file is the identity every later step uses (the read passes, duplicate
     # detection); :matlab_file (the .mat, matlab rows only) groups the .mat reads.
@@ -490,14 +491,14 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = DEFAULT_I
 
     # the extrinsic time stamp must actually yield a detectable frame; only meaningful once the
     # time stamp itself has been range-checked above
-    verify_extrinsics!(df, run_dir; progress)
+    verify_extrinsics!(df, session_dir; progress)
 
     # the intrinsic window must actually contain ≥ 3 detectable-corner frames; runs after
     # verify_extrinsics! so rows whose extrinsic already failed are skipped, not re-scanned
     verify_intrinsics!(df; progress)
 
     # apriltag rows: the extrinsic frame must yield a valid shared reference (tags detectable + coplanar)
-    verify_apriltag_extrinsics!(df, run_dir; progress)
+    verify_apriltag_extrinsics!(df, session_dir; progress)
 
     verify_unique_rectifications!(df)
 

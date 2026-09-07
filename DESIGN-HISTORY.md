@@ -25,6 +25,40 @@ It used to be a pairwise tree of `concat:`-protocol calls with per-join disconti
 run at `-loglevel 8` so that every warning it produced was hidden. The demuxer rewrites timestamps
 monotonically by design, so the heuristics went away with it.
 
+### "Run" means an experimental run, and nothing else (v0.2.25)
+
+**A run is one repeat of an experiment** — one trial, one animal crossing the arena once. It is an
+event in the world, not a file. Fromage meets it twice: as the `runs.csv` rows describing it, and as
+the **track** it yields. A run may be split across several video files, each piece a **segment**;
+they are one run because they share a `run_id`. One timeline (`_concat_timestamps`), one set of
+run-level parameters (`verify_run_consistency!`), one track file (`save2csv`).
+
+The word had been doing two other jobs:
+
+- **The track.** `main` returned a column literally named `run` holding `(ts, coords)`, in a
+  DataFrame with one row per run — so every column in that row was about the run, and the one named
+  `run` was the only one that wasn't what it said. `results.md` already glossed it as "the track".
+  It is now `track`, which also restores a symmetry with the rectification side: declaration →
+  verified → product is `runs.csv` → `Run` → the track, exactly as it is
+  `rectifications.csv` → `RectificationMethod` → `StaticRectification`. The product was the only
+  stage without a name of its own.
+- **An execution of Fromage.** `paths.jl` used it this way nine times in seventeen lines — "one
+  folder per verification run", "back-to-back runs", "two runs starting within the same second" —
+  and the function was `run_issues_dir`, which reads as "the issues folder of a given `Run`" and
+  meant the opposite. That sense is now a **session**: `session_issues_dir`, per execution.
+
+The ambiguity had already produced a false statement, which is why this was worth doing rather than
+merely tidy. `PawsomeTracker.jl` said *"~372 opens per run"* and `shareio.jl` repeated it as
+*"~372 tracking opens per run"*. `CIFS-SHARE-INVESTIGATION.md` records **372 runs** in that dataset
+and **one open per run** — so it is 372 runs × 1 open, and the comment stated the ratio backwards by
+a factor of 372. `probing.jl`'s *"~386 times per run"* was the same error. All three now say **per
+session**, and the sentence is no longer writable the wrong way round, because "run" can no longer
+mean an execution.
+
+`Segment` keeps its name. "Segment" names a *division of the run*, whether you look at it as the
+input video portion or the track portion it yields; only `results.md` had slipped to the output
+sense ("their segments come out in the same orientation"), now "their tracks".
+
 ### An unmatched `run_ids` / `rectification_ids` filter is an error (#21)
 
 Filtering by id is a convenience for iterating on one run, so an id that matches nothing is a
