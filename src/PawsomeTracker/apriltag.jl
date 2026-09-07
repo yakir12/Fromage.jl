@@ -2,7 +2,7 @@
 # into metric ground-plane coordinates (cm), in a single pass, using four coplanar tags as
 # landmarks. This file holds the ground-plane geometry (pure and unit-tested), the detection and
 # tracking loop, and the ROI local search. Registration is folded into the background stack's lazy
-# index pipe (RegisteredWarp), so the tracker works in the shared reference frame — a static scene
+# index pipe (RegisteredWarp), so the tracker works in the shared reference space — a static scene
 # — rather than in native image space. Every fit uses all 16 tag corners, and the metric map is fit
 # from all four tags jointly; see DESIGN-HISTORY.md for the measurements behind both.
 
@@ -104,10 +104,10 @@ place_square(D, canon = CANON) = map(rigid_align(canon, D), canon)
 # from all 16 corners to those pinned squares (DLT). The gauge pin is essential; without it the
 # iteration diverges under strong perspective. EVERY tag is tried as the bootstrap and the globally
 # best result kept, since the convergence basin is sensitive to sub-pixel corner noise. Fit once per
-# reference frame — a one-time few ms, not a per-frame cost.
+# reference space — a one-time few ms, not a per-frame cost.
 #
 # Returns `(M, worst_error)`: it computes, it does not decide. Whether that error is acceptable is
-# the caller's policy (see METRIC_FIT_TOLERANCE), which lets `reference_frame` report a
+# the caller's policy (see METRIC_FIT_TOLERANCE), which lets `reference_space` report a
 # non-converged fit as an issue string rather than catch a throw from in here.
 function fit_metric(tag_corners; canon = CANON, maxiter = 1000, tol = 1e-9)
     side = norm(canon[1] - canon[2])
@@ -147,9 +147,9 @@ end
 const METRIC_FIT_TOLERANCE = 5.0
 metric_fit_issue(err) = "AprilTag metric fit did not converge (worst square error $(round(err, digits = 2)) > $METRIC_FIT_TOLERANCE; in the rectification's real units); tags may be non-coplanar or mis-detected"
 
-# The reference frame: the tag ids (their order fixes the corner alignment used every frame), the
+# The reference space: the tag ids (their order fixes the corner alignment used every frame), the
 # 16 reference-image corners, and the metric map `M : reference image → ground cm`.
-struct ReferenceFrame
+struct ReferenceSpace
     ids::Vector{Int}
     corners::Vector{SVector{2, Float64}}          # flat 16, tag-major in `ids` order
     # The length parameter is not optional decoration: without it the type is a UnionAll, so the
@@ -158,25 +158,25 @@ struct ReferenceFrame
 end
 
 # Direct construction from detected corners: this one throws on a non-converged fit, since a caller
-# building a reference frame by hand has nowhere to put an issue string. The pipeline entry point
-# (`reference_frame`) does the same check itself and returns the message instead.
-function ReferenceFrame(ids::AbstractVector{<:Integer}, tag_corners; kw...)
+# building a reference space by hand has nowhere to put an issue string. The pipeline entry point
+# (`reference_space`) does the same check itself and returns the message instead.
+function ReferenceSpace(ids::AbstractVector{<:Integer}, tag_corners; kw...)
     M, err = fit_metric(tag_corners; kw...)
     err > METRIC_FIT_TOLERANCE && error(metric_fit_issue(err))
-    ReferenceFrame(collect(Int, ids), reduce(vcat, tag_corners), M)
+    ReferenceSpace(collect(Int, ids), reduce(vcat, tag_corners), M)
 end
 
 # ---- the shared reference as a rectification -------------------------------------------------
 # The AprilTag method yields a rectification like any other (VerifyRectifications builds it from a
 # `type = apriltag` rectifications row and Fromage joins it to the runs that reference it). Unlike the video
-# rectifications there is no fixed image→real map: the drone moves, so each run frame is registered
+# rectifications there is no fixed image→real map: the drone moves, so each frame of the run is registered
 # to this ONE shared `reference` (established from the rectification's extrinsic frame; the tags are
 # stationary across every run) before the fixed metric map takes it to ground cm. `image2real` is
 # therefore not a pixel map but the cm→real gauge (centre/north) applied to `track_apriltag`'s metric
 # output; `family` is the detector family the runs must be detected with; `ratio` is a representative
 # cm-per-pixel scale (kept positive for the diagnostics/tests that read it).
 struct ApriltagRectification{I}
-    reference::ReferenceFrame
+    reference::ReferenceSpace
     family::AprilTags.TagFamilies
     image2real::I
     ratio::Float64
@@ -204,14 +204,14 @@ function read_frame_at(file, t)
     end
 end
 
-# Establish the shared reference frame from the rectification's extrinsic frame: detect ≥ `ntags` tags
+# Establish the shared reference space from the rectification's extrinsic frame: detect ≥ `ntags` tags
 # of `family`, take the `ntags` lowest ids, and fit the metric map from their known cell geometry.
 #
-# Returns the `ReferenceFrame`, or a `String` describing why one could not be built — an unsupported
+# Returns the `ReferenceSpace`, or a `String` describing why one could not be built — an unsupported
 # family, an unreadable frame, too few tags, corners that could not be re-read, or a metric fit that
 # did not converge. Every one of those is a fact about the rectification the user gave us, not an
 # exceptional condition, so it is reported rather than thrown.
-function reference_frame(file, extrinsic, ntags, family, tag_cell_width)
+function reference_space(file, extrinsic, ntags, family, tag_cell_width)
     valid_apriltag_family(family) ||
         return unknown_family_message(family)
     # Serialize the WHOLE read + detect: the one-shot VideoIO read races under the callers' `tmap`,
@@ -236,17 +236,17 @@ function reference_frame(file, extrinsic, ntags, family, tag_cell_width)
             isnothing(tc) && return "could not read all $ntags AprilTag corners at the extrinsic frame"
             M, err = fit_metric(tc; canon = canon_square(family, tag_cell_width))
             err > METRIC_FIT_TOLERANCE && return metric_fit_issue(err)
-            ReferenceFrame(collect(Int, ids), reduce(vcat, tc), M)
+            ReferenceSpace(collect(Int, ids), reduce(vcat, tc), M)
         finally
             freeDetector!(det)
         end
     end
 end
 
-# A representative cm-per-pixel scale of the reference frame: the mean tag side in cm over its mean
+# A representative cm-per-pixel scale of the reference space: the mean tag side in cm over its mean
 # side in pixels. Only used where a positive scalar `ratio` is expected (diagnostics/tests) — the
 # real image→ground map is the per-frame homography, not a single scale.
-function reference_ratio(ref::ReferenceFrame)
+function reference_ratio(ref::ReferenceSpace)
     px = 0.0
     cm = 0.0
     for tc in Iterators.partition(ref.corners, 4)             # one tag's 4 corners at a time
@@ -258,7 +258,7 @@ function reference_ratio(ref::ReferenceFrame)
     return cm / px
 end
 
-# The (x, y) ↔ (y, x) reordering between the metric frame and the real-coordinate convention, held
+# The (x, y) ↔ (y, x) reordering between the metric space and the real-coordinate convention, held
 # as a transformation rather than spelled inline, so the gauge below composes into a single
 # invertible map instead of a one-way closure.
 const XY_SWAP = LinearMap(SMatrix{2, 2, Float64}(0, 1, 1, 0))
@@ -291,7 +291,7 @@ end
 # duplication #140/#141 were about. Square pixels are spelled `aspect = 1.0` at the call site.
 function ApriltagRectification(; file, extrinsic, ntags, family, tag_cell_width, center, north,
         width, height, aspect)
-    ref = reference_frame(file, extrinsic, ntags, family, tag_cell_width)
+    ref = reference_space(file, extrinsic, ntags, family, tag_cell_width)
     # Building a rectification has nowhere to put an issue string, so the report becomes a throw
     # here. In the normal pipeline this is unreachable: VerifyRectifications ran
     # apriltag_extrinsic_issue over the same arguments first and rejected the row.
@@ -306,17 +306,17 @@ valid_apriltag_family(family) = haskey(APRIL_FAMILIES, family)
 
 # Does the extrinsic frame support a shared reference? Returns `nothing` on success or an issue
 # string (unreadable frame, too few tags, non-coplanar / mis-detected tags), so it composes with the
-# gateway's other checks. A plain type test, since `reference_frame` already reports those as
+# gateway's other checks. A plain type test, since `reference_space` already reports those as
 # strings — a genuine error propagates rather than being reformatted as a rectification issue.
 function apriltag_extrinsic_issue(file, extrinsic, ntags, family, tag_cell_width)
-    ref = reference_frame(file, extrinsic, ntags, family, tag_cell_width)
+    ref = reference_space(file, extrinsic, ntags, family, tag_cell_width)
     return ref isa String ? ref : nothing
 end
 
 # Homography mapping the current frame's image to the reference image, from all 16 corners (already
 # aligned to `ref.ids` order by the caller). The full image→cm map for a frame is `ref.M * register(…)`,
 # which the tracking loop composes inline because it needs the registration separately for `inv`.
-register(ref::ReferenceFrame, corners) = homography_dlt(corners, ref.corners)
+register(ref::ReferenceSpace, corners) = homography_dlt(corners, ref.corners)
 
 # The lazy registration warp: the background stack's index transform, composing each slice's
 # registration with the tracker's inverse scaling, so every slice is sampled in the SHARED REFERENCE
@@ -394,7 +394,7 @@ function apriltag_guess(start_xy::NTuple{2, Int}, _, vid, _, _, _, _, seedR)
 end
 
 # ---- local ROI search --------------------------------------------------------------------------
-# AprilTag detection cost scales with pixels, so after the reference frame each tag is searched in a
+# AprilTag detection cost scales with pixels, so in every frame after the reference image each tag is searched in a
 # small box around where it was last seen rather than over the whole frame. Detecting on a crop
 # reproduces the full-frame corners to better than 0.1 px, so this is a pure speedup. The box grows
 # and re-searches until the tag is found or spans the whole frame, degrading gracefully to
@@ -449,7 +449,7 @@ end
 # the user judge both rectification quality and tracking at a glance. The canvas covers the
 # reference tags' bounding box (plus a margin) at a fixed pixel size, with square pixels.
 #
-# The canvas is laid out in the rectification's GAUGED real frame, not in the raw metric frame the tag
+# The canvas is laid out in the rectification's GAUGED real space, not in the raw metric space the tag
 # fit happens to land in. That distinction is the whole point of the scene holding a gauge:
 # `fit_metric` pins its cm frame to the lowest-numbered tag's BODY, so turning that one board 90°
 # between two field days turned the entire canvas 90° with it, and two runs over the same terrain
@@ -521,11 +521,11 @@ diagnose_apriltag(file::AbstractString, rectification, darker_target, fps) =
 # tracker holds its last reference-space position.
 #
 # The reference is established once, from the rectification's extrinsic frame, and shared here;
-# `family` is the detector family it was built with; `ref_sz` is the reference frame's (rows, cols),
+# `family` is the detector family it was built with; `ref_sz` is the reference space's (rows, cols),
 # which the run's own resolution may differ from. `dia` is an AprilTag `Diagnostic`/`Dont` created and
 # closed by the caller, shared across a run's segments.
 function track_apriltag(file, start, stop, target_width, start_location, window_size, darker_target,
-                        native_fps, sample_fps, dia, ref::ReferenceFrame, family, ref_sz, initial_search_factor, downscale, background_length)
+                        native_fps, sample_fps, dia, ref::ReferenceSpace, family, ref_sz, initial_search_factor, downscale, background_length)
     ids = ref.ids
     ntags = length(ids)
     video(file, native_fps, sample_fps, start, stop, downscale) do vid

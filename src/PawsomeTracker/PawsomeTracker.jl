@@ -114,7 +114,7 @@ end
 
 function get_guess(::Missing, stack, vid, darker_target, target_width, initial_search_factor, subtract)
     # size the throwaway search Tracker from the stack itself, not the video: in AprilTag mode the
-    # stack's canvas is the (scaled) reference viewport, which may differ from the run frame's
+    # stack's canvas is the (scaled) reference viewport, which may differ from the run space's
     sz = size(parent(stack))[1:2]
     guess = sz .÷ 2
     window_size = fix_window_size(floor(Int, min(sz...) / initial_search_factor))
@@ -136,7 +136,7 @@ struct Video
     # `Rational{Int}`, not a bare `Rational`: the unparameterised spelling is abstract, so the field
     # would be boxed and every read of it untyped. `VideoIO.aspect_ratio` returns
     # `Union{Rational{Int32}, Rational{Int64}}` and either converts on construction. Matches
-    # `VerifyRuns.Frame.sar`, which holds the same quantity read from ffprobe instead.
+    # `VerifyRuns.FrameFormat.sar`, which holds the same quantity read from ffprobe instead.
     sar::Rational{Int}
 
     # `sample_fps` arrives as a request and is stored as a promise: the sampler advances whole

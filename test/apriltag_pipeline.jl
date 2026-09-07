@@ -72,7 +72,7 @@ Run one flight end to end and assert the two contracts that define a working pip
     DoG search window (which is what makes the un-corrected guess correct);
   * **track** — the coordinates `track` reports match, frame by frame, the intended ground path
     carried through the pipeline's own declared maps (`ref.M`, then `image2real`). Both are fixed
-    properties of the reference frame rather than of the track, so the prediction stays independent
+    properties of the reference space rather than of the track, so the prediction stays independent
     of the thing it is checking.
 """
 function check_flight(dir, name, pose; teeth = false)

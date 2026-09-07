@@ -8,9 +8,9 @@
 
     @testset "the video's pixel dimensions are carried onto the run's Source" begin
         r = only(check([runrow()]))
-        @test r.frame.width  == 640                    # ← probed from the video itself
-        @test r.frame.height == 480
-        @test r.frame.sar    == 1                      # square pixels; anamorphic: test_tracking.jl
+        @test r.frame_format.width  == 640                    # ← probed from the video itself
+        @test r.frame_format.height == 480
+        @test r.frame_format.sar    == 1                      # square pixels; anamorphic: test_tracking.jl
     end
 
     @testset "the video's own frame rate is carried onto the run's Tuning" begin

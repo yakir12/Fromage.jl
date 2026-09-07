@@ -88,7 +88,7 @@
         # asserts the imputation ran with the right inputs rather than restating its result.
         @test r.tuning.window_size isa Int
         @test r.tuning.window_size == PT.get_window(r.tuning.target_width, r.tuning.sample_fps,
-                                                    min(r.frame.height, r.frame.width),
+                                                    min(r.frame_format.height, r.frame_format.width),
                                                     VR.run_duration(r.segments))
         @test r.tuning.darker_target         == true
         @test r.tuning.initial_search_factor == 4.0

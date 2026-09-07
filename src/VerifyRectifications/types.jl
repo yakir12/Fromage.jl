@@ -36,7 +36,7 @@ struct MATLAB <: RectificationMethod
     extrinsic_index::Int
 end
 
-# An AprilTag rectification: the drone footage is registered to a shared reference frame (built from
+# An AprilTag rectification: the drone footage is registered to a shared reference space (built from
 # the `extrinsic` frame, where ≥ `apriltags` tags of `family` must be detectable and coplanar) rather
 # than to a fixed image→real map. `tag_cell_width` is the size of one tag CELL; the black-border
 # square is `cells_across(family) × tag_cell_width` (see PawsomeTracker.canon_square). It is NOT the
