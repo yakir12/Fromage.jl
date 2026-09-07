@@ -30,7 +30,7 @@ gateways `VerifyRuns` / `VerifyRectifications`. Shared plumbing at the top of `s
 `gateway.jl` (csv → verified DataFrame). `src/main.jl` holds the only export, `main`. Include
 order in `src/Fromage.jl` is load-bearing and documented there.
 
-`DESIGN-HISTORY.md` records *why* non-obvious code is shaped as it is, with issue numbers —
+`DECISIONS.md` records *why* non-obvious code is shaped as it is, with issue numbers —
 check it whenever a call path looks needlessly convoluted, and cite the entry.
 
 ## Report

@@ -4,7 +4,7 @@
 # tracking loop, and the ROI local search. Registration is folded into the background stack's lazy
 # index pipe (RegisteredWarp), so the tracker works in the shared reference space — a static scene
 # — rather than in each frame's own stored pixels. Every fit uses all 16 tag corners, and the metric map is fit
-# from all four tags jointly; see DESIGN-HISTORY.md for the measurements behind both.
+# from all four tags jointly; see DECISIONS.md for the measurements behind both.
 
 using StaticArrays: SVector, SMatrix
 using LinearAlgebra: svd, det, norm
@@ -455,7 +455,7 @@ end
 # between two field days turned the entire canvas 90° with it, and two runs over the same terrain
 # did not line up however carefully `center`/`north` were placed. `center`/`north` name physical
 # points, so gauging by them makes the canvas comparable across rectifications — and matches what
-# `RectifiedScene` has always done for the video path. See DESIGN-HISTORY.md.
+# `RectifiedScene` has always done for the video path. See DECISIONS.md.
 struct ApriltagScene{G, U}
     m::Int
     xc::Float64                                   # canvas ↔ real: centre (real units) …

@@ -116,7 +116,7 @@ const S = ShareIO
         # expected 0.2 + 0.4) catches a removed backoff with room to spare. The previous version
         # asserted `t ≥ 0.6` — the exact sum, with no margin — and a test of "did it retry" should
         # not sit on the scheduler's exact output. It deliberately does NOT pin the schedule:
-        # src/shareio.jl states that, and DESIGN-HISTORY says why those values were chosen.
+        # src/shareio.jl states that, and DECISIONS says why those values were chosen.
         t = @elapsed @test_throws S.ShareReadError S.capture(`false`, "it failed"; tries = 3)
         @test t ≥ 0.3
     end

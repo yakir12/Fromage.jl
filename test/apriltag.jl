@@ -119,7 +119,7 @@ project(H) = [[apply_h(H, c) for c in tc] for tc in TAGS_CM]
         # than the registration they are here to test (#27).
         # Seeded: the assertions below are exact-copy invariants that hold for ANY array, so the
         # values are incidental — but an unseeded fixture makes a failure irreproducible from
-        # the log, which is the hazard DESIGN-HISTORY's "corrupt-video fixture is deterministic"
+        # the log, which is the hazard DECISIONS's "corrupt-video fixture is deterministic"
         # entry already records once.
         ground = Gray{N0f8}.(rand(Xoshiro(20260901), N0f8, 100, 120))
         offs = [(0, 0), (5, 7), (10, 3)]                                   # (row, col) crop offsets

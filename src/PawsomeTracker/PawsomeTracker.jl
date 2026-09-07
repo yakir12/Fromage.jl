@@ -343,7 +343,7 @@ function detect(guess, stack, j, tr::Tracker, downscale, level = Ref(0.0))
     window_indices = UnitRange.(guess .- radii, guess .+ radii)
     # Serial on purpose. This is the innermost of five nested layers of parallelism, and on a
     # 21×21 window with a 29×29 kernel the threaded resource is worth nothing measurable — see
-    # DESIGN-HISTORY.md. `CPU1(FIR)` is bitwise identical to `CPUThreads(FIR)`, and the resource
+    # DECISIONS.md. `CPU1(FIR)` is bitwise identical to `CPUThreads(FIR)`, and the resource
     # argument cannot simply be dropped: `imfilter!` has no method taking `inds` without one.
     imfilter!(CPU1(Algorithm.FIR()), buff, img, kernel, NoPad(), window_indices)
     v = view(buff, window_indices...)
@@ -513,7 +513,7 @@ An `ApriltagRectification` selects AprilTag mode (drone footage): every backgrou
 lazily warped into the rectification's shared reference, so drone motion is removed at lookup time
 and tracking happens in a static scene. `coords` are then ground coordinates in the rectification's real-world unit, `missing` on
 frames where a tag was lost, and the segments do NOT chain — each registers to the same shared
-reference and starts from its own `start_location` (see DESIGN-HISTORY.md). Otherwise the segments
+reference and starts from its own `start_location` (see DECISIONS.md). Otherwise the segments
 are one continuous run, and a segment whose `start_location` is `missing` continues from where the
 previous one ended.
 
@@ -547,7 +547,7 @@ function track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnos
 
     # AprilTag mode: every segment registers to the SAME shared reference (the tags are stationary
     # across the whole run) and is tracked independently from its own start_location, a missing one
-    # falling back to the frame-centre search. Segments do not chain (see DESIGN-HISTORY.md). One
+    # falling back to the frame-centre search. Segments do not chain (see DECISIONS.md). One
     # diagnostic spans all of them.
     if rectification isa ApriltagRectification
         segs = Vector{Vector{Union{Missing, RowCol}}}(undef, nsegments)

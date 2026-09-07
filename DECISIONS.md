@@ -1,14 +1,22 @@
-# Design history
+# Decisions
 
-Why the code looks the way it does.
+**Read this before removing something.**
 
-The comments in `src/` and `test/` describe what the code *does now*. This file holds the other
-half — the decisions, the alternatives that were tried and abandoned, and the bugs that taught us
-something — so that a future reader who wonders "why on earth is it done this way?" has somewhere
-to look before changing it.
+`CONTEXT.md` says what the package *is* and what its words mean. `src/` and `test/` comments say
+what the code *does*. This file holds the third thing neither can: **what was tried, measured, and
+not kept** — and the hazards that have no line of code to hang a comment on.
+
+That is the irreducible part. You cannot write a comment on a parallel layer that was removed, or
+on a polynomial root-finder that was benchmarked and declined. Without this file someone re-adds
+them and re-derives the measurement. It has already happened once: a rename's reasoning lived only
+in a commit message, so it got half-applied and cost three rounds to reconstruct.
+
+So the test for an entry here is: **would a reasonable person otherwise undo this, or redo the thing
+we rejected?** If the answer is no — if it merely describes how something works — it belongs in a
+code comment, and if it names something it belongs in `CONTEXT.md`.
 
 Entries cite the issue number where one exists (`#nn` → `github.com/yakir12/Fromage.jl/issues/nn`);
-`git log --grep '#nn'` finds the commit. Nothing here is required reading to work on the package.
+`git log --grep '#nn'` finds the commit.
 
 ---
 
@@ -24,130 +32,6 @@ same encoder settings, rather than each rectification rendering at its own natur
 It used to be a pairwise tree of `concat:`-protocol calls with per-join discontinuity heuristics,
 run at `-loglevel 8` so that every warning it produced was hidden. The demuxer rewrites timestamps
 monotonically by design, so the heuristics went away with it.
-
-### A "frame" is an image; every coordinate system is a "space" (v0.2.26)
-
-Unlike rectification/calibration, **machine vision does not settle this one**: a *video frame* is an
-image and a *frame of reference* is a coordinate system, and both are standard usage in the same
-field. OpenCV means the first, ROS/tf means the second. So this needed a local convention rather
-than a lookup.
-
-The convention: **bare "frame" means an image. Every other sense takes a qualifier.**
-
-Three things decided it that way rather than the reverse:
-
-1. Weight — "frame" means a picture roughly 200 times in `src/` against ~15 for the coordinate
-   sense, and the image sense is the user-facing one (`native_fps`, "pause the video on a frame").
-2. `DataFrame` proves the pattern already works. 62 occurrences of a third meaning that can never
-   be removed, and it confuses nobody because it is *always compounded, never bare*.
-3. The replacement word was already in the codebase, unadopted: `grep` found **reference space**,
-   **display space**, **native space**, **image space** — eight uses of "space" for exactly the
-   coordinate sense, sitting alongside "frame" doing the same job.
-
-What moved:
-
-| was | is | why |
-|---|---|---|
-| `ReferenceFrame` | `ReferenceSpace` | it defines the shared coordinate system every run frame registers into; the reference image is how it was established, not what it is |
-| `reference_frame()` | `reference_space()` | |
-| `VerifyRuns.Frame` | `FrameFormat` | it holds `width`/`height`/`sar` — neither an image nor a space, but the format every frame of that video shares |
-| `Run.frame` | `Run.frame_format` | `r.frame` read as an image |
-| "run frame" (`VerifyRuns/types.jl`) | "run space" | |
-| "metric frame", "GAUGED real frame" | "metric space", "real space" | |
-
-The sentence that made the case, `apriltag.jl:207`: *"Establish the shared **reference frame** from
-the rectification's **extrinsic frame**"* — both words correct, two senses, one clause. It now reads
-"reference **space** from … extrinsic **frame**", and says which is which.
-
-Two traps found while doing it, both of which a blanket replace would have corrupted — worth
-knowing about before the next pass over this vocabulary:
-
-- **"real" is itself overloaded.** *"the GAUGED real frame"* (`apriltag.jl`) is real-world
-  coordinates; *"the real frame size"* and *"Reads real frames"* (`VerifyRectifications`) mean
-  **actual**, as opposed to declared or synthetic. Only the first is a space.
-- **Two "reference frame"s are images.** `apriltag.jl:397` (*"after the reference frame each tag is
-  searched…"*) means every frame after the reference image, and `test/apriltag.jl:103` measures
-  through a frame that is deliberately not the reference. Both now say "reference image".
-
-`Segment`, `frame_center`, `frame_skip`, `nframes`, `frame_geometry`, `read_frame_at` and the whole
-frame-rate family are untouched: every one of them is about images, which is what the word now
-means.
-
-### The six coordinate spaces, their axis orders, and why nothing says "cm" (v0.2.26)
-
-Six spaces, and every conversion between them is somewhere in `src/`. Nothing stated them in one
-place, and two of the six use `(x, y)` while four use `(row, col)` — which is the shape of a bug
-that has already happened once (see `Segment`'s constructor, and #18).
-
-| space | what it is | axis order |
-|---|---|---|
-| **stored** | pixels as encoded in the file; what ffprobe reports | `(row, col)` |
-| **display** | stored corrected by `sar` — what an image viewer shows. `center`, `north`, `start_location` and `window_size` are written here | **`(x, y)`** |
-| **scaled** | after `downscale`; what the tracker's buffers cover | `(row, col)` |
-| **canvas** | a fixed-size render target (the diagnostic's square, the AprilTag reference viewport) | `(row, col)` |
-| **reference** | the AprilTag shared space every run frame registers into | `(row, col)` |
-| **metric** | AprilTag ground units straight out of the tag fit, before the centre/north gauge | **`(x, y)`** |
-| **real** | the output: metric after the gauge, or `image2real` for the fixed maps | `(y, x)` |
-
-`display` ↔ `stored` is `sar`; `scaled` is `downscale`; `metric` → `real` is `XY_SWAP` composed with
-centering and northing — which is exactly why those two differ in axis order and why the swap is a
-named constant rather than an inline reversal.
-
-**Why nothing says "cm" any more.** The AprilTag path asserted centimetres in 27 places, including a
-function called `img_to_cm` and the user-facing `track` docstring ("metric ground coordinates"). But
-`tag_cell_width` is *the real-world size of a tag cell in whatever unit the user measured it in* —
-`rectifications.md` says so and says the track comes out in that unit. Measure a tag cell in inches
-and the output is inches, so every one of those claims was false for a legal configuration. They now
-say **ground** (`img_to_ground`, "ground units", "raw ground (x, y)"). This is the same class of
-error as the "~372 opens per run" one: a statement only writable because a word had drifted.
-
-Three things deliberately keep the word:
-
-- `TAG_SIZE_CM` and `CANON` — the default gauge the geometry unit tests are built on, which really
-  is 12 cm/cell.
-- The test fixtures, whose `tag_cell_width` really is in cm. `test/fromage.jl` already noted that
-  *"'cm' is only the unit label the pipeline carries"*.
-- **"metric" as the name of the space.** In vision a *metric* reconstruction is one where true
-  distances are recoverable, as opposed to projective or affine. It has never meant SI, so it is the
-  correct word and was never the problem.
-
-"native image space" is gone as a seventh name for `stored`, and "real" versus "real-world" needed
-no work: the codebase already used the long form in prose and the short form to match
-`image2real`/`real2image`.
-
-### "Run" means an experimental run, and nothing else (v0.2.25)
-
-**A run is one repeat of an experiment** — one trial, one animal crossing the arena once. It is an
-event in the world, not a file. Fromage meets it twice: as the `runs.csv` rows describing it, and as
-the **track** it yields. A run may be split across several video files, each piece a **segment**;
-they are one run because they share a `run_id`. One timeline (`_concat_timestamps`), one set of
-run-level parameters (`verify_run_consistency!`), one track file (`save2csv`).
-
-The word had been doing two other jobs:
-
-- **The track.** `main` returned a column literally named `run` holding `(ts, coords)`, in a
-  DataFrame with one row per run — so every column in that row was about the run, and the one named
-  `run` was the only one that wasn't what it said. `results.md` already glossed it as "the track".
-  It is now `track`, which also restores a symmetry with the rectification side: declaration →
-  verified → product is `runs.csv` → `Run` → the track, exactly as it is
-  `rectifications.csv` → `RectificationMethod` → `StaticRectification`. The product was the only
-  stage without a name of its own.
-- **An execution of Fromage.** `paths.jl` used it this way nine times in seventeen lines — "one
-  folder per verification run", "back-to-back runs", "two runs starting within the same second" —
-  and the function was `run_issues_dir`, which reads as "the issues folder of a given `Run`" and
-  meant the opposite. That sense is now a **session**: `session_issues_dir`, per execution.
-
-The ambiguity had already produced a false statement, which is why this was worth doing rather than
-merely tidy. `PawsomeTracker.jl` said *"~372 opens per run"* and `shareio.jl` repeated it as
-*"~372 tracking opens per run"*. `CIFS-SHARE-INVESTIGATION.md` records **372 runs** in that dataset
-and **one open per run** — so it is 372 runs × 1 open, and the comment stated the ratio backwards by
-a factor of 372. `probing.jl`'s *"~386 times per run"* was the same error. All three now say **per
-session**, and the sentence is no longer writable the wrong way round, because "run" can no longer
-mean an execution.
-
-`Segment` keeps its name. "Segment" names a *division of the run*, whether you look at it as the
-input video portion or the track portion it yields; only `results.md` had slipped to the output
-sense ("their segments come out in the same orientation"), now "their tracks".
 
 ### An unmatched `run_ids` / `rectification_ids` filter is an error (#21)
 
@@ -323,70 +207,6 @@ negligible.
 ---
 
 ## Rectifications
-
-### "Rectification" and "calibration" are decided by machine-vision usage, not by audience (v0.2.24)
-
-The two words had drifted into each other for three releases, and each attempt to separate them
-picked a different boundary:
-
-- `d5cdf03` (v0.1.x): *"rectification names the output; calibration keeps genuine camera-calibration
-  semantics, plus the user-facing `calibration_id`/`calibs.csv`."* Requires a judgement call at
-  every site, which is why the same commit renamed the duplicate-detection **messages** to
-  "rectification" while leaving the **function** that emits them called
-  `verify_unique_calibrations!`.
-- An audience rule was considered and rejected: *"a non-technical user reads it ⇒ calibration."*
-  It is mechanical, but it makes the same object change name depending on who is looking at it,
-  which is how you end up with two vocabularies to keep in step instead of one.
-
-The rule now is external: **call each thing what machine vision calls it.**
-
-- **Calibration** = estimating a camera model — intrinsics (focal length, principal point,
-  distortion) and/or extrinsics (pose). The output is a camera model.
-- **Rectification** = warping an image to remove perspective (here: to a fronto-parallel metric
-  view of the arena floor), and by extension the transform that performs it.
-
-Applying that to what Fromage actually does:
-
-| thing | what it is | word |
-|---|---|---|
-| `fit_model` → `OpenCV.calibrateCamera`, distortion coefficients | intrinsic + extrinsic camera calibration | calibration |
-| `from_matlab` reading `K`, `RotationVectors`, `RadialDistortion` | an imported camera calibration | calibration |
-| `intrinsic_start`/`intrinsic_stop`, `checker_width`, `n_corners`, `radial_parameters` | parameters of that calibration | calibration |
-| `RectifiedScene`, `warp_extrinsic`, the top-down diagnostic | an image warped to the ground plane | rectification |
-| `StaticRectification`, `image2real`/`real2image` | the transform that performs that warp | rectification |
-| `type = apriltag` | homography + per-frame registration, **no camera model** | rectification |
-| `type = uniform` | a declared similarity transform, **no camera model** | rectification |
-| `rectifications.csv`, `rectification_id` | the file/row saying *which method and its parameters* | rectification |
-
-The decisive fact is that `OpenCV.calibrateCamera` is called in exactly **one** place
-(`detect_fit.jl`), and `from_uniform` has "no camera model at all". Two of the four types perform no
-calibration whatsoever — so "calibration" could never be the name of the file describing all four.
-That is what made the boundary unstateable: `calibs.csv` was the counter-example sitting at the
-centre of the vocabulary.
-
-So v0.2.24 finished what `d5cdf03` started: `calibs.csv` → `rectifications.csv`,
-`calibration_id` → `rectification_id` (a column of **both** csv files), `calibs_file` →
-`rectifications_file`, `calibration_ids` → `rectification_ids`, `verify_unique_calibrations!` →
-`verify_unique_rectifications!`, `verify_run_calibration!` → `verify_run_rectification!`,
-`report_calibs` → `report_rectifications`, the gateway's `what` label and its
-`"Reading calibration videos…"` probe message, and `verify`'s returned field `calibs` →
-`rectifications`. The `"duplicate rectification"` messages `d5cdf03` introduced were already
-correct and did not move.
-
-Deliberately **not** renamed, because the word is right where it stands:
-
-- `extrinsic` — literally the pose-anchoring frame for `checkerboard` and `matlab`, and generalised
-  to the other two as "the frame this rectification is anchored to". One deliberate generalisation
-  beats a third vocabulary word.
-- The docs' *"What makes a good calibration video"* — it sits under `type = checkerboard` and
-  describes waving a board for the intrinsic fit. That is a calibration video.
-- `"Reading matlab calibration files…"`, `matlab_file`, `extrinsic_index`, and the MATLAB prose —
-  they name an external camera calibration.
-
-One thing this rule cannot do is enforce itself. An audience rule could have been a test ("no issue
-string contains `rectif`"); formal correctness is a judgement about what a thing *is*, so it stays
-a convention backed by this table. The table is the checkable part: if a new concept does not
-appear in it, decide which column it belongs in before naming it.
 
 ### Rectification builders take keywords, and are chosen by type (#68)
 
@@ -626,20 +446,6 @@ never raises the per-pixel maximum over time, so `maximum` sees through it, wher
 target *is* the maximum wherever it ever passed and would erase itself, leaving a ghost swath
 along its own trajectory.
 
-### `collect_stack` is sequential on purpose
-
-`next!(vid)` decodes into the single shared `vid.img` buffer, so copying slice *i* must complete
-before the next read. A spawned copy raced the following `next!` and nondeterministically
-corrupted background slices with (parts of) the wrong frame.
-
-### The confidence gate
-
-When the window's peak DoG response falls below `GATE_FRACTION` of the running response level, the
-frame is treated as "target not seen" (occlusion, glare, washout) and the tracker holds its last
-position instead of chasing the weighted mean of noise. The level is an exponential moving average
-of accepted peaks — self-normalized, so there is no per-video threshold to tune — and it decays
-slowly while holding, so a genuine lasting drop in contrast eventually re-opens the gate.
-
 ### `background_length = 0` keeps a 2-slice stack
 
 Zero turns background subtraction off, but the stack itself stays, because it is also `detect`'s
@@ -757,13 +563,6 @@ marker, so a target that happened to sit under the text was drawn on top of it; 
 stamped the label last. All three now stamp last, which is the order that keeps the label legible —
 and the label exists precisely to be read (#22). The two orders only differ where marker and text
 overlap, in the top-left corner of the frame.
-
-### Diagnostic label fonts are per-writer
-
-FreeType faces are stateful (one glyph slot per face) and FreeTypeAbstraction's per-face lock is
-not held across load → read → copy, so concurrently tracked runs sharing one global face can swap
-each other's label glyphs — a run briefly labelled with another run's id. Each writer therefore
-loads its own private face.
 
 ### The AprilTag diagnostic carries a label too (#22)
 
@@ -1076,59 +875,6 @@ Windows.
 Fromage removes nothing from the issues folder, including anything of the user's that happens to
 live there. Cleaning it out is their call.
 
-### The csv vocabulary was disambiguated in one migration (v0.2.23)
-
-Four names in the two csv files were changed at once, because each of them meant more than one
-thing and the user edits both files side by side.
-
-`scale` was the worst: a *spatial downsampling factor* in `runs.csv` and *real-world units per
-pixel* in `rectifications.csv`. Unrelated quantities, one word, and the same
-`"scale must be larger than zero"` message written out in both gateways. It is now `downscale`
-(runs) and `pixel_width` (rectifications). Note this was **not** the `checker_size` failure mode: that was
-one column in *one* file serving two row types, where a single default could not serve both, and
-the mechanical hazard is absent here — `rectifications.csv`'s `scale` was never in `DEFAULTS` (it is
-inherently per-row), so no global default could ever land on the wrong one. The case for splitting
-it was legibility, not a live bug.
-
-`pixel_width` was picked over any other spelling because it makes the rectifications unit columns one rule
-instead of three names: `checker_width`, `tag_cell_width` and `pixel_width` are each *the
-real-world width of the thing this calibration type measures*, and each is the column that decides
-what unit your tracks come out in.
-
-`type = video` distinguished nothing. Every kind of calibration here is anchored to a source video
-— `apriltag` reads one, `matlab` reads one for its frame size, and so does `only_scale` — so the
-name said only what was true of all four. The checkerboard is what makes that one particular, hence
-`type = checkerboard`. Renaming it orphaned nothing, but renaming `scale` *did* orphan
-`type = only_scale`, which then pointed at a column no longer in the file; it became `type =
-uniform`, named for the map it produces (a uniform scaling, no camera model) rather than for an
-absence.
-
-`start`/`stop` in `rectifications.csv` are the window in which the board is waved to fit the lens model —
-not the span of a run to track, which is what `runs.csv` calls `start`/`stop`. They are now
-`intrinsic_start`/`intrinsic_stop`, which also gives the codebase a name for a concept it had been
-describing three different ways ("the intrinsic window", "the intrinsic window", "the time window
-during which the checkerboard is being moved around"). `Checkerboard{Missing}` — the extrinsics-only
-case — now reads as exactly what it is: a calibration with no intrinsic window.
-
-Two things this deliberately did **not** do. `extrinsic` was left alone even though the word covers
-a timestamp, a pose and (as `extrinsic_index`) an image index: those last two are the same role
-addressed two ways, so the fix was to name the concept — *the extrinsic frame* — in prose rather
-than to break another column. And `runs.csv`'s own `start`/`stop` did not move: they are the
-ordinary reading, and `Segment` is unaffected.
-
-One PR, one version bump, one migration. Split across releases it would have meant editing every
-`rectifications.csv` on the share more than once. Old names are rejected the way `fps` and `checker_size`
-already were — `RENAMED_COLUMNS` per gateway, surfaced by `read_rows` before any row parses — with
-a new `RENAMED_TYPES` beside it for the two retired `type` *values*, which the column-level table
-structurally cannot see. Without that table a migrating file's commonest value produced the file's
-least useful message: a bare `"wrong type"`.
-
-The rename could not stop at the csv: `test/quality.jl` requires every `Tuning` field to be a
-`runs.csv` column and every builder keyword to be a `rectifications.csv` column (#140/#141), so each rename
-was forced through `Tuning`, the `RectificationMethod` structs and the builders. That is the
-invariant working as intended — it is what makes "the csv column and the code field are the same
-name" a fact rather than an aspiration.
-
 ---
 
 ## Error handling
@@ -1149,13 +895,6 @@ bug on our side and the `InterruptException` a bare catch would swallow.
 Where a check can replace a catch, it does: `matlab_dimension` and `matlab_extrinsic_count`
 validate the shape and element type of the `Any` they read instead of catching the `InexactError`
 that a malformed value would eventually cause.
-
-### Exceptions from `tmap` need unwrapping
-
-Errors raised inside a `tmap` come back wrapped in a `TaskFailedException` — but only when the
-scheduler actually spawned a task, so the same failure arrives bare when the work ran inline (a
-single-element batch, say). Both shapes must be unwrapped before classifying, or the narrowing
-silently stops catching under the threaded path.
 
 ### Process failures print what happened, not the `Cmd` (#67)
 

@@ -63,7 +63,7 @@
         #
         # The bisection solver's measured worst residual over this entire sweep is 1.3e-11 px; the
         # bound below leaves two orders of magnitude of headroom, so it states a requirement rather
-        # than pinning one implementation — but any replacement has to meet it. See DESIGN-HISTORY.
+        # than pinning one implementation — but any replacement has to meet it. See DECISIONS.
         frames = ((100, 100), (320, 240), (640, 480), (1280, 720), (1920, 1080), (2000, 2000))
         for (w, h) in frames, fov in (1.4, 0.7),
                 k in ((), (-0.1,), (0.15,), (-0.28, 0.09), (0.1, -0.02, 0.005))

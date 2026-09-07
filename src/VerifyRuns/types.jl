@@ -32,7 +32,7 @@
 # not to track.
 #
 # One concrete type, not an abstract `Run` over `SingleRun`/`MultiRun`: a run's arity is data, not a
-# kind of thing. See DESIGN-HISTORY.md for what the split cost and what it turned out not to buy.
+# kind of thing. See DECISIONS.md for what the split cost and what it turned out not to buy.
 
 struct FrameFormat
     width::Int
@@ -103,7 +103,7 @@ frame_center(f::FrameFormat) = (round(Int, f.width * f.sar / 2), f.height ÷ 2)
 # The `copy` is what makes this a query rather than an edit: a `Run` describes what the csv said,
 # and tracking it must leave it alone (#23).
 # AprilTag mode carries every segment's own start_location through untouched: segments do not chain
-# there (DESIGN-HISTORY), so there is nothing to impute. Selected by the rectification's TYPE rather
+# there (DECISIONS), so there is nothing to impute. Selected by the rectification's TYPE rather
 # than by an `isa` inside the general method.
 resolved_segments(r::Run, _, ::ApriltagRectification) = r.segments
 

@@ -21,7 +21,7 @@ a wrong convention, a tolerance that hides a drift, a unit that changed meaning.
   constructor deliberately does not re-read the rate — a second definition site is exactly the
   bug #140/#141 fixed. Interlaced footage reports frame rate, not field rate (#145).
 - **Conditioning and stability** — lens distortion is inverted by bisection on the monotone
-  branch (rooting the polynomial was measured and declined, DESIGN-HISTORY); the metric AprilTag
+  branch (rooting the polynomial was measured and declined, DECISIONS); the metric AprilTag
   fit bootstraps from every tag; a single planar view needs its principal point fixed.
 - **Tolerances** — is a test tolerance derived from the physics, or tuned until green? Would it
   catch a real regression? Is it thread-count- or platform-dependent?
@@ -35,7 +35,7 @@ Ground truth is analytic and lives in `test/fixtures.jl` (`drone_pose`, `aprilta
 
 `search_code(collection="fromage")` to find the maths, `grep_code` to confirm, `type_info` for
 element types (`Gray{N0f8}` vs. widened arithmetic matters: the background stack stores
-`Gray{N0f8}` and `detect` widens before subtracting). Check `DESIGN-HISTORY.md` before calling
+`Gray{N0f8}` and `detect` widens before subtracting). Check `DECISIONS.md` before calling
 anything wrong — several odd-looking choices are measured decisions with an entry.
 
 Where a hypothesis can be settled by evaluating something, propose the exact expression and its
