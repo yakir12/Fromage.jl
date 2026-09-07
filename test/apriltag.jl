@@ -154,7 +154,7 @@ project(H) = [[apply_h(H, c) for c in tc] for tc in TAGS_CM]
     end
 
     @testset "the diagnostic canvas is gauged by center/north, not by the tag fit" begin
-        # `fit_metric` pins its cm frame to the lowest-numbered tag's BODY, so the SAME terrain
+        # `fit_metric` pins its ground space to the lowest-numbered tag's BODY, so the SAME terrain
         # yields metric maps differing by a rigid transform when that one board is turned between
         # field days — which turned the whole diagnostic canvas with it, and made two runs over one
         # arena impossible to compare. Turning the board is modelled here as `M2 = rot * M`: an
@@ -162,7 +162,7 @@ project(H) = [[apply_h(H, c) for c in tc] for tc in TAGS_CM]
         # gauge. With `center`/`north` naming the same two PHYSICAL points in both, the canvas must
         # come out identical. Before the gauge reached the scene, these differed by the rotation.
         ref = ReferenceSpace([0,1,2,3], project(HMILD))
-        R90 = SMatrix{3,3,Float64}(0, 1, 0, -1, 0, 0, 0, 0, 1)          # cm frame turned 90°
+        R90 = SMatrix{3,3,Float64}(0, 1, 0, -1, 0, 0, 0, 0, 1)          # ground space turned 90°
         M2 = R90 * ref.M
         ref2 = ReferenceSpace(ref.ids, ref.corners, M2)
         @test _worst_side(M2, project(HMILD)) ≈ _worst_side(ref.M, project(HMILD))

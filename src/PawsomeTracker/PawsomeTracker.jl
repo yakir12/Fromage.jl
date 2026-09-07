@@ -511,7 +511,7 @@ speed, and coordinates are always reported unscaled.
 
 An `ApriltagRectification` selects AprilTag mode (drone footage): every background-stack slice is
 lazily warped into the rectification's shared reference, so drone motion is removed at lookup time
-and tracking happens in a static scene. `coords` are then metric ground coordinates, `missing` on
+and tracking happens in a static scene. `coords` are then ground coordinates in the rectification's real-world unit, `missing` on
 frames where a tag was lost, and the segments do NOT chain — each registers to the same shared
 reference and starts from its own `start_location` (see DESIGN-HISTORY.md). Otherwise the segments
 are one continuous run, and a segment whose `start_location` is `missing` continues from where the

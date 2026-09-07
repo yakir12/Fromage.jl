@@ -1,9 +1,9 @@
 # AprilTag-based tracking for drone footage: register out drone motion and rectify the beetle track
-# into metric ground-plane coordinates (cm), in a single pass, using four coplanar tags as
+# into metric ground-plane coordinates in the rectification’s real-world unit, in a single pass, using four coplanar tags as
 # landmarks. This file holds the ground-plane geometry (pure and unit-tested), the detection and
 # tracking loop, and the ROI local search. Registration is folded into the background stack's lazy
 # index pipe (RegisteredWarp), so the tracker works in the shared reference space — a static scene
-# — rather than in native image space. Every fit uses all 16 tag corners, and the metric map is fit
+# — rather than in each frame's own stored pixels. Every fit uses all 16 tag corners, and the metric map is fit
 # from all four tags jointly; see DESIGN-HISTORY.md for the measurements behind both.
 
 using StaticArrays: SVector, SMatrix
@@ -72,7 +72,7 @@ function homography_dlt(src, dst)
 end
 
 # worst deviation (real units) of any tag edge from the true side length `side`, under an
-# image→cm homography `M`
+# image→ground homography `M`
 _worst_side(M, tag_corners, side = TAG_SIZE_CM) =
     maximum(abs(norm(apply_h(M, tc[i]) - apply_h(M, tc[mod1(i+1, 4)])) - side)
             for tc in tag_corners for i in 1:4)
@@ -93,13 +93,13 @@ function rigid_align(A, B)
     return p -> R * (p - ma) + mb
 end
 
-# Place the canonical square `canon` (no scaling — its size is known exactly) onto four measured cm
+# Place the canonical square `canon` (no scaling — its size is known exactly) onto four measured ground
 # points, giving the best-fit true square at that pose. This is how each tag's known metric geometry
 # is imposed during the consensus fit: the same Kabsch solve as above, evaluated at `canon` itself.
 place_square(D, canon = CANON) = map(rigid_align(canon, D), canon)
 
-# Fit the metric map `M : image → ground cm` from all tags jointly. Bootstrap from one tag's
-# corners, then alternate: place a true square on each tag's current cm estimate (Procrustes), pin
+# Fit the metric map `M : image → ground units` from all tags jointly. Bootstrap from one tag's
+# corners, then alternate: place a true square on each tag's current ground estimate (Procrustes), pin
 # the global gauge by rigidly mapping tag 1's square back onto the canonical square, and refit `M`
 # from all 16 corners to those pinned squares (DLT). The gauge pin is essential; without it the
 # iteration diverges under strong perspective. EVERY tag is tried as the bootstrap and the globally
@@ -148,7 +148,7 @@ const METRIC_FIT_TOLERANCE = 5.0
 metric_fit_issue(err) = "AprilTag metric fit did not converge (worst square error $(round(err, digits = 2)) > $METRIC_FIT_TOLERANCE; in the rectification's real units); tags may be non-coplanar or mis-detected"
 
 # The reference space: the tag ids (their order fixes the corner alignment used every frame), the
-# 16 reference-image corners, and the metric map `M : reference image → ground cm`.
+# 16 reference-image corners, and the metric map `M : reference image → ground units`.
 struct ReferenceSpace
     ids::Vector{Int}
     corners::Vector{SVector{2, Float64}}          # flat 16, tag-major in `ids` order
@@ -171,10 +171,10 @@ end
 # `type = apriltag` rectifications row and Fromage joins it to the runs that reference it). Unlike the video
 # rectifications there is no fixed image→real map: the drone moves, so each frame of the run is registered
 # to this ONE shared `reference` (established from the rectification's extrinsic frame; the tags are
-# stationary across every run) before the fixed metric map takes it to ground cm. `image2real` is
-# therefore not a pixel map but the cm→real gauge (centre/north) applied to `track_apriltag`'s metric
+# stationary across every run) before the fixed metric map takes it to ground units. `image2real` is
+# therefore not a pixel map but the ground→real gauge (centre/north) applied to `track_apriltag`'s metric
 # output; `family` is the detector family the runs must be detected with; `ratio` is a representative
-# cm-per-pixel scale (kept positive for the diagnostics/tests that read it).
+# units-per-pixel scale (kept positive for the diagnostics/tests that read it).
 struct ApriltagRectification{I}
     reference::ReferenceSpace
     family::AprilTags.TagFamilies
@@ -243,19 +243,19 @@ function reference_space(file, extrinsic, ntags, family, tag_cell_width)
     end
 end
 
-# A representative cm-per-pixel scale of the reference space: the mean tag side in cm over its mean
+# A representative units-per-pixel scale of the reference space: the mean tag side in ground units over its mean
 # side in pixels. Only used where a positive scalar `ratio` is expected (diagnostics/tests) — the
 # real image→ground map is the per-frame homography, not a single scale.
 function reference_ratio(ref::ReferenceSpace)
     px = 0.0
-    cm = 0.0
+    ground = 0.0
     for tc in Iterators.partition(ref.corners, 4)             # one tag's 4 corners at a time
         for i in 1:4
             px += norm(tc[i] - tc[mod1(i + 1, 4)])
-            cm += norm(apply_h(ref.M, tc[i]) - apply_h(ref.M, tc[mod1(i + 1, 4)]))
+            ground += norm(apply_h(ref.M, tc[i]) - apply_h(ref.M, tc[mod1(i + 1, 4)]))
         end
     end
-    return cm / px
+    return ground / px
 end
 
 # The (x, y) ↔ (y, x) reordering between the metric space and the real-coordinate convention, held
@@ -263,7 +263,7 @@ end
 # invertible map instead of a one-way closure.
 const XY_SWAP = LinearMap(SMatrix{2, 2, Float64}(0, 1, 1, 0))
 
-# The cm → real gauge: `track_apriltag` already maps each frame to metric ground cm (x, y); this
+# The ground → real gauge: `track_apriltag` already maps each frame to metric ground units (x, y); this
 # applies the `center`/`north` origin and orientation, exactly as the video pipeline's centre/north
 # does, and returns real coordinates as `(y, x)` (matching every other rectification's `image2real`,
 # so `save2csv` unpacks them the same way). `center`/`north` are pixels in the reference (extrinsic)
@@ -276,13 +276,13 @@ function apriltag_image2real(M, center, north, width, height, aspect)
     n = ismissing(north) ? missing : SVector{2, Float64}(north[1] / aspect, north[2])
     # `f` mirrors a video image2real: reference pixel (col, row) → real (y, x). Feeding it and the
     # gauge points to the shared centre/north helpers pins the SAME north convention as the video path.
-    f = p -> (cm = apply_h(M, SVector(Float64(p[1]), Float64(p[2]))); SVector(cm[2], cm[1]))
+    f = p -> (ground = apply_h(M, SVector(Float64(p[1]), Float64(p[2]))); SVector(ground[2], ground[1]))
     centering, northing = i2r_centering_northing(f, c, n)
     # Composed, not wrapped in a closure over `gauge`: `∘` collapses these to ONE concrete
     # `AffineMap` whether or not `north` was given, which makes the gauge both type-stable and —
-    # the reason this matters — invertible. `ApriltagScene` runs it backwards, real → cm, to sample
+    # the reason this matters — invertible. `ApriltagScene` runs it backwards, real → ground, to sample
     # the source frame for every canvas pixel.
-    return northing ∘ centering ∘ XY_SWAP                          # raw cm (x, y) → gauged real (y, x)
+    return northing ∘ centering ∘ XY_SWAP                          # raw ground (x, y) → gauged real (y, x)
 end
 
 # Build the AprilTag rectification from a verified `type = apriltag` rectifications row.
@@ -314,7 +314,7 @@ function apriltag_extrinsic_issue(file, extrinsic, ntags, family, tag_cell_width
 end
 
 # Homography mapping the current frame's image to the reference image, from all 16 corners (already
-# aligned to `ref.ids` order by the caller). The full image→cm map for a frame is `ref.M * register(…)`,
+# aligned to `ref.ids` order by the caller). The full image→ground map for a frame is `ref.M * register(…)`,
 # which the tracking loop composes inline because it needs the registration separately for `inv`.
 register(ref::ReferenceSpace, corners) = homography_dlt(corners, ref.corners)
 
@@ -377,7 +377,7 @@ function detect_tags(det, img, ids)
 end
 
 # tag geometry is (x, y) = (col, row); the DoG tracker works in (row, col). This bridges the two.
-img_to_cm(H, rc) = apply_h(H, SVector(rc[2], rc[1]))                       # (row,col) px → cm
+img_to_ground(H, rc) = apply_h(H, SVector(rc[2], rc[1]))                       # (row,col) px → ground
 
 # Resolve the initial guess in CANVAS coordinates. `start_location` is the target's (x, y)
 # display-pixel position in the run's first frame — NATIVE space — while the stack lives in
@@ -444,14 +444,14 @@ function detect_tags_roi!(dets, img, ids, boxes, sz)
 end
 
 # Diagnostic scene for AprilTag mode: a top-down rectified video. Each frame is warped into a fixed
-# canvas through that frame's own image→cm homography, so a correct rectification renders the
+# canvas through that frame's own image→ground homography, so a correct rectification renders the
 # ground plane stationary (the tags stop moving) while the beetle dot follows the target — letting
 # the user judge both rectification quality and tracking at a glance. The canvas covers the
 # reference tags' bounding box (plus a margin) at a fixed pixel size, with square pixels.
 #
 # The canvas is laid out in the rectification's GAUGED real space, not in the raw metric space the tag
 # fit happens to land in. That distinction is the whole point of the scene holding a gauge:
-# `fit_metric` pins its cm frame to the lowest-numbered tag's BODY, so turning that one board 90°
+# `fit_metric` pins its ground space to the lowest-numbered tag's BODY, so turning that one board 90°
 # between two field days turned the entire canvas 90° with it, and two runs over the same terrain
 # did not line up however carefully `center`/`north` were placed. `center`/`north` name physical
 # points, so gauging by them makes the canvas comparable across rectifications — and matches what
@@ -461,7 +461,7 @@ struct ApriltagScene{G, U}
     xc::Float64                                   # canvas ↔ real: centre (real units) …
     yc::Float64
     ppc::Float64                                  # … and pixels per real unit
-    gauge::G                                      # raw cm (x, y) → gauged real (y, x)
+    gauge::G                                      # raw ground (x, y) → gauged real (y, x)
     ungauge::U                                    # and back, for sampling the source frame
 end
 
@@ -486,12 +486,12 @@ _canvas_to_real(s::ApriltagScene, i, j) = SVector(s.yc + (i - s.m/2)/s.ppc, s.xc
 _real_to_canvas(s::ApriltagScene, r) = CartesianIndex(round(Int, (r[1]-s.yc)*s.ppc + s.m/2),
                                                       round(Int, (r[2]-s.xc)*s.ppc + s.m/2))
 
-# Warp `frame` into the canvas via this frame's image→cm homography `H`. `beetle` is `missing` on
+# Warp `frame` into the canvas via this frame's image→ground homography `H`. `beetle` is `missing` on
 # frames without a full tag set, and `H` is `nothing` when there is no map at all — then every canvas
 # pixel reads out of bounds and the frame comes out filled.
 function (s::ApriltagScene)(frame, beetle, H)
     Hinv = isnothing(H) ? nothing : inv(H)
-    # output canvas (i,j) → source image (row,col): canvas→real→cm→image (cm→image is inv(H))
+    # output canvas (i,j) → source image (row,col): canvas→real→ground→image (ground→image is inv(H))
     tf = idx -> begin
         isnothing(Hinv) && return SVector(-1.0, -1.0)           # no map → fill (out of bounds)
         c = s.ungauge(_canvas_to_real(s, idx[1], idx[2])); v = Hinv * SVector(c[1], c[2], 1.0)
@@ -516,7 +516,7 @@ diagnose_apriltag(file::AbstractString, rectification, darker_target, fps) =
 # the DoG tracker sees a static scene — a stable background model, and no per-frame guess
 # compensation. Per frame: detect the tags (on the raw `vid.img`), fit the registration, roll the
 # raw frame plus its registration into the stack, run the DoG detection in reference space, and map
-# the result through the FIXED metric map `ref.M` to ground cm. Frames missing any tag yield
+# the result through the FIXED metric map `ref.M` to ground units. Frames missing any tag yield
 # `missing` — their true registration is unknown, so the slice borrows the nearest known one and the
 # tracker holds its last reference-space position.
 #
@@ -539,7 +539,7 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
             stack = get_stack(vid, tr.sz, tr.h, n_bkgd, warp)
             n = vid.nframes
             sz = size(vid.img)                             # raw frame size (row, col)
-            # image→cm per prefill frame (dia + gating); length parameter as in Hinvs above
+            # image→ground per prefill frame (dia + gating); length parameter as in Hinvs above
             Hs = Vector{Union{Nothing, SMatrix{3, 3, Float64, 9}}}(undef, n_bkgd)
             coords = Vector{Union{Missing, RowCol}}(undef, n)
             boxes = NTuple{4, Int}[]                       # per-tag ROI search boxes
@@ -592,7 +592,7 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
                     coords[i] = missing
                 else
                     rc, guess = detect(guess, stack, i, tr, vid.downscale, level)
-                    coords[i] = img_to_cm(ref.M, rc)       # rc is reference px; ref.M is the fixed metric map
+                    coords[i] = img_to_ground(ref.M, rc)       # rc is reference px; ref.M is the fixed metric map
                 end
                 dia(slice(i), coords[i], H)
             end
@@ -622,7 +622,7 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
                     coords[i] = missing
                 else
                     rc, guess = detect(guess, stack, j, tr, vid.downscale, level)
-                    coords[i] = img_to_cm(ref.M, rc)
+                    coords[i] = img_to_ground(ref.M, rc)
                 end
                 dia(vid.img, coords[i], H)
                 isnothing(protect) || restore_background!(stack, j, protect, keep)
