@@ -129,7 +129,7 @@
 
         # the frame-centre fallback (no centre given) must not write back either
         sls3 = VR.resolved_segments(r, missing, nothing)
-        @test sls3[1].start_location == VR.frame_center(r.frame)
+        @test sls3[1].start_location == VR.frame_center(r.frame_format)
         @test isequal([s.start_location for s in r.segments], before)
     end
 

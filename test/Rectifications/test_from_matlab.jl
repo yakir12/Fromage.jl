@@ -50,7 +50,7 @@
         end
     end
 
-    @testset "center/north define a rigid reference frame" begin
+    @testset "center/north define a rigid reference space" begin
         rect = rectify(center = SVector(320.0, 240.0), north = SVector(320.0, 100.0))
         p0 = SVector(100.0, 120.0)
         # centering + northing is rigid: a one-pixel step still spans Z/f world units

@@ -25,6 +25,54 @@ It used to be a pairwise tree of `concat:`-protocol calls with per-join disconti
 run at `-loglevel 8` so that every warning it produced was hidden. The demuxer rewrites timestamps
 monotonically by design, so the heuristics went away with it.
 
+### A "frame" is an image; every coordinate system is a "space" (v0.2.26)
+
+Unlike rectification/calibration, **machine vision does not settle this one**: a *video frame* is an
+image and a *frame of reference* is a coordinate system, and both are standard usage in the same
+field. OpenCV means the first, ROS/tf means the second. So this needed a local convention rather
+than a lookup.
+
+The convention: **bare "frame" means an image. Every other sense takes a qualifier.**
+
+Three things decided it that way rather than the reverse:
+
+1. Weight — "frame" means a picture roughly 200 times in `src/` against ~15 for the coordinate
+   sense, and the image sense is the user-facing one (`native_fps`, "pause the video on a frame").
+2. `DataFrame` proves the pattern already works. 62 occurrences of a third meaning that can never
+   be removed, and it confuses nobody because it is *always compounded, never bare*.
+3. The replacement word was already in the codebase, unadopted: `grep` found **reference space**,
+   **display space**, **native space**, **image space** — eight uses of "space" for exactly the
+   coordinate sense, sitting alongside "frame" doing the same job.
+
+What moved:
+
+| was | is | why |
+|---|---|---|
+| `ReferenceFrame` | `ReferenceSpace` | it defines the shared coordinate system every run frame registers into; the reference image is how it was established, not what it is |
+| `reference_frame()` | `reference_space()` | |
+| `VerifyRuns.Frame` | `FrameFormat` | it holds `width`/`height`/`sar` — neither an image nor a space, but the format every frame of that video shares |
+| `Run.frame` | `Run.frame_format` | `r.frame` read as an image |
+| "run frame" (`VerifyRuns/types.jl`) | "run space" | |
+| "metric frame", "GAUGED real frame" | "metric space", "real space" | |
+
+The sentence that made the case, `apriltag.jl:207`: *"Establish the shared **reference frame** from
+the rectification's **extrinsic frame**"* — both words correct, two senses, one clause. It now reads
+"reference **space** from … extrinsic **frame**", and says which is which.
+
+Two traps found while doing it, both of which a blanket replace would have corrupted — worth
+knowing about before the next pass over this vocabulary:
+
+- **"real" is itself overloaded.** *"the GAUGED real frame"* (`apriltag.jl`) is real-world
+  coordinates; *"the real frame size"* and *"Reads real frames"* (`VerifyRectifications`) mean
+  **actual**, as opposed to declared or synthetic. Only the first is a space.
+- **Two "reference frame"s are images.** `apriltag.jl:397` (*"after the reference frame each tag is
+  searched…"*) means every frame after the reference image, and `test/apriltag.jl:103` measures
+  through a frame that is deliberately not the reference. Both now say "reference image".
+
+`Segment`, `frame_center`, `frame_skip`, `nframes`, `frame_geometry`, `read_frame_at` and the whole
+frame-rate family are untouched: every one of them is about images, which is what the word now
+means.
+
 ### "Run" means an experimental run, and nothing else (v0.2.25)
 
 **A run is one repeat of an experiment** — one trial, one animal crossing the arena once. It is an

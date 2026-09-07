@@ -378,8 +378,8 @@ end
     @test !occursin(':', basename(a))
 end
 
-@testset "reference_frame reports failures, and only the builder throws" begin
-    # reference_frame returns Union{ReferenceFrame, String}: every way a calibration can fail to
+@testset "reference_space reports failures, and only the builder throws" begin
+    # reference_space returns Union{ReferenceSpace, String}: every way a calibration can fail to
     # yield a shared reference is a fact about the user's file, so it is reported, not thrown.
     PT = Fromage.PawsomeTracker
     dir = mktempdir()
@@ -387,10 +387,10 @@ end
     file = joinpath(dir, vid)
     corrupt = make_corrupt_video(joinpath(dir, "corrupt.mp4"))
 
-    @test PT.reference_frame(file, 0.2, 4, "tag36h11", 8)    isa PT.ReferenceFrame   # success
-    @test PT.reference_frame(file, 0.2, 99, "tag36h11", 8)   isa String              # too few tags
-    @test PT.reference_frame(file, 0.2, 4, "tag99x9", 8)     isa String              # unsupported family
-    @test PT.reference_frame(corrupt, 0.2, 4, "tag36h11", 8) isa String              # unreadable frame
+    @test PT.reference_space(file, 0.2, 4, "tag36h11", 8)    isa PT.ReferenceSpace   # success
+    @test PT.reference_space(file, 0.2, 99, "tag36h11", 8)   isa String              # too few tags
+    @test PT.reference_space(file, 0.2, 4, "tag99x9", 8)     isa String              # unsupported family
+    @test PT.reference_space(corrupt, 0.2, 4, "tag36h11", 8) isa String              # unreadable frame
 
     # the verification hook is now a plain type test, with no catch of its own
     @test PT.apriltag_extrinsic_issue(file, 0.2, 4, "tag36h11", 8)    === nothing

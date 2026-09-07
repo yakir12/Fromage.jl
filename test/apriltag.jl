@@ -10,7 +10,7 @@ using Random: Xoshiro
 using LinearAlgebra
 # the geometry is internal to the submodule; import the (non-exported) names directly
 using Fromage.PawsomeTracker: CANON, apply_h, homography_dlt, place_square, fit_metric, rigid_align,
-    _worst_side, ReferenceFrame, register,
+    _worst_side, ReferenceSpace, register,
     RegisteredWarp, build_stack, canvas2raw, Gray, N0f8, METRIC_FIT_TOLERANCE,
     ApriltagScene, apriltag_image2real, _real_to_canvas, DIAGNOSTIC_SIZE
 
@@ -89,18 +89,18 @@ project(H) = [[apply_h(H, c) for c in tc] for tc in TAGS_CM]
         # fit_metric computes and reports; it does not decide. The error it returns is well past
         # the tolerance, and the direct constructor still turns that into a throw.
         @test last(fit_metric(bad)) > METRIC_FIT_TOLERANCE
-        @test_throws ErrorException ReferenceFrame([0,1,2,3], bad)
+        @test_throws ErrorException ReferenceSpace([0,1,2,3], bad)
     end
 
     @testset "registration is drone-motion invariant: one ground point, two frames" begin
-        ref = ReferenceFrame([0,1,2,3], project(HMILD))
+        ref = ReferenceSpace([0,1,2,3], project(HMILD))
         beetle = SVector(37.0, -88.0)                                # a ground point (cm)
         img1 = project(HMILD); img2 = project(HMILD2)                # same tags, two drone poses
         b1 = apply_h(HMILD, beetle); b2 = apply_h(HMILD2, beetle)    # beetle seen in each frame
         cm1 = apply_h(ref.M * register(ref, reduce(vcat, img1)), b1)
         cm2 = apply_h(ref.M * register(ref, reduce(vcat, img2)), b2)
         @test norm(cm1 - cm2) < 1e-4                                 # same cm despite drone move
-        # metric accuracy through a NON-reference frame: a known ground distance is recovered
+        # metric accuracy through a frame that is NOT the reference image: a known ground distance is recovered
         g1, g2 = SVector(50.0, -30.0), SVector(-90.0, 110.0)
         Gh = ref.M * register(ref, reduce(vcat, img2))
         d̂ = norm(apply_h(Gh, apply_h(HMILD2, g1)) - apply_h(Gh, apply_h(HMILD2, g2)))
@@ -161,10 +161,10 @@ project(H) = [[apply_h(H, c) for c in tc] for tc in TAGS_CM]
         # equally valid metric fit (every tag is still a true square, asserted below) in a rotated
         # gauge. With `center`/`north` naming the same two PHYSICAL points in both, the canvas must
         # come out identical. Before the gauge reached the scene, these differed by the rotation.
-        ref = ReferenceFrame([0,1,2,3], project(HMILD))
+        ref = ReferenceSpace([0,1,2,3], project(HMILD))
         R90 = SMatrix{3,3,Float64}(0, 1, 0, -1, 0, 0, 0, 0, 1)          # cm frame turned 90°
         M2 = R90 * ref.M
-        ref2 = ReferenceFrame(ref.ids, ref.corners, M2)
+        ref2 = ReferenceSpace(ref.ids, ref.corners, M2)
         @test _worst_side(M2, project(HMILD)) ≈ _worst_side(ref.M, project(HMILD))
 
         # center/north as REFERENCE-IMAGE pixels: both frames share one reference image, so the
@@ -195,7 +195,7 @@ project(H) = [[apply_h(H, c) for c in tc] for tc in TAGS_CM]
         # absorbed by centring the canvas on the tags' bounding box — so every calibration that
         # does not set `north` must render exactly as it did before the scene was gauged. This is
         # the no-regression half of the change; the formula on the right is the previous one.
-        ref = ReferenceFrame([0,1,2,3], project(HMILD))
+        ref = ReferenceSpace([0,1,2,3], project(HMILD))
         s = ApriltagScene(ref, apriltag_image2real(ref.M, missing, missing, 1920, 1080, 1.0))
 
         cm = [apply_h(ref.M, p) for p in ref.corners]

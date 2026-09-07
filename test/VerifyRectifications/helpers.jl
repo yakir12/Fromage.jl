@@ -125,7 +125,7 @@ uniformrow(; kw...) = _merge((rectification_id = "s", path = ".", file = ART.vid
 # and `check` therefore returns the annotated DataFrame rather than a Vector. That suits the tests
 # that use it: they assert on PARSED values, and defaults resolution happens at parse time — long
 # before any frame is read — so the columns are filled either way. (An apriltag row that has to
-# build a real reference frame is exercised end to end in test/fromage.jl, against a tag fixture.)
+# build a real reference space is exercised end to end in test/fromage.jl, against a tag fixture.)
 apriltagrow(; kw...) = _merge((rectification_id = "a", path = ".", file = ART.video, type = "apriltag",
                                extrinsic = "00:00:01"); kw...)
 

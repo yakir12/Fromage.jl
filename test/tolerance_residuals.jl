@@ -171,9 +171,9 @@ end
 # ---------------------------------------------------------------------------------------------
 function apriltag_residuals(dir)
     v = make_apriltag_video(dir, "tol_at"; nframes = 40, tw = 12, pose = drone_pose)
-    ref = PT.ReferenceFrame(joinpath(dir, only(v.files)), 0.0, "tag36h11", 8.0, 4)
+    ref = PT.ReferenceSpace(joinpath(dir, only(v.files)), 0.0, "tag36h11", 8.0, 4)
     if ref isa String
-        println("SKIP\tapriltag: reference frame failed — ", ref)
+        println("SKIP\tapriltag: reference space failed — ", ref)
         return
     end
     expected(k) = v.expected_ref(k)
