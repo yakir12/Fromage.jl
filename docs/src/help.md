@@ -8,7 +8,7 @@ That's Fromage doing its job. Before anything is tracked, every row of both csv 
 row 3: file does not exist, wrong start format
 ```
 
-The row's name is included too, so you can tell at a glance which entry needs fixing: issues with `calibs.csv` show the row's `calibration_id` — e.g. `row 2 (calibration_id: morning): …` — and, if you gave your runs names (a `run_id` column in `runs.csv`), issues with runs show the `run_id` — e.g. `row 3 (run_id: beetle12): …`.
+The row's name is included too, so you can tell at a glance which entry needs fixing: issues with `rectifications.csv` show the row's `rectification_id` — e.g. `row 2 (rectification_id: morning): …` — and, if you gave your runs names (a `run_id` column in `runs.csv`), issues with runs show the `run_id` — e.g. `row 3 (run_id: beetle12): …`.
 
 Nothing runs until they're all fixed — so nothing is ever half-done. Fix the mentioned rows in your csv files and run `main` again.
 
@@ -18,12 +18,12 @@ Among the things checked:
 - timestamps are well-formatted, non-negative, ordered (`start` < `stop`), and within the video's duration;
 - pixel coordinates lie inside the frame;
 - numeric parameters are within their valid ranges;
-- `calibration_id`s are unique, and no two calibrations are effectively identical duplicates;
+- `rectification_id`s are unique, and no two rectifications are effectively identical duplicates;
 - a filled cell in a column that the row's `type` doesn't use is flagged (it usually means the `type` itself is wrong);
-- the checkerboard is detected at the `extrinsic` timestamp, and — when a calibration window is given — at least 3 sampled frames within the intrinsic window [`intrinsic_start`, `intrinsic_stop`] have a detectable board (this is the expensive part of validation — it reads real frames);
-- for an `apriltag` calibration, at least `apriltags` tags of the chosen `family` are detected at the `extrinsic` frame and their metric fit converges;
+- the checkerboard is detected at the `extrinsic` timestamp, and — when a rectification window is given — at least 3 sampled frames within the intrinsic window [`intrinsic_start`, `intrinsic_stop`] have a detectable board (this is the expensive part of validation — it reads real frames);
+- for an `apriltag` rectification, at least `apriltags` tags of the chosen `family` are detected at the `extrinsic` frame and their metric fit converges;
 - segments of a multi-video run agree on all their shared parameters;
-- every `calibration_id` used in `runs.csv` exists in `calibs.csv`.
+- every `rectification_id` used in `runs.csv` exists in `rectifications.csv`.
 
 ## "The tracker followed the wrong thing"
 
@@ -42,30 +42,30 @@ To check both csv files without processing anything, use `verify`:
 
 ```julia
 out = Fromage.verify("path/to/data")
-out.calibs      # calibs.csv, annotated with an `issues` column
+out.rectifications      # rectifications.csv, annotated with an `issues` column
 out.runs        # runs.csv, likewise
 ```
 
 It reports everything wrong with both files in one pass and never throws, so you can fix a whole
 dataset in one sitting rather than one error per run. Both tables come back whether or not anything
-was wrong — a dataset is accepted or rejected as a whole — so `all(isempty, out.calibs.issues)` is
+was wrong — a dataset is accepted or rejected as a whole — so `all(isempty, out.rectifications.issues)` is
 the question to ask. Nothing is rectified or tracked. (`main` is the one that does the work; it
 aborts on any issue.)
 
 Two more helpers run only one half of the pipeline (both still run the full validation of their csv file):
 
 ```julia
-# only build calibrations (all of them, or a subset of calibration_ids):
-Fromage.only_rectify("path/to/data"; calibs_file = "calibs.csv", calibration_ids = ["morning"])
+# only build rectifications (all of them, or a subset of rectification_ids):
+Fromage.only_rectify("path/to/data"; rectifications_file = "rectifications.csv", rectification_ids = ["morning"])
 
-# only track (no calibration involved), optionally a subset of run_ids;
+# only track (no rectification involved), optionally a subset of run_ids;
 # writes one raw-view diagnostic per run: results_dir/1.mp4, 2.mp4, ...
 Fromage.only_track("path/to/data"; runs_file = "runs.csv", run_ids = ["run1", "long"])
 ```
 
-`main` itself also accepts `run_ids` to process only a subset of the runs (only the calibrations those runs reference are built). Every id you list must exist: if even one does not, the run stops with an error naming it and listing the ids that do exist, rather than quietly processing the ones that matched.
+`main` itself also accepts `run_ids` to process only a subset of the runs (only the rectifications those runs reference are built). Every id you list must exist: if even one does not, the run stops with an error naming it and listing the ids that do exist, rather than quietly processing the ones that matched.
 
-`main` and `only_rectify` also accept `rectification_diagnostics = true`, which saves each calibration's warped extrinsic frame to `results_dir/rectifications/` so you can check a calibration before tracking against it — see [the rectification images](results.md#The-rectification-images).
+`main` and `only_rectify` also accept `rectification_diagnostics = true`, which saves each rectification's warped extrinsic frame to `results_dir/rectifications/` so you can check a rectification before tracking against it — see [the rectification images](results.md#The-rectification-images).
 
 ## Changing a default for all rows at once
 
@@ -87,7 +87,7 @@ Anything else (identities, file names, timestamps, `start_location`/`center`/`no
 What matters is the CPU, not the macOS version (as of July 2026):
 
 - **Intel Macs** (`x86_64`): everything works — the full test suite runs on every commit on an Intel macOS runner.
-- **Apple Silicon Macs** (M1/M2/M3/…, `aarch64`) running the native arm64 Julia: everything works **except the AprilTag functionality** — `type = apriltag` calibrations and drone tracking fail with `UndefVarError: libapriltag not defined`. The cause is upstream: `AprilTags_jll` ships no `aarch64-apple-darwin` binaries, so the AprilTag C library can never load. `checkerboard`, `uniform`, and `matlab` calibrations, and all tracking of ordinary (fixed-camera) runs, are unaffected.
+- **Apple Silicon Macs** (M1/M2/M3/…, `aarch64`) running the native arm64 Julia: everything works **except the AprilTag functionality** — `type = apriltag` rectifications and drone tracking fail with `UndefVarError: libapriltag not defined`. The cause is upstream: `AprilTags_jll` ships no `aarch64-apple-darwin` binaries, so the AprilTag C library can never load. `checkerboard`, `uniform`, and `matlab` rectifications, and all tracking of ordinary (fixed-camera) runs, are unaffected.
 - **Workaround on Apple Silicon**: install the **Intel (x86_64) Julia binary** and run it under Rosetta 2 — Julia then pulls the `x86_64-apple-darwin` artifacts for all binary dependencies, AprilTags included. Slower, but functional.
 
 Linux and Windows (x64) are fully tested in CI.

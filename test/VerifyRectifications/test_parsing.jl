@@ -13,18 +13,18 @@
         # with *just* "wrong type" — no cascade of missing-field issues — and load without error.
         df = check([row(type = "bogus")])
         @test flagged(df, 1, "wrong type")
-        @test !flagged(df, 1, "calibration_id is missing")
+        @test !flagged(df, 1, "rectification_id is missing")
         @test !flagged(df, 1, "file is missing")
     end
 
     @testset "missing required fields" begin
-        @test flagged(check([checkerboardrow(calibration_id = missing)]), 1, "calibration_id is missing")
+        @test flagged(check([checkerboardrow(rectification_id = missing)]), 1, "rectification_id is missing")
         @test flagged(check([checkerboardrow(file = missing)]),           1, "file is missing")
         @test flagged(check([uniformrow(pixel_width = missing)]),          1, "pixel_width is missing")
         @test flagged(check([checkerboardrow(extrinsic = missing)]),      1, "extrinsic is missing")
         # parse_matlab! / parse_uniform! are separate hand-written field lists; assert the required
         # fields shared with checkerboard are wired in those branches too (not just in parse_checkerboard!).
-        @test flagged(check([matlabrow(calibration_id = missing)]), 1, "calibration_id is missing")
+        @test flagged(check([matlabrow(rectification_id = missing)]), 1, "rectification_id is missing")
         @test flagged(check([matlabrow(file = missing)]),           1, "file is missing")
         # matlab_file (the .mat) is the matlab-only required path field, separate from the source video `file`
         @test flagged(check([matlabrow(matlab_file = missing)]),    1, "matlab_file is missing")
@@ -33,13 +33,13 @@
         # extrinsic is now mandatory for ALL types (it lives in the shared Source struct), not just video
         @test flagged(check([matlabrow(extrinsic = missing)]),      1, "extrinsic is missing")
         @test flagged(check([uniformrow(extrinsic = missing)]),       1, "extrinsic is missing")
-        @test flagged(check([uniformrow(calibration_id = missing)]),  1, "calibration_id is missing")
+        @test flagged(check([uniformrow(rectification_id = missing)]),  1, "rectification_id is missing")
         @test flagged(check([uniformrow(file = missing)]),            1, "file is missing")
     end
 
     @testset "blank (whitespace-only) cell is treated as missing" begin
         # a required field reports "is missing" rather than silently becoming an empty string
-        @test flagged(check([checkerboardrow(calibration_id = "   ")]), 1, "calibration_id is missing")
+        @test flagged(check([checkerboardrow(rectification_id = "   ")]), 1, "rectification_id is missing")
         @test flagged(check([checkerboardrow(file = "   ")]),           1, "file is missing")
         # an optional field falls back to its default ("." for path) and still resolves
         @test clean(check([checkerboardrow(path = "  ")]))
@@ -118,16 +118,16 @@
         @test clean(check([checkerboardrow(type = "checkerboard ")]))   # "checkerboard " -> checkerboard, not "wrong type"
         @test clean(check([checkerboardrow(file = " " * ART.board)]))    # " board.mp4" still resolves
         # leading/trailing space on an id is trimmed, so two such ids collide and the repeat is caught
-        df = check([checkerboardrow(calibration_id = "dup",  extrinsic = "00:00:01"),
-                    checkerboardrow(calibration_id = "dup ", extrinsic = "00:00:03")])
-        @test flagged(df, 2, "calibration_id must not repeat")
+        df = check([checkerboardrow(rectification_id = "dup",  extrinsic = "00:00:01"),
+                    checkerboardrow(rectification_id = "dup ", extrinsic = "00:00:03")])
+        @test flagged(df, 2, "rectification_id must not repeat")
     end
 
-    @testset "calibration_id must be usable as a file name" begin
+    @testset "rectification_id must be usable as a file name" begin
         # Since #101 it names the diagnostic image `rectification_diagnostics` writes.
-        @test flagged(check([checkerboardrow(calibration_id = "a/b")]), 1, "calibration_id")
-        @test flagged(check([checkerboardrow(calibration_id = "a:b")]), 1, "calibration_id")
-        @test clean(check([checkerboardrow(calibration_id = "morning's board")]))
+        @test flagged(check([checkerboardrow(rectification_id = "a/b")]), 1, "rectification_id")
+        @test flagged(check([checkerboardrow(rectification_id = "a:b")]), 1, "rectification_id")
+        @test clean(check([checkerboardrow(rectification_id = "morning's board")]))
     end
 
     @testset "extrinsic accepts seconds and HH:MM:SS" begin

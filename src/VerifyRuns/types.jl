@@ -2,7 +2,7 @@
 # more segment videos sharing a `run_id`, held as a vector of `PawsomeTracker.Segment` in CSV order
 # — a single-video run being the one-element case.
 #
-# `run_id` names the run and `calibration_id` names the rectification it uses (Fromage joins the two
+# `run_id` names the run and `rectification_id` names the rectification it uses (Fromage joins the two
 # on it, so a run without one has nothing to rectify against); neither is forwarded to `track`.
 #
 # The run-level `track` parameters live in `tuning`, a `PawsomeTracker.Tuning` built here — which is
@@ -27,7 +27,7 @@ end
 
 struct Run
     run_id::String
-    calibration_id::String
+    rectification_id::String
     tuning::Tuning
     frame::Frame
     segments::Vector{Segment}
@@ -65,7 +65,7 @@ function Run(g::AbstractDataFrame)
     frame = Frame(width, height, g.sar[1])
     segments = Segment[Segment(f, a, o, sl)
                        for (f, a, o, sl) in zip(g.file, g.start, g.stop, g.start_location)]
-    return Run(g.run_id[1], g.calibration_id[1], _tuning(g, frame, segments), frame, segments)
+    return Run(g.run_id[1], g.rectification_id[1], _tuning(g, frame, segments), frame, segments)
 end
 
 # The run's (or first segment's) start_location falls back to `center` (e.g. the rectification's
@@ -76,7 +76,7 @@ frame_center(f::Frame) = (round(Int, f.width * f.sar / 2), f.height ÷ 2)
 
 # The run's segments with the first one's start-location fallbacks applied, ready for `track`.
 #
-# For an AprilTag run the calibration's `center` is a pixel in the (moved) extrinsic frame, not the
+# For an AprilTag run the rectification's `center` is a pixel in the (moved) extrinsic frame, not the
 # run frame, so it can't seed the tracker's start: the per-segment start_locations are used as-is, a
 # missing one becoming the frame-centre search inside `track`, and each segment relocates on its
 # own. Every other rectification shares the run frame, so its centre is a valid fallback for the

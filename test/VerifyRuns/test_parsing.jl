@@ -6,12 +6,12 @@
         @test flagged(check([runrow(file = missing)]),   1, "file is missing")
     end
 
-    @testset "calibration_id is required" begin
-        # a run is always rectified against a calibration (Fromage joins on calibration_id), so a
+    @testset "rectification_id is required" begin
+        # a run is always rectified against a calibration (Fromage joins on rectification_id), so a
         # run without one has nothing to rectify against and is flagged rather than left missing.
-        @test only(check([runrow(calibration_id = "cal_42")])).calibration_id == "cal_42"
-        @test flagged(check([runrow(calibration_id = missing)]), 1, "calibration_id is missing")
-        @test flagged(check([runrow(calibration_id = "   ")]),   1, "calibration_id is missing")
+        @test only(check([runrow(rectification_id = "cal_42")])).rectification_id == "cal_42"
+        @test flagged(check([runrow(rectification_id = missing)]), 1, "rectification_id is missing")
+        @test flagged(check([runrow(rectification_id = "   ")]),   1, "rectification_id is missing")
     end
 
     @testset "run_id is all-or-nothing" begin
@@ -74,11 +74,11 @@
     end
 
     @testset "defaults applied (with correct values) when optional fields omitted" begin
-        runs = check([runrow()])   # only run_id + calibration_id + file set
+        runs = check([runrow()])   # only run_id + rectification_id + file set
         @test clean(runs)
         r = only(runs)
         @test length(r.segments) == 1                    # one csv row ⇒ one segment
-        @test r.calibration_id        == "c"   # the baseline's id (required, never defaulted)
+        @test r.rectification_id        == "c"   # the baseline's id (required, never defaulted)
         @test only(r.segments).start                 == 0.0
         @test r.tuning.target_width          == 25.0
         @test only(r.segments).start_location        === missing

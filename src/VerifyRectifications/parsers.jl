@@ -42,7 +42,7 @@ const DEFAULT_TYPES = (;
 resolve_defaults(overrides) = Parsing.resolve_defaults(overrides, DEFAULTS, DEFAULT_TYPES, "rectification")
 
 function parse_uniform!(dict, row)
-    parseto!(dict, row, :calibration_id, String)
+    parseto!(dict, row, :rectification_id, String)
     parseto!(dict, row, :file, String)
     parseto!(dict, row, :extrinsic, MyTemporal)
     parseto!(dict, row, :pixel_width, Float64)
@@ -60,7 +60,7 @@ end
 # aspect is imputed from the video (unused by the method). All three tunables take their default
 # from `defaults`, so `rectification_defaults` reaches them like any other (#140).
 function parse_apriltag!(dict, row, defaults)
-    parseto!(dict, row, :calibration_id, String)
+    parseto!(dict, row, :rectification_id, String)
     parseto!(dict, row, :file, String)
     parseto!(dict, row, :extrinsic, MyTemporal)
     parseto!(dict, row, :apriltags, Int, defaults.apriltags)
@@ -73,7 +73,7 @@ function parse_apriltag!(dict, row, defaults)
 end
 
 function parse_matlab!(dict, row)
-    parseto!(dict, row, :calibration_id, String)
+    parseto!(dict, row, :rectification_id, String)
     parseto!(dict, row, :file, String)
     parseto!(dict, row, :matlab_file, String)
     parseto!(dict, row, :extrinsic, MyTemporal)
@@ -87,7 +87,7 @@ function parse_matlab!(dict, row)
 end
 
 function parse_checkerboard!(dict, row, defaults)
-    parseto!(dict, row, :calibration_id, String)
+    parseto!(dict, row, :rectification_id, String)
     parseto!(dict, row, :file, String)
     parseto!(dict, row, :extrinsic, MyTemporal)
     parseto!(dict, row, :intrinsic_start, MyTemporal, missing)
@@ -108,7 +108,7 @@ function parse_checkerboard!(dict, row, defaults)
     parseto!(dict, row, :yadif, Bool, defaults.yadif)
 end
 
-# The two calibs bounds are all-or-nothing. Asked of the CSV cells, not of the parsed values: a cell
+# The two rectifications bounds are all-or-nothing. Asked of the CSV cells, not of the parsed values: a cell
 # that was filled in but malformed is *present*, and the parser has already said so — comparing the
 # parsed types instead reported a second, contradictory issue for one typo, and nulled the good
 # bound along with it.

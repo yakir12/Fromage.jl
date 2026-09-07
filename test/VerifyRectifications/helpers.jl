@@ -99,7 +99,7 @@ end
 # Only names from VerifyRectifications.COLUMNS are allowed (others => "unrecognized column").
 # ---------------------------------------------------------------------------
 
-const HEADER = ["calibration_id", "path", "file", "matlab_file", "type", "extrinsic", "extrinsic_index",
+const HEADER = ["rectification_id", "path", "file", "matlab_file", "type", "extrinsic", "extrinsic_index",
                 "intrinsic_start", "intrinsic_stop", "center", "north", "n_corners",
                 "checker_width", "pixel_width", "temporal_step", "radial_parameters", "blur",
                 "yadif", "aspect", "apriltags", "family", "tag_cell_width", "comment"]
@@ -112,26 +112,26 @@ _merge(base; kw...) = row(; merge(base, values(kw))...)
 
 # Clean baseline rows per rectification type; override any field via keyword to isolate one issue.
 # (Each scenario is loaded as its own single-row CSV, so there is no cross-row coupling.)
-checkerboardrow(; kw...) = _merge((calibration_id = "v", path = ".", file = ART.board, type = "checkerboard",
+checkerboardrow(; kw...) = _merge((rectification_id = "v", path = ".", file = ART.board, type = "checkerboard",
                             extrinsic = "00:00:01", intrinsic_start = "00:00:00", intrinsic_stop = "00:00:04",
                             center = (250, 180), north = (250, 1), n_corners = (5, 8),
                             checker_width = 4, temporal_step = 2, radial_parameters = 1, blur = 0); kw...)
-matlabrow(; kw...) = _merge((calibration_id = "m", path = ".", file = ART.video, matlab_file = ART.good_mat,
+matlabrow(; kw...) = _merge((rectification_id = "m", path = ".", file = ART.video, matlab_file = ART.good_mat,
                              type = "matlab", extrinsic = "00:00:01", extrinsic_index = 1,
                              center = (160, 120), north = (160, 1)); kw...)
-uniformrow(; kw...) = _merge((calibration_id = "s", path = ".", file = ART.video, type = "uniform",
+uniformrow(; kw...) = _merge((rectification_id = "s", path = ".", file = ART.video, type = "uniform",
                             extrinsic = "00:00:01", pixel_width = 9.5, center = (320, 240), north = (320, 1)); kw...)
 # An apriltag row. ART.video holds no tags, so verify_apriltag_extrinsics! always flags such a row
 # and `check` therefore returns the annotated DataFrame rather than a Vector. That suits the tests
 # that use it: they assert on PARSED values, and defaults resolution happens at parse time — long
 # before any frame is read — so the columns are filled either way. (An apriltag row that has to
 # build a real reference frame is exercised end to end in test/fromage.jl, against a tag fixture.)
-apriltagrow(; kw...) = _merge((calibration_id = "a", path = ".", file = ART.video, type = "apriltag",
+apriltagrow(; kw...) = _merge((rectification_id = "a", path = ".", file = ART.video, type = "apriltag",
                                extrinsic = "00:00:01"); kw...)
 
 # mixed.mp4: checkerboard for 0–2 s, testsrc after; extrinsic sits on the board, the intrinsic window
 # is chosen per test (inside/outside the board portion) to exercise the intrinsic-window check.
-mixedrow(; kw...) = _merge((calibration_id = "x", path = ".", file = ART.mixed, type = "checkerboard",
+mixedrow(; kw...) = _merge((rectification_id = "x", path = ".", file = ART.mixed, type = "checkerboard",
                             extrinsic = "00:00:01", intrinsic_start = "0", intrinsic_stop = "1.8",
                             center = (250, 180), north = (250, 1), n_corners = (5, 8),
                             checker_width = 4, temporal_step = 0.9, radial_parameters = 1, blur = 0); kw...)

@@ -10,14 +10,14 @@ You audit documentation impact in `/home/yakir/Sync/evri/Fromage.jl`. You never 
 
 | Surface | Where | Audience |
 |---|---|---|
-| User site | `docs/src/` — `get-started.md`, `data-folder.md`, `runs.md`, `calibs.md`, `results.md`, `help.md` | the ~10 lab users |
+| User site | `docs/src/` — `get-started.md`, `data-folder.md`, `runs.md`, `rectifications.md`, `results.md`, `help.md` | the ~10 lab users |
 | Docstrings | `src/**` | callers and the site |
 | README | `README.md` | install, dev setup, test invocation |
 | Design rationale | `DESIGN-HISTORY.md` | future maintainers |
 | Investigations | `CIFS-SHARE-INVESTIGATION.md`, `WHY-FRAMES-FAIL.md` | evidence for the share/retry design |
 | Release machinery | `RELEASING.md` | maintainer |
 
-`runs.md` and `calibs.md` document the csv columns — and every tuning parameter *is* a csv
+`runs.md` and `rectifications.md` document the csv columns — and every tuning parameter *is* a csv
 column by construction (`test/quality.jl`, #140/#141). So **any change to a `Tuning`/`Segment`
 field or a rectification builder keyword is a documentation change**, always. Check it first.
 

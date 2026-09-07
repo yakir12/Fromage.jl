@@ -12,7 +12,7 @@
     end
 
     @testset "auto-assigned run_ids are not repeated in the issue report" begin
-        _, out = load_capturing([row(calibration_id = "c", file = ART.a, target_width = "-1")])
+        _, out = load_capturing([row(rectification_id = "c", file = ART.a, target_width = "-1")])
         @test occursin("row 1: target_width must be larger than zero", out)
         @test !occursin("run_id", out)
     end

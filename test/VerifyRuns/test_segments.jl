@@ -67,32 +67,32 @@
         @test flagged(df, 2, "run segments disagree on dimension")
     end
 
-    @testset "a run's segments must agree on calibration_id (required on every row)" begin
-        # all segments share the same calibration_id ⇒ clean, carried onto the run
-        runs = check([runrow(run_id = "s", file = ART.a, calibration_id = "cal_1"),
-                      runrow(run_id = "s", file = ART.b, calibration_id = "cal_1")])
+    @testset "a run's segments must agree on rectification_id (required on every row)" begin
+        # all segments share the same rectification_id ⇒ clean, carried onto the run
+        runs = check([runrow(run_id = "s", file = ART.a, rectification_id = "cal_1"),
+                      runrow(run_id = "s", file = ART.b, rectification_id = "cal_1")])
         @test clean(runs)
         @test length(only(runs).segments) == 2
-        @test only(runs).calibration_id == "cal_1"
+        @test only(runs).rectification_id == "cal_1"
 
         # omitting it is not allowed: every such segment row is flagged at parse time
-        df0 = check([runrow(run_id = "s", file = ART.a, calibration_id = missing),
-                     runrow(run_id = "s", file = ART.b, calibration_id = missing)])
-        @test flagged(df0, 1, "calibration_id is missing")
-        @test flagged(df0, 2, "calibration_id is missing")
+        df0 = check([runrow(run_id = "s", file = ART.a, rectification_id = missing),
+                     runrow(run_id = "s", file = ART.b, rectification_id = missing)])
+        @test flagged(df0, 1, "rectification_id is missing")
+        @test flagged(df0, 2, "rectification_id is missing")
 
         # two different values ⇒ flagged on every segment
-        df = check([runrow(run_id = "s", file = ART.a, calibration_id = "cal_1"),
-                    runrow(run_id = "s", file = ART.b, calibration_id = "cal_2")])
-        @test flagged(df, 1, "run segments disagree on calibration_id")
-        @test flagged(df, 2, "run segments disagree on calibration_id")
+        df = check([runrow(run_id = "s", file = ART.a, rectification_id = "cal_1"),
+                    runrow(run_id = "s", file = ART.b, rectification_id = "cal_2")])
+        @test flagged(df, 1, "run segments disagree on rectification_id")
+        @test flagged(df, 2, "run segments disagree on rectification_id")
 
         # one set, one missing: the omission itself is the issue; the consistency check only
         # compares otherwise-clean rows, so no "disagree" is stacked on top of it
-        df2 = check([runrow(run_id = "s", file = ART.a, calibration_id = "cal_1"),
-                     runrow(run_id = "s", file = ART.b, calibration_id = missing)])
-        @test flagged(df2, 2, "calibration_id is missing")
-        @test !flagged(df2, 1, "run segments disagree on calibration_id")
+        df2 = check([runrow(run_id = "s", file = ART.a, rectification_id = "cal_1"),
+                     runrow(run_id = "s", file = ART.b, rectification_id = missing)])
+        @test flagged(df2, 2, "rectification_id is missing")
+        @test !flagged(df2, 1, "run segments disagree on rectification_id")
     end
 
     @testset "a single bad segment fails the whole run load" begin

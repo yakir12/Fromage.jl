@@ -24,7 +24,7 @@ Things to know:
 - `test/quality.jl` enforces structural invariants, not style: every tuning parameter has
   exactly one definition site (#140/#141), `track` takes no keyword arguments, every
   `Tuning`/`Segment` field is a `runs.csv` column, every rectification builder keyword is a
-  `calibs.csv` column. A change that adds a keyword will fail here.
+  `rectifications.csv` column. A change that adds a keyword will fail here.
 - The real CIFS dataset is **not** in CI and will not be. Share-contention behaviour cannot be
   covered by a test; say so rather than proposing a test that can't work.
 - `test/fixtures.jl` is shared with `benchmark/benchmarks.jl` — changing a fixture can rot the

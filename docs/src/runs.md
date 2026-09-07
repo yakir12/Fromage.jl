@@ -11,12 +11,12 @@ Only two columns must always be there:
 | column | description |
 | --- | --- |
 | `file` | the video file name, including its extension (e.g. `beetle01.mp4`). |
-| `calibration_id` | which calibration to use for this run — must match a `calibration_id` in `calibs.csv`. |
+| `rectification_id` | which rectification to use for this run — must match a `rectification_id` in `rectifications.csv`. |
 
 A minimal `runs.csv` can be just:
 
 ```csv
-file,calibration_id
+file,rectification_id
 beetle01.mp4,morning
 beetle02.mp4,morning
 beetle03.mp4,afternoon
@@ -42,13 +42,16 @@ beetle03.mp4,afternoon
 | `comment` | — | free text, ignored. |
 
 !!! note
-    AprilTag drone tracking is configured entirely from `calibs.csv` — see [`type = apriltag`](calibs.md#Columns-for-type-apriltag) — so `runs.csv` has no `apriltags` column.
+    AprilTag drone tracking is configured entirely from `rectifications.csv` — see [`type = apriltag`](rectifications.md#Columns-for-type-apriltag) — so `runs.csv` has no `apriltags` column.
 
 !!! warning "Renamed in v0.2.0"
     The `fps` column has been **split in two**. It used to mean both "the rate this video runs at" and "the rate to track it at" — the same number by default, and impossible to separate when they differed. Track at a lower rate with [`sample_fps`](#Optional-columns), which is what a plain `fps` always meant; use [`native_fps`](#Optional-columns) to correct a video that misreports its own rate. A csv that still names `fps` is rejected up front with `unrecognized column/s in runs file: [:fps] (fps was renamed to sample_fps — the video's own rate is native_fps)`. Renaming the column to `sample_fps` reproduces exactly what you had.
 
+!!! warning "Renamed in v0.2.24"
+    The `calibration_id` column is now **`rectification_id`**, and the file it points into — `calibs.csv` — is now [`rectifications.csv`](rectifications.md). Only the column name changes here; what you write in it is unchanged. A `runs.csv` that still names `calibration_id` is rejected with `unrecognized column/s in runs file: [:calibration_id] (calibration_id was renamed to rectification_id (and calibs.csv is now rectifications.csv))`.
+
 !!! warning "Renamed in v0.2.23"
-    The `scale` column is now [`downscale`](#Optional-columns). `calibs.csv` also had a `scale` column, meaning something entirely different — real-world units per pixel, now [`pixel_width`](calibs.md#Columns-for-type-uniform) — and one word for two unrelated quantities in two files you edit side by side was a trap worth closing. A `runs.csv` that still names `scale` is rejected with `unrecognized column/s in runs file: [:scale] (scale was renamed to downscale)`. Renaming the column reproduces exactly what you had; nothing about tracking changes.
+    The `scale` column is now [`downscale`](#Optional-columns). `rectifications.csv` also had a `scale` column, meaning something entirely different — real-world units per pixel, now [`pixel_width`](rectifications.md#Columns-for-type-uniform) — and one word for two unrelated quantities in two files you edit side by side was a trap worth closing. A `runs.csv` that still names `scale` is rejected with `unrecognized column/s in runs file: [:scale] (scale was renamed to downscale)`. Renaming the column reproduces exactly what you had; nothing about tracking changes.
 
 !!! note "Why `native_fps` cannot be raised"
     `start` and `stop` stay in the video file's own seconds no matter what you declare, so claiming a rate *higher* than the file reports claims that your window holds more frames than it does — and the tracker would run off the end of the video partway through the run. A file that overstates its rate is the case worth correcting; one that understates it cannot be expressed here, because the frames it would need are not in the file.
@@ -73,7 +76,7 @@ beetle03.mp4,afternoon
 The starting position for a run is determined by the first available of:
 
 1. `start_location` in `runs.csv`,
-2. the `center` of the run's calibration in `calibs.csv`,
+2. the `center` of the run's rectification in `rectifications.csv`,
 3. nothing — the target is searched for near the center of the frame, within a window of `min(width, height) / initial_search_factor` pixels.
 
 ## Runs that span multiple videos
@@ -81,12 +84,12 @@ The starting position for a run is determined by the first available of:
 If a single run was recorded across several consecutive video files (e.g. the camera splits long recordings), give all its rows the **same `run_id`**, one row per video file, in chronological order:
 
 ```csv
-run_id,calibration_id,file,start,stop,start_location
+run_id,rectification_id,file,start,stop,start_location
 long,afternoon,beetle03_a.mp4,0,,"(210, 400)"
 long,afternoon,beetle03_b.mp4,0,00:01:03,
 ```
 
-- `file`, `start`, `stop`, and `start_location` are per segment; all other parameters (`target_width`, `sample_fps`, `calibration_id`, …) must be identical across the segments of one run, and all segments must come from the same camera setup (same frame size).
+- `file`, `start`, `stop`, and `start_location` are per segment; all other parameters (`target_width`, `sample_fps`, `rectification_id`, …) must be identical across the segments of one run, and all segments must come from the same camera setup (same frame size).
 - The segments are assumed to have been **filmed at the same frame rate** — they are pieces of one continuous recording, so normally they are. Footage that genuinely mixes frame rates is outside what Fromage tracks: a run has one timeline, and every timestamp in its track file is spaced at one rate. Left blank, the rate is read from each video and the segments must agree on it, so mismatched footage is reported rather than silently mistimed.
 - A `native_fps` written on **any** row of a run is a statement about the whole recording, and applies to every one of its segments — so you write it once, on whichever row is convenient, and leave it blank on the rest. Two rows claiming *different* native rates cannot both be true and are rejected.
 - Leave `start_location` blank on the second segment onwards: tracking continues from where the previous segment ended.
@@ -95,5 +98,5 @@ long,afternoon,beetle03_b.mp4,0,00:01:03,
 
 ## Next
 
-- [calibs.csv →](calibs.md)
+- [rectifications.csv →](rectifications.md)
 - [Your results →](results.md)

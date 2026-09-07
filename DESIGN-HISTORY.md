@@ -25,7 +25,7 @@ It used to be a pairwise tree of `concat:`-protocol calls with per-join disconti
 run at `-loglevel 8` so that every warning it produced was hidden. The demuxer rewrites timestamps
 monotonically by design, so the heuristics went away with it.
 
-### An unmatched `run_ids` / `calibration_ids` filter is an error (#21)
+### An unmatched `run_ids` / `rectification_ids` filter is an error (#21)
 
 Filtering by id is a convenience for iterating on one run, so an id that matches nothing is a
 typo, not a request for less work. Unchecked, it failed twice over: a *total* miss emptied the
@@ -200,6 +200,70 @@ negligible.
 
 ## Rectifications
 
+### "Rectification" and "calibration" are decided by machine-vision usage, not by audience (v0.2.24)
+
+The two words had drifted into each other for three releases, and each attempt to separate them
+picked a different boundary:
+
+- `d5cdf03` (v0.1.x): *"rectification names the output; calibration keeps genuine camera-calibration
+  semantics, plus the user-facing `calibration_id`/`calibs.csv`."* Requires a judgement call at
+  every site, which is why the same commit renamed the duplicate-detection **messages** to
+  "rectification" while leaving the **function** that emits them called
+  `verify_unique_calibrations!`.
+- An audience rule was considered and rejected: *"a non-technical user reads it ⇒ calibration."*
+  It is mechanical, but it makes the same object change name depending on who is looking at it,
+  which is how you end up with two vocabularies to keep in step instead of one.
+
+The rule now is external: **call each thing what machine vision calls it.**
+
+- **Calibration** = estimating a camera model — intrinsics (focal length, principal point,
+  distortion) and/or extrinsics (pose). The output is a camera model.
+- **Rectification** = warping an image to remove perspective (here: to a fronto-parallel metric
+  view of the arena floor), and by extension the transform that performs it.
+
+Applying that to what Fromage actually does:
+
+| thing | what it is | word |
+|---|---|---|
+| `fit_model` → `OpenCV.calibrateCamera`, distortion coefficients | intrinsic + extrinsic camera calibration | calibration |
+| `from_matlab` reading `K`, `RotationVectors`, `RadialDistortion` | an imported camera calibration | calibration |
+| `intrinsic_start`/`intrinsic_stop`, `checker_width`, `n_corners`, `radial_parameters` | parameters of that calibration | calibration |
+| `RectifiedScene`, `warp_extrinsic`, the top-down diagnostic | an image warped to the ground plane | rectification |
+| `StaticRectification`, `image2real`/`real2image` | the transform that performs that warp | rectification |
+| `type = apriltag` | homography + per-frame registration, **no camera model** | rectification |
+| `type = uniform` | a declared similarity transform, **no camera model** | rectification |
+| `rectifications.csv`, `rectification_id` | the file/row saying *which method and its parameters* | rectification |
+
+The decisive fact is that `OpenCV.calibrateCamera` is called in exactly **one** place
+(`detect_fit.jl`), and `from_uniform` has "no camera model at all". Two of the four types perform no
+calibration whatsoever — so "calibration" could never be the name of the file describing all four.
+That is what made the boundary unstateable: `calibs.csv` was the counter-example sitting at the
+centre of the vocabulary.
+
+So v0.2.24 finished what `d5cdf03` started: `calibs.csv` → `rectifications.csv`,
+`calibration_id` → `rectification_id` (a column of **both** csv files), `calibs_file` →
+`rectifications_file`, `calibration_ids` → `rectification_ids`, `verify_unique_calibrations!` →
+`verify_unique_rectifications!`, `verify_run_calibration!` → `verify_run_rectification!`,
+`report_calibs` → `report_rectifications`, the gateway's `what` label and its
+`"Reading calibration videos…"` probe message, and `verify`'s returned field `calibs` →
+`rectifications`. The `"duplicate rectification"` messages `d5cdf03` introduced were already
+correct and did not move.
+
+Deliberately **not** renamed, because the word is right where it stands:
+
+- `extrinsic` — literally the pose-anchoring frame for `checkerboard` and `matlab`, and generalised
+  to the other two as "the frame this rectification is anchored to". One deliberate generalisation
+  beats a third vocabulary word.
+- The docs' *"What makes a good calibration video"* — it sits under `type = checkerboard` and
+  describes waving a board for the intrinsic fit. That is a calibration video.
+- `"Reading matlab calibration files…"`, `matlab_file`, `extrinsic_index`, and the MATLAB prose —
+  they name an external camera calibration.
+
+One thing this rule cannot do is enforce itself. An audience rule could have been a test ("no issue
+string contains `rectif`"); formal correctness is a judgement about what a thing *is*, so it stays
+a convention backed by this table. The table is the checkable part: if a new concept does not
+appear in it, decide which column it belongs in before naming it.
+
 ### Rectification builders take keywords, and are chosen by type (#68)
 
 `Rectification(c::Video)` used to unpack its struct into **fifteen positional arguments**, and the
@@ -282,7 +346,7 @@ narrowing decides what gets built, never what gets checked, so validation was al
 
 ### The extrinsics-only rectification is selected by absence, and never flagged
 
-Which constructor a rectification gets is decided *solely* by whether the calibs row has an
+Which constructor a rectification gets is decided *solely* by whether the rectifications.csv row has an
 intrinsic window: both `start` and `stop` blank ⇒ the single-frame fit, where pose and focal
 length come from the extrinsic frame alone with every lens-distortion coefficient fixed at zero.
 
@@ -783,7 +847,7 @@ construction) turn it back into a throw themselves.
 ### A failed check nulls its own field
 
 `verify!` sets the offending field to `missing` after recording the issue, which makes every later
-check skip that row rather than pile on. It is what keeps an inverted calibs window from also
+check skip that row rather than pile on. It is what keeps an inverted intrinsic window from also
 reporting "temporal_step too short", and a bad `path` from also reporting "file does not exist".
 The ordering of the checks in `verifications!` is therefore load-bearing.
 
@@ -807,7 +871,7 @@ the same identity that disagree on the remaining parameters also get a conflicti
 issue.
 
 Within a duplicate set the **first row in csv order stands** and every later one is rejected: its
-`:calibration_id` is nulled, so nothing downstream can join a run onto a rectification that was
+`:rectification_id` is nulled, so nothing downstream can join a run onto a rectification that was
 thrown out.
 
 ### Duplicates are found by grouping, not by a shadow index column (#68)
@@ -818,17 +882,17 @@ The bookkeeping was the part most likely to be wrong in a way no test would catc
 
 `parentindices` does the same job for free: the per-type frames are views of `df` all the way down,
 so a group's rows already know where they came from. Both halves are now one `groupby` — the
-non-video half over every column that is not `:calibration_id` or `:issues` (`:type` among them, so
+non-video half over every column that is not `:rectification_id` or `:issues` (`:type` among them, so
 the two kinds never group together), the video half over its identity key — sharing one
 `reject_duplicates!`.
 
 Equivalence was not taken on faith. Three semantics the old code encoded implicitly and nothing
-asserted — that the duplicate's `:calibration_id` is nulled, that with three identical rows the
+asserted — that the duplicate's `:rectification_id` is nulled, that with three identical rows the
 first is kept and *both* others flagged, and that the video and non-video halves are judged
 separately — were written as tests against the old implementation first. Then both implementations
 were run over 4,000 randomly generated frames drawn from a deliberately tiny value space (so
 collisions and `missing`s are common, and a third of rows arrive pre-flagged): identical
-`:calibration_id` and identical `:issues` every time.
+`:rectification_id` and identical `:issues` every time.
 
 ### `comment` is exempt from the irrelevant-column check (#16)
 
@@ -894,15 +958,15 @@ Four names in the two csv files were changed at once, because each of them meant
 thing and the user edits both files side by side.
 
 `scale` was the worst: a *spatial downsampling factor* in `runs.csv` and *real-world units per
-pixel* in `calibs.csv`. Unrelated quantities, one word, and the same
+pixel* in `rectifications.csv`. Unrelated quantities, one word, and the same
 `"scale must be larger than zero"` message written out in both gateways. It is now `downscale`
-(runs) and `pixel_width` (calibs). Note this was **not** the `checker_size` failure mode: that was
+(runs) and `pixel_width` (rectifications). Note this was **not** the `checker_size` failure mode: that was
 one column in *one* file serving two row types, where a single default could not serve both, and
-the mechanical hazard is absent here — `calibs.csv`'s `scale` was never in `DEFAULTS` (it is
+the mechanical hazard is absent here — `rectifications.csv`'s `scale` was never in `DEFAULTS` (it is
 inherently per-row), so no global default could ever land on the wrong one. The case for splitting
 it was legibility, not a live bug.
 
-`pixel_width` was picked over any other spelling because it makes the calibs unit columns one rule
+`pixel_width` was picked over any other spelling because it makes the rectifications unit columns one rule
 instead of three names: `checker_width`, `tag_cell_width` and `pixel_width` are each *the
 real-world width of the thing this calibration type measures*, and each is the column that decides
 what unit your tracks come out in.
@@ -915,10 +979,10 @@ name said only what was true of all four. The checkerboard is what makes that on
 uniform`, named for the map it produces (a uniform scaling, no camera model) rather than for an
 absence.
 
-`start`/`stop` in `calibs.csv` are the window in which the board is waved to fit the lens model —
+`start`/`stop` in `rectifications.csv` are the window in which the board is waved to fit the lens model —
 not the span of a run to track, which is what `runs.csv` calls `start`/`stop`. They are now
 `intrinsic_start`/`intrinsic_stop`, which also gives the codebase a name for a concept it had been
-describing three different ways ("the calibs window", "the intrinsic window", "the time window
+describing three different ways ("the intrinsic window", "the intrinsic window", "the time window
 during which the checkerboard is being moved around"). `Checkerboard{Missing}` — the extrinsics-only
 case — now reads as exactly what it is: a calibration with no intrinsic window.
 
@@ -929,14 +993,14 @@ than to break another column. And `runs.csv`'s own `start`/`stop` did not move: 
 ordinary reading, and `Segment` is unaffected.
 
 One PR, one version bump, one migration. Split across releases it would have meant editing every
-`calibs.csv` on the share more than once. Old names are rejected the way `fps` and `checker_size`
+`rectifications.csv` on the share more than once. Old names are rejected the way `fps` and `checker_size`
 already were — `RENAMED_COLUMNS` per gateway, surfaced by `read_rows` before any row parses — with
 a new `RENAMED_TYPES` beside it for the two retired `type` *values*, which the column-level table
 structurally cannot see. Without that table a migrating file's commonest value produced the file's
 least useful message: a bare `"wrong type"`.
 
 The rename could not stop at the csv: `test/quality.jl` requires every `Tuning` field to be a
-`runs.csv` column and every builder keyword to be a `calibs.csv` column (#140/#141), so each rename
+`runs.csv` column and every builder keyword to be a `rectifications.csv` column (#140/#141), so each rename
 was forced through `Tuning`, the `RectificationMethod` structs and the builders. That is the
 invariant working as intended — it is what makes "the csv column and the code field are the same
 name" a fact rather than an aspiration.

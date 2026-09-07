@@ -16,11 +16,11 @@ using Tables: Tables
 
 # Read the CSV and screen it before a single cell is parsed: the file must exist, hold at least one
 # row, and name only columns the gateway recognizes. `what` names the file in the two messages that
-# mention it ("runs"/"calibration"), which are the gateway's own words for its input.
+# mention it ("runs"/"rectification"), which are the gateway's own words for its input.
 #
 # CSV gets the bytes, not the path: a path source is memory-mapped, and the mapping outlives this
 # call — `CSV.Rows` is lazy and holds it until the object is collected. On Windows a mapped file
-# cannot be reopened for writing, so the iterate-on-your-csv loop (edit calibs.csv, run again in the
+# cannot be reopened for writing, so the iterate-on-your-csv loop (edit rectifications.csv, run again in the
 # same session) fails with "Invalid argument" (#133). These files are one row per run; reading them
 # whole costs nothing.
 # `stripwhitespace = true` trims surrounding whitespace off every unquoted cell AND off the header
@@ -118,7 +118,7 @@ function read_per_file!(df::AbstractDataFrame, filecol, groupcols, desc, read, a
 end
 
 # Both csvs carry an id that becomes a file name — `results_dir/<run_id>.csv` and the diagnostic
-# segments, `rectifications/<calibration_id>.jpg` — so both have to be usable as one. Checked in the
+# segments, `rectifications/<rectification_id>.jpg` — so both have to be usable as one. Checked in the
 # gateway, where every other cell is already checked, rather than left to fail at write time: a
 # `run_id` of "2026/03/14" would otherwise surface as a SystemError out of `save2csv`, after every
 # run had already been tracked.

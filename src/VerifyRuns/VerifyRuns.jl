@@ -18,19 +18,24 @@ export load_runs, check_runs
 # Every column maps onto a field of `PawsomeTracker.Segment` or `PawsomeTracker.Tuning`, plus
 # `run_id` (identity / segment grouping) and `path` (path resolution). This is the full set of
 # recognized CSV columns; anything else is rejected as unrecognized.
-const COLUMNS = (:calibration_id, :comment, :run_id, :path, :file, :start, :stop, :target_width, :start_location, :window_size, :darker_target, :native_fps, :sample_fps, :initial_search_factor, :downscale, :background_length)
+const COLUMNS = (:rectification_id, :comment, :run_id, :path, :file, :start, :stop, :target_width, :start_location, :window_size, :darker_target, :native_fps, :sample_fps, :initial_search_factor, :downscale, :background_length)
 
 # `fps` meant two different rates at once — the video's own and the one to sample it at — which is
 # why it is gone rather than kept as a synonym for either. A file that still has the column is
 # rejected with the hint below, since neither reading of it can be assumed (see runs.md).
 #
-# `scale` named a spatial downsampling factor here and a real-world units-per-pixel in calibs.csv —
+# `scale` named a spatial downsampling factor here and a real-world units-per-pixel in rectifications.csv —
 # one word, two unrelated quantities, one of them the reciprocal-ish of the other in spirit. Each
 # file now spells its own: `downscale` here, `pixel_width` there. The two gateways' tables are
 # separate precisely so a `runs.csv` naming `scale` is never pointed at `pixel_width`.
+#
+# `calibration_id` became `rectification_id` in v0.2.24: it names a row of what is now
+# `rectifications.csv`, and only two of that file's four `type`s involve a camera calibration at
+# all. Same entry in both gateways, since the column is required in both files.
 const RENAMED_COLUMNS = Dict(
     :fps => "sample_fps — the video's own rate is native_fps",
     :scale => "downscale",
+    :calibration_id => "rectification_id (and calibs.csv is now rectifications.csv)",
 )
 
 include("types.jl")
@@ -46,7 +51,7 @@ function check_runs(file; defaults = (;), progress = true)
 end
 
 # Read the csv and settle its identities: parse every cell, then the first tier of verification
-# (`verify_ids!`), which touches nothing but `run_id` and `calibration_id`. Returns the annotated
+# (`verify_ids!`), which touches nothing but `run_id` and `rectification_id`. Returns the annotated
 # DataFrame — `:issues` carrying whatever the parse and that tier found — and whether every identity
 # came through usable. Split out of `load_runs` so `main` can settle BOTH files' identities before
 # either one opens a video (#121).
@@ -66,7 +71,7 @@ function parse_runs(data_path, file; defaults = (;), progress = true)
     before = sum(length, df.issues)
     verify_ids!(df)
     identities_ok = sum(length, df.issues) == before &&
-        !any(ismissing, df.run_id) && !any(ismissing, df.calibration_id)
+        !any(ismissing, df.run_id) && !any(ismissing, df.rectification_id)
     return df, identities_ok
 end
 

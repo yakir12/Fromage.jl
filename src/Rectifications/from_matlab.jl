@@ -4,11 +4,11 @@
 # angle conventions) is ported untouched from CameraCalibrations.jl's `loadMAT`. Real-world
 # coordinates come out in the `.mat`'s own world units (whatever square size the MATLAB
 # calibration was given), so the unit scale is 1.
-function from_matlab(; file, extrinsic, calibration_id, matlab_file, extrinsic_index, aspect, center, north,
+function from_matlab(; file, extrinsic, rectification_id, matlab_file, extrinsic_index, aspect, center, north,
         width, height, rectification_diagnostics::Bool)
     dict = matread(matlab_file)
     # the Camera Calibrator wraps everything in a single top-level struct (e.g. "cameraParams");
-    # unwrap until the calibration fields are at hand (VerifyRectifications already verified they
+    # unwrap until the camera-calibration fields are at hand (VerifyRectifications already verified they
     # exist, nested or not)
     while !haskey(dict, "K") && length(keys(dict)) == 1 && first(values(dict)) isa AbstractDict
         dict = first(values(dict))
@@ -35,6 +35,6 @@ function from_matlab(; file, extrinsic, calibration_id, matlab_file, extrinsic_i
     # checker_width/checker_width_pixel (there are no detected corners to measure it from): one
     # real-world unit step at the origin spans 1/ratio pixels
     ratio = 1 / norm(real2image(SVector(1.0, 0.0)) - real2image(SVector(0.0, 0.0)))
-    _diagnostic(rectification_diagnostics, file, extrinsic, calibration_id, width, height, ratio, real2image)
+    _diagnostic(rectification_diagnostics, file, extrinsic, rectification_id, width, height, ratio, real2image)
     return StaticRectification(image2real, real2image, ratio, width, height)
 end

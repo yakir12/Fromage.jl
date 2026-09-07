@@ -56,7 +56,7 @@ follow this file. Rule 6 below exists because that has actually gone wrong.
 | `test/quality.jl` | Aqua, ExplicitImports, and the single-definition-site invariant (#140/#141) |
 | `test/jet.jl` | JET; runs only on the pinned Julia 1.11 |
 | `benchmark/benchmarks.jl` | BenchmarkTools `SUITE`, `"micro"` + `"macro"`. Deliberately **not** in CI |
-| `docs/src/` | The user-facing site (`get-started`, `data-folder`, `runs`, `calibs`, `results`, `help`) |
+| `docs/src/` | The user-facing site (`get-started`, `data-folder`, `runs`, `rectifications`, `results`, `help`) |
 
 ---
 
@@ -202,7 +202,7 @@ This is the axis that most often slips. New and modified code must read like the
   the failure). Gateway verification *reports* failures rather than throwing — respect the
   distinction.
 - **One definition site per tuning parameter.** Enforced by `test/quality.jl` (#140/#141): every
-  `Tuning`/`Segment` field is a `runs.csv` column, every builder keyword is a `calibs.csv`
+  `Tuning`/`Segment` field is a `runs.csv` column, every builder keyword is a `rectifications.csv`
   column, `track` takes **no** keyword arguments. Adding a keyword "just for convenience" will
   fail the suite, and rightly.
 - **Docstrings on exported and non-obvious internal functions**, stating argument meaning and

@@ -22,7 +22,7 @@ end
 # by (aspect - 1) × x — half a frame at sar 2 (#130).
 #
 # Display space is not an arbitrary pick: `center` doubles as the default start_location for the
-# calibration's runs, and `start_location` is display space, so the two must agree.
+# rectification's runs, and `start_location` is display space, so the two must agree.
 fix_coordinate(::Missing, _) = missing
 function fix_coordinate(xy, aspect)
     x, y = xy

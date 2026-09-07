@@ -57,7 +57,7 @@ lens["inverse, 640 px"] = @benchmarkable [R.inv_lens_distortion(v, $K, $RSTAR) f
 
 # A uniform rectification: no video is read unless `rectification_diagnostics` asks for one, so
 # this is a pure pair of coordinate maps.
-const RECT = R.from_uniform(; file = "unread.mp4", extrinsic = 0, calibration_id = "bench",
+const RECT = R.from_uniform(; file = "unread.mp4", extrinsic = 0, rectification_id = "bench",
                           rectification_diagnostics = false,
     pixel_width = 0.05, aspect = 1.0, center = missing, north = missing, width = 640, height = 480)
 const IMAGE_PTS = vec([SVector(float(r), float(c)) for r in 1:16:480, c in 1:16:640])
@@ -111,10 +111,10 @@ const MAIN_DIR = let dir = mktempdir()
     png = joinpath(@__DIR__, "..", "test", "VerifyRectifications", "fixtures", "checkerboard.png")
     make_checkerboard_video(joinpath(dir, "board.mp4"), png)
     target, _ = make_target_video(dir, "run")
-    write(joinpath(dir, "calibs.csv"),
-        "calibration_id,file,type,extrinsic,intrinsic_start,intrinsic_stop,checker_width\nc1,board.mp4,checkerboard,1,0,4,4\n")
+    write(joinpath(dir, "rectifications.csv"),
+        "rectification_id,file,type,extrinsic,intrinsic_start,intrinsic_stop,checker_width\nc1,board.mp4,checkerboard,1,0,4,4\n")
     write(joinpath(dir, "runs.csv"),
-        "calibration_id,file,start_location\nc1,$(only(target)),\"(55, 50)\"\n")
+        "rectification_id,file,start_location\nc1,$(only(target)),\"(55, 50)\"\n")
     dir
 end
 
@@ -127,10 +127,10 @@ run_main() = cd(() -> main(MAIN_DIR; rectification_defaults = (n_corners = (5, 8
 # typing, `subset`, `groupby`, the issue accumulation — from ffprobe, which otherwise dominates.
 const GATEWAY_DIR = let dir = mktempdir(), n = 200
     write(joinpath(dir, "runs.csv"),
-        "run_id,calibration_id,file,start_location\n" *
+        "run_id,rectification_id,file,start_location\n" *
         join(["r$i,c$(i % 5),nope_$i.mp4,\"(55, 50)\"" for i in 1:n], '\n') * "\n")
-    write(joinpath(dir, "calibs.csv"),
-        "calibration_id,type,file,extrinsic,pixel_width\n" *
+    write(joinpath(dir, "rectifications.csv"),
+        "rectification_id,type,file,extrinsic,pixel_width\n" *
         join(["c$i,uniform,nope_$i.mp4,1,2" for i in 0:4], '\n') * "\n")
     dir
 end
@@ -144,7 +144,7 @@ gates["load_runs, 200 rows"] =
     @benchmarkable Fromage.VerifyRuns.load_runs(joinpath($GATEWAY_DIR, "runs.csv");
                                                 strict = false, progress = false)
 gates["load_rectifications, 5 rows"] =
-    @benchmarkable Fromage.VerifyRectifications.load_rectifications(joinpath($GATEWAY_DIR, "calibs.csv");
+    @benchmarkable Fromage.VerifyRectifications.load_rectifications(joinpath($GATEWAY_DIR, "rectifications.csv");
                                                                     strict = false, progress = false)
 
 # `track` takes no keyword arguments (#140, #141): a run's `Segment`s and its `Tuning` are what the

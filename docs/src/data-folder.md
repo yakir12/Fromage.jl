@@ -1,6 +1,6 @@
 # The data folder
 
-Fromage works on one folder that holds your videos and two spreadsheet files: `calibs.csv` (your calibration videos) and `runs.csv` (your run videos). This page covers how to lay that folder out, and the writing rules that both csv files share.
+Fromage works on one folder that holds your videos and two spreadsheet files: `rectifications.csv` (your rectification videos) and `runs.csv` (your run videos). This page covers how to lay that folder out, and the writing rules that both csv files share.
 
 ## The simplest layout
 
@@ -8,7 +8,7 @@ Everything in one folder:
 
 ```
 my experiment/
-├── calibs.csv
+├── rectifications.csv
 ├── runs.csv
 ├── calib_morning.mp4
 ├── calib_afternoon.mp4
@@ -28,7 +28,7 @@ main("path/to/my experiment")
 The csv files can be named differently or live in subfolders:
 
 ```julia
-main("path/to/my experiment"; calibs_file = "meta/my_calibs.csv", runs_file = "meta/my_runs.csv")
+main("path/to/my experiment"; rectifications_file = "meta/my_rectifications.csv", runs_file = "meta/my_runs.csv")
 ```
 
 And the video files can live in other folders via the `path` column in either csv file. Paths are relative to the folder the csv file itself is in; absolute paths work too.
@@ -71,4 +71,4 @@ Pixel coordinates (`start_location`, `center`, `north`) are written `"(x, y)"` �
 ## Next
 
 - [runs.csv →](runs.md)
-- [calibs.csv →](calibs.md)
+- [rectifications.csv →](rectifications.md)

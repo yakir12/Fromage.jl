@@ -64,7 +64,7 @@ using Fromage
             @test Set(keys(VRuns.DEFAULTS)) ⊆ Set(fieldnames(PT.Tuning))
         end
 
-        @testset "every rectification parameter is a calibs.csv column" begin
+        @testset "every rectification parameter is a rectifications.csv column" begin
             builders = [Fromage.Rectifications.from_checkerboard, Fromage.Rectifications.from_extrinsic,
                         Fromage.Rectifications.from_matlab, Fromage.Rectifications.from_uniform,
                         PT.ApriltagRectification]
