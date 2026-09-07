@@ -26,12 +26,12 @@ using ..Harness: capturing
     # n_corners and target_width are deliberately NOT in the CSVs: they arrive via main's global
     # defaults (the hardcoded n_corners (7, 10) would fail detection on the 5×8 board, so a clean
     # run proves the kwargs propagated into both gateways)
-    open(joinpath(dir, "calibs.csv"), "w") do io
-        println(io, "calibration_id,file,type,extrinsic,intrinsic_start,intrinsic_stop,checker_width")
+    open(joinpath(dir, "rectifications.csv"), "w") do io
+        println(io, "rectification_id,file,type,extrinsic,intrinsic_start,intrinsic_stop,checker_width")
         println(io, "c1,board.mp4,checkerboard,1,0,4,4")
     end
     open(joinpath(dir, "runs.csv"), "w") do io
-        println(io, "calibration_id,file,start_location")
+        println(io, "rectification_id,file,start_location")
         println(io, "c1,$(only(target)),\"(55, 50)\"")
     end
 
@@ -84,20 +84,20 @@ end
     dir = mktempdir()
     make_video(joinpath(dir, "cal.mp4"); size = (320, 240), duration = 2)
     target, expected = make_target_video(dir, "solo")
-    open(joinpath(dir, "calibs.csv"), "w") do io
-        println(io, "calibration_id,type,file,extrinsic,pixel_width")
+    open(joinpath(dir, "rectifications.csv"), "w") do io
+        println(io, "rectification_id,type,file,extrinsic,pixel_width")
         println(io, "c1,uniform,cal.mp4,1,2")
     end
     open(joinpath(dir, "runs.csv"), "w") do io
         # background_length = 0 rides along to prove the column flows csv → gateway → track
-        println(io, "calibration_id,file,start_location,background_length")
+        println(io, "rectification_id,file,start_location,background_length")
         println(io, "c1,$(only(target)),\"(55, 50)\",0")
     end
     outdir = mktempdir()
 
-    calibs = cd(() -> Fromage.only_rectify(dir), outdir)
-    @test length(calibs) == 1
-    rect = only(calibs)
+    rects = cd(() -> Fromage.only_rectify(dir), outdir)
+    @test length(rects) == 1
+    rect = only(rects)
     @test rect.ratio == 2                           # the csv's pixel_width
     @test (rect.width, rect.height) == (320, 240)
     p = SVector(7.0, 11.0)
@@ -127,7 +127,7 @@ end
     # filter drops an earlier run. Numbering by position instead would name this file "1.mp4",
     # which matches no row in the csv the user is looking at.
     open(joinpath(dir, "named.csv"), "w") do io
-        println(io, "run_id,calibration_id,file,start_location,background_length")
+        println(io, "run_id,rectification_id,file,start_location,background_length")
         println(io, "solo_a,c1,$(only(target)),\"(55, 50)\",0")
         println(io, "solo_b,c1,$(only(target)),\"(55, 50)\",0")
     end
@@ -146,12 +146,12 @@ end
     dir = mktempdir()
     make_video(joinpath(dir, "cal.mp4"); size = (320, 240), duration = 2)
     target, _ = make_target_video(dir, "idf")
-    open(joinpath(dir, "calibs.csv"), "w") do io
-        println(io, "calibration_id,type,file,extrinsic,pixel_width")
+    open(joinpath(dir, "rectifications.csv"), "w") do io
+        println(io, "rectification_id,type,file,extrinsic,pixel_width")
         println(io, "c1,uniform,cal.mp4,1,2")
     end
     open(joinpath(dir, "runs.csv"), "w") do io
-        println(io, "run_id,calibration_id,file,start_location")
+        println(io, "run_id,rectification_id,file,start_location")
         println(io, "r1,c1,$(only(target)),\"(55, 50)\"")
     end
     outdir = mktempdir()
@@ -164,25 +164,25 @@ end
     @test_throws "r1" cd(() -> main(dir; run_ids = ["r_typo"]), outdir)
     # both partial-pipeline helpers, which returned an empty vector with no error at all
     @test_throws "r_typo" cd(() -> Fromage.only_track(dir; run_ids = ["r_typo"]), outdir)
-    @test_throws "c_typo" cd(() -> Fromage.only_rectify(dir; calibration_ids = ["c_typo"]), outdir)
+    @test_throws "c_typo" cd(() -> Fromage.only_rectify(dir; rectification_ids = ["c_typo"]), outdir)
     # and a filter that does match still works
     @test nrow(cd(() -> main(dir; run_ids = ["r1"], tracking_defaults = (target_width = 10,)), outdir)) == 1
 end
 
 @testset "Fromage end-to-end: AprilTag drone tracking" begin
-    # The whole AprilTag path through `main`: a `type = apriltag` calibs row builds the shared
+    # The whole AprilTag path through `main`: a `type = apriltag` rectifications.csv row builds the shared
     # reference from the extrinsic frame; the run registers each frame to it (cancelling the drone
     # pan) and is reported in metric ground coordinates. Exercises detection, reference building,
     # motion cancellation, the metric scale (tag_cell_width = cell size), the centre/north gauge, and
     # the csv/diagnostic outputs — the pure geometry is unit-tested separately in test/apriltag.jl.
     dir = mktempdir()
     vid, groundpath, sl, nframes = make_apriltag_video(dir, "drone")
-    open(joinpath(dir, "calibs.csv"), "w") do io
-        println(io, "calibration_id,type,file,extrinsic,apriltags,family,tag_cell_width")
+    open(joinpath(dir, "rectifications.csv"), "w") do io
+        println(io, "rectification_id,type,file,extrinsic,apriltags,family,tag_cell_width")
         println(io, "drone,apriltag,$vid,0,4,tag36h11,8")
     end
     open(joinpath(dir, "runs.csv"), "w") do io
-        println(io, "run_id,calibration_id,file,start_location,target_width")
+        println(io, "run_id,rectification_id,file,start_location,target_width")
         println(io, "beetle,drone,$vid,\"$sl\",12")
     end
     outdir = mktempdir()
@@ -338,12 +338,12 @@ end
     keepsake = joinpath(idir, "my_notes.txt")          # the user's own file, in the folder they named
     write(keepsake, "hands off")
     vid, _, _, _ = make_apriltag_video(dir, "drone")
-    open(joinpath(dir, "calibs.csv"), "w") do io
-        println(io, "calibration_id,type,file,extrinsic,apriltags,family,tag_cell_width")
+    open(joinpath(dir, "rectifications.csv"), "w") do io
+        println(io, "rectification_id,type,file,extrinsic,apriltags,family,tag_cell_width")
         println(io, "drone,apriltag,$vid,0,6,tag36h11,12")
     end
     # named for what it does here; `verify` is now an exported entry point of its own
-    check_calibs() = Fromage.VerifyRectifications.check_rectifications(dir, joinpath(dir, "calibs.csv"); issues_dir = idir)
+    check_calibs() = Fromage.VerifyRectifications.check_rectifications(dir, joinpath(dir, "rectifications.csv"); issues_dir = idir)
     run_dirs() = filter(isdir, readdir(idir; join = true))
     frames(d) = filter(endswith(".png"), readdir(d; join = true))
 
@@ -419,15 +419,15 @@ end
         "TranslationVectors" => [0.0 0.0 100.0; 0.0 0.0 200.0],
         "RadialDistortion" => [0.0, 0.0])))
     targets = [make_target_video(dir, "t$i") for i in 1:4]
-    open(joinpath(dir, "calibs.csv"), "w") do io
-        println(io, "calibration_id,type,file,extrinsic,pixel_width,matlab_file,extrinsic_index")
+    open(joinpath(dir, "rectifications.csv"), "w") do io
+        println(io, "rectification_id,type,file,extrinsic,pixel_width,matlab_file,extrinsic_index")
         println(io, "c1,uniform,cal_big.mp4,1,1,,")
         println(io, "c2,uniform,cal_small.mp4,1,1,,")
         println(io, "m1,matlab,cal_big.mp4,1,,cal.mat,1")
     end
     calib_ids = ("c1", "c1", "c2", "m1")
     open(joinpath(dir, "runs.csv"), "w") do io
-        println(io, "run_id,calibration_id,file,start_location")
+        println(io, "run_id,rectification_id,file,start_location")
         for (i, (files, _)) in enumerate(targets)
             println(io, "run$i,$(calib_ids[i]),$(only(files)),\"(55, 50)\"")
         end
@@ -478,13 +478,13 @@ end
     dir = mktempdir()
     make_video(joinpath(dir, "cal.mp4"); size = (320, 240), duration = 2)
     target, _ = make_target_video(dir, "nonstrict")
-    open(joinpath(dir, "calibs.csv"), "w") do io
-        println(io, "calibration_id,type,file,extrinsic,pixel_width")
+    open(joinpath(dir, "rectifications.csv"), "w") do io
+        println(io, "rectification_id,type,file,extrinsic,pixel_width")
         println(io, "c1,uniform,cal.mp4,1,2")
         println(io, "c1,uniform,cal.mp4,1,2")     # duplicate id: a first-tier failure
     end
     open(joinpath(dir, "runs.csv"), "w") do io
-        println(io, "calibration_id,file,start_location")
+        println(io, "rectification_id,file,start_location")
         println(io, "c1,$(only(target)),\"(55, 50)\"")
     end
     outdir = mktempdir()
@@ -494,17 +494,17 @@ end
     # A dataset is accepted or rejected as a whole, so both tables come back annotated — handing
     # back built runs whose calibration was just rejected would imply a usability they lack (#122).
     out = cd(() -> verify(dir), outdir)
-    @test out.calibs isa DataFrame
+    @test out.rectifications isa DataFrame
     @test out.runs isa DataFrame
-    @test hasproperty(out.calibs, :issues)
+    @test hasproperty(out.rectifications, :issues)
     @test hasproperty(out.runs, :issues)
-    @test any(!isempty, out.calibs.issues)                            # the offending file
+    @test any(!isempty, out.rectifications.issues)                            # the offending file
     @test all(isempty, out.runs.issues)                               # runs.csv itself was clean
 end
 
 # The two csv files must describe one dataset: every run's calibration exists, and every calibration
 # is used (#122). Both are first-tier checks, so an incoherent pair costs no video reads at all.
-@testset "calibs.csv and runs.csv must be coherent" begin
+@testset "rectifications.csv and runs.csv must be coherent" begin
     dir = mktempdir()
     make_video(joinpath(dir, "cal.mp4"); size = (320, 240), duration = 2)
     # seeded, like every other fixture: random bytes are unreadable whatever they are, but an
@@ -514,10 +514,10 @@ end
     outdir = mktempdir()
 
     @testset "a calibration no run uses is rejected, before anything is opened" begin
-        write(joinpath(dir, "calibs.csv"),
-              "calibration_id,type,file,extrinsic,pixel_width\nc1,uniform,cal.mp4,1,2\nc2,uniform,broken.mp4,1,2\n")
+        write(joinpath(dir, "rectifications.csv"),
+              "rectification_id,type,file,extrinsic,pixel_width\nc1,uniform,cal.mp4,1,2\nc2,uniform,broken.mp4,1,2\n")
         write(joinpath(dir, "runs.csv"),
-              "calibration_id,file,start_location\nc1,$(only(target)),\"(55, 50)\"\n")
+              "rectification_id,file,start_location\nc1,$(only(target)),\"(55, 50)\"\n")
         _, out = capturing() do
             try
                 cd(() -> main(dir; tracking_defaults = (target_width = 10,)), outdir)
@@ -525,17 +525,17 @@ end
                 e
             end
         end
-        @test occursin("calibration_id c2 is not used by any row in runs.csv", out)
+        @test occursin("rectification_id c2 is not used by any row in runs.csv", out)
         # the unused calibration points at an unreadable video; probing it would say so loudly, so
         # this silence is what proves the first tier stopped before any read
         @test !occursin("issue reading from video file", out)
     end
 
     @testset "a run naming a calibration that does not exist is rejected, and both files reported" begin
-        write(joinpath(dir, "calibs.csv"),
-              "calibration_id,type,file,extrinsic,pixel_width\nc1,uniform,cal.mp4,1,2\n")
+        write(joinpath(dir, "rectifications.csv"),
+              "rectification_id,type,file,extrinsic,pixel_width\nc1,uniform,cal.mp4,1,2\n")
         write(joinpath(dir, "runs.csv"),
-              "calibration_id,file,start_location\nc9,$(only(target)),\"(55, 50)\"\n")
+              "rectification_id,file,start_location\nc9,$(only(target)),\"(55, 50)\"\n")
         _, out = capturing() do
             try
                 cd(() -> main(dir; tracking_defaults = (target_width = 10,)), outdir)
@@ -544,8 +544,8 @@ end
             end
         end
         # both halves are reported in one pass: together they diagnose the typo
-        @test occursin("references calibration_id c9, which is not in calibs.csv", out)
-        @test occursin("calibration_id c1 is not used by any row in runs.csv", out)
+        @test occursin("references rectification_id c9, which is not in rectifications.csv", out)
+        @test occursin("rectification_id c1 is not used by any row in runs.csv", out)
     end
 end
 
@@ -557,17 +557,17 @@ end
     make_video(joinpath(dir, "cal2.mp4"); size = (320, 240), duration = 2)
     t1, _ = make_target_video(dir, "n1")
     t2, _ = make_target_video(dir, "n2")
-    write(joinpath(dir, "calibs.csv"),
-          "calibration_id,type,file,extrinsic,pixel_width\nc1,uniform,cal1.mp4,1,2\nc2,uniform,cal2.mp4,1,2\n")
+    write(joinpath(dir, "rectifications.csv"),
+          "rectification_id,type,file,extrinsic,pixel_width\nc1,uniform,cal1.mp4,1,2\nc2,uniform,cal2.mp4,1,2\n")
     write(joinpath(dir, "runs.csv"),
-          "run_id,calibration_id,file,start_location\n" *
+          "run_id,rectification_id,file,start_location\n" *
           "r1,c1,$(only(t1)),\"(55, 50)\"\nr2,c2,$(only(t2)),\"(55, 50)\"\n")
     outdir = mktempdir()
 
     runs = cd(() -> main(dir; run_ids = ["r1"], tracking_defaults = (target_width = 10,)), outdir)
     @test nrow(runs) == 1                       # only the run asked for
     @test only(runs.run_id) == "r1"
-    @test only(runs.calibration_id) == "c1"     # and only the calibration it needs
+    @test only(runs.rectification_id) == "c1"     # and only the calibration it needs
 end
 
 end

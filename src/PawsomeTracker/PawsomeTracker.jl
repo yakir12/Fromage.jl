@@ -68,7 +68,7 @@ open_gray_video(file) =
 # The AprilTag C detector (`apriltag_detector_detect`) is not reentrant: it has global/static state
 # that concurrent calls corrupt, even across distinct per-thread detectors on distinct frames, and
 # under enough pressure it segfaults. Every detection call is therefore serialized process-wide
-# through this lock (see `detect_locked`), covering both calibration reference building and per-run
+# through this lock (see `detect_locked`), covering both rectification reference building and per-run
 # tracking. Reads and decoding stay concurrent — only the detect is serial.
 const APRILTAG_LOCK = ReentrantLock()
 
@@ -409,7 +409,7 @@ target is at `start`, as an `(x, y)` display-pixel position.
 the second and later segments of an ordinary run, where the target continues from where the
 previous one ended, and any segment of an AprilTag run, where a missing one becomes a frame-centre
 search. The first segment of an ordinary run carries a concrete one: the runs gateway resolves it
-(csv cell, then the calibration's `center`, then the frame centre) before building the segment.
+(csv cell, then the rectification's `center`, then the frame centre) before building the segment.
 
 The union is exactly what is supported (#18). `RowCol` is absent on purpose despite having a
 `get_guess` method: that is the internal form a later segment's start takes, carried over from the

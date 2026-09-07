@@ -20,7 +20,7 @@
         # a loud message for a cause the user cannot see in their spreadsheet. CSV strips header
         # names now, which is the half no cell parser can reach.
         csv = write_rows(joinpath(DATADIR, "padded_header.csv"), [["r", "c", ART.a, "1"]];
-                         header = [" run_id", "calibration_id ", " file ", "\tstart"])
+                         header = [" run_id", "rectification_id ", " file ", "\tstart"])
         @test clean(VR.load_runs(DATADIR, csv))
     end
 
@@ -28,7 +28,7 @@
         # `fps` named two rates at once, so it could not be kept as a synonym for either: the
         # message has to say which one the value was, or a run silently changes meaning.
         csv = write_rows(joinpath(DATADIR, "fps_split.csv"), [["c1", "a.mp4", "15"]];
-                         header = ["calibration_id", "file", "fps"])
+                         header = ["rectification_id", "file", "fps"])
         @test_throws "unrecognized column" VR.load_runs(DATADIR, csv)
         @test_throws "sample_fps" VR.load_runs(DATADIR, csv)
         @test_throws "native_fps" VR.load_runs(DATADIR, csv)
@@ -36,14 +36,23 @@
 
     @testset "the renamed scale column points at downscale, never pixel_width" begin
         # `scale` existed in BOTH csv files meaning unrelated things, so the two gateways carry
-        # separate RENAMED_COLUMNS tables. Pointing a runs.csv at calibs.csv's replacement would be
+        # separate RENAMED_COLUMNS tables. Pointing a runs.csv at rectifications.csv's replacement would be
         # worse than the generic message: it names a column this file does not even have.
         csv = write_rows(joinpath(DATADIR, "scale_renamed.csv"), [["c1", "a.mp4", "0.5"]];
-                         header = ["calibration_id", "file", "scale"])
+                         header = ["rectification_id", "file", "scale"])
         @test_throws "unrecognized column" VR.load_runs(DATADIR, csv)
         @test_throws "scale was renamed to downscale" VR.load_runs(DATADIR, csv)
         err = try VR.load_runs(DATADIR, csv) catch e; sprint(showerror, e) end
         @test !occursin("pixel_width", err)
+    end
+
+    @testset "the renamed calibration_id column says where it went" begin
+        # v0.2.24: the column is required in BOTH csv files, so both gateways carry the entry —
+        # a runs.csv naming the old one has to be told, not just handed the generic message.
+        csv = write_rows(joinpath(DATADIR, "calibid_renamed.csv"), [["c1", "a.mp4"]];
+                         header = ["calibration_id", "file"])
+        @test_throws "unrecognized column" VR.load_runs(DATADIR, csv)
+        @test_throws "calibration_id was renamed to rectification_id" VR.load_runs(DATADIR, csv)
     end
 
     @testset "the removed white_point column is now rejected by name (#19)" begin
@@ -51,7 +60,7 @@
         # A csv that still carries it is rejected up front, naming the column — the migration is
         # deleting it, and nothing about tracking changes, since the value never reached the tracker.
         csv = write_rows(joinpath(DATADIR, "wp_removed.csv"), [["c1", "a.mp4", "1.0"]];
-                         header = ["calibration_id", "file", "white_point"])
+                         header = ["rectification_id", "file", "white_point"])
         @test_throws "unrecognized column" VR.load_runs(DATADIR, csv)
         @test_throws "white_point" VR.load_runs(DATADIR, csv)
     end

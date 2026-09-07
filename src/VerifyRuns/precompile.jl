@@ -10,7 +10,7 @@
     dir = mktempdir()
     csv = joinpath(dir, "precompile.csv")
     open(csv, "w") do io
-        println(io, "run_id,calibration_id,file,start,stop")
+        println(io, "run_id,rectification_id,file,start,stop")
         println(io, "r,c,nope.mp4,0,5")
     end
     @compile_workload begin

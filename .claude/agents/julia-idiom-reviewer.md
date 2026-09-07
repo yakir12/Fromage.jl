@@ -28,7 +28,7 @@ re-exporter, never an import left behind after the name stopped being used.
 
 **One definition site per tuning parameter** (#140/#141). `track` takes no keyword arguments.
 Every `Tuning`/`Segment` field is a `runs.csv` column; every rectification builder keyword is a
-`calibs.csv` column. **No `kwargs...` splatted through an intermediate function** — that open
+`rectifications.csv` column. **No `kwargs...` splatted through an intermediate function** — that open
 channel is the bug itself, because a later splatted keyword silently beats an earlier one.
 
 **Errors stay errors.** No bare `catch`. Catch the specific exception and preserve what it said;

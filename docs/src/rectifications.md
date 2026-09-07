@@ -1,17 +1,17 @@
-# calibs.csv — your calibration videos
+# rectifications.csv — how pixels become real-world coordinates
 
-`calibs.csv` describes your **calibrations**: how Fromage converts pixels in each camera view into real-world coordinates on the arena floor. One row per calibration. Every run in `runs.csv` points at one of these rows through its `calibration_id`.
+`rectifications.csv` describes your **rectifications**: how Fromage converts pixels in each camera view into real-world coordinates on the arena floor. One row per rectification. Every run in `runs.csv` points at one of these rows through its `rectification_id`.
 
 Not sure about the general formatting rules (timestamps, coordinates, blank cells)? See [the data folder](data-folder.md#Rules-both-csv-files-share) first.
 
-## The four kinds of calibration
+## The four kinds of rectification
 
-Every calibration is anchored to a video file of the arena. There are four kinds, selected with the `type` column:
+Every rectification is anchored to a video file of the arena. There are four kinds, selected with the `type` column:
 
 - **`checkerboard`** (the default): a video of a checkerboard being moved around the arena, then laid flat on the arena floor. Yields a full calibration — lens distortion, perspective, and scale. **This is the one you'll usually want.**
 - **`uniform`**: no checkerboard; you supply the real-world width of one pixel and nothing is measured from the video. The result is a single uniform scaling, so there is **no distortion and no perspective correction at all** — only appropriate for a distortion-free lens pointed straight down at the arena. If your camera is at an angle, or your lens bends straight lines, use `checkerboard` instead.
 - **`matlab`**: a calibration you already made with MATLAB's Camera Calibrator app, supplied as a `.mat` file. The camera model — intrinsics, lens distortion, and the extrinsic poses — is read from the file instead of being fit from a video.
-- **`apriltag`**: drone (moving-camera) footage with four (or more) coplanar AprilTags visible on the arena floor. Instead of a fixed image→arena map, every run frame is registered to a shared reference — built from the `extrinsic` frame — so the drone's motion is cancelled and the target comes out in metric ground coordinates. The tags must stay in the same physical place across the calibration and all its runs.
+- **`apriltag`**: drone (moving-camera) footage with four (or more) coplanar AprilTags visible on the arena floor. Instead of a fixed image→arena map, every run frame is registered to a shared reference — built from the `extrinsic` frame — so the drone's motion is cancelled and the target comes out in metric ground coordinates. The tags must stay in the same physical place across the rectification and all its runs.
 
 ## What makes a good calibration video
 
@@ -28,12 +28,12 @@ Required:
 
 | column | description |
 | --- | --- |
-| `calibration_id` | a unique name for this calibration; referenced from `runs.csv`. It also names this calibration's rectification image, so it has to be usable as a file name — see the note below. |
+| `rectification_id` | a unique name for this rectification; referenced from `runs.csv`. It also names this rectification's diagnostic image, so it has to be usable as a file name — see the note below. |
 | `file` | the video file name, including extension. |
 | `extrinsic` | timestamp of a frame where the checkerboard lies **flat on the arena floor**. This frame anchors the mapping between the image and the arena surface, so make sure the full board is clearly visible in it. |
 
-!!! note "`calibration_id` becomes a file name"
-    With `rectification_diagnostics = true` each calibration's [rectification image](results.md#The-rectification-images) is saved as `<calibration_id>.jpg`, so the id may not contain `/`, `\`, `:`, `*`, `?`, `"`, `<`, `>` or `|`, and may not be `.` or `..`. A bad one is reported along with everything else in the file, before any calibration is built. Spaces and apostrophes are fine.
+!!! note "`rectification_id` becomes a file name"
+    With `rectification_diagnostics = true` each rectification's [diagnostic image](results.md#The-rectification-images) is saved as `<rectification_id>.jpg`, so the id may not contain `/`, `\`, `:`, `*`, `?`, `"`, `<`, `>` or `|`, and may not be `.` or `..`. A bad one is reported along with everything else in the file, before any rectification is built. Spaces and apostrophes are fine.
 
 Optional:
 
@@ -53,7 +53,14 @@ Optional:
 | `type` | `checkerboard` | see above. |
 
 !!! warning "Renamed in v0.1.58"
-    `checker_width` used to be called `checker_size`. That name also served `type = apriltag` rows, where it meant a different quantity — a tag cell rather than a checkerboard square — so it has split in two: checkerboard rows use `checker_width`, apriltag rows use [`tag_cell_width`](#Columns-for-type-apriltag). A csv that still names `checker_size` is rejected up front with `unrecognized column/s in calibration file: [:checker_size]` and a note naming both replacements; rename the column and the file loads exactly as before. Nothing about the calibration changes.
+    `checker_width` used to be called `checker_size`. That name also served `type = apriltag` rows, where it meant a different quantity — a tag cell rather than a checkerboard square — so it has split in two: checkerboard rows use `checker_width`, apriltag rows use [`tag_cell_width`](#Columns-for-type-apriltag). A csv that still names `checker_size` is rejected up front with `unrecognized column/s in rectification file: [:checker_size]` and a note naming both replacements; rename the column and the file loads exactly as before. Nothing about the rectification changes.
+
+!!! warning "Renamed in v0.2.24: the file and the id"
+    `calibs.csv` is now **`rectifications.csv`**, and its `calibration_id` column is now **`rectification_id`** — including in `runs.csv`, which references it. Rename the file, and rename that column in **both** files.
+
+    The reason is that only two of the four `type`s involve a camera calibration at all: `checkerboard` fits a lens model and `matlab` imports one, while `uniform` just declares a scale and `apriltag` fits a homography. What every row describes is a **rectification** — how pixels in one camera view become real-world coordinates — so that is what the file and the id are now called. Where a camera calibration genuinely happens the word stays: the [intrinsic window](#Columns-for-type-checkerboard), `checker_width`, `n_corners`, `radial_parameters`, and everything about the MATLAB Camera Calibrator.
+
+    An old column name is rejected up front: `unrecognized column/s in rectification file: [:calibration_id] (calibration_id was renamed to rectification_id (and calibs.csv is now rectifications.csv))`. If you keep your csv files under other names, the keyword is now `rectifications_file` (was `calibs_file`), and `only_rectify`'s filter is `rectification_ids` (was `calibration_ids`).
 
 !!! warning "Renamed in v0.2.23"
     Four names in this file changed, all so that each one says what it means. Every replacement is a plain find-and-replace in your spreadsheet; nothing about any calibration changes.
@@ -65,14 +72,14 @@ Optional:
     | `scale` | `pixel_width` | `runs.csv` also has a `scale`, meaning something unrelated (a downsampling factor, now `downscale`). `pixel_width` also matches how `checker_width` and `tag_cell_width` are named: the real-world width of the thing that sets your unit. |
     | `start`, `stop` | `intrinsic_start`, `intrinsic_stop` | `runs.csv` uses `start`/`stop` for the span of a run to *track*, which is a different thing from the window in which you wave the board. |
 
-    An old column name is rejected up front, naming its replacement — e.g. `unrecognized column/s in calibration file: [:scale] (scale was renamed to pixel_width (and type = only_scale is now type = uniform))`. An old `type` value is reported per row, as `wrong type (video was renamed to checkerboard)`. Rows that left `type` blank are unaffected: the default was `video` and is now `checkerboard`, which is the same kind of calibration.
+    An old column name is rejected up front, naming its replacement — e.g. `unrecognized column/s in rectification file: [:scale] (scale was renamed to pixel_width (and type = only_scale is now type = uniform))`. An old `type` value is reported per row, as `wrong type (video was renamed to checkerboard)`. Rows that left `type` blank are unaffected: the default was `video` and is now `checkerboard`, which is the same kind of calibration.
 
 !!! tip "Count the *internal* corners"
     `n_corners` counts where four squares meet, not the squares themselves. A board of 8 × 11 squares has 7 × 10 internal corners.
 
 ## Columns for `type = uniform`
 
-Required: `calibration_id`, `file`, `extrinsic` (a timestamp of any representative frame), and:
+Required: `rectification_id`, `file`, `extrinsic` (a timestamp of any representative frame), and:
 
 | column | description |
 | --- | --- |
@@ -82,7 +89,7 @@ Optional: `path`, `center`, `north`, `aspect` — same meaning as above.
 
 ## Columns for `type = matlab`
 
-Required: `calibration_id`, `file` (a video of the arena from the same camera — its frame size is cross-checked against the `.mat`'s `ImageSize`), `extrinsic` (a timestamp of any representative frame, used for the diagnostics), and:
+Required: `rectification_id`, `file` (a video of the arena from the same camera — its frame size is cross-checked against the `.mat`'s `ImageSize`), `extrinsic` (a timestamp of any representative frame, used for the diagnostics), and:
 
 | column | description |
 | --- | --- |
@@ -93,7 +100,7 @@ Optional: `path`, `center`, `north`, `aspect` — same meaning as above. Real-wo
 
 ## Columns for `type = apriltag`
 
-Required: `calibration_id`, `file` (the drone footage — a video where the tags are visible), `extrinsic` (a timestamp of the frame that establishes the shared reference: **all** the tags must be clearly visible and lie flat on the arena floor there). Optional:
+Required: `rectification_id`, `file` (the drone footage — a video where the tags are visible), `extrinsic` (a timestamp of the frame that establishes the shared reference: **all** the tags must be clearly visible and lie flat on the arena floor there). Optional:
 
 | column | default | description |
 | --- | --- | --- |
@@ -101,7 +108,7 @@ Required: `calibration_id`, `file` (the drone footage — a video where the tags
 | `family` | `tag36h11` | the AprilTag family; one of `tag36h11`, `tag25h9`, `tag16h5`. |
 | `tag_cell_width` | `12` | the real-world size of a single tag **cell** (e.g. cm). The black-border square is `cells × tag_cell_width`, where `cells` is 8 for `tag36h11`, 7 for `tag25h9`, 6 for `tag16h5`. **Track coordinates come out in this unit.** |
 | `center` | — | `"(x, y)"` pixel of the arena's origin **in the `extrinsic` frame**, as displayed. Becomes the origin of the real-world coordinates. |
-| `north` | — | `"(x, y)"` pixel due north of `center` in the `extrinsic` frame, as displayed; rotates the coordinates so north is consistent, and orients the [diagnostic video](results.md#The-diagnostic-video) the same way. Worth setting whenever you want to compare two calibrations of one arena: without it, the orientation follows whichever tag board carries the lowest id. Requires `center`. |
+| `north` | — | `"(x, y)"` pixel due north of `center` in the `extrinsic` frame, as displayed; rotates the coordinates so north is consistent, and orients the [diagnostic video](results.md#The-diagnostic-video) the same way. Worth setting whenever you want to compare two rectifications of one arena: without it, the orientation follows whichever tag board carries the lowest id. Requires `center`. |
 | `path` | `.` | the **folder** containing `file`, relative to the csv file. Just the folder — the file name belongs in `file`, not here. |
 
 !!! warning "Renamed in v0.1.58"
@@ -117,7 +124,7 @@ The tags are stationary across the whole experiment, so the reference is establi
 All kinds can be mixed in one file — leave a column blank on the rows where it doesn't apply:
 
 ```csv
-calibration_id,type,file,extrinsic,intrinsic_start,intrinsic_stop,checker_width,n_corners,center,north,pixel_width,apriltags,family,tag_cell_width
+rectification_id,type,file,extrinsic,intrinsic_start,intrinsic_stop,checker_width,n_corners,center,north,pixel_width,apriltags,family,tag_cell_width
 morning,checkerboard,calib_morning.mp4,00:00:02,00:00:05,00:00:35,4,"(7, 10)","(960, 540)","(960, 100)",,,,
 afternoon,,calib_afternoon.mp4,1.5,5,35,4,"(7, 10)","(955, 545)",,,,,
 drone,uniform,drone_shot.mp4,0,,,,,"(2000, 1500)",,0.21,,,

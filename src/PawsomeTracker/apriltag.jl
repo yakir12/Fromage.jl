@@ -141,11 +141,11 @@ function fit_metric(tag_corners; canon = CANON, maxiter = 1000, tol = 1e-9)
     return bestM, beste
 end
 
-# Worst per-tag square error (in the calibration's real units) still accepted as a converged metric
+# Worst per-tag square error (in the rectification's real units) still accepted as a converged metric
 # fit; beyond it the tags are taken to be non-coplanar or mis-detected. The message lives here too,
 # so the throwing and the issue-string paths below word it identically.
 const METRIC_FIT_TOLERANCE = 5.0
-metric_fit_issue(err) = "AprilTag metric fit did not converge (worst square error $(round(err, digits = 2)) > $METRIC_FIT_TOLERANCE; in the calibration's real units); tags may be non-coplanar or mis-detected"
+metric_fit_issue(err) = "AprilTag metric fit did not converge (worst square error $(round(err, digits = 2)) > $METRIC_FIT_TOLERANCE; in the rectification's real units); tags may be non-coplanar or mis-detected"
 
 # The reference frame: the tag ids (their order fixes the corner alignment used every frame), the
 # 16 reference-image corners, and the metric map `M : reference image → ground cm`.
@@ -167,10 +167,10 @@ function ReferenceFrame(ids::AbstractVector{<:Integer}, tag_corners; kw...)
 end
 
 # ---- the shared reference as a rectification -------------------------------------------------
-# The AprilTag calibration is a rectification like any other (VerifyRectifications builds it from a
-# `type = apriltag` calibs row and Fromage joins it to the runs that reference it). Unlike the video
+# The AprilTag method yields a rectification like any other (VerifyRectifications builds it from a
+# `type = apriltag` rectifications row and Fromage joins it to the runs that reference it). Unlike the video
 # rectifications there is no fixed image→real map: the drone moves, so each run frame is registered
-# to this ONE shared `reference` (established from the calibration's extrinsic frame; the tags are
+# to this ONE shared `reference` (established from the rectification's extrinsic frame; the tags are
 # stationary across every run) before the fixed metric map takes it to ground cm. `image2real` is
 # therefore not a pixel map but the cm→real gauge (centre/north) applied to `track_apriltag`'s metric
 # output; `family` is the detector family the runs must be detected with; `ratio` is a representative
@@ -204,19 +204,19 @@ function read_frame_at(file, t)
     end
 end
 
-# Establish the shared reference frame from the calibration's extrinsic frame: detect ≥ `ntags` tags
+# Establish the shared reference frame from the rectification's extrinsic frame: detect ≥ `ntags` tags
 # of `family`, take the `ntags` lowest ids, and fit the metric map from their known cell geometry.
 #
 # Returns the `ReferenceFrame`, or a `String` describing why one could not be built — an unsupported
 # family, an unreadable frame, too few tags, corners that could not be re-read, or a metric fit that
-# did not converge. Every one of those is a fact about the calibration the user gave us, not an
+# did not converge. Every one of those is a fact about the rectification the user gave us, not an
 # exceptional condition, so it is reported rather than thrown.
 function reference_frame(file, extrinsic, ntags, family, tag_cell_width)
     valid_apriltag_family(family) ||
         return unknown_family_message(family)
     # Serialize the WHOLE read + detect: the one-shot VideoIO read races under the callers' `tmap`,
     # and the AprilTag detector is not reentrant. Reference building is one-time setup over a handful
-    # of calibs, so this costs essentially nothing.
+    # of rectifications, so this costs essentially nothing.
     lock(APRILTAG_LOCK) do
         # VideoIO reports an unreadable/corrupt file, and a seek past the end, as a plain
         # ErrorException, so that is as narrow as this gets — it still excludes the
@@ -285,8 +285,8 @@ function apriltag_image2real(M, center, north, width, height, aspect)
     return northing ∘ centering ∘ XY_SWAP                          # raw cm (x, y) → gauged real (y, x)
 end
 
-# Build the AprilTag rectification from a verified `type = apriltag` calibs row.
-# `aspect` has no default: the calibs gateway reads it from the video (or the csv) for every row,
+# Build the AprilTag rectification from a verified `type = apriltag` rectifications row.
+# `aspect` has no default: the rectifications gateway reads it from the video (or the csv) for every row,
 # so a default here would be a second definition of a value the caller always has -- exactly the
 # duplication #140/#141 were about. Square pixels are spelled `aspect = 1.0` at the call site.
 function ApriltagRectification(; file, extrinsic, ntags, family, tag_cell_width, center, north,
@@ -307,7 +307,7 @@ valid_apriltag_family(family) = haskey(APRIL_FAMILIES, family)
 # Does the extrinsic frame support a shared reference? Returns `nothing` on success or an issue
 # string (unreadable frame, too few tags, non-coplanar / mis-detected tags), so it composes with the
 # gateway's other checks. A plain type test, since `reference_frame` already reports those as
-# strings — a genuine error propagates rather than being reformatted as a calibration issue.
+# strings — a genuine error propagates rather than being reformatted as a rectification issue.
 function apriltag_extrinsic_issue(file, extrinsic, ntags, family, tag_cell_width)
     ref = reference_frame(file, extrinsic, ntags, family, tag_cell_width)
     return ref isa String ? ref : nothing
@@ -449,12 +449,12 @@ end
 # the user judge both rectification quality and tracking at a glance. The canvas covers the
 # reference tags' bounding box (plus a margin) at a fixed pixel size, with square pixels.
 #
-# The canvas is laid out in the calibration's GAUGED real frame, not in the raw metric frame the tag
+# The canvas is laid out in the rectification's GAUGED real frame, not in the raw metric frame the tag
 # fit happens to land in. That distinction is the whole point of the scene holding a gauge:
 # `fit_metric` pins its cm frame to the lowest-numbered tag's BODY, so turning that one board 90°
 # between two field days turned the entire canvas 90° with it, and two runs over the same terrain
 # did not line up however carefully `center`/`north` were placed. `center`/`north` name physical
-# points, so gauging by them makes the canvas comparable across calibrations — and matches what
+# points, so gauging by them makes the canvas comparable across rectifications — and matches what
 # `RectifiedScene` has always done for the video path. See DESIGN-HISTORY.md.
 struct ApriltagScene{G, U}
     m::Int
@@ -520,7 +520,7 @@ diagnose_apriltag(file::AbstractString, rectification, darker_target, fps) =
 # `missing` — their true registration is unknown, so the slice borrows the nearest known one and the
 # tracker holds its last reference-space position.
 #
-# The reference is established once, from the calibration's extrinsic frame, and shared here;
+# The reference is established once, from the rectification's extrinsic frame, and shared here;
 # `family` is the detector family it was built with; `ref_sz` is the reference frame's (rows, cols),
 # which the run's own resolution may differ from. `dia` is an AprilTag `Diagnostic`/`Dont` created and
 # closed by the caller, shared across a run's segments.
@@ -549,7 +549,7 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
 
             # Fill the background stack: each frame enters raw, PLUS its registration in
             # `warp.Hinvs`, which is what places it in reference space. The run's `start` can be far
-            # from the calibration's extrinsic frame, so the (stationary) tags may sit anywhere in
+            # from the rectification's extrinsic frame, so the (stationary) tags may sit anywhere in
             # the first frame: locate them by a full-frame scan, NOT an ROI around their reference
             # positions. Subsequent frames then use per-tag local search seeded from each tag's last
             # box. Frames missing any tag borrow the nearest known registration (pre-seed slices are

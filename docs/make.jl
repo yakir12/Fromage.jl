@@ -16,7 +16,7 @@ makedocs(;
         "Prepare your data" => [
             "The data folder" => "data-folder.md",
             "runs.csv" => "runs.md",
-            "calibs.csv" => "calibs.md",
+            "rectifications.csv" => "rectifications.md",
         ],
         "Your results" => "results.md",
         "Help & troubleshooting" => "help.md",

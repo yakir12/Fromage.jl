@@ -23,7 +23,7 @@ end
 # file, so it moved too.
 struct Uniform <: RectificationMethod
     source::Source
-    calibration_id::String
+    rectification_id::String
     pixel_width::Float64
 end
 
@@ -31,7 +31,7 @@ end
 # video carried in `source`.
 struct MATLAB <: RectificationMethod
     source::Source
-    calibration_id::String
+    rectification_id::String
     matlab_file::String
     extrinsic_index::Int
 end
@@ -40,12 +40,12 @@ end
 # the `extrinsic` frame, where ≥ `apriltags` tags of `family` must be detectable and coplanar) rather
 # than to a fixed image→real map. `tag_cell_width` is the size of one tag CELL; the black-border
 # square is `cells_across(family) × tag_cell_width` (see PawsomeTracker.canon_square). It is NOT the
-# `checker_width` of a checkerboard calibration (a checkerboard square) — the two were one column until
+# `checker_width` of a checkerboard rectification (a checkerboard square) — the two were one column until
 # v0.1.58 and are now separate, so each can carry its own default and each row says which it means.
 # `center`/`north` live in `source` and gauge the metric output exactly as for the other methods.
 struct Apriltag <: RectificationMethod
     source::Source
-    calibration_id::String
+    rectification_id::String
     apriltags::Int
     family::String
     tag_cell_width::Float64
@@ -58,7 +58,7 @@ end
 # included.
 struct Checkerboard{S <: Union{Missing, Float64}} <: RectificationMethod
     source::Source
-    calibration_id::String
+    rectification_id::String
     intrinsic_start::S
     intrinsic_stop::S
     checker_width::Float64
@@ -72,17 +72,17 @@ end
 source(row) = Source(row.file, row.extrinsic, row.center, row.north, row.aspect, row.width, row.height)
 
 RectificationMethod(row) = if row.type == "checkerboard"
-    Checkerboard(source(row), row.calibration_id, row.intrinsic_start, row.intrinsic_stop, row.checker_width,
+    Checkerboard(source(row), row.rectification_id, row.intrinsic_start, row.intrinsic_stop, row.checker_width,
         row.n_corners, row.temporal_step, row.radial_parameters, row.blur, row.yadif)
 elseif row.type == "uniform"
-    Uniform(source(row), row.calibration_id, row.pixel_width)
+    Uniform(source(row), row.rectification_id, row.pixel_width)
 elseif row.type == "apriltag"
-    Apriltag(source(row), row.calibration_id, row.apriltags, row.family, row.tag_cell_width)
+    Apriltag(source(row), row.rectification_id, row.apriltags, row.family, row.tag_cell_width)
 else # can only be matlab
-    MATLAB(source(row), row.calibration_id, row.matlab_file, row.extrinsic_index)
+    MATLAB(source(row), row.rectification_id, row.matlab_file, row.extrinsic_index)
 end
 
-# `Rectification(c; rectification_diagnostics)` turns one verified calibs row into its image ↔ real
+# `Rectification(c; rectification_diagnostics)` turns one verified rectifications row into its image ↔ real
 # map pair. Which builder runs is chosen by the row's type, which the parser already decided — not
 # by how many arguments get passed, and every argument travels by name. That matters here more than
 # it usually does: `width`/`height`, `intrinsic_start`/`intrinsic_stop` and `center`/`north` are
@@ -95,7 +95,7 @@ end
 # and named means it cannot be forgotten, cannot be mistyped, and is defined in exactly one place:
 # `main`'s own signature.
 
-# The six facts every builder needs from the shared `Source` (`calibration_id`, which names the
+# The six facts every builder needs from the shared `Source` (`rectification_id`, which names the
 # diagnostic image, lives on the method itself and is passed alongside). `aspect` is not among them
 # only because it is spelled `c.source.aspect` at each call below; every builder needs it, the
 # AprilTag one included — its metric scale comes from the tags, but its `center`/`north` are still
@@ -103,7 +103,7 @@ end
 _source(s::Source) = (; s.file, s.extrinsic, s.center, s.north, s.width, s.height)
 
 Rectification(c::Checkerboard; rectification_diagnostics::Bool) =
-    from_checkerboard(; _source(c.source)..., c.calibration_id, c.source.aspect, c.intrinsic_start, c.intrinsic_stop,
+    from_checkerboard(; _source(c.source)..., c.rectification_id, c.source.aspect, c.intrinsic_start, c.intrinsic_stop,
         c.temporal_step, c.yadif, c.blur, c.n_corners, c.checker_width, c.radial_parameters,
         rectification_diagnostics)
 
@@ -118,18 +118,18 @@ Rectification(c::Checkerboard; rectification_diagnostics::Bool) =
 # which is also what runs.csv calls the span of a run to TRACK: one pair of names for two unrelated
 # time windows, in two files a user edits side by side.
 Rectification(c::Checkerboard{Missing}; rectification_diagnostics::Bool) =
-    from_extrinsic(; _source(c.source)..., c.calibration_id, c.source.aspect, c.yadif, c.blur,
+    from_extrinsic(; _source(c.source)..., c.rectification_id, c.source.aspect, c.yadif, c.blur,
         c.n_corners, c.checker_width, rectification_diagnostics)
 
 # A MATLAB rectification reads the camera model (intrinsics, distortion, and the pose picked by
 # extrinsic_index) from the .mat file; the source video supplies the frame size (already
 # cross-checked against the .mat's ImageSize) and the extrinsic timestamp for the diagnostics.
 Rectification(c::MATLAB; rectification_diagnostics::Bool) =
-    from_matlab(; _source(c.source)..., c.calibration_id, c.source.aspect, c.matlab_file,
+    from_matlab(; _source(c.source)..., c.rectification_id, c.source.aspect, c.matlab_file,
         c.extrinsic_index, rectification_diagnostics)
 
 Rectification(c::Uniform; rectification_diagnostics::Bool) =
-    from_uniform(; _source(c.source)..., c.calibration_id, c.source.aspect, c.pixel_width,
+    from_uniform(; _source(c.source)..., c.rectification_id, c.source.aspect, c.pixel_width,
         rectification_diagnostics)
 
 # An AprilTag rectification builds its shared reference from the extrinsic frame (detecting the tags

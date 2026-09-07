@@ -28,7 +28,7 @@ const CRITERIA = OpenCV.TermCriteria(OpenCV.TERM_CRITERIA_EPS + OpenCV.TERM_CRIT
 """
     StaticRectification(image2real, real2image, ratio, width, height)
 
-One calibration's fixed image ↔ real map pair, as `from_checkerboard`, `from_extrinsic`,
+One rectification: the fixed image ↔ real map pair, as `from_checkerboard`, `from_extrinsic`,
 `from_matlab` and `from_uniform` return it. "Static" is the contrast with `PawsomeTracker.ApriltagRectification`: the
 camera does not move, so a single pair of maps describes the whole run, where the AprilTag path
 re-registers every frame against a shared reference.
@@ -61,7 +61,7 @@ include("plotting.jl")
 """
     Rectification(c; rectification_diagnostics)
 
-The image ↔ real map pair for one verified calibration `c`, chosen by `c`'s type. The methods live
+The image ↔ real map pair for one verified rectification `c`, chosen by `c`'s type. The methods live
 in `VerifyRectifications`, which owns those types; each reads `c`'s fields and calls one of the
 builders here — `from_checkerboard`, `from_extrinsic`, `from_matlab`, `from_uniform` — or
 `PawsomeTracker.ApriltagRectification`, by keyword. Declared here because this module owns the

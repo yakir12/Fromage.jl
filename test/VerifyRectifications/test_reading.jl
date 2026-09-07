@@ -86,15 +86,15 @@
         # "." and "./." resolve to the same dir, so both rows point at one physical .mat. The reading
         # passes group on the canonical (realpath) matlab_file, so the file is read once and the result
         # is applied to every spelling — here a structure failure is reported on both rows.
-        df = check([matlabrow(calibration_id = "c1", path = ".",   matlab_file = ART.partial_mat, center = missing, north = missing),
-                    matlabrow(calibration_id = "c2", path = "./.", matlab_file = ART.partial_mat, center = missing, north = missing)])
+        df = check([matlabrow(rectification_id = "c1", path = ".",   matlab_file = ART.partial_mat, center = missing, north = missing),
+                    matlabrow(rectification_id = "c2", path = "./.", matlab_file = ART.partial_mat, center = missing, north = missing)])
         @test flagged(df, 1, "missing required calibration field(s)")
         @test flagged(df, 2, "missing required calibration field(s)")
 
         # likewise a video read (dimension) applied across spellings: an out-of-bounds center is caught
         # on both rows from the one read.
-        df = check([checkerboardrow(calibration_id = "v1", path = ".",   center = (9000, 9000)),
-                    checkerboardrow(calibration_id = "v2", path = "./.", center = (9000, 9000))])
+        df = check([checkerboardrow(rectification_id = "v1", path = ".",   center = (9000, 9000)),
+                    checkerboardrow(rectification_id = "v2", path = "./.", center = (9000, 9000))])
         @test flagged(df, 1, "center cannot be larger than the dimensions")
         @test flagged(df, 2, "center cannot be larger than the dimensions")
     end

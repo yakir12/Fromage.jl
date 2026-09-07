@@ -40,7 +40,7 @@ features:
 
 Fromage is the Dacke lab's tool for turning experiment videos into usable tracks.
 
-You have video recordings of **runs** — an animal (or any other target) moving through an arena — and video recordings of **calibrations** — a checkerboard filmed in that same arena. Fromage tracks the target in every run, pairs each run with its calibration, and converts the tracked pixel coordinates into real-world coordinates (e.g. cm on the arena floor). It also produces a diagnostic video so you can quickly check, run by run, that the tracker followed the right thing.
+You have video recordings of **runs** — an animal (or any other target) moving through an arena — and video recordings of **rectifications** — a checkerboard filmed in that same arena. Fromage tracks the target in every run, pairs each run with its rectification, and converts the tracked pixel coordinates into real-world coordinates (e.g. cm on the arena floor). It also produces a diagnostic video so you can quickly check, run by run, that the tracker followed the right thing.
 
 You don't need to be a programmer to use it. If you can organise your videos in a folder and fill in a spreadsheet, you can use Fromage — the only Julia you'll type is two lines:
 

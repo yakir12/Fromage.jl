@@ -11,7 +11,7 @@
     end
 
     @testset "unrecognized column" begin
-        csv = write_rows(joinpath(DATADIR, "badcol.csv"), [["x", "y"]]; header = ["calibration_id", "foo"])
+        csv = write_rows(joinpath(DATADIR, "badcol.csv"), [["x", "y"]]; header = ["rectification_id", "foo"])
         @test_throws "unrecognized column" VRect.load_rectifications(DATADIR, csv)
     end
 
@@ -20,26 +20,27 @@
     # tag_cell_width (apriltag) in v0.1.58, so the error has to name both.
     @testset "a renamed column says where it went" begin
         csv = write_rows(joinpath(DATADIR, "renamedcol.csv"), [["c", "4"]];
-                         header = ["calibration_id", "checker_size"])
+                         header = ["rectification_id", "checker_size"])
         @test_throws "checker_size was renamed to checker_width" VRect.load_rectifications(DATADIR, csv)
         @test_throws "tag_cell_width" VRect.load_rectifications(DATADIR, csv)
     end
 
-    # The v0.2.23 vocabulary migration. Each old name is rejected at the file level, before any row
+    # The v0.2.23 and v0.2.24 vocabulary migrations. Each old name is rejected at the file level, before any row
     # parses, and has to name its replacement — the user's file was correct when they wrote it.
-    @testset "the v0.2.23 renamed columns say where they went" begin
-        for (old, new) in ((:scale, "pixel_width"), (:start, "intrinsic_start"), (:stop, "intrinsic_stop"))
+    @testset "renamed columns say where they went" begin
+        for (old, new) in ((:scale, "pixel_width"), (:start, "intrinsic_start"), (:stop, "intrinsic_stop"),
+                           (:calibration_id, "rectification_id"))
             @testset "$old → $new" begin
                 csv = write_rows(joinpath(DATADIR, "renamed_$old.csv"), [["c", "1"]];
-                                 header = ["calibration_id", string(old)])
+                                 header = ["rectification_id", string(old)])
                 @test_throws "unrecognized column" VRect.load_rectifications(DATADIR, csv)
                 @test_throws "$old was renamed to $new" VRect.load_rectifications(DATADIR, csv)
             end
         end
-        # calibs.csv's `scale` and runs.csv's `scale` went to different places; this file must never
+        # rectifications.csv's `scale` and runs.csv's `scale` went to different places; this file must never
         # be pointed at the other one's replacement.
         csv = write_rows(joinpath(DATADIR, "renamed_scale_only.csv"), [["c", "1"]];
-                         header = ["calibration_id", "scale"])
+                         header = ["rectification_id", "scale"])
         err = try VRect.load_rectifications(DATADIR, csv) catch e; sprint(showerror, e) end
         @test !occursin("downscale", err)
     end
@@ -51,14 +52,14 @@
         for (old, new) in (("video", "checkerboard"), ("only_scale", "uniform"))
             @testset "type = $old" begin
                 csv = write_rows(joinpath(DATADIR, "renamed_type_$old.csv"), [["c", ART.video, old, "1"]];
-                                 header = ["calibration_id", "file", "type", "extrinsic"])
+                                 header = ["rectification_id", "file", "type", "extrinsic"])
                 @test flagged(VRect.check_rectifications(DATADIR, csv), 1,
                               "wrong type ($old was renamed to $new)")
             end
         end
         # an unrecognized value that is not a retired one keeps the plain message
         csv = write_rows(joinpath(DATADIR, "wrong_type_plain.csv"), [["c", ART.video, "banana", "1"]];
-                         header = ["calibration_id", "file", "type", "extrinsic"])
+                         header = ["rectification_id", "file", "type", "extrinsic"])
         @test flagged(VRect.check_rectifications(DATADIR, csv), 1, "wrong type")
     end
 end

@@ -1,19 +1,19 @@
 # ---- first tier: identity ---------------------------------------------------------------------
-# Reads `calibration_id` and nothing else — no filesystem, no decoding. It runs before
+# Reads `rectification_id` and nothing else — no filesystem, no decoding. It runs before
 # `verifications!` so a duplicated or unusable id fails before a single video is probed or
-# corner-detected (#121). `calibration_id`'s presence is already checked at parse time.
+# corner-detected (#121). `rectification_id`'s presence is already checked at parse time.
 function verify_ids!(df::AbstractDataFrame)
     verify_unique_ids!(df)
-    # calibration_id names the diagnostic image `rectification_diagnostics` writes (#101), so it
+    # rectification_id names the diagnostic image `rectification_diagnostics` writes (#101), so it
     # must be a usable file name.
-    verify_id_filename!(df, :calibration_id)
+    verify_id_filename!(df, :rectification_id)
     return df
 end
 
 function verify_unique_ids!(df::AbstractDataFrame)
-    tf = nonunique(df, :calibration_id) .&& completecases(df, :calibration_id)
-    df.calibration_id[tf] .= missing
-    push!.(df.issues[tf], "calibration_id must not repeat")
+    tf = nonunique(df, :rectification_id) .&& completecases(df, :rectification_id)
+    df.rectification_id[tf] .= missing
+    push!.(df.issues[tf], "rectification_id must not repeat")
 end
 
 # One ffprobe call per physical video file yields width, height, duration, sample (pixel) aspect
@@ -27,7 +27,7 @@ function read_video_metadata!(df::AbstractDataFrame; progress = true)
     blank!(df, :duration, :dimension, :width, :height)
     # Every type carries a source video (:file), so every group is probed once: the read fills
     # :duration/:dimension/:width/:height for all, plus imputes :aspect (and :yadif for video).
-    read_per_file!(df, :file, [:file, :type], "Reading calibration videos...", probe_video, apply_video_metadata!; progress)
+    read_per_file!(df, :file, [:file, :type], "Reading rectification videos...", probe_video, apply_video_metadata!; progress)
 end
 
 function apply_video_metadata!(g, issue::String)
@@ -380,21 +380,21 @@ function verify_apriltag_extrinsics!(df::AbstractDataFrame, run_dir; progress = 
 end
 
 # Within one group of rectifications that count as the same, the first row in csv order stands and
-# every later one is rejected: its :calibration_id is nulled so nothing downstream can join a run
+# every later one is rejected: its :rectification_id is nulled so nothing downstream can join a run
 # onto a rejected rectification. `parentindices` recovers each row's position in `df` — the group is
 # a view all the way down to it — so the flags land on the right rows with no bookkeeping column.
 # Returns the rejected rows, empty when the group holds only one.
 function reject_duplicates!(df::AbstractDataFrame, g::AbstractDataFrame)
     nrow(g) > 1 || return Int[]
     dups = parentindices(g)[1][2:end]
-    df[dups, :calibration_id] .= missing
+    df[dups, :rectification_id] .= missing
     push!.(df[dups, :issues], "duplicate rectification")
     return dups
 end
 
-function verify_unique_calibrations!(df::AbstractDataFrame)
+function verify_unique_rectifications!(df::AbstractDataFrame)
     # What makes two rectifications "the same" is type-dependent, so partition by :type:
-    #   * matlab / uniform: identical on *every* field (calibration_id and issues aside).
+    #   * matlab / uniform: identical on *every* field (rectification_id and issues aside).
     #   * checkerboard: identical on the identity key below. The remaining parameters are NOT part of
     #     identity (one checkerboard video can carry several rectifications differing only in, say,
     #     blur), but two same-identity rows still *should* agree on them — when they don't, the duplicate also
@@ -409,9 +409,9 @@ function verify_unique_calibrations!(df::AbstractDataFrame)
     ischeckerboard = coalesce.(candidates.type .== "checkerboard", false)
 
     # matlab / uniform: same iff every compared field matches, so the grouping key is every
-    # column that is not :calibration_id or :issues. :type is among them, so the two kinds never
+    # column that is not :rectification_id or :issues. :type is among them, so the two kinds never
     # group together.
-    for g in groupby(@view(candidates[.!ischeckerboard, :]), Not(:calibration_id, :issues))
+    for g in groupby(@view(candidates[.!ischeckerboard, :]), Not(:rectification_id, :issues))
         reject_duplicates!(df, g)
     end
 
@@ -499,6 +499,6 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = DEFAULT_I
     # apriltag rows: the extrinsic frame must yield a valid shared reference (tags detectable + coplanar)
     verify_apriltag_extrinsics!(df, run_dir; progress)
 
-    verify_unique_calibrations!(df)
+    verify_unique_rectifications!(df)
 
 end

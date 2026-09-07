@@ -7,7 +7,7 @@
 [![BestieTemplate](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/JuliaBesties/BestieTemplate.jl/main/docs/src/assets/badge.json)](https://github.com/JuliaBesties/BestieTemplate.jl)
 [![](https://img.shields.io/badge/%F0%9F%9B%A9%EF%B8%8F_tested_with-JET.jl-233f9a)](https://github.com/aviatesk/JET.jl)
 
-This is the main package used to organise, calibrate, and track video files in the Dacke lab. You film **runs** (an animal moving through an arena) and **calibrations** (a checkerboard in that same arena); Fromage tracks the target in every run and converts the tracks into real-world coordinates (e.g. cm on the arena floor), plus a diagnostic video to check that the tracker followed the right thing.
+This is the main package used to organise, calibrate, and track video files in the Dacke lab. You film **runs** (an animal moving through an arena) and **rectifications** (a checkerboard in that same arena); Fromage tracks the target in every run and converts the tracks into real-world coordinates (e.g. cm on the arena floor), plus a diagnostic video to check that the tracker followed the right thing.
 
 ## 📖 Documentation
 

@@ -19,17 +19,17 @@ end
 # run has been tracked. `rectification_diagnostics` is the same flag `main` takes, passed straight
 # down, so there is one name and one type for it the whole way.
 #
-# The file is named by `calibration_id`, which is what lets a reader match an image back to its csv
+# The file is named by `rectification_id`, which is what lets a reader match an image back to its csv
 # row — and is unique, where the video/extrinsic pair this used to be named after is not: two video
-# rows differing only in `center` are not duplicates by `verify_unique_calibrations!` and warp
+# rows differing only in `center` are not duplicates by `verify_unique_rectifications!` and warp
 # differently, so one would have silently overwritten the other.
 #
 # `mkpath` here rather than in the caller keeps the function correct when called on its own, and is
 # safe under the builders' `tmap`: it tolerates the directory already existing.
-function _diagnostic(rectification_diagnostics, file, extrinsic, calibration_id, width, height, ratio, real2image)
+function _diagnostic(rectification_diagnostics, file, extrinsic, rectification_id, width, height, ratio, real2image)
     rectification_diagnostics || return
     imgw = warp_extrinsic(file, extrinsic, width, height, get_warp(ratio, real2image))
     mkpath(RECTIFICATIONS_DIR)
-    FileIO.save(joinpath(RECTIFICATIONS_DIR, string(calibration_id, ".jpg")), parent(imgw))
+    FileIO.save(joinpath(RECTIFICATIONS_DIR, string(rectification_id, ".jpg")), parent(imgw))
     return
 end

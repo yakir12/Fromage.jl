@@ -12,7 +12,7 @@ using Dates: format, now, @dateformat_str
 # user's output.
 const RESULTS_DIR = "results_dir"
 
-# One warped extrinsic frame per calibration, written only when a caller asks for them (`main`'s
+# One warped extrinsic frame per rectification, written only when a caller asks for them (`main`'s
 # `rectification_diagnostics`). Derived here like every other output location, so there is still one
 # string to change.
 const RECTIFICATIONS_DIR = joinpath(RESULTS_DIR, "rectifications")

@@ -20,8 +20,8 @@ end
 
 # Save one run's track to results_dir/<run_id>.csv: one row per coordinate, with the `time` stamp
 # (seconds into the video) and the `x`/`y` real-world coordinates. `track` returns coordinates the
-# rectification's `image2real` has already been applied to, so the origin is at the calibration's
-# `center`, north-aligned when `north` was given, in the calibration's real-world unit. Axis follows
+# rectification's `image2real` has already been applied to, so the origin is at the rectification's
+# `center`, north-aligned when `north` was given, in the rectification's real-world unit. Axis follows
 # the image — x rightward, y downward — as `(y-direction, x-direction)`, hence the `y, x` unpack.
 # A `missing` coordinate (AprilTag tracking, where a frame's target couldn't be localized) keeps its
 # `time` with empty `x`/`y`, so the time axis stays intact and the gaps are explicit.
@@ -40,7 +40,7 @@ function save2csv(run_id, (ts, coords))
 end
 
 # Keep only the entries whose `id` field was asked for, and reject any requested id that matched
-# nothing. Filtering by id is a convenience for iterating on one run or calibration, so an id that
+# nothing. Filtering by id is a convenience for iterating on one run or rectification, so an id that
 # matches nothing is a typo rather than a request for less: every requested id must match (#21).
 function filter_ids!(xs, requested, id, what)
     isnothing(requested) && return xs
@@ -57,12 +57,12 @@ end
 # return type and nothing to assert — the `isa AbstractDataFrame` test and the
 # `::Vector{RectificationMethod}` assertion that used to sit here existed only because a `strict`
 # keyword chose the return type at runtime (JET flags e.g. `length(::DataFrame)` otherwise).
-function gather_rectifications(data_path, calibs_file, defaults, calibration_ids = nothing)
+function gather_rectifications(data_path, rectifications_file, defaults, rectification_ids = nothing)
     mkpath(RESULTS_DIR)
     # `issues_dir` is left at its default, which Paths derives from `results_dir` — the frames a
-    # failing calibration dumps land under the same output folder as everything else.
-    cs = load_rectifications(joinpath(data_path, calibs_file); defaults)
-    return filter_ids!(cs, calibration_ids, :calibration_id, "calibration_ids")
+    # failing rectification dumps land under the same output folder as everything else.
+    cs = load_rectifications(joinpath(data_path, rectifications_file); defaults)
+    return filter_ids!(cs, rectification_ids, :rectification_id, "rectification_ids")
 end
 
 function gather_runs(data_path, runs_file, defaults, run_ids = nothing)
@@ -72,7 +72,7 @@ function gather_runs(data_path, runs_file, defaults, run_ids = nothing)
 end
 
 # `rectification_diagnostics` travels from here to `_diagnostic` unchanged — same name, same `Bool`
-# — so there is no path assembly in between and nothing to keep in step. An `apriltag` calibration
+# — so there is no path assembly in between and nothing to keep in step. An `apriltag` rectification
 # has no fixed image->real map to warp through and quietly produces no image; its top-down
 # diagnostic is the per-run video instead.
 build_rectifications(cs, rectification_diagnostics::Bool) =
@@ -97,70 +97,70 @@ build_rectifications(cs, rectification_diagnostics::Bool) =
 # The two loaders are driven a tier at a time rather than through `load_rectifications`/`load_runs`,
 # which validate one file end to end: the cross-file check has to happen between the tiers, and it
 # needs both files parsed to run at all.
-function _validate_dataset(data_path, calibs_file, runs_file, rectification_defaults, tracking_defaults)
-    calibs, calibs_ids_ok = VerifyRectifications.parse_rectifications(
-        data_path, joinpath(data_path, calibs_file); defaults = rectification_defaults)
+function _validate_dataset(data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults)
+    rects, rects_ids_ok = VerifyRectifications.parse_rectifications(
+        data_path, joinpath(data_path, rectifications_file); defaults = rectification_defaults)
     runs, runs_ids_ok = VerifyRuns.parse_runs(
         data_path, joinpath(data_path, runs_file); defaults = tracking_defaults)
 
     # Coherence is a property of the two files AS WRITTEN, so it is checked on all of their rows —
     # before `run_ids` narrows anything. Narrowing decides what gets built, never what gets
-    # validated; otherwise asking for one run would fail the calibrations it did not ask for.
-    coherent = verify_cross_references!(calibs, runs, :calibration_id, "calibs.csv", "runs.csv")
+    # validated; otherwise asking for one run would fail the rectifications it did not ask for.
+    coherent = verify_cross_references!(rects, runs, :rectification_id, "rectifications.csv", "runs.csv")
 
     # The first-tier gate, across both files. Both are reported before the caller decides, so a user
     # fixing a dataset sees everything the csv text can tell them in one pass rather than one file's
     # problems per run.
     tier1_bad = false
-    if !(calibs_ids_ok && runs_ids_ok && coherent)
-        tier1_bad = VerifyRectifications.report_calibs(calibs, false)
+    if !(rects_ids_ok && runs_ids_ok && coherent)
+        tier1_bad = VerifyRectifications.report_rectifications(rects, false)
         tier1_bad |= VerifyRuns.report_runs(runs, false)
     end
 
-    VerifyRectifications.verifications!(calibs, data_path, DEFAULT_ISSUES_DIR)
+    VerifyRectifications.verifications!(rects, data_path, DEFAULT_ISSUES_DIR)
     VerifyRuns.verifications!(runs, data_path)
 
-    bad = VerifyRectifications.report_calibs(calibs, false)
+    bad = VerifyRectifications.report_rectifications(rects, false)
     bad |= VerifyRuns.report_runs(runs, false)
-    return calibs, runs, (bad || tier1_bad)
+    return rects, runs, (bad || tier1_bad)
 end
 
 # Build both, or throw. Always returns the two vectors.
-function load_dataset(data_path, calibs_file, runs_file, rectification_defaults, tracking_defaults)
-    calibs, runs, bad = _validate_dataset(data_path, calibs_file, runs_file,
+function load_dataset(data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults)
+    rects, runs, bad = _validate_dataset(data_path, rectifications_file, runs_file,
                                           rectification_defaults, tracking_defaults)
     bad && error("there were issues with the data (see above)")
-    return VerifyRectifications.build_methods(calibs), VerifyRuns.build_runs(runs)
+    return VerifyRectifications.build_methods(rects), VerifyRuns.build_runs(runs)
 end
 
 # Validate and report, never throw. Always returns both annotated DataFrames — both, not just the
-# offending one: a dataset is accepted or rejected as a whole, and runs whose calibration was
+# offending one: a dataset is accepted or rejected as a whole, and runs whose rectification was
 # rejected are not buildable anyway.
-function check_dataset(data_path, calibs_file, runs_file, rectification_defaults, tracking_defaults)
-    calibs, runs, _ = _validate_dataset(data_path, calibs_file, runs_file,
+function check_dataset(data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults)
+    rects, runs, _ = _validate_dataset(data_path, rectifications_file, runs_file,
                                         rectification_defaults, tracking_defaults)
-    return calibs, runs
+    return rects, runs
 end
 
 """
-    main(data_path; calibs_file = "calibs.csv", runs_file = "runs.csv",
+    main(data_path; rectifications_file = "rectifications.csv", runs_file = "runs.csv",
          rectification_defaults = (;), tracking_defaults = (;), run_ids = nothing,
          rectification_diagnostics = false)
 
-Run the whole pipeline over the data folder `data_path`: validate `calibs.csv` and `runs.csv` as one
-dataset, build a rectification for each calibration, track every run through the one it names, and
+Run the whole pipeline over the data folder `data_path`: validate `rectifications.csv` and `runs.csv` as one
+dataset, build the map each rectification row describes, track every run through the one it names, and
 write the results.
 
-Returns a `DataFrame` with one row per run, carrying `run_id`, `calibration_id`, the built
+Returns a `DataFrame` with one row per run, carrying `run_id`, `rectification_id`, the built
 `rectification`, and `run` — the track itself, as `(timestamps, coordinates)`.
 
 Everything produced lands under `results_dir/`, created in the folder Julia was started in: one
 `<run_id>.csv` per run (a row per coordinate, with `time` in seconds into the video and `x`/`y` in
-the calibration's real-world unit, origin at its `center`), and `diagnostic.mp4`.
+the rectification's real-world unit, origin at its `center`), and `diagnostic.mp4`.
 
 # Keyword arguments
 
-- `calibs_file`, `runs_file`: the two csv file names, relative to `data_path`.
+- `rectifications_file`, `runs_file`: the two csv file names, relative to `data_path`.
 
 - `rectification_defaults`, `tracking_defaults`: globally replace the hardcoded defaults of the
   tuning parameters, e.g. `rectification_defaults = (n_corners = (5, 8), blur = 0)` or
@@ -171,10 +171,10 @@ the calibration's real-world unit, origin at its `center`), and `diagnostic.mp4`
 - `run_ids`: restrict processing to the named runs. Only the rectifications those runs reference
   are built. An id matching no row is an error, not a request for less (#21).
 
-- `rectification_diagnostics`: also save each calibration's extrinsic frame, warped through the
-  rectification fitted to it, to `results_dir/rectifications/<calibration_id>.jpg`. The same "are
+- `rectification_diagnostics`: also save each rectification's extrinsic frame, warped through the
+  rectification fitted to it, to `results_dir/rectifications/<rectification_id>.jpg`. The same "are
   the straight edges straight" check the diagnostic video offers, but available as soon as the
-  rectifications are built rather than after every run has been tracked. An `apriltag` calibration
+  rectifications are built rather than after every run has been tracked. An `apriltag` rectification
   has no fixed image→real map to warp through and quietly produces no image; its top-down
   diagnostic is the per-run video instead.
 
@@ -184,25 +184,25 @@ anything.
 
 See also `only_track` and `only_rectify`, the two narrowing entry points.
 """
-function main(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.csv",
+function main(data_path::String; rectifications_file = "rectifications.csv", runs_file = "runs.csv",
         rectification_defaults = (;), tracking_defaults = (;), run_ids = nothing,
         rectification_diagnostics::Bool = false)
     mkpath(RESULTS_DIR)
-    cs, rs = load_dataset(data_path, calibs_file, runs_file, rectification_defaults, tracking_defaults)
+    cs, rs = load_dataset(data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults)
 
-    # Coherence guarantees every calibration is used, so with no `run_ids` this keeps all of them;
-    # with one, it drops the calibrations the surviving runs no longer reference.
+    # Coherence guarantees every rectification is used, so with no `run_ids` this keeps all of them;
+    # with one, it drops the rectifications the surviving runs no longer reference.
     rs = filter_ids!(rs, run_ids, :run_id, "run_ids")
-    run_calib_ids = [r.calibration_id for r in rs]
-    filter!(c -> c.calibration_id ∈ run_calib_ids, cs)
+    used_rectification_ids = [r.rectification_id for r in rs]
+    filter!(c -> c.rectification_id ∈ used_rectification_ids, cs)
 
-    calib_ids = [c.calibration_id for c in cs]
-    calibs = DataFrame(calibration_id = calib_ids, c = cs)
+    rect_ids = [c.rectification_id for c in cs]
+    rects = DataFrame(rectification_id = rect_ids, c = cs)
 
-    calibs.rectification .= build_rectifications(calibs.c, rectification_diagnostics)
+    rects.rectification .= build_rectifications(rects.c, rectification_diagnostics)
 
-    runs = DataFrame(calibration_id = [r.calibration_id for r in rs], run_id = [r.run_id for r in rs], r = rs)
-    leftjoin!(runs, calibs, on = :calibration_id)
+    runs = DataFrame(rectification_id = [r.rectification_id for r in rs], run_id = [r.run_id for r in rs], r = rs)
+    leftjoin!(runs, rects, on = :rectification_id)
 
     mktempdir() do path
         transform!(runs, :run_id => (x -> joinpath.(path, string.(x, ".mp4"))) => :diagnostic_file)
@@ -223,16 +223,16 @@ end
 # csv names no runs, and the run's own name when it does. Numbering by position instead would
 # rename every file as soon as `run_ids` filtered one out.
 """
-    verify(data_path; calibs_file = "calibs.csv", runs_file = "runs.csv",
+    verify(data_path; rectifications_file = "rectifications.csv", runs_file = "runs.csv",
            rectification_defaults = (;), tracking_defaults = (;))
 
-Validate `calibs.csv` and `runs.csv` in `data_path` as one dataset and report everything wrong with
+Validate `rectifications.csv` and `runs.csv` in `data_path` as one dataset and report everything wrong with
 them, **without building or tracking anything**. For looking at a dataset rather than processing it;
 [`main`](@ref) is the one that does the work and aborts on any issue.
 
-Returns `(; calibs, runs)`: both annotated `DataFrame`s, each carrying an `issues` column. Both come
+Returns `(; rectifications, runs)`: both annotated `DataFrame`s, each carrying an `issues` column. Both come
 back, not just the offending one — a dataset is accepted or rejected as a whole, and runs whose
-calibration was rejected are not buildable anyway. They come back the same way whether or not
+rectification was rejected are not buildable anyway. They come back the same way whether or not
 anything was wrong, so the return type never depends on the data; `isempty` on the `issues` column
 is the question to ask.
 
@@ -242,20 +242,20 @@ decides what gets built, never what gets checked. There is correspondingly no `r
 See also `only_track` and `only_rectify`, which serve the same debugging purpose by narrowing
 instead.
 """
-function verify(data_path::String; calibs_file = "calibs.csv", runs_file = "runs.csv",
+function verify(data_path::String; rectifications_file = "rectifications.csv", runs_file = "runs.csv",
         rectification_defaults = (;), tracking_defaults = (;))
     mkpath(RESULTS_DIR)
-    calibs, runs = check_dataset(data_path, calibs_file, runs_file,
-                                 rectification_defaults, tracking_defaults)
-    return (; calibs, runs)
+    rects, runs = check_dataset(data_path, rectifications_file, runs_file,
+                                rectification_defaults, tracking_defaults)
+    return (; rectifications = rects, runs)
 end
 
 """
     only_track(data_path; runs_file = "runs.csv", tracking_defaults = (;), run_ids = nothing)
 
-Track the runs in `runs.csv` without any calibration, and return the tracks. A debugging entry
+Track the runs in `runs.csv` without any rectification, and return the tracks. A debugging entry
 point: coordinates stay in image pixels because there is no rectification to carry them into
-real-world units, and with no calibration there is no scene centre either — a first segment with no
+real-world units, and with no rectification there is no scene centre either — a first segment with no
 `start_location` of its own falls back to the frame centre.
 
 Each run's diagnostic video is written to `results_dir/<run_id>.mp4`, named by `run_id` exactly as
@@ -263,24 +263,24 @@ Each run's diagnostic video is written to `results_dir/<run_id>.mp4`, named by `
 """
 function only_track(data_path::String; runs_file = "runs.csv", tracking_defaults = (;), run_ids = nothing)
     rs = gather_runs(data_path, runs_file, tracking_defaults, run_ids)
-    # No calibration here, so no scene centre to fall back on and nothing to rectify through: a
+    # No rectification here, so no scene centre to fall back on and nothing to rectify through: a
     # first segment with no start_location of its own falls through to the frame centre.
     return @showprogress desc = "Building runs" tmap(
         r -> track(r, missing, nothing, joinpath(RESULTS_DIR, string(r.run_id, ".mp4"))), rs)
 end
 
 """
-    only_rectify(data_path; calibs_file = "calibs.csv", rectification_defaults = (;),
-                 calibration_ids = nothing, rectification_diagnostics = false)
+    only_rectify(data_path; rectifications_file = "rectifications.csv", rectification_defaults = (;),
+                 rectification_ids = nothing, rectification_diagnostics = false)
 
-Build the rectifications described by `calibs.csv` and return them, without tracking anything. A
-debugging entry point: it exercises the whole calibration path — reads, corner detection, the fit —
-so a calibration can be checked before committing to a full run.
+Build the rectifications described by `rectifications.csv` and return them, without tracking anything. A
+debugging entry point: it exercises the whole rectification path — reads, corner detection, the fit —
+so a rectification can be checked before committing to a full run.
 
-`calibration_ids` narrows which are built; `rectification_diagnostics` is as in `main`.
+`rectification_ids` narrows which are built; `rectification_diagnostics` is as in `main`.
 """
-function only_rectify(data_path::String; calibs_file = "calibs.csv", rectification_defaults = (;),
-        calibration_ids = nothing, rectification_diagnostics::Bool = false)
-    cs = gather_rectifications(data_path, calibs_file, rectification_defaults, calibration_ids)
+function only_rectify(data_path::String; rectifications_file = "rectifications.csv", rectification_defaults = (;),
+        rectification_ids = nothing, rectification_diagnostics::Bool = false)
+    cs = gather_rectifications(data_path, rectifications_file, rectification_defaults, rectification_ids)
     return build_rectifications(cs, rectification_diagnostics)
 end

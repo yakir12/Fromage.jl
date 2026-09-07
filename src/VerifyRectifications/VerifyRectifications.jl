@@ -21,7 +21,7 @@ using Tables: Tables
 
 export load_rectifications, check_rectifications
 
-const COLUMNS = (:comment, :calibration_id, :path, :file, :matlab_file, :intrinsic_start, :intrinsic_stop, :extrinsic, :checker_width, :center, :north, :n_corners, :pixel_width, :type, :temporal_step, :radial_parameters, :blur, :extrinsic_index, :aspect, :yadif, :apriltags, :family, :tag_cell_width)
+const COLUMNS = (:comment, :rectification_id, :path, :file, :matlab_file, :intrinsic_start, :intrinsic_stop, :extrinsic, :checker_width, :center, :north, :n_corners, :pixel_width, :type, :temporal_step, :radial_parameters, :blur, :extrinsic_index, :aspect, :yadif, :apriltags, :family, :tag_cell_width)
 
 # Columns retired by a rename, and where each one's value went. Surfaced by `read_rows` when an
 # old csv still names them — the file-level error fires before any row is parsed, so this is the
@@ -29,21 +29,28 @@ const COLUMNS = (:comment, :calibration_id, :path, :file, :matlab_file, :intrins
 #
 # The v0.2.23 three. `scale` is the one to be careful with: runs.csv has a `scale` column too, and
 # it meant something else entirely (a downsampling factor, now `downscale`). The two gateways keep
-# separate tables so a calibs.csv naming `scale` is never pointed at `downscale`, or the reverse.
+# separate tables so a rectifications.csv naming `scale` is never pointed at `downscale`, or the reverse.
 # `start`/`stop` moved because runs.csv uses those names for the span of a run to TRACK, which is
 # not this window — this one is when the checkerboard is being waved to fit the lens model.
+#
+# `calibration_id` became `rectification_id` in v0.2.24, along with the file itself
+# (`calibs.csv` → `rectifications.csv`). Only two of the four `type`s perform a camera calibration
+# at all — `uniform` declares a scale and `apriltag` fits a homography — so "calibration" was
+# never the right name for what this file describes. It is a column of BOTH csv files, so
+# VerifyRuns carries the same entry.
 const RENAMED_COLUMNS = Dict(
     :checker_size => "checker_width — or tag_cell_width on `type = apriltag` rows",
     :scale => "pixel_width (and `type = only_scale` is now `type = uniform`)",
     :start => "intrinsic_start",
     :stop => "intrinsic_stop",
+    :calibration_id => "rectification_id (and calibs.csv is now rectifications.csv)",
 )
 
 include("types.jl")
 include("parsers.jl")
 include("verifications.jl")
 
-# `issues_dir` is where the extrinsic frame of a calibration that fails checkerboard/AprilTag
+# `issues_dir` is where the extrinsic frame of a rectification that fails checkerboard/AprilTag
 # detection is dumped for inspection (see `verifications!`). Every run writes into a new time-stamped
 # folder of its own inside it, so what a run dumped is exactly what its folder holds; nothing here is
 # ever deleted, including anything the user keeps in the folder they name.
@@ -58,16 +65,16 @@ end
 # `defaults` globally replaces the hardcoded fallbacks of the whitelisted rectification parameters
 # (see DEFAULTS in parsers.jl); the hierarchy is csv cell → `defaults` → hardcoded/probed value.
 # Read the csv and settle its identities: parse every cell, then the first tier of verification
-# (`verify_ids!`), which touches nothing but `calibration_id`. Returns the annotated DataFrame —
+# (`verify_ids!`), which touches nothing but `rectification_id`. Returns the annotated DataFrame —
 # `:issues` carrying whatever the parse and that tier found — and whether every identity came
 # through usable. Split out of `load_rectifications` so `main` can settle BOTH files' identities
 # before either one opens a video (#121).
 function parse_rectifications(data_path, file; defaults = (;), progress = true)
     defaults = resolve_defaults(defaults)   # fail fast on unknown keys / unconvertible values
-    csvrows = read_rows(file, COLUMNS, "calibration"; renamed = RENAMED_COLUMNS)
+    csvrows = read_rows(file, COLUMNS, "rectification"; renamed = RENAMED_COLUMNS)
 
     # parse rows to RectificationMethods or error messages
-    cs = @showprogress desc = "Parsing calibs.csv" enabled = progress tmap(r -> parse_row(r, defaults), collect(csvrows))
+    cs = @showprogress desc = "Parsing rectifications.csv" enabled = progress tmap(r -> parse_row(r, defaults), collect(csvrows))
 
     df = DataFrame(Tables.dictrowtable(cs))
     allowmissing!(df)
@@ -77,12 +84,12 @@ function parse_rectifications(data_path, file; defaults = (;), progress = true)
     # duplicate shows up in both halves.
     before = sum(length, df.issues)
     verify_ids!(df)
-    identities_ok = sum(length, df.issues) == before && !any(ismissing, df.calibration_id)
+    identities_ok = sum(length, df.issues) == before && !any(ismissing, df.rectification_id)
     return df, identities_ok
 end
 
-# a blank calibration_id cell is itself flagged as an issue, so it can be missing here
-report_calibs(df, strict) = report_issues(df, :calibration_id, "calibs.csv", "calibration", strict;
+# a blank rectification_id cell is itself flagged as an issue, so it can be missing here
+report_rectifications(df, strict) = report_issues(df, :rectification_id, "rectifications.csv", "rectification", strict;
     mention = (i, cid) -> !ismissing(cid))
 
 # The comprehension pins the element type to the abstract `Vector{RectificationMethod}` (as in
@@ -95,9 +102,9 @@ build_methods(df) = RectificationMethod[RectificationMethod(r) for r in eachrow(
 function load_rectifications(data_path, file; defaults = (;), issues_dir = DEFAULT_ISSUES_DIR,
         progress = true)
     df, identities_ok = parse_rectifications(data_path, file; defaults, progress)
-    identities_ok || report_calibs(df, true)
+    identities_ok || report_rectifications(df, true)
     verifications!(df, data_path, issues_dir; progress)
-    report_calibs(df, true)
+    report_rectifications(df, true)
     return build_methods(df)
 end
 
@@ -106,9 +113,9 @@ end
 function check_rectifications(data_path, file; defaults = (;), issues_dir = DEFAULT_ISSUES_DIR,
         progress = true)
     df, identities_ok = parse_rectifications(data_path, file; defaults, progress)
-    identities_ok || report_calibs(df, false)
+    identities_ok || report_rectifications(df, false)
     verifications!(df, data_path, issues_dir; progress)
-    report_calibs(df, false)
+    report_rectifications(df, false)
     return df
 end
 

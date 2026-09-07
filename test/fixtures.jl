@@ -107,7 +107,7 @@ pose_apply(H, p) = (v = H * SVector(Float64(p[1]), Float64(p[2]), 1.0); SVector(
 
 # Ground layout, in ground-canvas pixels. `getAprilTagImage` returns the 10x10 cell image — the
 # 8x8 black-border square plus one white quiet-zone cell all round — so each tag block is
-# 10 * TAG_CELL px square. TAG_CELL is also what the calibs row declares as `tag_cell_width`, which
+# 10 * TAG_CELL px square. TAG_CELL is also what the rectifications.csv row declares as `tag_cell_width`, which
 # makes one recovered metric unit exactly one ground pixel and the tracked cm path therefore
 # directly comparable to the intended ground path.
 const TAG_CELL = 8

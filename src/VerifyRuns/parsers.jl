@@ -54,7 +54,7 @@ resolve_defaults(overrides) = Parsing.resolve_defaults(overrides, DEFAULTS, DEFA
 # stay missing and are imputed later.
 function parse_run!(dict, row, defaults)
     parseto!(dict, row, :run_id, String, missing)               # all-or-nothing: blank only allowed when every row is blank (then imputed from the row number); see resolve_run_ids!
-    parseto!(dict, row, :calibration_id, String)                # required: Fromage joins runs to rectifications on it
+    parseto!(dict, row, :rectification_id, String)                # required: Fromage joins runs to rectifications on it
     parseto!(dict, row, :file, String)
     parseto!(dict, row, :path, String, ".")
     parseto!(dict, row, :start, MyTemporal, 0.0)

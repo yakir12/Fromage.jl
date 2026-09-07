@@ -34,7 +34,7 @@ make_target_video(name; kw...) = make_target_video(DATADIR, name; kw...)
 # Only names from VerifyRuns.COLUMNS are allowed (others => "unrecognized column").
 # ---------------------------------------------------------------------------
 
-const HEADER = ["run_id", "calibration_id", "path", "file", "start", "stop", "target_width",
+const HEADER = ["run_id", "rectification_id", "path", "file", "start", "stop", "target_width",
                 "start_location", "window_size", "darker_target", "native_fps", "sample_fps",
                 "initial_search_factor", "downscale", "background_length"]
 
@@ -44,10 +44,10 @@ row(; kw...) = buildrow(HEADER; kw...)
 write_rows(path, rows; header = HEADER) = Harness.write_csv(path, rows, header)
 _merge(base; kw...) = row(; merge(base, values(kw))...)
 
-# Clean baseline run row (run_id + calibration_id + a 5 s video; every other field defaults).
+# Clean baseline run row (run_id + rectification_id + a 5 s video; every other field defaults).
 # Override any field via keyword to isolate one issue. Each scenario is loaded as its own CSV, so
 # there is no cross-row coupling.
-runrow(; kw...) = _merge((run_id = "r", calibration_id = "c", file = ART.a); kw...)
+runrow(; kw...) = _merge((run_id = "r", rectification_id = "c", file = ART.a); kw...)
 
 # ---------------------------------------------------------------------------
 # Run + assert.
