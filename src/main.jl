@@ -152,7 +152,7 @@ dataset, build the map each rectification row describes, track every run through
 write the results.
 
 Returns a `DataFrame` with one row per run, carrying `run_id`, `rectification_id`, the built
-`rectification`, and `run` — the track itself, as `(timestamps, coordinates)`.
+`rectification`, and `track` — the track itself, as `(timestamps, coordinates)`.
 
 Everything produced lands under `results_dir/`, created in the folder Julia was started in: one
 `<run_id>.csv` per run (a row per coordinate, with `time` in seconds into the video and `x`/`y` in
@@ -208,13 +208,13 @@ function main(data_path::String; rectifications_file = "rectifications.csv", run
         transform!(runs, :run_id => (x -> joinpath.(path, string.(x, ".mp4"))) => :diagnostic_file)
         build_run(r, c, rectification, diagnostic_file) =
             track(r, c.source.center, rectification, diagnostic_file)
-        runs.run .= @showprogress desc = "Building runs" tmap(
+        runs.track .= @showprogress desc = "Building runs" tmap(
             build_run, runs.r, runs.c, runs.rectification, runs.diagnostic_file)
         concatenate(path, runs.diagnostic_file)
         select!(runs, Not(:diagnostic_file))
     end
 
-    tforeach(save2csv, runs.run_id, runs.run)
+    tforeach(save2csv, runs.run_id, runs.track)
 
     return runs
 end

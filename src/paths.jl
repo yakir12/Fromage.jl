@@ -17,21 +17,27 @@ const RESULTS_DIR = "results_dir"
 # string to change.
 const RECTIFICATIONS_DIR = joinpath(RESULTS_DIR, "rectifications")
 
-# The parent of the per-run issue folders (see `run_issues_dir`), and the default a caller who names
-# no folder of their own gets.
+# The parent of the per-session issue folders (see `session_issues_dir`), and the default a caller
+# who names no folder of their own gets.
 const DEFAULT_ISSUES_DIR = joinpath(RESULTS_DIR, "issues")
 
-# One folder per verification run, named for the moment the run started, so a run's folder holds
-# exactly what that run dumped — with nothing deleted to keep it that way. Fromage never removes
-# anything from the issues folder: cleaning it out is the user's call, not a side effect of running
-# a verification (#86).
+# One folder per SESSION — one execution of Fromage — named for the moment that session started, so
+# a session's folder holds exactly what it dumped, with nothing deleted to keep it that way. Fromage
+# never removes anything from the issues folder: cleaning it out is the user's call, not a side
+# effect of verifying (#86).
+#
+# "Session", not "run": a `Run` in this package is an experimental run — one repeat of an
+# experiment, one animal crossing the arena — and has nothing to do with how many times Fromage was
+# executed. This folder is per execution. The function was `run_issues_dir`, which read as "the
+# issues folder of a given Run" and meant the opposite.
 #
 # Nothing is created here: `save_issue_frame` mkpaths the folder when it dumps its first frame, so a
-# run with nothing to report leaves no trace at all. The counter is what makes back-to-back runs
-# distinct — it skips a second that already has a folder. Two runs starting within the same second
-# and both dumping frames would land in one folder (unwritten folders cannot be counted), but a
-# verification run reads video off disk before it can fail a detection, so that race isn't reachable.
-function run_issues_dir(issues_dir)
+# session with nothing to report leaves no trace at all. The counter is what makes back-to-back
+# sessions distinct — it skips a second that already has a folder. Two sessions starting within the
+# same second and both dumping frames would land in one folder (unwritten folders cannot be
+# counted), but a session reads video off disk before it can fail a detection, so that race isn't
+# reachable.
+function session_issues_dir(issues_dir)
     stamp = format(now(), dateformat"yyyy-mm-dd\THH-MM-SS")
     dir = joinpath(issues_dir, stamp)
     n = 1

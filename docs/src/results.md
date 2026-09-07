@@ -22,7 +22,7 @@ The coordinates are already fully converted — lens distortion, perspective, an
 
 `main` also writes `results_dir/diagnostic.mp4`: every run rendered top-down through its rectification into a fixed 540×540 canvas, with a circle around the tracked position, a trailing trace, and the run's `run_id` as a label — one run after the other, playing at 2× real time (≈24 fps regardless of the run's `sample_fps`).
 
-The canvas is oriented by the rectification's `north`, pointing up. Give two rectifications of the same arena a `center` and a `north` on the same physical landmarks and their segments come out in the same orientation, so you can compare them directly. Without a `north`, each rectification is oriented however its own rectification frame happened to fall — for `apriltag` rectifications that means the orientation of one tag board, which is easy to change between field days without noticing.
+The canvas is oriented by the rectification's `north`, pointing up. Give two rectifications of the same arena a `center` and a `north` on the same physical landmarks and their tracks come out in the same orientation, so you can compare them directly. Without a `north`, each rectification is oriented however its own rectification frame happened to fall — for `apriltag` rectifications that means the orientation of one tag board, which is easy to change between field days without noticing.
 
 This is what a healthy run looks like — the circle sits on the animal for the whole run, and the trace grows behind it from the centre of the arena to the edge (one complete run, looping):
 
@@ -64,7 +64,7 @@ If a rectification fails detection — the checkerboard or the AprilTags can't b
 row 2 (rectification_id: morning): only 4 of 6 AprilTags detected at the extrinsic frame — saved the extrinsic frame to results_dir/issues/2026-08-20T14-22-05/board_t1.0s.png for inspection
 ```
 
-Each run gets its own time-stamped folder under `results_dir/issues`, named for the moment it started, so the folder holds exactly the frames of that run and older runs stay where they are. Nothing here is ever deleted: the folder is yours to clean out whenever you like.
+Each time you run Fromage it gets its own time-stamped folder under `results_dir/issues`, named for the moment it started, so the folder holds exactly the frames of that session and older ones stay where they are. Nothing here is ever deleted: the folder is yours to clean out whenever you like.
 
 Open the frame and look at it — a blurry, over-exposed, or half-out-of-shot board is usually the whole story, and the fix is a different `extrinsic` timestamp or a better rectification video.
 
@@ -75,7 +75,7 @@ Open the frame and look at it — a blurry, over-exposed, or half-out-of-shot bo
 | column | content |
 | --- | --- |
 | `run_id`, `rectification_id` | the identifiers from the csv files. |
-| `run` | the track: a tuple `(ts, coords)` of timestamps (seconds into the video) and the target's **real-world** coordinates — the same data as the track file. |
+| `track` | a tuple `(ts, coords)` of timestamps (seconds into the video) and the target's **real-world** coordinates — the same data as the track file. |
 | `rectification` | the rectification: a `StaticRectification`, whose `image2real` function converts pixel coordinates to real-world coordinates and whose `real2image` is its inverse. Drone runs instead carry an `ApriltagRectification`, which registers each frame against a shared reference and so has no single `real2image`. |
 | `r`, `c` | the parsed run and rectification entries (all the resolved parameter values). |
 
@@ -83,5 +83,5 @@ For example:
 
 ```julia
 runs = main("path/to/data")
-ts, xy = runs.run[1]    # first run: timestamps + real-world coordinates (e.g. cm)
+ts, xy = runs.track[1]  # first run's track: timestamps + real-world coordinates (e.g. cm)
 ```

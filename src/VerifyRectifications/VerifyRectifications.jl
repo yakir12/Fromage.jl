@@ -11,7 +11,7 @@ using DataFrames: AbstractDataFrame, ByRow, DataFrame, Not, allowmissing!, compl
 using ..Gateway: backfill!, blank!, read_per_file!, read_rows, report_issues, resolve_paths!,
     verify!, verify_id_filename!
 using ..Parsing: Parsing, MyTemporal, filled, parseto!
-using ..Paths: DEFAULT_ISSUES_DIR, run_issues_dir
+using ..Paths: DEFAULT_ISSUES_DIR, session_issues_dir
 using ..Probing: frame_geometry, is_interlaced, no_video_stream, parse_sample_aspect, probe_fields
 using MAT: MAT, matread
 using OhMyThreads: OhMyThreads, tmap
