@@ -493,14 +493,14 @@ stack built. The union now names only what works. `RowCol` is absent on purpose 
 method: that is the internal form a *later* segment's start takes in the vector method, carried
 over from the previous segment's last coordinate, not something a caller supplies.
 
-### A run's arity is data, not a type (#68)
+### A run's segment count is data, not a type (#68)
 
 `Run` used to be abstract over `SingleRun` (scalar `file`/`start`/`stop`/`start_location`) and
 `MultiRun` (the same as aligned vectors). The split cost two `track` methods, two `get_duration`s,
 a separate `impute_start_location`, and a constructor branching on `nrow(g) == 1`.
 
-The comment above it said the arity was "materialized in the *type*, so `track` dispatches on it
-with no runtime branch". **That was wrong.** `load_runs` returns `Run[Run(g) for g in …]` — a
+The comment above it said the segment count was "materialized in the *type*, so `track` dispatches
+on it with no runtime branch". **That was wrong.** `load_runs` returns `Run[Run(g) for g in …]` — a
 `Vector{Run}` whose element type was *abstract*, so every `track(r)` from `main` was a dynamic
 dispatch anyway. Collapsing to one concrete struct is what actually delivers the static call:
 `isconcretetype(Run)` is now true, and so is the vector's element type.
@@ -517,7 +517,7 @@ What it gives up: a single run's video is `only(r.files)` rather than `r.file`, 
 longer states "exactly one segment". Two call sites in `src/`, so the price is small — but it is a
 price, and `verify_run_consistency!` is now the only thing asserting the shape.
 
-### `Tuning` keeps its name; the seam is arity, not facts-versus-knobs
+### `Tuning` keeps its name; the seam is scope, not facts-versus-knobs
 
 The name looks wrong on inspection, and will keep looking wrong: `native_fps` is probed,
 `darker_target` is a property of the footage and `target_width` is a measurement of the animal —
@@ -525,7 +525,7 @@ three of eight fields are observations, not knobs. Splitting them off into a sec
 renaming to `TrackingParameters`, were both considered and declined.
 
 The split is a solution to the wrong seam. What actually separates `Tuning` from `Segment` is
-*arity* — what one run shares versus what varies within it — which is the rule
+*scope* — what one run shares versus what varies within it — which is the rule
 `verify_run_consistency!` already enforces and the reason both types exist. A facts/knobs split
 cuts across that at right angles, costs an argument at every call site, and buys nothing at the one
 site that consumes it. The rename churns an exported name to fix a definition.
@@ -542,8 +542,8 @@ kept the first one — and the frame-centre fallback became unreachable too. A `
 the CSV said; tracking it leaves it alone.
 
 This used to be structurally impossible for a one-segment run, whose `start_location` was an
-immutable scalar field. Since the arity collapse it is a one-element vector taking the same
-imputation path, so the guarantee is asserted at both arities.
+immutable scalar field. Since the segment-count collapse it is a one-element vector taking the same
+imputation path, so the guarantee is asserted for one-segment and many-segment runs alike.
 
 ### Anamorphic video
 

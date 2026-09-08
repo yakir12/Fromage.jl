@@ -182,8 +182,9 @@ mean **actual**, as opposed to declared or synthetic. Only the first is a space.
 
 ## Tracking parameters
 
-A *tracking parameter* is a value `runs.csv` supplies to `track`. They divide by arity, and that
-division is what separates the two types carrying them:
+A *tracking parameter* is a value `runs.csv` supplies to `track`. They divide by **scope** — whether
+a value belongs to the whole run or varies between its segments — and that division is what
+separates the two types carrying them:
 
 - `Segment` holds what varies within a run — `file`, `start`, `stop`, `start_location`.
 - `Tuning` holds what one run shares. The name is narrower than the contents: three of its eight
@@ -191,7 +192,7 @@ division is what separates the two types carrying them:
   `darker_target` (a property of the footage) and `target_width` (a measurement of the animal).
   Membership is not "knobs": it is *run-level, and an argument of `track`*.
 
-`verify_run_consistency!` is that arity rule enforced — segments of one run must agree on every
+`verify_run_consistency!` is that scope rule enforced — segments of one run must agree on every
 run-level column.
 
 Run-level alone does not make a tracking parameter. `frame_format` (the frame's stored `width` and
