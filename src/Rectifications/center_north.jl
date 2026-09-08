@@ -31,7 +31,8 @@ end
 
 # When no `center` is supplied (`missing`), default it to the frame centre — expressed in the same
 # display pixels `center`/`north` use, so that `fix_coordinate` converts it back to the true stored
-# centre (width/2, height/2).
+# centre, (height/2, width/2). Stored is (row, col), so the row comes first: writing that pair the
+# other way round is the transposition this whole file exists to get right.
 default_center(center, _, _, _) = center
 default_center(::Missing, width, height, aspect) = SVector{2,Float64}(width * aspect / 2, height / 2)
 

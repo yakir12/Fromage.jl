@@ -10,10 +10,15 @@
                 center = missing, north = missing, width = 640, height = 480)
             image2real = rect.image2real
             p0 = SVector(100.0, 120.0)
-            dx = image2real(p0 + SVector(1.0, 0.0)) - image2real(p0)
-            dy = image2real(p0 + SVector(0.0, 1.0)) - image2real(p0)
-            @test hypot(dx...) ≈ pixel_width             # one pixel in x ⇒ `pixel_width` in world units
-            @test hypot(dy...) ≈ pixel_width * aspect    # one pixel in y ⇒ `pixel_width·aspect`
+            # `image2real` takes STORED (row, col) — see `stored_centre` below — so stepping slot 1
+            # is a row step (a y step) and slot 2 a column step (an x step). Naming these dx/dy had
+            # them exactly backwards, which reads as "vertical pixels carry the sar": the #130
+            # mistake in prose.
+            drow = image2real(p0 + SVector(1.0, 0.0)) - image2real(p0)
+            dcol = image2real(p0 + SVector(0.0, 1.0)) - image2real(p0)
+            @test hypot(drow...) ≈ pixel_width            # one stored row ⇒ `pixel_width`
+            @test hypot(dcol...) ≈ pixel_width * aspect   # one stored column ⇒ `pixel_width·aspect`,
+                                                          # the squeeze being horizontal
             # the builder returns a StaticRectification, so these five are its fields
             @test rect.real2image(rect.image2real(p0)) ≈ p0    # the two maps are inverses
             @test rect.ratio == pixel_width

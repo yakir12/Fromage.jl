@@ -1,12 +1,20 @@
 """
     RowCol(row, col)
 An alias for a static vector of two, row and column, indicating a cartesian coordinate in an image/matrix.
+
+The name is a convention, not an invariant: the AprilTag path reuses this alias for metric ground
+`(x, y)` values, because `track` collects both paths' results into one array type. See
+`PawsomeTracker.track_apriltag`.
 """
 const RowCol = SVector{2, Float32}
 
 """
-    XYZ(x, y, z)
-An alias for a static vector of three, x, y, and z, indicating a real-world coordinate. Note that `x` is equivalent to the `column` in `RowCol` and the `y` is equivalent to the `row`.
+    XYZ(y, x, z)
+An alias for a static vector of three indicating a real-world coordinate. Its first two components
+are ordered like `RowCol`'s: component 1 is the one that pairs with a corner's `row` and component 2
+with its `col`, which in the conventional naming makes them `y` and `x`. `_rectification` builds the
+board points that way, and `image2real` is `∘(pop, …)` — it drops `z` and returns these two
+components as they stand — which is why real-world coordinates come out `(y, x)`.
 """
 const XYZ = SVector{3, <: Real}
 

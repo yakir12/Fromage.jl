@@ -541,6 +541,9 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
             sz = size(vid.img)                             # raw frame size (row, col)
             # image→ground per prefill frame (dia + gating); length parameter as in Hinvs above
             Hs = Vector{Union{Nothing, SMatrix{3, 3, Float64, 9}}}(undef, n_bkgd)
+            # `RowCol` here is the SVector{2, Float32} type, not the convention its name states:
+            # these hold metric ground (x, y) from `img_to_ground`, never image (row, col). The
+            # alias is shared because `track` collects both paths into one array type.
             coords = Vector{Union{Missing, RowCol}}(undef, n)
             boxes = NTuple{4, Int}[]                       # per-tag ROI search boxes
             seeded = false
