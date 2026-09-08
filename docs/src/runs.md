@@ -2,7 +2,7 @@
 
 `runs.csv` describes your **runs**. A run is **one repeat of your experiment** — one trial, one animal crossing the arena once. One row per run video. (A run split across multiple video files uses several rows — see [Runs that span multiple videos](#Runs-that-span-multiple-videos) below.)
 
-Each run yields one **track**: the target's position over time, written to `results_dir/<run_id>.csv`. A run has one timeline, one set of tuning parameters, and one track file, however many video files it was recorded across.
+Each run yields one **track**: the target's position over time, written to `results_dir/<run_id>.csv`. A run has one timeline, one set of run-level tracking parameters, and one track file, however many video files it was recorded across.
 
 Not sure about the general formatting rules (timestamps, coordinates, blank cells)? See [the data folder](data-folder.md#Rules-both-csv-files-share) first.
 
@@ -30,7 +30,7 @@ beetle03.mp4,afternoon
 | --- | --- | --- |
 | `start` | `0` | timestamp where the run starts in the video. |
 | `stop` | full duration | timestamp where the run ends. |
-| `target_width` | `25` | the full width (diameter, not radius) of the target, in pixels. **The single most important tuning parameter** — measure it in a paused frame. |
+| `target_width` | `25` | the full width (diameter, not radius) of the target, in pixels. **The single most important tracking parameter** — measure it in a paused frame. |
 | `start_location` | see [below](#Where-the-tracker-starts-looking) | `"(x, y)"` pixel coordinate of the target at `start`. |
 | `darker_target` | `true` | `true` if the target is darker than its background, `false` if lighter. |
 | `window_size` | computed | the size of the search window the tracker scans around the target's last known position: a single number for a square window (e.g. `41`) or `"(w, h)"` for a rectangle. Must be comfortably larger than `target_width` plus however far the target can move between consecutive frames. The default is computed from `target_width` and a conservative speed estimate, and is usually fine. |

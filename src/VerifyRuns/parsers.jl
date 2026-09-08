@@ -12,7 +12,7 @@ function mytryparse(::Type{MyWindow}, s)
     return mytryparse(NTuple{2, Int}, s)
 end
 
-# The globally overridable defaults: exactly the tracking tuning parameters. Identities and the
+# The globally overridable defaults: exactly the eight `Tuning` fields. Identities and the
 # temporal window are inherently per-row. The caller replaces any of these via `load_runs`'
 # `defaults` kwarg (in Fromage: `main`'s `tracking_defaults`), and a csv cell always wins over the
 # replaced default (see parseto!).
@@ -47,11 +47,11 @@ const DEFAULT_TYPES = (;
 
 resolve_defaults(overrides) = Parsing.resolve_defaults(overrides, DEFAULTS, DEFAULT_TYPES, "tracking")
 
-# Every column maps to one `track` keyword (plus `run_id`/`path` for identity and path resolution).
-# The hardcoded defaults mirror `PawsomeTracker.track`'s own, so a blank cell behaves exactly as
-# omitting the argument would. `stop`/`native_fps` are left missing here and imputed from the probed
-# video, and `sample_fps` from whatever `native_fps` resolves to; `window_size`/`start_location`
-# stay missing and are imputed later.
+# Every column becomes one tracking parameter — a `Tuning` or `Segment` field (plus `run_id`/`path`
+# for identity and path resolution). The hardcoded defaults here are the only ones: `track` has no
+# keywords and no defaults of its own to disagree with (#140/#141). `stop`/`native_fps` are left
+# missing here and imputed from the probed video, and `sample_fps` from whatever `native_fps`
+# resolves to; `window_size`/`start_location` stay missing and are imputed later.
 function parse_run!(dict, row, defaults)
     parseto!(dict, row, :run_id, String, missing)               # all-or-nothing: blank only allowed when every row is blank (then imputed from the row number); see resolve_run_ids!
     parseto!(dict, row, :rectification_id, String)                # required: Fromage joins runs to rectifications on it

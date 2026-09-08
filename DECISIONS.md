@@ -517,6 +517,23 @@ What it gives up: a single run's video is `only(r.files)` rather than `r.file`, 
 longer states "exactly one segment". Two call sites in `src/`, so the price is small — but it is a
 price, and `verify_run_consistency!` is now the only thing asserting the shape.
 
+### `Tuning` keeps its name; the seam is arity, not facts-versus-knobs
+
+The name looks wrong on inspection, and will keep looking wrong: `native_fps` is probed,
+`darker_target` is a property of the footage and `target_width` is a measurement of the animal —
+three of eight fields are observations, not knobs. Splitting them off into a second struct, and
+renaming to `TrackingParameters`, were both considered and declined.
+
+The split is a solution to the wrong seam. What actually separates `Tuning` from `Segment` is
+*arity* — what one run shares versus what varies within it — which is the rule
+`verify_run_consistency!` already enforces and the reason both types exist. A facts/knobs split
+cuts across that at right angles, costs an argument at every call site, and buys nothing at the one
+site that consumes it. The rename churns an exported name to fix a definition.
+
+So the definition moved instead of the code: membership is *run-level, and an argument of `track`*
+(see CONTEXT.md). That rule also explains the field that is run-level and still not on `Tuning` —
+`frame_format`, which the gateway consumes to place a start location and `track` never sees.
+
 ### A run's imputed start location must not mutate the run (#23)
 
 Assigning the resolved first-segment location back into `r.start_locations` meant the first
@@ -975,7 +992,8 @@ Anything else is not a rejected default and propagates.
 
 ### What may be set globally, and what may not
 
-The `defaults` kwarg whitelists exactly the tuning parameters. Identities and anchors
+The `defaults` kwarg whitelists exactly the parameters each gateway's consumer takes — the eight
+`Tuning` fields for runs, the builder keywords for rectifications. Identities and anchors
 (`calibration_id`, `file`, `extrinsic`, `matlab_file`, `extrinsic_index`, `path`), scene points
 (`center`, `north`), the temporal windows, `aspect`, and `only_scale`'s `scale` are all inherently
 per-row. A default of `missing` means "imputed from the probed video", so a caller-supplied value

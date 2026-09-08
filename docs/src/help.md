@@ -29,7 +29,7 @@ Among the things checked:
 
 You saw it in the [diagnostic video](results.md#The-diagnostic-video) — good, that's what it's for. In rough order of likelihood:
 
-1. **Wrong `target_width`.** Pause the run video, measure how many pixels wide the animal is, and put that in the `target_width` column. This is the single most important tuning parameter.
+1. **Wrong `target_width`.** Pause the run video, measure how many pixels wide the animal is, and put that in the `target_width` column. This is the single most important tracking parameter.
 2. **Wrong starting position.** Give the run an explicit `start_location` (see [where the tracker starts looking](runs.md#Where-the-tracker-starts-looking)).
 3. **Wrong contrast direction.** If your target is *lighter* than the background, set `darker_target` to `false`.
 4. **The animal moves fast between frames.** Increase `window_size`, or track at the video's full frame rate (don't lower `sample_fps`).
