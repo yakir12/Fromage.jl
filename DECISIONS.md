@@ -552,12 +552,19 @@ Window sizes arrive in display pixels and their column extent is converted to st
 otherwise an anamorphic (sar < 1) target fills its own search window. `start_location` is likewise
 a display-pixel convention and is bounds-checked against the display width, `width × sar`.
 
-A rectification's `center`/`north` were described here as being handled the same way. They are not.
-They are bounds-checked against the *stored* width (`:dimension`, straight from ffprobe, with no
-`sar` applied), and `fix_coordinate` scales them by `aspect` where the tracker's `get_guess` divides
-by it — so the two halves of the pipeline disagree about which direction `sar` goes for the same
-user-supplied value. All of it is invisible at `sar = 1`, which is why it has stood; #36 tracks
-getting aspect ratio right across the whole system.
+A rectification's `center`/`north` were described here as *not* being handled the same way, and for
+a while they were not: bounds-checked against the *stored* width with no `sar` applied, and scaled
+by `aspect` in `fix_coordinate` where the tracker's `get_guess` divides by it — the two halves of
+the pipeline disagreeing about which direction `sar` goes for the same user-supplied value. #130
+fixed both. `fix_coordinate` now divides, and the bounds check multiplies the stored width by the
+aspect to get the display width to check against. The two halves agree, and
+`test/Rectifications/test_geometry.jl` and `test/Rectifications/test_from_uniform.jl` pin the
+direction with asymmetric values.
+
+All of it was invisible at `sar = 1`, which is why it stood as long as it did — and that is the
+lasting point of this entry rather than the specific bug. #36 closed as "aspect ratio works across
+the whole system", but every fixture that exercises tracking is square in display space, so a
+transposed axis is not what those tests measure.
 
 ### One diagnostic writer, three scenes (#68)
 

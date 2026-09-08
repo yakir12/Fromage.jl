@@ -134,22 +134,37 @@ because it is always compounded, never bare.
 
 | space | what it is | axis order |
 |---|---|---|
-| **stored** | pixels as encoded in the file; what ffprobe reports | `(row, col)` |
+| **stored** | pixels as encoded in the file; what ffprobe reports | `(row, col)` for a point, `(col, row)` for an extent |
 | **display** | stored corrected by `sar` — what an image viewer shows | **`(x, y)`** |
 | **scaled** | after `downscale`; what the tracker's buffers cover | `(row, col)` |
 | **canvas** | a fixed-size render target (the diagnostic square, the AprilTag viewport) | `(row, col)` |
-| **reference** | the AprilTag shared space every run frame registers into | `(row, col)` |
+| **reference** | the AprilTag shared space every run frame registers into | **`(x, y)`** |
 | **metric** | AprilTag ground units from the tag fit, before the centre/north gauge | **`(x, y)`** |
 | **real** | the output: metric after the gauge, or `image2real` for the fixed maps | `(y, x)` |
 
-`display` ↔ `stored` is `sar`. `scaled` is `downscale`. `metric` → `real` is `XY_SWAP` composed with
-centering and northing.
+`display` → `stored` is `sar` **and a swap** — `(x, y) → (y, x / sar)`, which is `fix_coordinate`.
+`scaled` is `downscale`. `metric` → `real` is `XY_SWAP` composed with centering and northing.
 
-**Two of the seven use `(x, y)` and the rest use `(row, col)`.** Everything a user writes —
+**Three of the seven use `(x, y)`, and `stored` uses both orders.** Everything a user writes —
 `center`, `north`, `start_location`, `window_size` — is **display `(x, y)`**, because that is what an
-image viewer reports. Everything internal is `(row, col)`. Both are `NTuple{2, Int}`, so nothing
-catches a transposition: this is why `Segment`'s constructor *asserts* its type rather than
-converting, and why `XY_SWAP` is a named constant rather than an inline reversal.
+image viewer reports. Most things internal are `(row, col)`, but the AprilTag geometry is not: tag
+corners, `ReferenceSpace.corners` and everything `apply_h` touches are `(x, y) = (col, row)`, which
+is why `img_to_ground` exists to bridge the two. The registered *buffer* is still an array, so
+indexing it is `(row, col)` like any other — `reference` names the coordinate convention, not the
+storage.
+
+Nothing in the type system catches a transposition. `start_location`, `center` and `north` are
+`NTuple{2, Int}`; `window_size` is `Union{Int, NTuple{2, Int}}` and is usually the bare `Int`; the
+internal `RowCol` is an `SVector{2, Float32}` whose name is a claim, not an invariant (the AprilTag
+path stores metric `(x, y)` in one). That is why `Segment`'s constructor *asserts* its type rather
+than converting, and why `XY_SWAP` is a named constant rather than an inline reversal. It is also
+why `stored` carries both orders undetected: `:dimension` is ffprobe's `(width, height)`, while
+`from_checkerboard`'s `sz` is `(height, width)` for the same frame.
+
+**"Canvas" is overloaded in the source.** The table's sense is the render target. `PawsomeTracker`
+also calls the tracker's working buffer a canvas (`Tracker`'s `sz`, `canvas2raw`, `build_stack`),
+and that one is `scaled` — or, in AprilTag mode, the scaled `reference` viewport. Same axis order,
+different space.
 
 ### "Metric" is not a claim about SI
 
