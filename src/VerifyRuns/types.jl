@@ -31,8 +31,9 @@
 # segments of a multi-segment run are verified to agree on. It is used to place a start location,
 # not to track.
 #
-# One concrete type, not an abstract `Run` over `SingleRun`/`MultiRun`: a run's arity is data, not a
-# kind of thing. See DECISIONS.md for what the split cost and what it turned out not to buy.
+# One concrete type, not an abstract `Run` over `SingleRun`/`MultiRun`: a run's segment count is
+# data, not a kind of thing. See DECISIONS.md for what the split cost and what it turned out not to
+# buy.
 
 struct FrameFormat
     width::Int

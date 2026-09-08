@@ -135,8 +135,8 @@
 
     @testset "...including a one-segment run (#23, #68)" begin
         # A single-video run used to carry its start_location as an immutable scalar field, so this
-        # could not go wrong at arity 1. It is a one-element vector now, and every run takes the
-        # same imputation path, so the guarantee has to be asserted here too.
+        # could not go wrong when a run had just one segment. It is a one-element vector now, and
+        # every run takes the same imputation path, so the guarantee has to be asserted here too.
         r = only(check([runrow(run_id = "o", start_location = missing)]))
         @test length(r.segments) == 1
         @test all(s -> ismissing(s.start_location), r.segments)
