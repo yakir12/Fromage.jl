@@ -142,8 +142,19 @@ because it is always compounded, never bare.
 | **metric** | AprilTag ground units from the tag fit, before the centre/north gauge | **`(x, y)`** |
 | **real** | the output: metric after the gauge, or `image2real` for the fixed maps | `(y, x)` |
 
-`display` → `stored` is `sar` **and a swap** — `(x, y) → (y, x / sar)`, which is `fix_coordinate`.
+`display` → `stored` is `sar` **and a swap** — `(x, y) → (y, x / sar)`, which is `Spaces.to_stored`.
 `scaled` is `downscale`. `metric` → `real` is `XY_SWAP` composed with centering and northing.
+
+The conversions between these spaces live in **`src/spaces.jl`**, and only there: `stored_x` (the
+`sar` correction on the x axis alone, which is all a homography-facing site needs), `to_stored` (that
+plus the swap) and `display_center_x`. This table says what the spaces *are*; that module is how you
+get from one to another.
+
+**`aspect` is the csv spelling of `sar`.** One quantity, two representations, deliberately:
+`rectifications.csv` has an `aspect` column and `VerifyRectifications` carries it as the `Float64`
+that mirrors `VideoIO.aspect_ratio`, while `sar` is internal-only and `VerifyRuns` holds the exact
+`Rational{Int}` because it bounds-checks a pixel against `width × sar`. `Spaces` takes either — its
+parameter is a bare `Real`, so neither caller's arithmetic is changed by passing through it.
 
 **Three of the seven use `(x, y)`, and `stored` uses both orders.** Everything a user writes —
 `center`, `north`, `start_location`, `window_size` — is **display `(x, y)`**, because that is what an
@@ -156,7 +167,9 @@ storage.
 Nothing in the type system catches a transposition. `start_location`, `center` and `north` are
 `NTuple{2, Int}`; `window_size` is `Union{Int, NTuple{2, Int}}` and is usually the bare `Int`; the
 internal `RowCol` is an `SVector{2, Float32}` whose name is a claim, not an invariant (the AprilTag
-path stores metric `(x, y)` in one). That is why `Segment`'s constructor *asserts* its type rather
+path stores metric `(x, y)` in one, and spells that `Spaces.GroundXY` — the **same type** under a
+true name, because `track` collects both paths into one array type). That is why `Segment`'s
+constructor *asserts* its type rather
 than converting, and why `XY_SWAP` is a named constant rather than an inline reversal. It is also
 why `stored` carries both orders undetected: `:dimension` is ffprobe's `(width, height)`, while
 `from_checkerboard`'s `sz` is `(height, width)` for the same frame.

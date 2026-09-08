@@ -23,6 +23,8 @@ end
 # rectification's `image2real` has already been applied to, so the origin is at the rectification's
 # `center`, north-aligned when `north` was given, in the rectification's real-world unit. Axis follows
 # the image — x rightward, y downward — as `(y-direction, x-direction)`, hence the `y, x` unpack.
+# That order is the `real` row of CONTEXT.md's table, which `Spaces` documents; this unpack is where
+# the package's output contract meets it, and the only place the convention is undone.
 # A `missing` coordinate (AprilTag tracking, where a frame's target couldn't be localized) keeps its
 # `time` with empty `x`/`y`, so the time axis stays intact and the gaps are explicit.
 function save2csv(run_id, (ts, coords))

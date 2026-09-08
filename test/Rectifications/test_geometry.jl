@@ -4,13 +4,9 @@
 
 @testset "geometry" begin
 
-    @testset "fix_coordinate" begin
-        @test R.fix_coordinate(missing, 2.0) === missing            # passthrough for "no point"
-        # display (x, y) ↦ stored (row, col) = (y, x/aspect): swaps the axes and undoes the pixel
-        # squeeze, so a display x maps back to the column it was read from (#130)
-        @test R.fix_coordinate((3.0, 5.0), 2.0) == (5.0, 1.5)
-        @test R.fix_coordinate((3.0, 5.0), 1.0) == (5.0, 3.0)
-    end
+    # `fix_coordinate` is now `Spaces.to_stored` and is asserted directly in test/spaces.jl, along
+    # with the display→stored rule it implements. What stays here is its use as a helper below, and
+    # `default_center`, which is a rectification-level default rather than a space conversion.
 
     @testset "i2r_centering" begin
         # centering translates so the chosen point lands on the world origin
@@ -52,8 +48,8 @@
             @test (r2i ∘ i2r)(p) ≈ p atol = 1e-9
         end
         # the (aspect-fixed) center maps to the world origin, north onto the −x axis
-        fc_center = SVector(R.fix_coordinate(center, aspect))
-        fc_north = SVector(R.fix_coordinate(north, aspect))
+        fc_center = SVector(S.to_stored(center, aspect))
+        fc_north = SVector(S.to_stored(north, aspect))
         @test i2r(fc_center) ≈ SVector(0.0, 0.0) atol = 1e-9
         pn = i2r(fc_north)
         @test pn[2] ≈ 0.0 atol = 1e-9
@@ -106,12 +102,12 @@
 
     @testset "default_center" begin
         # no center given ⇒ the frame centre, expressed in the DISPLAY pixels center/north are
-        # written in, so fix_coordinate converts it back to the true stored centre (#130)
+        # written in, so `Spaces.to_stored` converts it back to the true stored centre (#130)
         @test R.default_center(missing, 640, 480, 1.0) == SVector(320.0, 240.0)
         @test R.default_center(missing, 100, 50, 1.0) == SVector(50.0, 25.0)
         # anamorphic: the display centre is aspect times wider, and round-trips to the stored one
         @test R.default_center(missing, 640, 480, 2.0) == SVector(640.0, 240.0)
-        @test R.fix_coordinate(R.default_center(missing, 640, 480, 2.0), 2.0) == (240.0, 320.0)
+        @test S.to_stored(R.default_center(missing, 640, 480, 2.0), 2.0) == (240.0, 320.0)
         # an explicit center passes straight through, untouched
         @test R.default_center(SVector(1.0, 2.0), 640, 480, 1.0) == SVector(1.0, 2.0)
         @test R.default_center((10, 20), 640, 480, 2.0) === (10, 20)

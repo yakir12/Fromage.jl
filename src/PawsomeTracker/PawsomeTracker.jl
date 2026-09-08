@@ -17,7 +17,7 @@ using StaticArrays: SVector, SDiagonal
 using OpenCV: OpenCV
 using CoordinateTransformations: LinearMap, Transformation
 using LinearAlgebra: I
-using ..Rectifications: RowCol   # the one image-coordinate alias, defined where it is documented
+using ..Spaces: GroundXY, RowCol, stored_x, to_stored
 
 # Confidence gate for `detect`: when the window's peak DoG response falls below GATE_FRACTION of
 # the running response level, the frame is treated as "target not seen" (occlusion, glare,
@@ -107,8 +107,7 @@ function get_guess(start_index::RowCol, _, vid, _, _, _, _)
 end
 
 function get_guess(start_xy::NTuple{2, Int}, _, vid, _, _, _, _)
-    x, y = start_xy
-    guess = round.(Int, vid.downscale .* (y, x / vid.sar))
+    guess = round.(Int, vid.downscale .* to_stored(start_xy, vid.sar))
     return guess
 end
 
@@ -206,9 +205,9 @@ struct Tracker
     # track_apriltag).
     function Tracker(vid, darker_target, target_width, window_size, sz = (vid.height, vid.width), subtract::Bool = true)
         # window_size arrives as (rows, cols) in display pixels; the stored frame is squeezed
-        # horizontally by sar (stored x = display x / sar), so the column extent is converted to
-        # stored pixels — otherwise an anamorphic (sar < 1) target fills its own search window.
-        radii = (window_size[1], round(Int, window_size[2] / vid.sar)) .÷ 2
+        # horizontally, so the COLUMN extent — and only it — is converted to stored pixels by
+        # `stored_x`, otherwise an anamorphic (sar < 1) target fills its own search window.
+        radii = (window_size[1], round(Int, stored_x(window_size[2], vid.sar))) .÷ 2
         σ = get_sigma(target_width)
         direction = darker_target ? -1 : +1
         fillvalue = zero(Gray{Float32})
@@ -555,7 +554,9 @@ function track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnos
     # falling back to the frame-centre search. Segments do not chain (see DECISIONS.md). One
     # diagnostic spans all of them.
     if rectification isa ApriltagRectification
-        segs = Vector{Vector{Union{Missing, RowCol}}}(undef, nsegments)
+        # `GroundXY` (the same type as `RowCol`, see Spaces): what track_apriltag returns is metric
+        # ground (x, y), and the gauge below is what turns it into real coordinates.
+        segs = Vector{Vector{Union{Missing, GroundXY}}}(undef, nsegments)
         dia = diagnose_apriltag(diagnostic_file, rectification, tuning.darker_target, dia_fps)
         try
             for (i, s) in enumerate(segments)

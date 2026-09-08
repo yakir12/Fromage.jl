@@ -15,6 +15,7 @@ include("harness.jl")
     # is the point. Both entries are in the CI matrix already ("1.11" and "1", the latter being
     # 1.12 today), so this costs no extra job — it just stops 1.12 from skipping the analysis.
     VERSION.major == 1 && VERSION.minor in (11, 12) && include("jet.jl")
+    include("spaces.jl")
     include("shareio.jl")
     include("parsing.jl")
     include("probing.jl")

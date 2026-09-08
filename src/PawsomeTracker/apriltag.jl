@@ -269,11 +269,13 @@ const XY_SWAP = LinearMap(SMatrix{2, 2, Float64}(0, 1, 1, 0))
 # so `save2csv` unpacks them the same way). `center`/`north` are pixels in the reference (extrinsic)
 # frame; a missing `center` defaults to the frame centre, a missing `north` leaves orientation alone.
 function apriltag_image2real(M, center, north, width, height, aspect)
-    # `center`/`north` are DISPLAY pixels (see Rectifications.fix_coordinate), while `M` maps STORED
-    # reference pixels, so x is divided by aspect on the way in. The frame-centre default needs no
-    # such conversion: the display centre and the stored centre are the same point (#130).
-    c = ismissing(center) ? SVector{2, Float64}(width / 2, height / 2) : SVector{2, Float64}(center[1] / aspect, center[2])
-    n = ismissing(north) ? missing : SVector{2, Float64}(north[1] / aspect, north[2])
+    # `center`/`north` are DISPLAY pixels, while `M` maps STORED reference pixels, so the x is
+    # corrected by `Spaces.stored_x` on the way in — the same rule the video path applies, and the
+    # one #130 got backwards. No swap here: `M` is a homography over (x, y), so these stay (x, y)
+    # and only the correction applies. The frame-centre default needs no conversion at all: the
+    # display centre and the stored centre are the same point (#130).
+    c = ismissing(center) ? SVector{2, Float64}(width / 2, height / 2) : SVector{2, Float64}(stored_x(center[1], aspect), center[2])
+    n = ismissing(north) ? missing : SVector{2, Float64}(stored_x(north[1], aspect), north[2])
     # `f` mirrors a video image2real: reference pixel (col, row) → real (y, x). Feeding it and the
     # gauge points to the shared centre/north helpers pins the SAME north convention as the video path.
     f = p -> (ground = apply_h(M, SVector(Float64(p[1]), Float64(p[2]))); SVector(ground[2], ground[1]))
@@ -389,7 +391,10 @@ apriltag_guess(start_location::Missing, stack, vid, darker_target, target_width,
     get_guess(start_location, stack, vid, darker_target, target_width, initial_search_factor, subtract)
 function apriltag_guess(start_xy::NTuple{2, Int}, _, vid, _, _, _, _, seedR)
     x, y = start_xy
-    p = apply_h(seedR, SVector(x / vid.sar, Float64(y)))
+    # `stored_x` and no swap: `seedR` is a homography over (x, y), so the display correction
+    # applies but the axes stay put until after `apply_h` — which is why this is the primitive and
+    # not `to_stored`.
+    p = apply_h(seedR, SVector(stored_x(x, vid.sar), Float64(y)))
     return round.(Int, vid.downscale .* (p[2], p[1]))
 end
 
@@ -541,10 +546,10 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
             sz = size(vid.img)                             # raw frame size (row, col)
             # image→ground per prefill frame (dia + gating); length parameter as in Hinvs above
             Hs = Vector{Union{Nothing, SMatrix{3, 3, Float64, 9}}}(undef, n_bkgd)
-            # `RowCol` here is the SVector{2, Float32} type, not the convention its name states:
-            # these hold metric ground (x, y) from `img_to_ground`, never image (row, col). The
-            # alias is shared because `track` collects both paths into one array type.
-            coords = Vector{Union{Missing, RowCol}}(undef, n)
+            # `GroundXY`, not `RowCol`: these hold metric ground (x, y) from `img_to_ground`, never
+            # image (row, col). It is the SAME type — `track` collects both paths into one array
+            # type, so it has to be — under the name that is true here.
+            coords = Vector{Union{Missing, GroundXY}}(undef, n)
             boxes = NTuple{4, Int}[]                       # per-tag ROI search boxes
             seeded = false
             seedR = SMatrix{3, 3, Float64}(I)              # the seed frame's registration (start_location crosses it)
