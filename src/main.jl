@@ -163,7 +163,8 @@ the rectification's real-world unit, origin at its `center`), and `diagnostic.mp
 - `rectifications_file`, `runs_file`: the two csv file names, relative to `data_path`.
 
 - `rectification_defaults`, `tracking_defaults`: globally replace the hardcoded defaults of the
-  tuning parameters, e.g. `rectification_defaults = (n_corners = (5, 8), blur = 0)` or
+  tracking and rectification parameters, e.g.
+  `rectification_defaults = (n_corners = (5, 8), blur = 0)` or
   `tracking_defaults = (target_width = 60,)`. The hierarchy is: csv cell → these keywords → the
   hardcoded or probed default. Each gateway whitelists what may be set (see `DEFAULTS` in the
   respective `parsers.jl`) and rejects anything else up front.

@@ -25,7 +25,7 @@ using Fromage
         @test check_no_self_qualified_accesses(Fromage) === nothing
     end
 
-    # The structural invariant behind #140 and #141. Both issues came from a tuning parameter
+    # The structural invariant behind #140 and #141. Both issues came from a parameter
     # having TWO definition sites — the verification stage and the consuming function's kwarg
     # default — with an open `kwargs...` channel between them. Prose and review did not keep that
     # from happening; this does, by failing the moment a parameter appears on one side only.
@@ -34,7 +34,7 @@ using Fromage
     #   forward (#141) — nothing reaches a consumer that the csv did not describe and the gateway
     #                    did not verify;
     #   reverse (#140) — nothing is settable that fails to reach a consumer.
-    @testset "every tuning parameter has exactly one definition site (#140, #141)" begin
+    @testset "every tracking and rectification parameter has exactly one definition site (#140, #141)" begin
         PT = Fromage.PawsomeTracker
         VRuns = Fromage.VerifyRuns
         VRect = Fromage.VerifyRectifications

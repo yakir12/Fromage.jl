@@ -2,7 +2,7 @@
 # live in the shared ..Parsing module; this file holds what is gateway-specific — the defaults
 # whitelist and the per-type row parsers and row-level checks.
 
-# The globally overridable defaults: every tuning parameter any type reads. Everything else —
+# The globally overridable defaults: every rectification parameter any type reads. Everything else —
 # identities and anchors, the scene points, `aspect`, the intrinsic window, uniform's
 # `pixel_width` — is inherently per-row. The caller replaces any of these via `load_rectifications`' `defaults`
 # kwarg (in Fromage: `main`'s `rectification_defaults`), and a csv cell always wins over the

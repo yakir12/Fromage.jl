@@ -165,21 +165,40 @@ mean **actual**, as opposed to declared or synthetic. Only the first is a space.
 
 ---
 
-## Tuning
+## Tracking parameters
 
-`Tuning` holds the run-level tracking parameters. The name is loose: three of its fields are facts
-rather than knobs — `native_fps` (the rate the video runs at, probed), `darker_target` (a property
-of the footage) and `target_width` (a measurement of the animal). The other five are genuine
-speed/robustness choices.
+A *tracking parameter* is a value `runs.csv` supplies to `track`. They divide by arity, and that
+division is what separates the two types carrying them:
+
+- `Segment` holds what varies within a run — `file`, `start`, `stop`, `start_location`.
+- `Tuning` holds what one run shares. The name is narrower than the contents: three of its eight
+  fields are observations rather than choices — `native_fps` (the rate the video runs at),
+  `darker_target` (a property of the footage) and `target_width` (a measurement of the animal).
+  Membership is not "knobs": it is *run-level, and an argument of `track`*.
+
+`verify_run_consistency!` is that arity rule enforced — segments of one run must agree on every
+run-level column.
+
+Run-level alone does not make a tracking parameter. `frame_format` (the frame's stored `width` and
+`height`, and its `sar`) is run-level and is checked for agreement, but it sits beside `Tuning` on
+`Run` rather than on it: the gateway consumes it, to place a start location, and `track` never
+receives it.
+
+A *rectification parameter* is the same idea one gateway over: a value `rectifications.csv`
+supplies to a rectification builder.
 
 ---
 
 ## One definition site
 
-Every tuning parameter is defined in exactly one place, and this is enforced by `test/quality.jl`:
+Every tracking and rectification parameter is defined in exactly one place, and this is enforced by
+`test/quality.jl`:
 
 - every `Tuning` and `Segment` field is a `runs.csv` column
 - every rectification builder keyword is a `rectifications.csv` column
 - `track` takes **no** keyword arguments
+
+The gateways impute; `track` and the builders do not. Every value arrives concrete, decided in
+exactly one place upstream — a csv cell, a `defaults` entry, or the gateway's probe of the video.
 
 This is why a csv rename must travel into the code, and why it cannot be half-applied.
