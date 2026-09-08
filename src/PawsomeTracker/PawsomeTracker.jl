@@ -212,7 +212,12 @@ struct Tracker
         σ = get_sigma(target_width)
         direction = darker_target ? -1 : +1
         fillvalue = zero(Gray{Float32})
-        kernel = direction * Kernel.DoG((σ/vid.sar, σ))
+        # `Kernel.DoG` takes its sigmas in array order, (rows, cols), so the sar correction belongs
+        # on the SECOND one — the same column axis `radii` corrects above. It was on the first,
+        # which stretched the matched filter across the rows while the anamorphic squeeze stretches
+        # the columns: at sar 1/2 a target 9 rows by 18 columns was hunted with a 53x29 filter.
+        # `h` below adds these two elementwise, so they must share an axis order (#36).
+        kernel = direction * Kernel.DoG((σ, σ/vid.sar))
         h = radii .+ size(kernel)
 
         pad_indices = UnitRange.(1 .- h, sz .+ h)
