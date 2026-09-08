@@ -57,6 +57,12 @@ const DATADIR = mktempdir()
     # cannot show (#36).
     sar05, _ = make_target_video(DATADIR, "pt_sar05"; sar = 1//2)
     sar2, _ = make_target_video(DATADIR, "pt_sar2"; sar = 2//1)
+    # Non-square, with the disc well off the diagonal. Every other trajectory fixture is 100x100
+    # with the disc at (row 50, col 55): there a transposed start location lands 7 px away, a third
+    # of the default search radius, so it still tracks and no assertion notices. Here row 30 and
+    # col 120 cannot be confused — a transposed guess names row 120 of a 90-row frame.
+    wide, wide_exp = make_target_video(DATADIR, "pt_wide"; width = 160, height = 90, row = 30, col = 120)
+    wide_file = joinpath(DATADIR, only(wide))
 
     @testset "single video, explicit start_location" begin
         # window_size left unnamed takes `get_window`'s value, as a blank csv cell does — there is
@@ -136,6 +142,44 @@ const DATADIR = mktempdir()
                 close(vid.vid)
             end
         end
+    end
+
+    # The three assertions below pin the display (x, y) -> scaled (row, col) conversion directly.
+    # Until now it was only ever observed through a tracking RMSE, and the measured cost of getting
+    # it backwards on the square fixtures is 0.139 -> 0.149 px against a tolerance of 0.5 — so every
+    # existing assertion passes with the axes swapped.
+    @testset "a non-square frame pins the start location's axis order" begin
+        # display (x, y) = (120, 30) on a 160x90 frame. Swapped, this is row 120 of 90 rows: the
+        # guess lands outside the frame, the search clamps to the wrong corner, and the track leaves
+        # the disc entirely.
+        _, ij = track1(wide_file; start_location = (120, 30), target_width = 10)
+        @test tracking_rmse(ij, wide_exp) < 0.5
+    end
+
+    @testset "get_guess maps display (x, y) to scaled (row, col)" begin
+        # Exact equality, and the two components differ, so a transposition cannot slip through on
+        # tolerance the way the RMSE assertions do.
+        vid = PT.Video(wide_file, 25, 25, 0, 2, 1.0)      # sar 1, downscale 1
+        try
+            @test PT.get_guess((120, 30), nothing, vid, false, 0, 0, false) == (30, 120)
+        finally
+            close(vid.vid)
+        end
+
+        # ...and at sar 1/2 the x is converted to stored columns on the way, y untouched.
+        anam = PT.Video(joinpath(DATADIR, only(sar05)), 25, 25, 0, 2, 1.0)
+        try
+            @test anam.sar == 1//2
+            @test PT.get_guess((10, 90), nothing, anam, false, 0, 0, false) == (90, 20)
+        finally
+            close(anam.vid)
+        end
+    end
+
+    @testset "fix_window_size transposes (width, height) into (rows, cols)" begin
+        @test PT.fix_window_size((31, 21)) == (21, 31)   # the csv gives (w, h); the tracker wants (rows, cols)
+        @test PT.fix_window_size((21, 31)) == (31, 21)   # ...and the other way round
+        @test PT.fix_window_size(20) == (21, 21)         # a scalar side length, oddified
     end
 
     @testset "defaults (frame-center start)" begin
