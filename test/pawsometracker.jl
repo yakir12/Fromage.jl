@@ -52,6 +52,11 @@ const DATADIR = mktempdir()
     light, light_exp = make_target_video(DATADIR, "pt_light"; darker_target = false)
     seg, seg_exp = make_target_video(DATADIR, "pt_seg"; nsegments = 3)
     base_file = joinpath(DATADIR, only(base))
+    # Anamorphic, both directions: sar 1/2 stores 200x100, sar 2 stores 50x100. Every other fixture
+    # in this file is square at sar 1, where the two axes are interchangeable and a transposition
+    # cannot show (#36).
+    sar05, _ = make_target_video(DATADIR, "pt_sar05"; sar = 1//2)
+    sar2, _ = make_target_video(DATADIR, "pt_sar2"; sar = 2//1)
 
     @testset "single video, explicit start_location" begin
         # window_size left unnamed takes `get_window`'s value, as a blank csv cell does — there is
@@ -109,6 +114,27 @@ const DATADIR = mktempdir()
             @test eltype(tr.img) == PT.Gray{Float32}
         finally
             close(vid.vid)
+        end
+    end
+
+    # The anamorphic squeeze stretches ONE axis — the columns — so the search window and the matched
+    # filter must both stretch along that same axis. `radii` converts the window's column extent by
+    # sar; the DoG has to agree, or the two are stretched orthogonally and the filter no longer
+    # matches the shape it is looking for. Measured against the disc as actually encoded rather than
+    # against a formula, so the assertion cannot drift with the one it is checking. Invisible at
+    # sar = 1, which is why every other fixture here misses it.
+    @testset "the DoG is stretched along the same axis as the target (sar ≠ 1)" begin
+        for files in (sar05, sar2)
+            vid = PT.Video(joinpath(DATADIR, only(files)), 25, 25, 0, 2, 1.0)
+            try
+                dark = Float64.(vid.img) .< 0.5               # the target is the dark disc
+                taller = count(any(dark, dims = 2)[:]) > count(any(dark, dims = 1)[:])
+                tr = PT.Tracker(vid, true, 10, (21, 21), (vid.height, vid.width), true)
+                @test (size(tr.kernel, 1) > size(tr.kernel, 2)) == taller
+                @test (tr.radii[1] > tr.radii[2]) == taller   # the window was already right
+            finally
+                close(vid.vid)
+            end
         end
     end
 
