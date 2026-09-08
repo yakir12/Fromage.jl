@@ -129,6 +129,10 @@
 
         # the frame-centre fallback (no centre given) must not write back either
         sls3 = VR.resolved_segments(r, missing, nothing)
+        # The literal, not `VR.frame_center(...)`: comparing the function against itself passes
+        # whichever order it returns, and (320, 240) is distinguishable from its transpose. a.mp4 is
+        # 640x480 at sar 1, and the fallback is display (x, y), so the x comes first.
+        @test sls3[1].start_location == (320, 240)
         @test sls3[1].start_location == VR.frame_center(r.frame_format)
         @test isequal([s.start_location for s in r.segments], before)
     end
