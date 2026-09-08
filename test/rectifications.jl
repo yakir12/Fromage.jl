@@ -1,7 +1,7 @@
 module RectificationsTests
 
 using Test
-using Fromage: Rectifications
+using Fromage: Fromage, Rectifications
 using StaticArrays
 using LinearAlgebra
 using CoordinateTransformations
@@ -10,6 +10,9 @@ using MAT
 
 # Most of the submodule's functions are internal (not exported); reach them through the module.
 const R = Rectifications
+# The coordinate conversions moved to their own module; these tests use them to build expected
+# values, and `test/spaces.jl` is where they are asserted directly.
+const S = Fromage.Spaces
 
 @testset "Rectifications" begin
     # Tier 1 — pure, deterministic functions (no ffmpeg / OpenCV / I/O).

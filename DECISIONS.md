@@ -206,6 +206,62 @@ negligible.
 
 ---
 
+## Coordinate spaces
+
+### The axis-order conversions moved to `Spaces`, and three things deliberately did not
+
+`stored x = display x / sar` had four independent spellings — `Rectifications.fix_coordinate`,
+`PawsomeTracker.get_guess`, and two inside `apriltag.jl` — and #130 was two of them disagreeing
+about which direction `sar` goes, which displaced every anamorphic rectification by half a frame.
+The frame centre had two spellings. All of it is now `src/spaces.jl`: `stored_x`, `to_stored`,
+`display_center_x`, plus the `RowCol` alias, which had been living in `Rectifications` only because
+`PawsomeTracker` needed to import it from somewhere.
+
+The refactor was behaviour-preserving by construction, and measured: the benchmark `SUITE` is
+unchanged, which is what was expected — the conversions run per *call*, not per pixel, and the
+composed maps the hot paths use are built once.
+
+**Three things were considered and left alone. They will look like oversights; they are not.**
+
+- **Wrapper types are not here.** `CONTEXT.md` says nothing in the type system catches a
+  transposition, and a `DisplayXY`/`StoredRowCol` pair would change that. It is a *measurement*
+  question, not a naming one: the same file records that an abstract `SMatrix` in `Hinvs` cost two
+  orders of magnitude in `detect`'s background reduce, and the innermost parallel layer was removed
+  after measurement rather than before. Extracting the conversions first is what makes the typed
+  version cheap to try later — the call sites are now one function each.
+- **The AprilTag index reversals stay inline.** `RegisteredWarp`, `canvas2raw`, `img_to_ground` and
+  two more in `apriltag.jl` reverse `(row, col)` ↔ `(x, y)` by hand. They carry no `sar`, never
+  cross a module seam, and sit in the stack's index pipe. Moving them buys a shorter file and
+  spends the one thing that pipe is sensitive to. **`canvas2raw` is `RegisteredWarp`'s body written
+  a second time seven lines below it** — a real duplicate, deliberately out of this change's scope
+  rather than unnoticed.
+- **`fix_window_size` was not converted.** Its `(w, h) → (rows, cols)` swap is fused with
+  `oddify`, whose extra-pixel behaviour is documented as changing tracking on scaled or anamorphic
+  runs and as needing a deliberate decision. Separating the swap from the rounding there is exactly
+  the "side effect of a comment fix" that comment warns against.
+
+Also not done: renaming the `aspect` column to `sar`. It is one quantity with two spellings
+(`CONTEXT.md` now says so), but the csv name is user-facing and a rename has to travel into
+`RENAMED_COLUMNS` and cannot be half-applied.
+
+### The two frame-centre callers round differently, and that was preserved
+
+`VerifyRuns.frame_center` and `Rectifications.default_center` compute the same display-space centre
+and then disagree: the first is `(round(Int, x), height ÷ 2)`, the second
+`SVector{2,Float64}(x, height / 2)`. On an odd height those differ by half a pixel, and the x by a
+rounding.
+
+Only the shared half — `display_center_x`, the part carrying the `sar` rule — was extracted. The
+rounding stayed at each call site, which is what keeps the extraction behaviour-preserving and what
+makes the difference visible instead of buried in two files.
+
+**Whether the difference is right is an open question, not a settled one.** A start location is an
+Int pixel so `frame_center` must round somehow, but `÷` on the height truncates where the x rounds,
+and nothing argues for that combination. It wants a reproduction before it wants a fix — which is
+why it is recorded here rather than quietly unified.
+
+---
+
 ## Rectifications
 
 ### Rectification builders take keywords, and are chosen by type (#68)

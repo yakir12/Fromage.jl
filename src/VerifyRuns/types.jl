@@ -87,8 +87,13 @@ end
 # The run's (or first segment's) start_location falls back to `center` (e.g. the rectification's
 # scene centre) and then to the frame's centre, so `track` always gets a concrete starting point.
 # Both are (x, y) in *display* pixels, matching start_location's convention, so x is half of
-# width × sar and `track` maps it back to stored columns.
-frame_center(f::FrameFormat) = (round(Int, f.width * f.sar / 2), f.height ÷ 2)
+# width × sar (`Spaces.display_center_x`) and `track` maps it back to stored columns.
+#
+# The rounding is deliberately spelled here rather than shared: a start location is an Int pixel, so
+# the x rounds and the y truncates, where `Rectifications.default_center` — the other caller of
+# `display_center_x`, computing the same centre — keeps exact Float64 halves. The two differ by up
+# to half a pixel on an odd height, which is not obviously right and is not this function's to fix.
+frame_center(f::FrameFormat) = (round(Int, display_center_x(f.width, f.sar)), f.height ÷ 2)
 
 # The run's segments with the first one's start-location fallbacks applied, ready for `track`.
 #

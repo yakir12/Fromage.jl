@@ -4,6 +4,7 @@ using ColorTypes: Gray
 using CoordinateTransformations: AffineMap, IdentityTransformation, LinearMap, PerspectiveMap, Translation
 using ..Paths: RECTIFICATIONS_DIR
 using ..ShareIO: ShareIO
+using ..Spaces: RowCol, display_center_x, to_stored
 using FFMPEG: FFMPEG
 using FileIO: FileIO
 using ImageCore: colorview, normedview

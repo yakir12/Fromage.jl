@@ -1,12 +1,15 @@
 module Fromage
 
 # The four packages of the tracking ecosystem, consolidated as submodules (one repo, one version,
-# one test suite; see the README). Include order matters: Paths is first because both `main` and
-# VerifyRectifications derive their output folders from it, ShareIO next because all three
-# share-reading paths depend on it, Rectifications is used by VerifyRectifications and (for the
-# `RowCol` alias) by PawsomeTracker, PawsomeTracker by VerifyRuns, and the three shared modules by
-# both gateways -- Parsing (CSV-cell machinery), Probing (ffprobe plumbing) and Gateway (the csv ->
-# verified DataFrame pipeline the two gateways run in common).
+# one test suite; see the README). Include order matters: Spaces is first because it depends on
+# nothing and almost everything depends on it (the coordinate-space conversions and the `RowCol`
+# alias), Paths next because both `main` and VerifyRectifications derive their output folders from
+# it, ShareIO because all three share-reading paths depend on it, Rectifications is used by
+# VerifyRectifications and (for the centre/north helpers) by PawsomeTracker, PawsomeTracker by
+# VerifyRuns, and the three shared modules by both gateways -- Parsing (CSV-cell machinery),
+# Probing (ffprobe plumbing) and Gateway (the csv -> verified DataFrame pipeline the two gateways
+# run in common).
+include("spaces.jl")
 include("paths.jl")
 include("shareio.jl")
 include("Rectifications/Rectifications.jl")
