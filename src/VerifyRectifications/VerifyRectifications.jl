@@ -8,7 +8,7 @@ using ..PawsomeTracker: PawsomeTracker, ApriltagRectification
 using FileIO: FileIO
 using DataFrames: AbstractDataFrame, ByRow, DataFrame, Not, allowmissing!, completecases,
     dropmissing, groupby, nonunique, nrow, passmissing, subset
-using ..Gateway: backfill!, blank!, read_per_file!, read_rows, report_issues, resolve_paths!,
+using ..Gateway: backfill!, blank!, issue_report, read_per_file!, read_rows, report_issues, resolve_paths!,
     verify!, verify_id_filename!
 using ..Parsing: Parsing, MyTemporal, filled, parseto!
 using ..Paths: DEFAULT_ISSUES_DIR, session_issues_dir
@@ -89,8 +89,9 @@ function parse_rectifications(data_path, file; defaults = (;), progress = true)
 end
 
 # a blank rectification_id cell is itself flagged as an issue, so it can be missing here
-report_rectifications(df, strict) = report_issues(df, :rectification_id, "rectifications.csv", "rectification", strict;
+rectifications_report(df) = issue_report(df, :rectification_id, "rectifications.csv";
     mention = (i, cid) -> !ismissing(cid))
+report_rectifications(df, strict) = report_issues(rectifications_report(df), "rectification", strict)
 
 # The comprehension pins the element type to the abstract `Vector{RectificationMethod}` (as in
 # load_runs), so the clean-path return type doesn't vary with the mix of kinds.

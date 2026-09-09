@@ -1,7 +1,7 @@
 module VerifyRuns
 
 using DataFrames: AbstractDataFrame, DataFrame, allowmissing!, groupby, nrow
-using ..Gateway: backfill!, blank!, read_per_file!, read_rows, report_issues, resolve_paths!,
+using ..Gateway: backfill!, blank!, issue_report, read_per_file!, read_rows, report_issues, resolve_paths!,
     verify!, verify_id_filename!
 using ..Parsing: Parsing, MyTemporal, parseto!
 import ..Parsing: mytryparse                # extended on MyWindow (a type this module owns)
@@ -78,8 +78,9 @@ end
 
 # a run_id that is missing (mixed numbering) or equal to the row number (auto-assigned) adds
 # nothing over "row $i", so it is only mentioned when the csv named the run itself
-report_runs(df, strict) = report_issues(df, :run_id, "runs.csv", "runs", strict;
+runs_report(df) = issue_report(df, :run_id, "runs.csv";
     mention = (i, rid) -> !ismissing(rid) && rid != string(i))
+report_runs(df, strict) = report_issues(runs_report(df), "runs", strict)
 
 # Clean: group the rows by :run_id, each group materialized into one `Run`. `Run` is concrete, so
 # this vector's element type is too, and `track(r)` is statically dispatched.

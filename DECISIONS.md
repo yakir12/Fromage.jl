@@ -931,6 +931,38 @@ marginally. The precompile workloads still earn their keep — they warm the Dat
 that remains — but the comment claiming `DataFramesMeta`/`Chain` macro machinery was the bulk of
 first-call latency was wrong, and has been corrected.
 
+### The issue report is a value; printing it is a separate half
+
+`report_issues` built the report, printed it, and threw under `strict`, all in one function whose
+only output channel was `println`. So every assertion about the report's *format* — which rows
+appear, when the id is named, that `join` adds no trailing separator — had to run a gateway,
+redirect stdout through a temp file (`Harness.capturing`, which needs a real file descriptor, not an
+`IOBuffer`) and match a substring of what came back.
+
+Split in two: `Gateway.issue_report(df, idcol, csv_name; mention)` builds the string or returns
+`nothing`, and `report_issues(report, what, strict)` prints and throws. Each gateway owns a one-line
+`runs_report` / `rectifications_report` so its id column and `mention` rule stay in one place. Output
+is byte-identical — `println(a, b)` and `println(string(a, b))` produce the same bytes.
+
+**An `IO` parameter was considered and rejected.** Threading one would have to reach `check_*` for
+the gateway suites and, for the end-to-end tests, all the way to a new public keyword on
+`main`/`verify` — user-facing API surface added for a test's benefit, when Julia already has
+`redirect_stdout` for the genuine "what did it print" case. Making the report a value is the smaller
+change and gives the tests the thing they actually wanted to inspect.
+
+**`Harness.capturing` deliberately survives.** Four assertions still capture stdout, and should:
+`test/fromage.jl`'s two end-to-end testsets check that `main` *tells the user* about an unmatched
+`rectification_id`, and each gateway's tier-1 abort test (#121) checks what was printed before the
+throw — in particular that the corrupt video's issue is ABSENT, which is the evidence that no video
+was read. Those are assertions about printed behaviour, not workarounds for an untestable one.
+What went away is `load_capturing`, in both suites.
+
+**The `Issue` type was not done.** Failures are still `String`s in a `Vector{String}` column, so a
+reworded message still breaks a test, and there is still no column attribution. That is ~25 `push!`
+sites and ~98 messages, and it changes the `:issues` column `verify` hands back to users — a bigger
+change with a narrower benefit than it looks, because `Harness.flagged` already asserts on
+`df.issues` by value. Worth doing only if the message-text coupling turns out to hurt.
+
 ### Failures are reported, not thrown
 
 A calibration whose extrinsic frame yields no corners, a `.mat` missing a required field, an

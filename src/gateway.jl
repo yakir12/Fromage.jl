@@ -183,17 +183,32 @@ function verify_cross_references!(defined::AbstractDataFrame, used::AbstractData
     return coherent
 end
 
-# Print every row's issues, one line per row, and throw under `strict`. Returns whether anything was
-# wrong, so a caller can hand the raw DataFrame back instead of building its objects.
+# The report for every row that has issues, one line per row — or `nothing` when nothing is wrong.
+#
+# Pure: it builds the string and does not print it, which is the whole point. The report's format is
+# a real behaviour with real rules (which rows appear, when the id is named, how issues are joined),
+# and it used to be observable only by running a gateway and capturing its stdout — so every
+# assertion about it went through a temp file and a substring match. It is a value now, and the
+# suites assert on it directly.
 #
 # `mention(i, id)` decides whether row `i`'s identity adds anything over "row $i" — an id that is
 # missing, or that was auto-generated from the row number, does not.
-function report_issues(df::AbstractDataFrame, idcol, csv_name, what, strict; mention)
-    any(!isempty, df.issues) || return false
+function issue_report(df::AbstractDataFrame, idcol, csv_name; mention)
+    any(!isempty, df.issues) || return nothing
     ids = df[!, idcol]
     msg = join([string(mention(i, id) ? "row $i ($idcol: $id)" : "row $i", ": ", join(issues, ", "))
                 for (i, (id, issues)) in enumerate(zip(ids, df.issues)) if !isempty(issues)], '\n')
-    println("\nThe following are issues with the $csv_name file:\n", msg)
+    return string("\nThe following are issues with the $csv_name file:\n", msg)
+end
+
+# Print the report and throw under `strict`. Returns whether anything was wrong, so a caller can
+# hand the raw DataFrame back instead of building its objects.
+#
+# Takes the report rather than the DataFrame: each gateway builds its own (it owns the id column and
+# the `mention` rule), and this half then knows nothing except what to do with the result.
+function report_issues(report, what, strict)
+    isnothing(report) && return false
+    println(report)
     strict && error("there were issues with the $what (see above)")
     return true
 end

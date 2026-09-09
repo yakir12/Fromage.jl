@@ -3,18 +3,22 @@
         @test_throws "there were issues" check([uniformrow(pixel_width = -1)]; strict = true)
     end
 
-    @testset "issue report is printed with no trailing separator" begin
-        df, out = load_capturing([uniformrow(pixel_width = -1)])
+    # `rectifications_report` rather than capturing stdout: the report is a value now, so these
+    # assert on the string the gateway builds instead of on a temp file it was redirected into.
+    @testset "issue report has no trailing separator" begin
+        df = check([uniformrow(pixel_width = -1)])
+        out = VRect.rectifications_report(df)
         @test occursin("row 1 (rectification_id: s): pixel_width must be larger than zero", out)
         @test !occursin("pixel_width must be larger than zero,", out)   # join(issues, ", ") adds no trailing separator
         @test hasproperty(df, :issues)                            # non-strict returns the df with :issues retained
     end
 
     @testset "a blank rectification_id falls back to the plain row label" begin
-        _, out = load_capturing([uniformrow(rectification_id = missing, pixel_width = -1)])
+        out = VRect.rectifications_report(check([uniformrow(rectification_id = missing, pixel_width = -1)]))
         @test occursin("row 1: ", out)
         @test !occursin("(rectification_id", out)
     end
+
     # The first tier reads rectification_id and nothing else, so under `strict` an id failure aborts
     # before a single video is opened (#121). ART.corrupt is the proof: probing it produces a loud,
     # specific issue, so its ABSENCE from the report is evidence that nothing was read.
