@@ -74,6 +74,7 @@ open_gray_video(file) =
 # tracking. Reads and decoding stay concurrent — only the detect is serial.
 const APRILTAG_LOCK = ReentrantLock()
 
+include("types.jl")
 include("diagnose.jl")
 include("apriltag.jl")
 
@@ -391,85 +392,26 @@ function track!(coords, stack, guess, tr, vid, dia)
     end
 end
 
-function track_one(file, start, stop, target_width, start_location, window_size, darker_target, native_fps, sample_fps, dia, initial_search_factor, downscale, background_length)
-    video(file, native_fps, sample_fps, start, stop, downscale) do vid
+# `dia` is a `Diagnostic`/`Dont` created and closed by the caller, shared across a run's segments.
+#
+# Four arguments, all of different types, rather than the thirteen this used to unpack out of the
+# caller's `ResolvedSegment`/`Tuning` and repack here. Six of those thirteen were bare `Float64`s
+# and a transposition among them compiled and returned a wrong track: swapping `target_width` with
+# `initial_search_factor` at the call site passed the entire tracker suite (#201 follow-up).
+function track_one(rseg::ResolvedSegment, tuning::Tuning, scaled::ScaledTuning, dia)
+    video(rseg.file, tuning.native_fps, tuning.sample_fps, rseg.start, rseg.stop, tuning.downscale) do vid
         update_ratio!(dia, size(vid.img))
-        subtract = background_length != 0
-        tr = Tracker(vid, darker_target, target_width, window_size, (vid.height, vid.width), subtract)
-        stack = collect_stack(vid, tr.sz, tr.h, n_background(vid, background_length))
+        subtract = tuning.background_length != 0
+        tr = Tracker(vid, tuning.darker_target, scaled.width, scaled.window, (vid.height, vid.width), subtract)
+        stack = collect_stack(vid, tr.sz, tr.h, n_background(vid, tuning.background_length))
         coords = Vector{RowCol}(undef, vid.nframes)
-        guess = get_guess(start_location, stack, vid, darker_target, target_width, initial_search_factor, subtract)
+        guess = get_guess(rseg.start_location, stack, vid, tuning.darker_target, scaled.width, scaled.search, subtract)
         track!(coords, stack, guess, tr, vid, dia)
         # sample i is raw frame (i-1)*skip, i.e. start + (i-1)/effective_fps (#17)
-        return (range(start; step = 1 / vid.sample_fps, length = vid.nframes), coords)
+        return (range(rseg.start; step = 1 / vid.sample_fps, length = vid.nframes), coords)
     end
 end
 
-"""
-    Segment(file, start, stop, start_location)
-
-One video of a run: the file, the seconds into it at which tracking starts and stops, and where the
-target is at `start`, as an `(x, y)` display-pixel position.
-
-`start_location` is `missing` on any segment whose starting position is not known independently —
-the second and later segments of an ordinary run, where the target continues from where the
-previous one ended, and any segment of an AprilTag run, where a missing one becomes a frame-centre
-search. The first segment of an ordinary run carries a concrete one: the runs gateway resolves it
-(csv cell, then the rectification's `center`, then the frame centre) before building the segment.
-
-The union is exactly what is supported (#18). `RowCol` is absent on purpose despite having a
-`get_guess` method: that is the internal form a later segment's start takes, carried over from the
-previous segment's last coordinate, not something a caller supplies.
-"""
-struct Segment
-    file::String
-    start::Float64
-    stop::Float64
-    start_location::Union{Missing, NTuple{2, Int}}
-
-    # `start_location` is ASSERTED by this constructor, not converted. Julia converts struct fields
-    # on assignment, and Base can convert a `CartesianIndex{2}` to an `NTuple{2, Int}` — so without
-    # the annotation here a (row, col) CartesianIndex would become an (x, y) start location with its
-    # axes silently swapped. That is a worse version of the bug #18 was filed about (a type the
-    # signature advertised but `get_guess` could not handle), and the reason the union names only
-    # what `get_guess` has a method for. The other three fields convert as usual.
-    Segment(file, start, stop, start_location::Union{Missing, NTuple{2, Int}}) =
-        new(file, start, stop, start_location)
-end
-
-"""
-    Tuning(target_width, window_size, darker_target, sample_fps, native_fps,
-           initial_search_factor, downscale, background_length)
-
-The run-level tracking parameters, every one of them concrete.
-
-Deliberately without defaults, and `track` deliberately takes no keyword arguments: each of these
-values is decided in exactly one place — a csv cell, `VerifyRuns.DEFAULTS`, or the gateway's probe
-of the video — and giving them a second definition here is what let a global default and a verified
-value disagree, and what let an unverified value reach the tracker at all (#140, #141). A caller
-with no gateway behind it (the test suite) builds one explicitly; see `tuning` in
-`test/fixtures.jl`.
-
-`window_size` is the search window scanned around the target's last known position, already imputed
-(`get_window`) rather than left blank — so there is one imputation rule, upstream, instead of a
-second one here.
-
-The two rates are separate parameters and neither is derived from the other here. `native_fps` is
-the rate the video itself runs at — probed once by the gateway, or declared in `runs.csv` when the
-container reports it wrongly — and `sample_fps` the rate to sample it at, which the gateway has
-verified does not exceed it. Both arrive concrete: tracking never opens a video merely to ask what
-rate it runs at (see WHY-FRAMES-FAIL.md), and never re-derives a rate it was given.
-"""
-struct Tuning
-    target_width::Float64
-    window_size::Union{Int, NTuple{2, Int}}
-    darker_target::Bool
-    sample_fps::Float64
-    native_fps::Float64
-    initial_search_factor::Float64
-    downscale::Float64
-    background_length::Int
-end
 
 # The default search window, when the csv leaves `window_size` blank: wide enough for the target
 # itself (from its DoG sigma) and for however far it can travel between two sampled frames,
@@ -543,11 +485,9 @@ function track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnos
     nsegments = length(segments)
     tss = Vector{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}(undef, nsegments)
 
-    # Every segment scales these three the same way, so they are computed once rather than per
-    # segment inside the loops below.
-    width = tuning.downscale * tuning.target_width
-    window = round.(Int, tuning.downscale .* fix_window_size(tuning.window_size))
-    search = tuning.downscale * tuning.initial_search_factor
+    # Every segment scales these the same way, so they are computed once rather than per segment
+    # inside the loops below — which is what `ScaledTuning` is for.
+    scaled = ScaledTuning(tuning)
 
     # AprilTag mode: every segment registers to the SAME shared reference (the tags are stationary
     # across the whole run) and is tracked independently from its own start_location, a missing one
@@ -560,11 +500,9 @@ function track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnos
         dia = diagnose_apriltag(diagnostic_file, rectification, tuning.darker_target, dia_fps)
         try
             for (i, s) in enumerate(segments)
-                tss[i], segs[i] = track_apriltag(s.file, s.start, s.stop, width, s.start_location,
-                    window, tuning.darker_target, tuning.native_fps, tuning.sample_fps, dia,
-                    rectification.reference, rectification.family,
-                    (rectification.height, rectification.width), search,
-                    tuning.downscale, tuning.background_length)
+                # The `Segment` itself, unresolved: nothing chains here, so its start_location
+                # is already final — what the csv said, or `missing` for a centre search.
+                tss[i], segs[i] = track_apriltag(s, tuning, scaled, dia, rectification)
             end
         finally
             close(dia)
@@ -576,10 +514,11 @@ function track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnos
     diagnose(diagnostic_file, tuning.darker_target, rectification, dia_fps) do dia
         end_location = missing
         for (i, s) in enumerate(segments)
-            loc = coalesce(s.start_location, end_location)
-            tss[i], ijs[i] = track_one(s.file, s.start, s.stop, width, loc, window,
-                tuning.darker_target, tuning.native_fps, tuning.sample_fps, dia, search,
-                tuning.downscale, tuning.background_length)
+            # The chaining: a segment with no start_location of its own continues from where the
+            # previous one ended. That carried-over value is a `RowCol`, which a `Segment` cannot
+            # hold (#18) — hence `ResolvedSegment`, whose union names exactly what `get_guess` takes.
+            rseg = ResolvedSegment(s.file, s.start, s.stop, coalesce(s.start_location, end_location))
+            tss[i], ijs[i] = track_one(rseg, tuning, scaled, dia)
             end_location = ijs[i][end]
         end
     end

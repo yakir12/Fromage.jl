@@ -526,6 +526,54 @@ through the wrapper.
 The keyword the wrapper still declares itself is `start_location`, because its type annotation is
 load-bearing (see below).
 
+### The tracking functions take typed objects, and the two paths take different ones
+
+`track_one` took thirteen positional arguments and `track_apriltag` sixteen, each unpacking the
+caller's `Segment` and `Tuning` and repacking them one frame down — the arrangement the comment on
+`detect` already called out as "the one hot path that undid that", except it was not the only one.
+Six of `track_one`'s thirteen were bare `Float64`s.
+
+That was measured before it was changed. Transposing a pair at the call site, on unmodified `main`:
+
+| transposition | suite |
+|---|---|
+| `native_fps` / `sample_fps` | caught, 15 failures |
+| `start` / `stop` | caught, 3 failures + 24 errors |
+| **`target_width` / `initial_search_factor`** | **not caught — 433/433 passed** |
+| **`ref_sz` inverted to `(width, height)`** | **not caught — 433/433 passed** |
+
+Both blind cases now have assertions, and the signatures are `(segment, tuning, scaled, dia)` and
+`(segment, tuning, scaled, dia, rectification)`.
+
+`ScaledTuning` holds the three `downscale`-scaled values `track` derives once per run. Its fields
+are `width`/`window`/`search`, deliberately NOT the column names, because they hold scaled values
+and a field called `target_width` that is not `target_width` is the same quiet lie as a `RowCol`
+holding `(x, y)`. It is absent from the #140/#141 invariant for the same reason, with a comment in
+`test/quality.jl` saying so: derived values are not tracking parameters.
+
+**The asymmetry is the load-bearing part, and it will look like an oversight.** `track_one` takes a
+`ResolvedSegment`, whose `start_location` union also admits `RowCol` — the carried-over form a later
+segment's start takes when it chains from the previous segment's last coordinate, which a `Segment`
+cannot hold (#18). `track_apriltag` takes a plain `Segment`, because AprilTag segments do **not**
+chain, so no `RowCol` can ever reach it and `apriltag_guess` has no method for one.
+
+Giving both the wider type was tried first, and JET rejected it: `no matching method found
+apriltag_guess(::SVector{2, Float32}, …) (1/3 union split)`. That is bug #18's exact shape — a type
+the signature advertises that the callee cannot handle — and the suite passed with it in place. So
+which of the two types a tracking function takes now states whether its path chains, and the pair
+must not be collapsed into one.
+
+### What the tracker's argument lists still do not pin
+
+The `ref_sz` assertion is on `reference_size` directly, not on a tracked path. A behavioural test
+was attempted and does not discriminate: a transposed reference viewport of comparable size still
+*contains* the disc, because the fixture's disc sits near the middle of the ground plane, so
+tracking succeeds either way. Making it discriminate needs an aspect ratio extreme enough to push
+the disc outside the transposed viewport while all four tag blocks stay in frame at every pose, and
+the fixture's fixed tag layout (ground rows/cols 150..450 on a 600x600 canvas) cannot currently do
+both. The non-square AprilTag test that exists is honest about covering the pipeline rather than the
+axis order.
+
 ### What was deliberately *not* merged
 
 The AprilTag and ordinary branches still stand apart, and the last line of each still differs:

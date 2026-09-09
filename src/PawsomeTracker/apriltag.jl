@@ -515,6 +515,13 @@ diagnose_apriltag(file::AbstractString, rectification, darker_target, fps) =
     Diagnostic(file, darker_target, fps, ApriltagScene(rectification.reference, rectification.image2real);
                radius = max(2, DIAGNOSTIC_SIZE ÷ 60), font = DIAGNOSTIC_SIZE ÷ 16)
 
+# The reference space's (rows, cols), from a rectification that stores `width` then `height`. A
+# named function rather than an inline `(r.height, r.width)`, because that is a transposition, and
+# an inline one is unassertable: it used to sit at `track`'s call site, thirteen positions into a
+# sixteen-argument call, and inverting it passed the entire suite. Asserted directly in
+# test/apriltag_pipeline.jl, the way #200 pins the other axis-order conversions.
+reference_size(r::ApriltagRectification) = (r.height, r.width)
+
 # Track the beetle across drone footage in a single pass, in the REFERENCE frame's coordinates: the
 # background stack lazily warps every slice through that slice's own registration (a RegisteredWarp
 # composed into the same index pipe as the scaling), so drone motion is removed at lookup time and
@@ -524,22 +531,40 @@ diagnose_apriltag(file::AbstractString, rectification, darker_target, fps) =
 # the result through the FIXED metric map `ref.M` to ground units. Frames missing any tag yield
 # `missing` — their true registration is unknown, so the slice borrows the nearest known one and the
 # tracker holds its last reference-space position.
+# `Segment`, NOT `ResolvedSegment`, and that is the interesting half: AprilTag segments do not
+# chain (DECISIONS.md), so a start location here is only ever what the csv said or `missing` — never
+# a `RowCol` carried over from a previous segment. `apriltag_guess` has methods for exactly those
+# two. Taking the wider type would advertise a third that no method handles, which is bug #18's
+# shape, and JET catches it as an unmatched union split. The two types therefore say which path
+# chains and which does not.
 #
-# The reference is established once, from the rectification's extrinsic frame, and shared here;
-# `family` is the detector family it was built with; `ref_sz` is the reference space's (rows, cols),
-# which the run's own resolution may differ from. `dia` is an AprilTag `Diagnostic`/`Dont` created and
+# The whole `rectification`, not three of its fields. `ApriltagScene` used to be handed
+# `rectification.reference` alone and rendered two calibrations of one arena 89.6 degrees apart,
+# because the gauge lived in the sibling field it never saw (DECISIONS.md); the same argument
+# applies one function down. It also retires the last positional transposition here: `ref_sz` was
+# spelled `(rectification.height, rectification.width)` at the call site — deliberately reversed
+# against the struct's own field order, carried by position into a sixteen-argument call, and
+# invisible to the suite when inverted. It is `reference_size` above now: derived once, named, and
+# asserted directly.
+#
+# `ref` is the shared reference space, established once from the rectification's extrinsic frame;
+# `family` is the detector family it was built with; `ref_sz` is that space's (rows, cols), which
+# the run's own resolution may differ from. `dia` is an AprilTag `Diagnostic`/`Dont` created and
 # closed by the caller, shared across a run's segments.
-function track_apriltag(file, start, stop, target_width, start_location, window_size, darker_target,
-                        native_fps, sample_fps, dia, ref::ReferenceSpace, family, ref_sz, initial_search_factor, downscale, background_length)
+function track_apriltag(segment::Segment, tuning::Tuning, scaled::ScaledTuning, dia,
+                        rectification::ApriltagRectification)
+    ref = rectification.reference
+    family = rectification.family
+    ref_sz = reference_size(rectification)
     ids = ref.ids
     ntags = length(ids)
-    video(file, native_fps, sample_fps, start, stop, downscale) do vid
+    video(segment.file, tuning.native_fps, tuning.sample_fps, segment.start, segment.stop, tuning.downscale) do vid
         dets = [set_detector!(AprilTagDetector(family)) for _ in 1:ntags]   # one per tag
         try
             canvas = round.(Int, vid.downscale .* ref_sz)      # the reference viewport, tracker-scaled
-            subtract = background_length != 0              # off ⇒ raw-slice detect, no protect/restore
-            tr = Tracker(vid, darker_target, target_width, window_size, canvas, subtract)
-            n_bkgd = n_background(vid, background_length)
+            subtract = tuning.background_length != 0       # off ⇒ raw-slice detect, no protect/restore
+            tr = Tracker(vid, tuning.darker_target, scaled.width, scaled.window, canvas, subtract)
+            n_bkgd = n_background(vid, tuning.background_length)
             warp = RegisteredWarp(vid.downscale, Vector{SMatrix{3, 3, Float64, 9}}(undef, n_bkgd))
             stack = get_stack(vid, tr.sz, tr.h, n_bkgd, warp)
             n = vid.nframes
@@ -593,7 +618,7 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
             # their own are reported `missing` and skipped (their borrowed alignment is good enough
             # for the background model, not for a measurement); the guess holds through them.
             level = Ref(0.0)
-            guess = apriltag_guess(start_location, stack, vid, darker_target, target_width, initial_search_factor, subtract, seedR)
+            guess = apriltag_guess(segment.start_location, stack, vid, tuning.darker_target, scaled.width, scaled.search, subtract, seedR)
             for i in 1:n_bkgd
                 H = Hs[i]
                 if isnothing(H)
@@ -637,7 +662,7 @@ function track_apriltag(file, start, stop, target_width, start_location, window_
             end
 
             # labeled from the effective rate, as in track_one (see the Video constructor)
-            return (range(start; step = 1 / vid.sample_fps, length = n), coords)
+            return (range(segment.start; step = 1 / vid.sample_fps, length = n), coords)
         finally
             foreach(freeDetector!, dets)
         end

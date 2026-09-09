@@ -156,6 +156,39 @@ const DATADIR = mktempdir()
         @test tracking_rmse(ij, wide_exp) < 0.5
     end
 
+    # `track` derives three pre-scaled values once per run and hands them to every segment. They
+    # used to travel as three bare arguments among thirteen; six of those thirteen were `Float64`,
+    # and transposing `target_width` with `initial_search_factor` at the call site passed the ENTIRE
+    # tracker suite. `ScaledTuning` narrows that to one constructor; these two testsets close it.
+    @testset "ScaledTuning scales exactly the three values track derives" begin
+        # Asymmetric on purpose: the three fields differ from each other, the window is non-square,
+        # and downscale != 1, so any transposition among them changes at least one field.
+        t = PT.Tuning(10.0, (31, 21), true, 25.0, 25.0, 4.0, 0.5, 250)
+        s = PT.ScaledTuning(t)
+        @test s.width  == 5.0                      # downscale * target_width
+        @test s.search == 2.0                      # downscale * initial_search_factor
+        # (w, h) = (31, 21) -> fix_window_size -> (rows, cols) = (21, 31) -> scaled
+        @test s.window == round.(Int, 0.5 .* (21, 31))
+        @test s.window[1] != s.window[2]           # a transposed window would be visible
+        # width and search are both Float64 and are the pair that was invisible: pin them apart
+        @test s.width != s.search
+    end
+
+    @testset "a centre search is sized by initial_search_factor, not by target_width" begin
+        # The behavioural half. With no start_location the tracker searches a box of
+        # min(frame)/initial_search_factor around the CANVAS centre. On the 160x90 fixture the
+        # centre is (45, 80) and the disc is at (30, 120), 40 columns away, so the box has to be
+        # wide to contain it: initial_search_factor = 1 gives 90x90, spanning columns 35..125.
+        #
+        # Swap target_width and initial_search_factor and the box becomes min(90,160)/10 = 9 px
+        # wide, columns 76..84 — the disc is not in it, and the tracker never finds the target.
+        # That is the swap the square fixtures cannot see, because there the disc sits at the
+        # centre and any box contains it.
+        _, ij = track1(wide_file; start_location = missing, target_width = 10,
+                       initial_search_factor = 1.0)
+        @test tracking_rmse(ij, wide_exp) < 0.5
+    end
+
     @testset "get_guess maps display (x, y) to scaled (row, col)" begin
         # Exact equality, and the two components differ, so a transposition cannot slip through on
         # tolerance the way the RMSE assertions do.
