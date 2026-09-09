@@ -135,7 +135,8 @@ qdrant_reindex_file(collection="fromage",
 One call per file, parallel is fine; include `test/` and `docs/` — they are indexed too. Do it
 after an edit lands, after a merge, and after a `git pull` that moved files. `src/probing.jl`
 and `test/probing.jl` share a basename and index separately; the tool reporting by basename is
-not a duplicate. Full rebuild (~7 min) needs `extra_dirs` or it silently drops `test/`:
+not a duplicate. A full rebuild takes several minutes — long enough to be worth avoiding when a
+per-file reindex would do — and needs `extra_dirs` or it silently drops `test/`:
 
 ```
 qdrant_index_project(collection="fromage",
@@ -166,15 +167,20 @@ Never `julia` without `--project`; the global environment does not have this pac
 ### Tests
 
 - `run_tests(project_path="/home/yakir/Sync/evri/Fromage.jl")` spawns its own subprocess and
-  never touches the shared REPL — the preferred route. It **caps at 10 minutes**, and the full
-  suite takes ~7.5 min (over 10 with coverage), so anything with coverage must go through Bash.
+  never touches the shared REPL — the preferred route. It **caps at 10 minutes**. The full suite
+  runs close enough under that cap to be at its mercy on a loaded machine, and a coverage run is
+  reliably over it, so anything with coverage must go through Bash.
 - Full suite: `JULIA_NUM_THREADS=auto julia --project -e 'using Pkg; Pkg.test()'`.
   `JULIA_NUM_THREADS` is not optional — it is what exercises the threaded read/detect/track
   paths, and CI sets it too.
 - A single suite while iterating: run `test/runtests.jl` with the other `include`s commented, or
   include `test/fixtures.jl` + `test/harness.jl` and then the one file you care about.
+- The gateway helper `check` in `test/harness.jl` returns the **built objects** for a clean file — a
+  `Vector{Run}`, not a DataFrame. Assertions written against the DataFrame it does not return look
+  plausible and fail for the wrong reason.
 - Benchmarks: `julia --project=benchmark benchmark/benchmarks.jl` — local dev tool, never CI. If
-  an API change rots the suite, fix it in the same PR.
+  an API change rots the suite, fix it in the same PR. **Read the allocation counts, not the
+  clock** — see DECISIONS, "Wall-clock benchmarks on this machine are noise".
 
 ### Other Kaimon tools
 
@@ -218,6 +224,11 @@ This is the axis that most often slips. New and modified code must read like the
   convenience" will fail the suite, and rightly.
 - **Docstrings on exported and non-obvious internal functions**, stating argument meaning and
   units.
+- **Mind the include order when you add a type annotation.** Method signatures are evaluated at
+  *definition* time, so naming a type in one requires that type to already exist when the `include`
+  defining the method runs. That is why `types.jl` is included first inside both gateways and
+  `PawsomeTracker`, and why `src/Fromage.jl`'s own include order is load-bearing. Annotating an
+  argument can therefore fail at load with a bare `UndefVarError` that says nothing about ordering.
 
 **Don't:**
 
@@ -306,11 +317,17 @@ branch starts from `main`, and if `main` has moved, rebase onto it rather than s
 1. **Branch.** `git checkout main && git pull`, then a new branch off it, named for the fix.
 2. **Implement.** Only what the fix needs, plus what implementing it turns up as directly related.
 3. **Validate locally.** The threaded full suite is the gate:
-   `JULIA_NUM_THREADS=auto julia --project -e 'using Pkg; Pkg.test()'` (~8.3 min; baseline 1414
-   passes at v0.2.4). Kaimon's `run_tests` caps at 10 minutes, so a coverage run must go
-   through Bash. Also `format_code` after a large edit, and reindex every file you changed (§2).
-   **JET runs only on the pinned Julia 1.11** — on a 1.12 local run a leaked `Union` passes here
-   and fails in CI. Treat that as a known blind spot, not a green light.
+   `JULIA_NUM_THREADS=auto julia --project -e 'using Pkg; Pkg.test()'`. Budget most of ten
+   minutes. Kaimon's `run_tests` caps at 10 minutes, so a coverage run must go through Bash.
+   The pass count is in the low thousands and climbs with almost every release, so it is only
+   ever meaningful **as a before/after pair within one session**: note what `main` reports before
+   you start, and compare after. A count that went *down* means a test stopped running — the
+   number itself is not a target and is not worth recording here, because a figure pinned to a
+   version is stale by the next one. Also `format_code` after a large edit, and reindex every file
+   you changed (§2). **JET runs only on the pinned Julia 1.11** — on a 1.12 local run a leaked
+   `Union` passes here and fails in CI. Treat that as a known blind spot, not a green light; it
+   has rejected a design the whole suite accepted (DECISIONS, "The tracking functions take typed
+   objects, and the two paths take different ones" — #202's `apriltag_guess` union split).
 4. **Fix what fails, without asking.** Iterate until the suite is green, or until you cannot make
    confident progress. Only the second case is worth interrupting the user for.
 5. **Open the PR** — only once step 3 is green. State the problem, the solution, and the tradeoffs
