@@ -12,6 +12,11 @@ on:
     # or the published /stable/ docs would never catch up.
     # Note `*.md` matches root-level markdown only ("*" does not cross "/"), so
     # docs/src/*.md still triggers a run.
+    # `docs/agents/**` is the single exception under docs/, and does not weaken the rule
+    # above: it is agent configuration read by the engineering skills, not site content.
+    # docs/make.jl builds from docs/src (Documenter's default), so nothing in docs/agents/
+    # is published and there is no /stable/ for a tag to advance. It lives under docs/
+    # only because the consuming skills hardcode that path.
     paths-ignore:
       - "*.md"
       - "LICENSE"
@@ -19,6 +24,7 @@ on:
       - "codecov.yml"
       - ".lychee.toml"
       - ".copier-answers.yml"
+      - "docs/agents/**"
   workflow_dispatch:
 
 # julia-actions/cache runs with delete-old-caches: true, which needs `actions: write`

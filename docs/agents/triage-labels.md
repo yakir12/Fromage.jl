@@ -15,15 +15,19 @@ role name.
 When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label
 string from this table.
 
-**Only `wontfix` currently exists on `yakir12/Fromage.jl`** (checked 2026-09-09; the repo otherwise
-carries the GitHub defaults plus `dependencies` and `github_actions`). The other four must be
-created before first use:
+**All five exist on `yakir12/Fromage.jl`** as of 2026-09-09. `wontfix` was already there, carrying
+GitHub's own description ("This will not be worked on") rather than the table's wording — harmless,
+since the skills match on the label string, not the description. The other four were created with:
 
 ```sh
-gh label create needs-triage    --description "Maintainer needs to evaluate this issue"
-gh label create needs-info      --description "Waiting on reporter for more information"
-gh label create ready-for-agent --description "Fully specified, ready for an AFK agent"
-gh label create ready-for-human --description "Requires human implementation"
+gh label create needs-triage    -c fbca04 -d "Maintainer needs to evaluate this issue"
+gh label create needs-info      -c d876e3 -d "Waiting on reporter for more information"
+gh label create ready-for-agent -c 0e8a16 -d "Fully specified, ready for an AFK agent"
+gh label create ready-for-human -c 1d76db -d "Requires human implementation"
 ```
+
+Kept here because `/triage` only ever *applies* labels — it never creates them, so a missing label
+surfaces as a failed `gh issue edit --add-label`, not as a label appearing. If the vocabulary in the
+right-hand column is ever changed, the new strings have to be created on the tracker the same way.
 
 Edit the right-hand column to match whatever vocabulary you actually use.
