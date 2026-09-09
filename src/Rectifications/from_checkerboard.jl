@@ -48,9 +48,9 @@ function extract_intrinsics(file, start, stop, temporal_step, vf, w, h, n_corner
     collect(skipmissing(corners))
 end
 
-function obj2img(R, t, frow, fcol, crow, ccol, checker_width)
-    intrinsic = AffineMap(SDiagonal(frow, fcol), SVector(crow, ccol))
-    extrinsic = AffineMap(RotationVec(R...), SVector{3, Float64}(t))
+function obj2img(cam::CameraModel, checker_width)
+    intrinsic = AffineMap(SDiagonal(cam.frow, cam.fcol), SVector(cam.crow, cam.ccol))
+    extrinsic = AffineMap(RotationVec(cam.R...), cam.t)
     scale = LinearMap(SDiagonal{3}(I/checker_width))
     return intrinsic, extrinsic, scale
 end
@@ -175,7 +175,8 @@ function from_checkerboard(; file, extrinsic, rectification_id, intrinsic_start,
     imgpointss = fetch(intrinsic_task)
     ismissing(extrinsic_corners) && error("no corners detected at extrinsic time stamp")
     push!(imgpointss, extrinsic_corners)
-    return _rectification(file, extrinsic, rectification_id, imgpointss, width, height, n_corners, checker_width, aspect, radial_parameters, center, north, rectification_diagnostics)
+    return _rectification(; file, extrinsic, rectification_id, imgpointss, width, height, n_corners,
+                          checker_width, aspect, radial_parameters, center, north, rectification_diagnostics)
 end
 
 """
@@ -196,36 +197,42 @@ function from_extrinsic(; file, extrinsic, yadif, blur, width, height, n_corners
     vf = _vf(yadif, blur)
     extrinsic_corners = get_corners(file, extrinsic, vf, width, height, n_corners)
     ismissing(extrinsic_corners) && error("no corners detected at extrinsic time stamp")
-    return _rectification(file, extrinsic, rectification_id, [extrinsic_corners], width, height, n_corners, checker_width, aspect, 0, center, north, rectification_diagnostics)
+    return _rectification(; file, extrinsic, rectification_id, imgpointss = [extrinsic_corners], width, height,
+                          n_corners, checker_width, aspect, radial_parameters = 0, center, north,
+                          rectification_diagnostics)
 end
 
 # Shared tail of both constructors above: fit the camera model to the collected views (the
 # extrinsic frame is always the LAST view) and compose the transform pipeline off its pose.
-function _rectification(file, extrinsic, rectification_id, imgpointss, width, height, n_corners, checker_width, aspect, radial_parameters, center, north, rectification_diagnostics)
+function _rectification(; file, extrinsic, rectification_id, imgpointss, width, height, n_corners,
+                        checker_width, aspect, radial_parameters, center, north, rectification_diagnostics)
     objpoints = XYZ.(Tuple.(CartesianIndices((0:(n_corners[1] - 1), 0:(n_corners[2] - 1), 0:0))))
     # (height, width), not (width, height): every point handed to OpenCV lives in the TRANSPOSED
     # view (see `get_corners` — the frame goes in as `reshape(img, 1, h, w)` and OpenCV.jl's `Mat`
     # axes are `(channels, cols, rows)`), so coordinate 1 of a corner is its row and spans `height`.
     # `fit_model`'s `sz` is the extent of those two coordinates, in their own order.
-    k, Rs, ts, frow, fcol, crow, ccol = fit_model((height, width), objpoints, imgpointss, n_corners, radial_parameters, aspect)
+    m = fit_model((height, width), objpoints, imgpointss, n_corners, radial_parameters, aspect)
     extrinsic_index = length(imgpointss)
     extrinsic_corners = imgpointss[extrinsic_index]
-    R = Rs[extrinsic_index]
-    t = ts[extrinsic_index]
-    image2real, real2image = _maps(R, t, frow, fcol, crow, ccol, k, checker_width, width, height, aspect, center, north)
+    # `fit_model` fits ONE set of intrinsics across every view and a pose per view; the model this
+    # rectification is built on is those intrinsics with the extrinsic frame's pose.
+    cam = CameraModel(; R = m.Rs[extrinsic_index], t = m.ts[extrinsic_index],
+                      m.frow, m.fcol, m.crow, m.ccol, m.k)
+    image2real, real2image = _maps(cam; checker_width, width, height, aspect, center, north)
     ratio = checker_width/checker_width_pixel(extrinsic_corners, n_corners)
     _diagnostic(rectification_diagnostics, file, extrinsic, rectification_id, width, height, ratio, real2image)
     return StaticRectification(image2real, real2image, ratio, width, height)
 end
 
-# Assemble the image ↔ real transform pair from one camera pose: the intrinsics
-# (frow/fcol/crow/ccol), the extrinsic pose (R, t), the radial distortion k and the real-unit
-# scale. Shared by the checkerboard paths above (parameters fit by fit_model) and the matlab path
-# (parameters read from the .mat file; see from_matlab.jl).
-function _maps(R, t, frow, fcol, crow, ccol, k, checker_width, width, height, aspect, center, north)
-    intrinsic, extrinsic_transform, scale = obj2img(R, t, frow, fcol, crow, ccol, checker_width)
-    distort(rc) = lens_distortion(rc, k)
-    inv_scale, inv_extrinsic, inv_perspective_map, inv_distort, inv_intrinsic = img2obj(intrinsic, extrinsic_transform, scale, k)
+# Assemble the image ↔ real transform pair from one `CameraModel` and the real-unit scale. Shared by
+# the checkerboard paths above (model fit by `fit_model`) and the matlab path (model read from the
+# .mat file; see from_matlab.jl). Keyword-only below the model: `width`/`height` and `center`/`north`
+# are two same-typed adjacent pairs, and a transposition among them was caught by exactly one
+# assertion each before this change.
+function _maps(cam::CameraModel; checker_width, width, height, aspect, center, north)
+    intrinsic, extrinsic_transform, scale = obj2img(cam, checker_width)
+    distort(rc) = lens_distortion(rc, cam.k)
+    inv_scale, inv_extrinsic, inv_perspective_map, inv_distort, inv_intrinsic = img2obj(intrinsic, extrinsic_transform, scale, cam.k)
     image2real = ∘(pop, inv_scale, inv_extrinsic, inv_perspective_map, inv_distort, inv_intrinsic)
     real2image = ∘(intrinsic, distort, PerspectiveMap(), extrinsic_transform, scale, Base.Fix2(push, 0))
     center = default_center(center, width, height, aspect)

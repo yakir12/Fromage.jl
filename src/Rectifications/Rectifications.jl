@@ -52,6 +52,40 @@ struct StaticRectification{I, R}
     height::Int
 end
 
+"""
+    CameraModel(; R, t, frow, fcol, crow, ccol, k)
+
+One camera model: the intrinsics — focal lengths `frow`/`fcol`, principal point `crow`/`ccol`, and
+radial distortion `k` — together with the extrinsic pose, `R` (a Rodrigues rotation vector) and `t`.
+
+This is the thing `CONTEXT.md` already names: *"Calibration — estimating a camera model: intrinsics
+… and/or extrinsics (pose). The output is a camera model."* It had no type, so it travelled as seven
+loose values: `fit_model` returned them, `_rectification` picked one pose out of them, and `_maps`
+and `obj2img` each took them apart again. `from_matlab` assembled the same seven by hand.
+
+**Keyword-only, and the inner constructor replaces the positional default**, so there is no
+positional form to transpose. That matters here more than anywhere else in the package:
+`frow`/`fcol` and `crow`/`ccol` are two adjacent same-typed pairs, and transposing the focal lengths
+at the old call site passed the entire rectification suite. It could only ever have been caught at
+`aspect != 1`, because `fit_model` fixes the aspect ratio and at `aspect = 1.0` `frow == fcol`
+bit-for-bit — the same "invisible at sar 1" blind spot as #130 and #197.
+
+`R` and `t` are converted to `SVector{3, Float64}`: `obj2img` splats one and converts the other, so
+this is the same arithmetic, decided once, with no abstract field left behind.
+"""
+struct CameraModel
+    R::SVector{3, Float64}
+    t::SVector{3, Float64}
+    frow::Float64
+    fcol::Float64
+    crow::Float64
+    ccol::Float64
+    k::NTuple{3, Float64}
+
+    CameraModel(; R, t, frow, fcol, crow, ccol, k) =
+        new(SVector{3, Float64}(R), SVector{3, Float64}(t), frow, fcol, crow, ccol, k)
+end
+
 include("detect_fit.jl")
 include("center_north.jl")
 include("from_uniform.jl")
