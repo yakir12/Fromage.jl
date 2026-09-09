@@ -134,17 +134,17 @@ const GATEWAY_DIR = let dir = mktempdir(), n = 200
     dir
 end
 
-# Every row ends up flagged, so the run also pays for building and printing the issue report. That
-# is a constant across revisions; allocations are the cleaner signal for whether machinery was
-# actually removed. `progress = false` (#117, #118) keeps the meters out of it: redrawing a progress
-# bar is real work, and a sampled benchmark would pay for it on every evaluation.
+# Every row ends up flagged, so the run also pays for building and printing the issue report — which
+# is also why these are `check_*` and not `load_*`, the entry point that throws on a flagged file
+# (#185). That cost is a constant across revisions; allocations are the cleaner signal for whether
+# machinery was actually removed. `progress = false` (#117, #118) keeps the meters out of it:
+# redrawing a progress bar is real work, and a sampled benchmark would pay for it every evaluation.
 gates = SUITE["micro"]["gateways"] = BenchmarkGroup()
-gates["load_runs, 200 rows"] =
-    @benchmarkable Fromage.VerifyRuns.load_runs(joinpath($GATEWAY_DIR, "runs.csv");
-                                                strict = false, progress = false)
-gates["load_rectifications, 5 rows"] =
-    @benchmarkable Fromage.VerifyRectifications.load_rectifications(joinpath($GATEWAY_DIR, "rectifications.csv");
-                                                                    strict = false, progress = false)
+gates["check_runs, 200 rows"] =
+    @benchmarkable Fromage.VerifyRuns.check_runs(joinpath($GATEWAY_DIR, "runs.csv"); progress = false)
+gates["check_rectifications, 5 rows"] =
+    @benchmarkable Fromage.VerifyRectifications.check_rectifications(joinpath($GATEWAY_DIR, "rectifications.csv");
+                                                                     progress = false)
 
 # `track` takes no keyword arguments (#140, #141): a run's `Segment`s and its `Tuning` are what the
 # gateway hands it, so they are built ONCE here rather than inside the benchmarkable. That is not

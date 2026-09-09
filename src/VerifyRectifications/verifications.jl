@@ -425,7 +425,7 @@ function verify_unique_rectifications!(df::AbstractDataFrame)
 end
 
 # The second tier: everything that has to open a file, plus the value checks that depend on what
-# those files report. `verify_ids!` has already run and passed (or, under `strict = false`, flagged
+# those files report. `verify_ids!` has already run and passed (or, on the `check_*` path, flagged
 # the rows it rejected — which every stage below skips, since they all subset to unflagged rows).
 function verifications!(df::AbstractDataFrame, data_path, issues_dir = DEFAULT_ISSUES_DIR;
         progress = true)
