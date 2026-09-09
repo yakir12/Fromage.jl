@@ -17,6 +17,9 @@ on:
     # docs/make.jl builds from docs/src (Documenter's default), so nothing in docs/agents/
     # is published and there is no /stable/ for a tag to advance. It lives under docs/
     # only because the consuming skills hardcode that path.
+    # `.claude/**` is excluded for the same reason: agents, skills, hooks and settings that
+    # shape how the assistant works in this repo. None of it is loaded by the package or
+    # built into the site, so a change there has nothing to release.
     paths-ignore:
       - "*.md"
       - "LICENSE"
@@ -25,6 +28,7 @@ on:
       - ".lychee.toml"
       - ".copier-answers.yml"
       - "docs/agents/**"
+      - ".claude/**"
   workflow_dispatch:
 
 # julia-actions/cache runs with delete-old-caches: true, which needs `actions: write`
