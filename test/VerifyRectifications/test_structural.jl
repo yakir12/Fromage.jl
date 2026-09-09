@@ -116,11 +116,11 @@
     @testset "a duplicate loses its rectification_id" begin
         # Nulling it is what stops anything downstream joining a run onto a rectification that was
         # rejected — and it is why the report names the duplicate's row without an id.
-        df, out = load_capturing([checkerboardrow(rectification_id = "keep"),
-                                  checkerboardrow(rectification_id = "drop")])
+        df = check([checkerboardrow(rectification_id = "keep"),
+                    checkerboardrow(rectification_id = "drop")])
         @test df.rectification_id[1] == "keep"
         @test ismissing(df.rectification_id[2])
-        @test occursin("row 2: duplicate rectification", out)
+        @test occursin("row 2: duplicate rectification", VRect.rectifications_report(df))
     end
 
     @testset "three identical rows: the first is kept, both others flagged" begin
