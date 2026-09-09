@@ -296,11 +296,24 @@ end
 #
 # The message is built before `blank!`, and must stay that way: a group key is a live view onto the
 # parent's columns, so :extrinsic read back through `k` after the blank is `missing`.
-function flag_extrinsic!(g::AbstractDataFrame, k, issue, session_dir, get_frame)
+#
+# `(g, k, issue)` is positional because `detect_per_group!` calls `flag!` that way; the two captures
+# are keywords because `issue` and `session_dir` are both strings and adjacent, and transposing them
+# would compile, run, and write the frame into a folder named by the issue message.
+function flag_extrinsic!(g::AbstractDataFrame, k, issue; session_dir, get_frame)
     saved = save_issue_frame(session_dir, k.file, k.extrinsic, get_frame)
     note = note_saved_frame(issue, saved)
     blank!(g, :extrinsic)
     push!.(g.issues, note)
+    return nothing
+end
+
+# The intrinsic pass's counterpart: it scans a window rather than one frame, so there is nothing to
+# dump and the bare issue is the whole message. Named rather than written inline purely so the three
+# call sites below read alike — an inline `flag!` was the one multi-statement lambda in the package.
+function flag_intrinsic!(g::AbstractDataFrame, issue)
+    blank!(g, :intrinsic_start, :intrinsic_stop)
+    push!.(g.issues, issue)
     return nothing
 end
 
@@ -317,7 +330,7 @@ function verify_extrinsics!(df::AbstractDataFrame, session_dir; progress = true)
     # failed too: had it succeeded (the probe failing transiently and the read not — the share
     # reconnect this package exists to survive), `reshape(buf, missing, missing)` is a MethodError,
     # which _detection_failure rightly refuses to classify as a detection failure, so it would
-    # escape the tmap and abort the whole verification. :width/:height are in the required list
+    # escape the tmap and abort the whole verification. :width/:height are in the required-column list
     # below for that reason, so it stays impossible even if a later change lets an unflagged row
     # through without them.
     detect_per_group!(checkerboards,
@@ -325,9 +338,10 @@ function verify_extrinsics!(df::AbstractDataFrame, session_dir; progress = true)
         [:file, :extrinsic, :yadif, :blur, :width, :height, :n_corners],
         "Validating extrinsics...",
         k -> extrinsic_issue(k.file, k.extrinsic, k.yadif, k.blur, k.width, k.height, k.n_corners),
-        (g, k, issue) -> flag_extrinsic!(g, k, issue, session_dir,
-            () -> extrinsic_gray_frame(k.file, k.extrinsic, _vf(k.yadif, k.blur), k.width, k.height));
+        (g, k, issue) -> flag_extrinsic!(g, k, issue; session_dir,
+            get_frame = () -> extrinsic_gray_frame(k.file, k.extrinsic, _vf(k.yadif, k.blur), k.width, k.height));
         progress)
+    return df
 end
 
 # The camera-model fit needs at least 3 frames with detectable corners sampled from the
@@ -360,15 +374,16 @@ function verify_intrinsics!(df::AbstractDataFrame; progress = true)
     # Rows already flagged are skipped by `detect_per_group!`: a failed probe, extrinsic or window
     # check implies this (expensive) scan would fail too — re-running it wastes frame reads and
     # re-reports noise. A missing intrinsic window (both bounds blank) is skipped like everywhere
-    # else. The one pass with no frame to dump, so it flags the bare issue.
+    # else. The one pass with no frame to dump — see `flag_intrinsic!`.
     checkerboards = subset(df, :type => ByRow(passmissing(==("checkerboard"))); view = true, skipmissing = true)
     detect_per_group!(checkerboards,
         [:file, :intrinsic_start, :intrinsic_stop, :temporal_step, :width, :height, :n_corners],
         [:file, :intrinsic_start, :intrinsic_stop, :temporal_step, :yadif, :blur, :width, :height, :n_corners],
         "Validating intrinsics...",
         k -> intrinsic_issue(k.file, k.intrinsic_start, k.intrinsic_stop, k.temporal_step, k.yadif, k.blur, k.width, k.height, k.n_corners),
-        (g, _, issue) -> (blank!(g, :intrinsic_start, :intrinsic_stop); push!.(g.issues, issue); nothing);
+        (g, _, issue) -> flag_intrinsic!(g, issue);
         progress)
+    return df
 end
 
 # The AprilTag analogue of verify_extrinsics!: at the extrinsic frame, ≥ `apriltags` tags of
@@ -380,9 +395,10 @@ function verify_apriltag_extrinsics!(df::AbstractDataFrame, session_dir; progres
     cols = [:file, :extrinsic, :apriltags, :family, :tag_cell_width]   # nothing here is imputed, so it both requires and groups on all five
     detect_per_group!(tags, cols, cols, "Validating AprilTag extrinsics...",
         k -> PawsomeTracker.apriltag_extrinsic_issue(k.file, k.extrinsic, k.apriltags, k.family, k.tag_cell_width),
-        (g, k, issue) -> flag_extrinsic!(g, k, issue, session_dir,
-            () -> collect(PawsomeTracker.read_frame_at(k.file, k.extrinsic)));
+        (g, k, issue) -> flag_extrinsic!(g, k, issue; session_dir,
+            get_frame = () -> collect(PawsomeTracker.read_frame_at(k.file, k.extrinsic)));
         progress)
+    return df
 end
 
 # Within one group of rectifications that count as the same, the first row in csv order stands and

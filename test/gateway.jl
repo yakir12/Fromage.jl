@@ -1,8 +1,9 @@
-# The two per-group seams in Gateway, tested directly. Both are exercised end-to-end by the gateway
-# suites — that is where "a corrupt video is reported once" lives — but those tests need videos, csvs
-# and a whole loader to say anything, so the seams' own contract (which rows reach the callbacks, and
+# `Gateway.detect_per_group!`, tested directly. It is exercised end-to-end by the VerifyRectifications
+# suite — that is where "a corrupt video is reported once" lives — but those tests need videos, csvs
+# and a whole loader to say anything, so the seam's own contract (which rows reach the callbacks, and
 # what the callbacks are handed) was only ever asserted through its consequences. It is asserted here
-# instead, on a four-row DataFrame and no files at all.
+# instead, on a five-row DataFrame and no files at all. Its sibling `read_per_file!` has no direct
+# tests yet; the gateway suites are still the only thing holding it.
 module GatewayTests
 
 using Test
@@ -28,11 +29,8 @@ frame() = DataFrame(a = ["x", "x", "y", "z", missing],
                                     Threads.atomic_add!(calls, 1)
                                     k.a == "x" ? "bad" : nothing
                                 end,
-                                # `k` is a live view onto the parent's columns, not a snapshot, so
-                                # a field this callback nulls reads back as `missing` through the
-                                # key. Both real frame-dumping passes are safe by construction —
-                                # they build the whole message before blanking — and this one names
-                                # only :a, which it does not blank.
+                                # This one names only :a, which it does not blank — the live-view
+                                # hazard that makes that matter has a testset of its own below.
                                 (g, k, issue) -> (G.blank!(g, :b); push!.(g.issues, "$(k.a): $issue"));
                                 progress = false)
             # Rows 1 and 2 share a key, so they are one detect — not two. Row 3 is the only other
@@ -48,10 +46,40 @@ frame() = DataFrame(a = ["x", "x", "y", "z", missing],
         @testset "already-flagged rows are skipped, not re-detected" begin
             df = frame()
             push!(df.issues[4], "flagged earlier")
+            calls = Threads.Atomic{Int}(0)
             G.detect_per_group!(df, [:a, :b], [:a, :b], "testing...",
-                                k -> "bad", (g, _, issue) -> push!.(g.issues, issue); progress = false)
-            # One unusable row is one issue: the stage neither re-ran on it nor reported it twice.
+                                k -> (Threads.atomic_add!(calls, 1); "bad"),
+                                (g, _, issue) -> push!.(g.issues, issue); progress = false)
+            # Not re-detected: only ("x",1) and ("y",2) are grouped at all — row 4 carries an issue
+            # and row 5 has no :a. And not re-reported: one unusable row stays one issue.
+            @test calls[] == 2
             @test df.issues[4] == ["flagged earlier"]
+        end
+
+        @testset "a group key is a live view onto the parent, not a snapshot" begin
+            # The hazard `flag_extrinsic!` is built around: it saves the frame and builds its whole
+            # message BEFORE `blank!`, because a key field read after the blank is `missing`. Pinned
+            # here rather than left to a comment — reorder those two lines and this is what fails.
+            df = frame()
+            before, after = Ref{Any}(), Ref{Any}()
+            G.detect_per_group!(df, [:a, :b], [:a, :b], "testing...",
+                                k -> k.a == "x" ? "bad" : nothing,
+                                function (g, k, issue)
+                                    before[] = k.b
+                                    G.blank!(g, :b)
+                                    after[] = k.b
+                                end; progress = false)
+            @test before[] == 1
+            @test ismissing(after[])
+        end
+
+        @testset "a required column that is not grouped on is refused" begin
+            # `detect` is handed the KEY, so a column it needs that is not in the key is a column it
+            # cannot read. The containment also catches the transposition the two adjacent
+            # `Vector{Symbol}` arguments invite: swapping them would otherwise run, and merge rows
+            # that differ on a required column into one detect.
+            @test_throws ArgumentError G.detect_per_group!(frame(), [:a, :b], [:a], "testing...",
+                                                           k -> "bad", (g, _, i) -> nothing; progress = false)
         end
 
         @testset "`required` governs the drop, `groupcols` only the grouping" begin
