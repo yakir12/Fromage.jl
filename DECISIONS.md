@@ -339,10 +339,11 @@ What that bought is not the line count — the diff is roughly neutral — but t
 "every builder keyword is a rectifications.csv column" no longer needs it carved out of the allowed
 set (#140/#141 got *tighter*, not looser). Three more arguments went with it: `file`, `extrinsic`
 and `rectification_id` were the diagnostic's only consumers in `from_matlab`, `from_uniform` and
-`_rectification`, so those three take neither the video nor the id that names the image. `from_uniform`
-and `from_matlab` are now provably free of I/O — `from_uniform` reads nothing at all. The cost had
-been landing on the tests, which fabricated `file = "unused.mp4"`, `extrinsic = 0.0` and
-`rectification_diagnostics = false` at nine call sites that wanted none of them.
+`_rectification`, so those three take neither the video nor the id that names the image. Neither
+`from_uniform` nor `from_matlab` touches the source video any more — `from_uniform` reads nothing at
+all, and `from_matlab` reads only its `.mat`. The cost had been landing on the tests, which
+fabricated `file = "unused.mp4"`, `extrinsic = 0.0` and `rectification_diagnostics = false` at nine
+call sites that wanted none of them.
 
 `rectification_diagnostics` remains on `main` and `only_rectify` unchanged: it is user-facing and
 documented in `docs/src/help.md`. Only the builder surface lost it.
@@ -353,10 +354,13 @@ same render line five times and leaves the flag as a dispatcher keyword, which i
 journey this removes. Keeping `rectification_id` on the builders "for symmetry" was rejected for
 the plainer reason that it would then be an argument no builder reads. And a
 `save_diagnostic(::Any, args...) = nothing` fallback in `Rectifications` would have avoided the
-cross-module method entirely, at the price of silently doing nothing for any future rectification
-shape that forgets to define one; the AprilTag no-op is typed, in `VerifyRectifications/types.jl`,
-because `Rectifications` is included before `PawsomeTracker` and cannot name
-`ApriltagRectification` in a signature.
+second method entirely, at the price of silently doing nothing for any future rectification shape
+that forgets to define one. So the AprilTag no-op is typed. It sits in `PawsomeTracker`, beside the
+struct, and not in `Rectifications` beside the method it pairs with, because `Rectifications` is
+included first and cannot name `ApriltagRectification` in a signature; `VerifyRectifications` can
+see both modules and was the other candidate, but it owns neither the function nor the type, where
+`PawsomeTracker` owns the type — the same ownership test `VerifyRuns` passes when it extends
+`Parsing.mytryparse` on `MyWindow`.
 
 ### The camera model is a type, and the builders' shared tail is keyword-only
 

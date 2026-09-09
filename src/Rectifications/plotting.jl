@@ -19,11 +19,14 @@ end
 #
 # Called by `build_rectifications`, never by a builder (#209). Everything the warp needs —
 # `width`, `height`, `ratio`, `real2image` — is a field of the `StaticRectification` the builder has
-# already returned, so rendering from the returned value costs the caller nothing and spares the
-# builders three arguments (`file`, `extrinsic`, `rectification_id`) that only this image ever
-# wanted, plus the `rectification_diagnostics` flag that used to travel five frames from `main` to
-# reach this line. Whether to call it is the caller's decision, so this function no longer takes it:
-# there is nothing here to switch off.
+# already returned, so nothing has to be threaded down for it. That spares `from_matlab`,
+# `from_uniform` and `_rectification` the three arguments only this image ever wanted (`file`,
+# `extrinsic`, `rectification_id`); `from_checkerboard`/`from_extrinsic` still take `file` and
+# `extrinsic`, which they read the video with. Whether to render at all is the caller's decision, so
+# this function no longer takes `rectification_diagnostics`: there is nothing here to switch off.
+#
+# Dispatch, not a branch: the other method is the AprilTag no-op, which cannot be written here
+# because `Rectifications` is included before `PawsomeTracker` — see PawsomeTracker/apriltag.jl.
 #
 # The file is named by `rectification_id`, which is what lets a reader match an image back to its csv
 # row — and is unique, where the video/extrinsic pair this used to be named after is not: two video

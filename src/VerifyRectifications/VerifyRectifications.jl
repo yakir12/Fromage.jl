@@ -3,7 +3,7 @@ module VerifyRectifications
 using ..ShareIO: ShareReadError
 using ..Rectifications: get_corners, _vf, extrinsic_gray_frame, from_extrinsic, from_matlab,
     from_uniform, from_checkerboard
-import ..Rectifications: Rectification, save_diagnostic   # both extended below on types this module can see
+import ..Rectifications: Rectification                     # extended below on the row types this module owns
 using ..PawsomeTracker: PawsomeTracker, ApriltagRectification
 using FileIO: FileIO
 using DataFrames: AbstractDataFrame, ByRow, DataFrame, Not, allowmissing!, completecases,

@@ -138,13 +138,3 @@ Rectification(c::Uniform) =
 Rectification(c::Apriltag) =
     ApriltagRectification(; _source(c.source)..., c.source.file, c.source.extrinsic, c.source.aspect,
         ntags = c.apriltags, c.family, c.tag_cell_width)
-
-# There is no build-time diagnostic image for an AprilTag rectification: it has no fixed image→real
-# map to warp a frame through, and its top-down diagnostic is the per-run video produced during
-# tracking instead. So `build_rectifications` asking for one lands here and does nothing.
-#
-# The method sits in this module because it is the pair of `Rectifications.save_diagnostic`, which
-# is defined on `StaticRectification` and cannot name `ApriltagRectification`: `Rectifications` is
-# included before `PawsomeTracker` (src/Fromage.jl), and a signature is evaluated at definition
-# time. This is the same reason the dispatch above lives here — see DECISIONS.md.
-save_diagnostic(::ApriltagRectification, file, extrinsic, rectification_id) = nothing
