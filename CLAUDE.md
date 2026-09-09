@@ -345,9 +345,13 @@ branch starts from `main`, and if `main` has moved, rebase onto it rather than s
 5. **Open the PR** — only once step 3 is green. State the problem, the solution, and the tradeoffs
    or limitations. Report the actual line delta against the estimate honestly: extracting shared
    code costs lines here, deleting a structure saves them.
-6. **Watch the PR's CI** (`gh pr checks --watch`). **`TestOnPRs` triggers only on `src/**`,
-   `test/**`, `*.toml` and `.github/workflows/**`** — a docs-only or top-level-`*.md` PR
+6. **Watch the PR's CI** — by polling `gh pr checks <n>` in a loop, *not* with `--watch` (see the
+   note below; `--watch` is silent from a non-interactive session). **`TestOnPRs` triggers only on
+   `src/**`, `test/**`, `*.toml` and `.github/workflows/**`** — a docs-only or top-level-`*.md` PR
    legitimately has *no* PR checks. Absent checks there is expected, not something to wait on.
+   Watch what the *merge* triggers separately, and on the right ref: an `AutoRelease` tag build
+   (`Docs` on `v0.x.y`) does not appear in `gh run list --branch main`, so a watcher scoped to
+   `main` reports the chain complete while the tag's docs build is still running.
 7. **A red PR CI is an approval gate.** Investigate the root cause, determine the fix, explain the
    reasoning — and **ask before changing anything to make CI pass.**
 8. **Merge only after every required check has passed.**
@@ -383,11 +387,19 @@ of those is "done" on its own, and none of them should be reported as done.
   a second version bump.
 - The `gh` on this machine is old (2.23.0, from early 2023), so a few flags you might expect are
   missing: `gh pr checks --json` and `gh release list --json` are not available, while `gh api`,
-  `gh run list --json` and `gh release view --json` are. `gh pr checks <n> --watch` works and is
-  the easy way to follow a PR. When polling `gh` in a loop, it helps to run the query once on its
-  own first — an unsupported flag swallowed by `2>/dev/null` becomes a watcher that polls forever
-  and says nothing, which is hard to tell from a slow CI run. A first-iteration heartbeat line
-  makes that distinction visible if you would rather not pre-check.
+  `gh run list --json` and `gh release view --json` are.
+- **Do not follow a PR with `gh pr checks <n> --watch` from here.** It draws a redrawing terminal
+  display, so with stdout redirected — which is what a backgrounded tool call does — it emitted
+  **zero bytes** across ten minutes of genuinely pending checks, and a silent watcher is
+  indistinguishable from a hung one. (It is fine typed at a real terminal, and fine when every
+  check has already settled, which is why it can look like it works.) Poll `gh pr checks <n>`
+  in a loop instead and print each check as it settles, so progress is visible and a broken query
+  is too. Same rule for the post-merge chain with `gh run list`.
+- When polling `gh` in a loop, run the query once on its own first — an unsupported flag swallowed
+  by `2>/dev/null` becomes a watcher that polls forever and says nothing, which is hard to tell
+  from a slow CI run. A first-iteration heartbeat line makes that distinction visible if you would
+  rather not pre-check. Give the loop an explicit failure branch too: a filter that only matches
+  success is silent through a crash, which reads exactly like "still running".
 
 ---
 
