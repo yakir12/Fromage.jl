@@ -255,10 +255,18 @@ Only the shared half — `display_center_x`, the part carrying the `sar` rule �
 rounding stayed at each call site, which is what keeps the extraction behaviour-preserving and what
 makes the difference visible instead of buried in two files.
 
-**Whether the difference is right is an open question, not a settled one.** A start location is an
-Int pixel so `frame_center` must round somehow, but `÷` on the height truncates where the x rounds,
-and nothing argues for that combination. It wants a reproduction before it wants a fix — which is
-why it is recorded here rather than quietly unified.
+**Measured, and it does not matter.** The deviation is at most a quarter pixel in x and half a
+pixel in y, and only on odd dimensions: 640x481 at sar 1 gives seed `(320, 240)` against origin
+`(320.0, 240.5)`; 641x481 at sar 1/2 gives `(160, 240)` against `(160.25, 240.5)`; every even frame
+gives zero. Neither consumer cares. `frame_center` is a search *seed* against a window of at least
+21 px, so half a pixel is about 2% of the search radius. `default_center` is the coordinate
+*origin*, used only when the csv declares no centre, and displacing an arbitrary-by-convention
+origin by half a pixel yields a different but equally valid origin — every relative quantity
+(distances, speeds, path shape) is unchanged.
+
+They also never meet: `main` hands `track` the csv value `c.source.center` (`main.jl`), never the
+builder's defaulted one, so no code path compares or combines the two. Each rounds for its own
+consumer, and that is the end of it — no fix, and no reason to unify them.
 
 ---
 
@@ -312,6 +320,45 @@ six-line preamble (`dia_fps`, the segment count, the pre-scaled `width`/`window`
 dispatching means either duplicating that across two methods or threading eight locals into a
 helper. Both are harder to read than the branch. The rule exists to serve clarity; here it would
 cost it.
+
+### The camera model is a type, and the builders' shared tail is keyword-only
+
+#68 made the four public rectification builders keyword-only, for a reason it stated plainly: their
+arguments are same-typed neighbours, so a transposition produces a silently wrong map rather than an
+error. It stopped at the public seam. One frame in, `_rectification` took 13 positional arguments
+and `_maps` another 13, and `obj2img` took the same four intrinsics a third time.
+
+Measured the same way as the tracking half, by transposing a pair at the `_maps` call site:
+
+| transposition | suite |
+|---|---|
+| `width` / `height` | caught, 1 failure |
+| `center` / `north` | caught, 1 failure |
+| **`frow` / `fcol`** | **not caught, 535/535 passed** |
+| `crow` / `ccol` | caught, 1 failure |
+
+Three of the four were caught by exactly *one* assertion each, and the fourth by none.
+
+**Why the focal lengths were invisible, which is the part worth remembering.** `fit_model` seeds
+`cammat[2,2] = aspect` and fits under `CALIB_FIX_ASPECT_RATIO`, so at `aspect = 1.0` the fit returns
+`frow == fcol` **bit-for-bit** — verified directly: 150945.0919 for both at aspect 1, against
+201295.8/100647.9 at aspect 1/2. Every checkerboard fixture in the suite is square, so the swap was
+a literal no-op. That is the same blind spot as #130 ("invisible at sar = 1, which is why it stood
+as long as it did") and #197, for the third time.
+
+`CameraModel` now holds the seven values `CONTEXT.md` already calls a camera model — intrinsics,
+distortion and pose. It is **keyword-only, with an inner constructor replacing the positional
+default**, so there is no positional form of it anywhere to transpose; `obj2img` and `_maps` take
+the model, and `_rectification` is keyword-only. `R` and `t` are converted to `SVector{3, Float64}`,
+which is the same arithmetic `obj2img` did inline (`RotationVec(R...)`, `SVector{3, Float64}(t)`).
+
+The blind case is now pinned directly, at asymmetric and unequal focal lengths, in
+`test/Rectifications/test_geometry.jl` — transposing them inside `obj2img` fails exactly that
+testset and nothing else.
+
+`_rectification` and `_maps` stay out of the #140/#141 builder-keyword invariant, with a comment in
+`test/quality.jl`: their keywords include fitted and derived values that are not csv columns, so
+adding them would fail the containment immediately.
 
 ### `main` processes, `verify` reports — a flag no longer picks the return type
 

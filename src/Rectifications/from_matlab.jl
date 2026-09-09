@@ -30,7 +30,10 @@ function from_matlab(; file, extrinsic, rectification_id, matlab_file, extrinsic
     radial = vec(dict["RadialDistortion"])
     k = ntuple(i -> i ≤ length(radial) ? Float64(radial[i]) : 0.0, 3)
 
-    image2real, real2image = _maps(R, t, frow, fcol, crow, ccol, k, 1, width, height, aspect, center, north)
+    cam = CameraModel(; R, t, frow, fcol, crow, ccol, k)
+    # `checker_width = 1`: the .mat's world units ARE the output units, so there is no square size
+    # to divide by (see the note above about the unit scale).
+    image2real, real2image = _maps(cam; checker_width = 1, width, height, aspect, center, north)
     # units-per-pixel at the arena centre — the matlab analogue of the video path's
     # checker_width/checker_width_pixel (there are no detected corners to measure it from): one
     # real-world unit step at the origin spans 1/ratio pixels

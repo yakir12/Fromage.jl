@@ -75,8 +75,9 @@
         t = (0.3, 0.4, 5.0)
         frow, fcol, crow, ccol = 800.0, 810.0, 320.0, 240.0
         checker_width = 0.025
-        k = (0.05, -0.01)
-        intrinsic, extrinsic, pixel_width = R.obj2img(Rvec, t, frow, fcol, crow, ccol, checker_width)
+        k = (0.05, -0.01, 0.0)
+        cam = R.CameraModel(; R = Rvec, t, frow, fcol, crow, ccol, k)
+        intrinsic, extrinsic, pixel_width = R.obj2img(cam, checker_width)
         inv_scale, inv_extrinsic, _, inv_distort, inv_intrinsic =
             R.img2obj(intrinsic, extrinsic, pixel_width, k)
         # img2obj hands back genuine inverses of obj2img's components
@@ -90,6 +91,21 @@
         # inv_distort inverts the forward radial map
         v = SVector(0.2, -0.1)
         @test inv_distort(R.lens_distortion(v, k)) ≈ v atol = 1e-9
+    end
+
+    @testset "obj2img keeps frow on the row axis and fcol on the column axis" begin
+        # The one transposition at the old `_maps` call site that the whole suite could not see.
+        # It is invisible wherever `aspect == 1`, because `fit_model` fixes the aspect ratio and
+        # then `frow == fcol` bit-for-bit — the same blind spot as #130 and #197, which is why the
+        # focal lengths here are asymmetric and unequal.
+        cam = R.CameraModel(; R = (0.0, 0.0, 0.0), t = (0.0, 0.0, 1.0),
+                            frow = 800.0, fcol = 400.0, crow = 30.0, ccol = 70.0, k = (0.0, 0.0, 0.0))
+        intrinsic, _, _ = R.obj2img(cam, 1.0)
+        # a unit step along coordinate 1 (the ROW axis) is scaled by frow, not fcol
+        @test intrinsic(SVector(1.0, 0.0)) == SVector(800.0 + 30.0, 70.0)
+        @test intrinsic(SVector(0.0, 1.0)) == SVector(30.0, 400.0 + 70.0)
+        # and the principal point is (crow, ccol), in that order
+        @test intrinsic(SVector(0.0, 0.0)) == SVector(30.0, 70.0)
     end
 
     @testset "get_warp" begin

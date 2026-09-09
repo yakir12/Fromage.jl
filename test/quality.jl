@@ -87,6 +87,14 @@ using Fromage
                 end
             end
 
+            # `_rectification` and `_maps` are deliberately NOT in `builders`, and that is not an
+            # oversight either. They are the shared tail below the public builders, and they took
+            # 13 positional arguments each until the argument-list change; they are keyword-only
+            # now, but their keywords include `imgpointss`, `radial_parameters` and a whole
+            # `CameraModel` — fitted and derived values that are not csv columns and never will be,
+            # so adding them here would fail the containment immediately. Same reasoning as
+            # `ScaledTuning` on the tracking side.
+
             # reverse: everything `rectification_defaults` may set reaches a builder. `apriltags`
             # is spelled `ntags` there, which is exactly the kind of rename this catches.
             # Over ALL methods, not `first(methods(f))`: method order is not specified, and
