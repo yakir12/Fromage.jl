@@ -117,6 +117,45 @@ function read_per_file!(df::AbstractDataFrame, filecol, groupcols, desc, read, a
     return df
 end
 
+# One detect per parameter group, in parallel: the sibling of `read_per_file!` one level down. Where
+# that one asks "what does this physical file say", this one asks "does this combination of
+# parameters actually work on that file" — group the rows that name one such combination, run the
+# detector once per group, and hand every failing group to `flag!`.
+#
+# `requiredcols` is what the detector cannot work without; `groupcols` is what makes two rows the
+# same question. They are deliberately two lists, not one: a pass may group on a column it does
+# not require (an imputed one, say), so such a row must form a group of its own, not be dropped.
+# The containment asserted below is not a convention but the design: `detect` is handed the group
+# KEY, so a column it needs that is not in the key is a column it cannot read. The assertion earns
+# its line by catching the transposition — two adjacent `Vector{Symbol}` arguments, and swapping
+# them at a call site compiles, runs, and silently merges rows that differ on a required column
+# into one detect, handing one of them the other's verdict. This is a programmer error, not a bad
+# csv, so it throws; the gateway's rule about reporting rather than throwing is about user data.
+#
+# `detect(key)` returns an issue string or `nothing`, and `nothing` — a group that passed — is the
+# one case this function handles itself. `flag!(group, key, issue)` therefore only ever sees a real
+# failure, and owns everything domain-specific about it: which fields to null, and whether there is
+# a frame worth dumping. The key is passed to both because the detector's inputs are the group's
+# identity, so a `flag!` that needs to re-read what the detector saw already has it.
+#
+# Flagged rows are skipped, as in every other second-tier stage. Here that is not merely a saving:
+# a row rejected by an earlier stage has had its offending field nulled, so a detector reached with
+# it can fail in ways it has no vocabulary for — see the note over `verify_extrinsics!`, which is
+# the pass that learned it.
+function detect_per_group!(df::AbstractDataFrame, requiredcols, groupcols, desc, detect, flag!;
+        progress = true)
+    requiredcols ⊆ groupcols ||
+        throw(ArgumentError("every required column must also be grouped on, or `detect` cannot read it; missing from groupcols: $(setdiff(requiredcols, groupcols))"))
+    usable = subset(dropmissing(df, requiredcols; view = true), :issues => ByRow(isempty); view = true)
+    groups = groupby(usable, groupcols)
+    groupkeys = collect(keys(groups))
+    issues = @showprogress desc = desc enabled = progress tmap(detect, groupkeys)
+    for (g, k, issue) in zip(groups, groupkeys, issues)
+        isnothing(issue) || flag!(g, k, issue)
+    end
+    return df
+end
+
 # Both csvs carry an id that becomes a file name — `results_dir/<run_id>.csv` and the diagnostic
 # segments, `rectifications/<rectification_id>.jpg` — so both have to be usable as one. Checked in the
 # gateway, where every other cell is already checked, rather than left to fail at write time: a

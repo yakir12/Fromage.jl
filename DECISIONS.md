@@ -914,6 +914,65 @@ return a negative `Float64` for a negative numerator, where `VerifyRuns.parse_sa
 square-pixel fallback. Both now take the fallback. No caller could use a negative aspect ratio, and
 every case either suite pins was already agreed on by both.
 
+### The frame dump stays out of `detect_per_group!` (#210)
+
+The three `VerifyRectifications` detector passes — `verify_extrinsics!`, `verify_intrinsics!`,
+`verify_apriltag_extrinsics!` — had written one skeleton out three times. It has one definition site
+now, `Gateway.detect_per_group!`, whose own comment says what it does.
+
+The reason it took a ticket rather than an afternoon is that the three passes vary on *three* axes,
+not the two an obvious reading finds. Each has its own detector call and its own `blank!` column
+list, yes — but two of them also dump the frame the detector saw into the issues folder and point
+the message at it, and `verify_intrinsics!` does not, because it scans a whole window and so has no
+single frame to dump.
+
+Three shapes for that third axis were rejected:
+
+* **A keyword on `detect_per_group!`** (`annotate = (k, issue) -> issue`, defaulting to identity).
+  It would have put a third, optional callback channel on a function that already takes two, for the
+  benefit of two call sites out of three — the open-channel shape #140/#141 exist to keep out.
+* **Teaching `Gateway` to dump the frame.** It cannot: which column names a frame, that `:extrinsic`
+  is the field to null, and how to read the frame at all are `VerifyRectifications` knowledge, and
+  `Gateway` deliberately knows nothing about either domain.
+* **Leaving the tail written out in both adapters.** The cheapest option, and the one that undoes
+  the ticket: three lines duplicated between the two frame-dumping passes is exactly the shape the
+  extraction was for, one level smaller. It is also where the live-view hazard below would sit
+  twice, and be got right twice or wrong once.
+
+What it is instead: `detect_per_group!` takes `detect(key)` and `flag!(group, key, issue)`, mirroring
+`read_per_file!`'s `read`/`apply!` pair exactly, and handles only the one case that is not
+domain-specific — a `nothing` from `detect` means the group passed, so `flag!` only ever sees a real
+failure. The shared tail then sits in `VerifyRectifications.flag_extrinsic!`, a five-line helper the
+two extrinsic passes call from their `flag!`; the intrinsic pass calls `flag_intrinsic!` instead,
+which exists only so that all three call sites read alike. Two seams, each at the level that owns
+what it knows, rather than one seam with a hole cut in it.
+
+One hazard the extraction surfaced and the tests now pin: a group key is a **live view** onto the
+parent's columns, not a snapshot, so a field a `flag!` nulls reads back through the key as `missing`.
+Both frame-dumping passes build their whole message before calling `blank!`, and must keep doing so.
+
+Allocations, from `SUITE["micro"]["gateways"]`: `check_rectifications` 8339 on `main` → 8350 on the
+branch, stable across two branch runs. Read that as flat, not as +11 — the control says so.
+`check_runs` measured 54144, 54142 and 54272 across the same three processes, and **VerifyRuns does
+not use this seam at all**, so ±130 allocations is this benchmark's run-to-run noise on identical
+code, and 11 is inside it. Worth knowing before anyone reads a small delta here as signal.
+
+The larger caveat on that measurement: every row in the gateway benchmark is a `uniform`
+rectification with a non-existent file, so all five are flagged before the detector passes run and
+all three passes see **zero groups**. The benchmark measures the DataFrames plumbing around the
+seam, not a detect through it. Measuring the loop itself would need real videos, which puts it in
+the "macro" tier and at the mercy of this machine's wall clock.
+
+The line count is worth recording because the ticket predicted the opposite: it expected ~40 lines
+out of `verifications.jl`, and the change is net **+17 code lines** across both files
+(`verifications.jl` 276 → 280, `gateway.jl` 105 → 118). The skeleton itself did concentrate — three
+copies of ~6 lines became one of 8 — but each call site paid that back as an explicit argument list,
+because the two column lists, the description and the two callbacks all have to be named somewhere,
+and review then added a guard, a second named helper and three restored return values on top. So the
+deletion test, read as line count, fails here; read as definition sites, it passes, and that is the
+one that was worth having. Do not go looking for the missing 40 lines by folding the arguments back
+into a keyword bundle.
+
 ### Plain DataFrames, not DataFramesMeta macros (#68)
 
 Both gateways ran their columns through `@transform!`, `@chain`, `@groupby` and `@rtransform!` —
