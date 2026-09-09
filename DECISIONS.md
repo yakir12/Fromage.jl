@@ -289,9 +289,12 @@ mode is a subtly rotated or mirrored arena, not an error. The test suite showed 
 one call read `R.Rectification(vid, extrinsic_t, missing, missing, Wimg, Himg, …)` with nothing to
 say which `missing` was `yadif` and which was `blur`.
 
-The four builders are now keyword-only and named for what they build — `from_video`,
-`from_extrinsic`, `from_matlab`, `from_scale`, matching the files they already lived in — plus
-`PawsomeTracker.ApriltagRectification`. Arity no longer selects anything; the calibration's type
+The four builders are now keyword-only and named for what they build — `from_checkerboard`,
+`from_extrinsic`, `from_matlab`, `from_uniform`, matching the files they already lived in — plus
+`PawsomeTracker.ApriltagRectification`. (Two were introduced here as `from_video` and `from_scale`
+and renamed by #189, along with their files, for the same reason they were named at all: the csv
+vocabulary calls them a checkerboard and a uniform rectification. The old names appear nowhere in
+the tree — `git log --grep '#189'`.) Arity no longer selects anything; the calibration's type
 does, in `VerifyRectifications/types.jl`, which is the only module that can see both
 `Rectifications` and `PawsomeTracker`. The seven facts every builder needs about the source video
 travel together as `_source(c.source)`.
@@ -1332,6 +1335,31 @@ hit by the test suite no matter how well the package is tested. Both workloads p
 nonexistent files, so they exercise the full parse + verification path but bail before any
 ffprobe, `matread` or corner detection — no bundled media, fast and deterministic.
 
+### The loop that produced #201–#204, and why each step stayed
+
+Four structural changes shipped in a row under the same four-step loop. It is recorded because
+every step earned its place by catching something the step before it could not, and skipping any of
+them was tried at least once.
+
+**1. Grill the design before writing code.** Rounds of questions with recommendations, waiting for
+answers, before any edit. This is what surfaced what inspection had missed: that "family A" was two
+shapes and not one, that the frame-centre pair was not an exact duplicate, and that family C was
+nearly empty. Going straight to code skipped nothing useful in four attempts — it only moved the
+discovery later, when it was more expensive.
+
+**2. Measure the premise before building on it.** Transpose one argument pair at one call site, on
+unmodified `main`, run the relevant subset, record what happens. That is what turned "this looks
+risky" into "two of the four transpositions are invisible to the suite", and in #203 it found a
+defect class no fixture in the repo could catch. The mutation tables in this file are the output of
+exactly this step; treat "the suite would catch that" as a hypothesis until one of them says so.
+
+**3. Mutation-check the new assertions too.** After extracting a function, transpose each one in
+turn and confirm that *exactly* the intended test fails. This caught a test whose comment claimed to
+pin `ref_sz` and did not — see "What the tracker's argument lists still do not pin".
+
+**4. Gate on the suite, JET and allocations — not the clock.** See the benchmarks section below for
+why wall-clock time on this machine cannot carry a claim.
+
 ## Benchmarks
 
 ### Two tiers, because one sampling strategy cannot serve both (#68)
@@ -1377,3 +1405,19 @@ nothing at this window size, and has since been removed. Both are still benchmar
 comparison is the evidence for the choice. The same run priced the other open question — the bisection inverse
 costs 274 μs per 640 pixels against 3.3 μs for the forward map, about 428 ns a pixel, which is the
 budget a polynomial root has to beat.
+
+### Wall-clock benchmarks on this machine are noise; read the allocations
+
+Two runs of *identical* code on this machine have differed by up to 43% — `real2image` −43.5%, the
+DoG filter −34% — with nothing changed between them. The `main` macro benchmark drifts by roughly ±5
+allocations and a few tenths of a megabyte run to run for the same reason. This is not a property of
+the code; it is the machine, and it does not average out at the sample counts these benchmarks use.
+
+The failure mode is not a missed improvement, it is a fabricated one. A swing of about this size was
+read as a real gain in #203 and had to be retracted in #204. Nothing was wrong with the benchmark:
+the number was real, it just measured the machine rather than the change.
+
+**So the stable signal is allocations** — on the `"micro"` group and on the two `track` benchmarks —
+and that is what a design claim has to rest on. A wall-clock difference is worth acting on only if
+it survives a re-run of both sides and is far larger than the spread above. This sits *under* the
+two-tier rule: the `"macro"` group still cannot settle a design question, whatever it reports.
