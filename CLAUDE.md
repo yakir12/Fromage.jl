@@ -374,3 +374,25 @@ result. If something was skipped, say which and why.
 
 Report failures faithfully. Do not describe a change as verified when the evidence is that the
 code looks right.
+
+---
+
+## 8. Agent skills
+
+Configuration the installed engineering skills read. Distinct from §4, which is about subagents.
+
+### Issue tracker
+
+GitHub issues on `yakir12/Fromage.jl`, via the `gh` CLI (2.23.0 — some `--json` flags are missing).
+See `docs/agents/issue-tracker.md`. Delivering the work still follows §6, not a skill's generic
+git workflow.
+
+### Triage labels
+
+The five canonical roles, each label string equal to its name; only `wontfix` exists on the repo so
+far. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` at the root, with `DECISIONS.md` standing in for `docs/adr/`. See
+`docs/agents/domain.md`.
