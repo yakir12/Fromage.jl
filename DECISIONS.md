@@ -1456,8 +1456,9 @@ Keeping benchmarks out of CI is still right for the reason above, so **this fail
 designed away, it is accepted**: the mitigation is to run the suite when touching the code it
 covers. #31 asked for BenchmarkCI to close the gap and was declined for the wall-clock reason
 below, so nothing automated is coming. The same class of rot lives in
-`test/tolerance_residuals.jl`, which `runtests.jl` also does not include and which calls a
-`PT.ReferenceSpace` constructor that no longer exists.
+`test/tolerance_residuals.jl`, which `runtests.jl` also does not include: its apriltag section is
+unreachable dead code, broken in three independent places, and its `main` swallows a section's
+failure into one `SKIP` line either way (#220).
 
 ### What the benchmarks cannot tell you
 
