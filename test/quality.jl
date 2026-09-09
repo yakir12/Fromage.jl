@@ -59,6 +59,15 @@ using Fromage
             # untrackable. Every field is a column now, so `⊆` is the whole invariant.
             @test Set(fieldnames(PT.Tuning)) ⊆ Set(VRuns.COLUMNS)
             @test Set(fieldnames(PT.Segment)) ⊆ Set(VRuns.COLUMNS)
+            # `ResolvedSegment` is a `Segment` whose start has been settled — same parameters, a
+            # wider `start_location` union — so the same rule binds it.
+            @test Set(fieldnames(PT.ResolvedSegment)) ⊆ Set(VRuns.COLUMNS)
+
+            # `ScaledTuning` is deliberately ABSENT, and that is not an oversight. Its three fields
+            # hold `downscale`-scaled values derived from `Tuning`, not tracking parameters, and
+            # they are named `width`/`window`/`search` rather than after the columns precisely so
+            # that this containment would fail if anyone tried. The rule is "every tracking
+            # parameter is a runs.csv column"; a derived value is not one.
 
             # reverse: everything `tracking_defaults` may set actually lands on a Tuning field
             @test Set(keys(VRuns.DEFAULTS)) ⊆ Set(fieldnames(PT.Tuning))
