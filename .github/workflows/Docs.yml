@@ -6,19 +6,27 @@ on:
       - main
     tags:
       - '*'
+    # `docs/agents/**` is agent configuration read by the engineering skills, not site
+    # content: docs/make.jl builds from docs/src, so a change there cannot alter the built
+    # site and a deploy would be pure queue time. A negated pattern is the only way to say
+    # so, because `paths` and `paths-ignore` cannot both appear on one event. Order matters —
+    # the exclusion must come after the `docs/**` it carves out of.
     paths:
       - "docs/**"
       - "src/**"
       - "*.toml"
       - ".github/workflows/Docs.yml"
+      - "!docs/agents/**"
   pull_request:
     branches:
       - main
+    # Same carve-out as the push event above.
     paths:
       - "docs/**"
       - "src/**"
       - "*.toml"
       - ".github/workflows/Docs.yml"
+      - "!docs/agents/**"
     types: [opened, synchronize, reopened]
   # AutoRelease dispatches this workflow on the release tag, because tags
   # pushed with GITHUB_TOKEN do not trigger tag-push workflows on their own.
