@@ -15,7 +15,7 @@ on `main` cuts a release (§6, "Green CI on `main` *is* the release"). Use this 
 
 ## 1. Build it test-first
 
-Drive `/tdd` at the seams the plan already agreed — one red-green slice at a time. For a bug,
+Drive `/mattpocock-skills:tdd` at the seams the plan already agreed — one red-green slice at a time. For a bug,
 the reproduction comes first, then the regression test, then the fix (CLAUDE.md §1.5).
 
 Run a single suite while iterating rather than the whole thing; §2 of CLAUDE.md describes how
@@ -25,7 +25,8 @@ to include `test/fixtures.jl` + `test/harness.jl` and then just the file you car
 
 Two passes, neither optional for a change of any size:
 
-- `/code-review` over the diff.
+- `/mattpocock-skills:code-review` over the diff — its Standards and Spec axes run as parallel
+  sub-agents. Name it in full: a bare `/code-review` resolves to the built-in review skill instead.
 - The `julia-idiom-reviewer` subagent (CLAUDE.md §4) — this is the axis that most often slips,
   and it knows the repo's structural invariants (#140/#141's one-definition-site rule, explicit
   imports, dispatch over flags).

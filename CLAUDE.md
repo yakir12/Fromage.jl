@@ -317,8 +317,8 @@ branch starts from `main`, and if `main` has moved, rebase onto it rather than s
 1. **Branch.** `git checkout main && git pull`, then a new branch off it, named for the fix.
 2. **Implement, test-first.** Only what the fix needs, plus what implementing it turns up as
    directly related. Build it in red-green slices at the seams the plan agreed — for a bug that
-   is §1.5's order (reproduction, regression test, fix), and `/implement` drives `/tdd` over it.
-   Iterate against a single suite (§2), not the whole one.
+   is §1.5's order (reproduction, regression test, fix), and `/implement` drives
+   `/mattpocock-skills:tdd` over it. Iterate against a single suite (§2), not the whole one.
 3. **Validate locally, then review the diff.** The threaded full suite is the gate:
    `JULIA_NUM_THREADS=auto julia --project -e 'using Pkg; Pkg.test()'`. Budget most of ten
    minutes. Kaimon's `run_tests` caps at 10 minutes, so a coverage run must go through Bash.
@@ -332,9 +332,10 @@ branch starts from `main`, and if `main` has moved, rebase onto it rather than s
    has rejected a design the whole suite accepted (DECISIONS, "The tracking functions take typed
    objects, and the two paths take different ones" — #202's `apriltag_guess` union split).
    A green suite is not the whole gate: **review the diff before it leaves the branch** —
-   `/code-review`, plus the `julia-idiom-reviewer` subagent (§4), which is the axis that most
-   often slips and the one that knows this repo's structural invariants. Fan out to the other
-   §4 auditors when the change earns them.
+   `/mattpocock-skills:code-review` (Standards + Spec), plus the `julia-idiom-reviewer` subagent
+   (§4), which is the axis that most often slips and the one that knows this repo's structural
+   invariants. Name the review skill in full: a bare `/code-review` resolves to the built-in
+   review skill instead. Fan out to the other §4 auditors when the change earns them.
 4. **Fix what fails, without asking.** Iterate until the suite is green, or until you cannot make
    confident progress. Only the second case is worth interrupting the user for.
 5. **Open the PR** — only once step 3 is green. State the problem, the solution, and the tradeoffs
