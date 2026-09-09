@@ -965,6 +965,17 @@ Measured against `main` at the same DataFrames version (1.8.2), with the same be
 | Fromage precompile | 3.9 s | 3.9 s | no change |
 | Manifest packages | 294 | 289 | −5 |
 
+**Read the percentages, not the counts.** Those absolutes were taken at `effcc68` (#79), through
+`load_*(...; strict = false)` — the entry point #185 split into `load_*`/`check_*` — over a fixture
+whose csv schema has changed since (`calibration_id`/`calibs.csv` then, `rectification_id`/
+`rectifications.csv` now). Re-measured on one machine in 2026-09, the counts do not reproduce and
+the drift is not recent: `69bf292^`, the commit just before #185, already allocates **54,948**
+(runs) and **8,372** (rectifications). The gap therefore opened between #79 and #185, not in the
+recent gateway work — the two fixtures differ only by those column renames, so the workloads are
+the same shape, and #201–#204 and #209 land at 54,145 and 8,339. This is why an allocation count is
+only ever a **within-session delta**: it is reproducible across processes and thread counts, not
+across a year of dependency and fixture churn.
+
 The allocation drop is concentrated in the rectification gateway because that is where the macros
 were densest. **The TTFX improvement the candidate was partly filed on did not materialise**: load
 time and precompile time are unchanged, and first-call latency moves 2–3%, consistently but
@@ -1420,6 +1431,33 @@ the scheduler rather than the code. Each runs once (`samples = 1, evals = 1`) an
 clock and allocations — a regression tripwire, not a measurement.
 
 Fixtures come from `test/fixtures.jl`, so a benchmark and a test measure the same synthetic media.
+
+### The price of staying out of CI is that the suite rots silently (#206)
+
+`@benchmarkable` builds an expression rather than evaluating the call, so `SUITE` *constructs*
+against an API that no longer exists and only throws when the group is actually run. That is how
+the gateway group came to call `load_runs`/`load_rectifications` with the `strict` keyword #185 had
+removed, in the very commit that removed it (`69bf292`), and keep doing so across 22 releases
+(v0.2.20 through v0.2.42): nothing constructed wrong, and nothing in CI ran it. The group was
+therefore unrunnable throughout #201–#204 and #209 — precisely the work whose allocation claims it
+existed to check.
+
+The fix is a keyword swap, not a policy change: the group now calls `check_runs` /
+`check_rectifications`, which is what `strict = false` meant, and the keys are renamed to match so
+a key never again names an entry point the benchmark does not call. Measured either side of #185
+with the fixture held identical, the split itself is free — 54,948 → 55,011 allocations on runs,
+8,372 → 8,372 on rectifications — so the swap changes what is measured not at all. **Today's
+anchor, same machine, 2026-09: `check_runs` ~54,200 allocations / 3.06 MiB, `check_rectifications`
+8,339 / 400.60 KiB.** The runs count is the one that wobbles, by a couple of hundred (~0.2%) run to
+run; the rectification count has been bit-stable across every run here. So a runs delta under about
+half a percent is noise, and the 54,948 → 55,011 above is inside it.
+
+Keeping benchmarks out of CI is still right for the reason above, so **this failure mode is not
+designed away, it is accepted**: the mitigation is to run the suite when touching the code it
+covers. #31 asked for BenchmarkCI to close the gap and was declined for the wall-clock reason
+below, so nothing automated is coming. The same class of rot lives in
+`test/tolerance_residuals.jl`, which `runtests.jl` also does not include and which calls a
+`PT.ReferenceSpace` constructor that no longer exists.
 
 ### What the benchmarks cannot tell you
 
