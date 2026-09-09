@@ -65,7 +65,7 @@ follow this file. Rule 6 below exists because that has actually gone wrong.
 | `test/fixtures.jl` | Synthetic ffmpeg media + analytic ground truth (a module; shared by tests *and* benchmarks) |
 | `test/harness.jl` | Gateway CSV plumbing shared by the two gateway suites |
 | `test/quality.jl` | Aqua, ExplicitImports, and the single-definition-site invariant (#140/#141) |
-| `test/jet.jl` | JET; runs only on the pinned Julia 1.11 |
+| `test/jet.jl` | JET; gated on an allowlist of Julia minors (currently 1.11 and 1.12) |
 | `benchmark/benchmarks.jl` | BenchmarkTools `SUITE`, `"micro"` + `"macro"`. Deliberately **not** in CI |
 | `docs/src/` | The user-facing site (`get-started`, `data-folder`, `runs`, `rectifications`, `results`, `help`) |
 
@@ -327,10 +327,14 @@ branch starts from `main`, and if `main` has moved, rebase onto it rather than s
    you start, and compare after. A count that went *down* means a test stopped running — the
    number itself is not a target and is not worth recording here, because a figure pinned to a
    version is stale by the next one. Also `format_code` after a large edit, and reindex every file
-   you changed (§2). **JET runs only on the pinned Julia 1.11** — on a 1.12 local run a leaked
-   `Union` passes here and fails in CI. Treat that as a known blind spot, not a green light; it
-   has rejected a design the whole suite accepted (DECISIONS, "The tracking functions take typed
-   objects, and the two paths take different ones" — #202's `apriltag_guess` union split).
+   you changed (§2). **JET runs on an allowlist of Julia minors, currently 1.11 and 1.12**
+   (`test/runtests.jl:17`) — so a local run on either does include it. The blind spot is the
+   allowlist's shape, not its contents: an *unlisted* minor runs no JET at all and says nothing
+   about it, so a green suite on a newer Julia is quieter than it looks. Check `VERSION` before
+   reading a pass as a JET pass. Worth the care, because JET has rejected a design the whole
+   suite accepted (DECISIONS, "The tracking functions take typed objects, and the two paths take
+   different ones" — #202's `apriltag_guess` union split). `test/jet.jl`'s header explains why
+   the gate is an allowlist and what adding a minor to it requires.
    A green suite is not the whole gate: **review the diff before it leaves the branch** —
    `/mattpocock-skills:code-review` (Standards + Spec), plus the `julia-idiom-reviewer` subagent
    (§4), which is the axis that most often slips and the one that knows this repo's structural
