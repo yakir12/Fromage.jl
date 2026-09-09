@@ -13,8 +13,9 @@ the full suite (it takes ~7.5 minutes) unless explicitly told to.
 analytic ground truth) and `Harness` (gateway CSV plumbing) — then each former package's suite
 inside its own wrapper module, so suite-local names cannot collide:
 
-`quality.jl` (Aqua + ExplicitImports + the single-definition-site invariant), `jet.jl` (pinned
-to Julia 1.11 only), `shareio.jl`, `parsing.jl`, `probing.jl`, `rectifications.jl`,
+`quality.jl` (Aqua + ExplicitImports + the single-definition-site invariant), `jet.jl` (gated
+on an allowlist of Julia minors, currently 1.11 and 1.12), `shareio.jl`, `parsing.jl`,
+`probing.jl`, `rectifications.jl`,
 `pawsometracker.jl`, `apriltag.jl`, `apriltag_pipeline.jl`, `verifyrectifications.jl`,
 `verifyruns.jl`, `fromage.jl` (end-to-end `main` over a synthetic data folder).
 

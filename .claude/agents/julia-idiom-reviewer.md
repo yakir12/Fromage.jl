@@ -17,8 +17,9 @@ or a symbol flag. Rectification builders are the reference pattern.
 
 **Type stability.** No `Union{Nothing,T}` accumulators, no abstract or untyped struct fields, no
 `Vector{Any}`, no untyped globals. Parametric fields (`T<:Real`, `SVector{2,Float64}`) where the
-type varies. JET runs over the whole package on the pinned Julia 1.11, so instability is a test
-failure, not a preference.
+type varies. JET runs over the whole package on the Julia minors its allowlist names
+(currently 1.11 and 1.12), so instability is a test failure, not a preference — but a run
+on an unlisted minor is silent about it.
 
 **Explicit imports via the owning module.** `test/quality.jl` enforces
 `check_no_implicit_imports`, `check_all_explicit_imports_via_owners`,
