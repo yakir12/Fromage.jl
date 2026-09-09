@@ -73,12 +73,23 @@ function gather_runs(data_path, runs_file, defaults, run_ids = nothing)
     return filter_ids!(rs, run_ids, :run_id, "run_ids")
 end
 
-# `rectification_diagnostics` travels from here to `_diagnostic` unchanged — same name, same `Bool`
-# — so there is no path assembly in between and nothing to keep in step. An `apriltag` rectification
-# has no fixed image->real map to warp through and quietly produces no image; its top-down
-# diagnostic is the per-run video instead.
-build_rectifications(cs, rectification_diagnostics::Bool) =
-    @showprogress desc = "Building rectifications" tmap(c -> Rectification(c; rectification_diagnostics), cs)
+# `rectification_diagnostics` stops here (#209). It is a caller instruction, and this is the caller:
+# it used to travel five frames down into three otherwise-pure builders to reach a file write. What
+# `save_diagnostic` needs is the rectification the builder just returned — `width`, `height`,
+# `ratio` and `real2image` are all its fields — plus the three facts only the row carries: the
+# source video, the extrinsic timestamp, and the id that names the image. An `apriltag`
+# rectification has no fixed image->real map to warp through and quietly produces no image (that
+# method is a no-op, in VerifyRectifications/types.jl); its top-down diagnostic is the per-run video
+# instead.
+function build_rectifications(cs, rectification_diagnostics::Bool)
+    function build(c)
+        rectification = Rectification(c)
+        rectification_diagnostics &&
+            save_diagnostic(rectification, c.source.file, c.source.extrinsic, c.rectification_id)
+        return rectification
+    end
+    return @showprogress desc = "Building rectifications" tmap(build, cs)
+end
 
 # Both csv files, validated as one dataset. The identities of BOTH are settled first — each file's
 # own, then the cross-file check that they describe the same thing — before either file's videos are

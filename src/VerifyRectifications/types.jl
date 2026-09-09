@@ -82,30 +82,32 @@ else # can only be matlab
     MATLAB(source(row), row.rectification_id, row.matlab_file, row.extrinsic_index)
 end
 
-# `Rectification(c; rectification_diagnostics)` turns one verified rectifications row into its image ↔ real
-# map pair. Which builder runs is chosen by the row's type, which the parser already decided — not
-# by how many arguments get passed, and every argument travels by name. That matters here more than
-# it usually does: `width`/`height`, `intrinsic_start`/`intrinsic_stop` and `center`/`north` are
-# same-typed neighbours, so a transposition would produce a silently wrong map rather than an error.
+# `Rectification(c)` turns one verified rectifications row into its image ↔ real map pair. Which
+# builder runs is chosen by the row's type, which the parser already decided — not by how many
+# arguments get passed, and every argument travels by name. That matters here more than it usually
+# does: `width`/`height`, `intrinsic_start`/`intrinsic_stop` and `center`/`north` are same-typed
+# neighbours, so a transposition would produce a silently wrong map rather than an error.
 #
-# `rectification_diagnostics` is a REQUIRED keyword, here and on every builder below. These methods
-# used to take `kwargs...` and splat it onward, which had two costs: a misspelled keyword vanished
-# without a word (silently, in the AprilTag case, which forwards nothing), and the builders each
-# carried their own `= false` — a second definition of a value the caller always supplies. Required
-# and named means it cannot be forgotten, cannot be mistyped, and is defined in exactly one place:
-# `main`'s own signature.
+# A dispatcher takes the row and NOTHING else, so any keyword at all is a MethodError. It took
+# `kwargs...` until #68, and that splat had two costs: a misspelled keyword vanished without a word
+# (silently, in the AprilTag case, which forwards nothing), and the builders each carried their own
+# `= false` for the one keyword there was. #68 replaced the splat with a required, named
+# `rectification_diagnostics`; #209 removed even that, by moving the diagnostic image out to
+# `build_rectifications`, which renders it from the rectification the builder returned.
 
-# The six facts every builder needs from the shared `Source` (`rectification_id`, which names the
-# diagnostic image, lives on the method itself and is passed alongside). `aspect` is not among them
-# only because it is spelled `c.source.aspect` at each call below; every builder needs it, the
-# AprilTag one included — its metric scale comes from the tags, but its `center`/`north` are still
-# display pixels that have to be converted like everyone else's (#130).
-_source(s::Source) = (; s.file, s.extrinsic, s.center, s.north, s.width, s.height)
+# The four facts every builder needs from the shared `Source`. `file`/`extrinsic` are NOT among
+# them: only the three builders that read the video take them, and they are named at those call
+# sites below — the other two carried them purely for a diagnostic image nobody renders here any
+# more. `aspect` is not among them either, only because it is spelled `c.source.aspect` at each call
+# below; every builder needs it, the AprilTag one included — its metric scale comes from the tags,
+# but its `center`/`north` are still display pixels that have to be converted like everyone else's
+# (#130).
+_source(s::Source) = (; s.center, s.north, s.width, s.height)
 
-Rectification(c::Checkerboard; rectification_diagnostics::Bool) =
-    from_checkerboard(; _source(c.source)..., c.rectification_id, c.source.aspect, c.intrinsic_start, c.intrinsic_stop,
-        c.temporal_step, c.yadif, c.blur, c.n_corners, c.checker_width, c.radial_parameters,
-        rectification_diagnostics)
+Rectification(c::Checkerboard) =
+    from_checkerboard(; _source(c.source)..., c.source.file, c.source.extrinsic, c.source.aspect,
+        c.intrinsic_start, c.intrinsic_stop, c.temporal_step, c.yadif, c.blur, c.n_corners,
+        c.checker_width, c.radial_parameters)
 
 # A Checkerboard with no INTRINSIC WINDOW (both bounds blank ⇒ Checkerboard{Missing}) is an
 # extrinsics-only rectification: the pose and focal length come from the single extrinsic frame and
@@ -117,31 +119,22 @@ Rectification(c::Checkerboard; rectification_diagnostics::Bool) =
 # `extrinsic` timestamp, and named for what they are since v0.2.23. They used to be `start`/`stop`,
 # which is also what runs.csv calls the span of a run to TRACK: one pair of names for two unrelated
 # time windows, in two files a user edits side by side.
-Rectification(c::Checkerboard{Missing}; rectification_diagnostics::Bool) =
-    from_extrinsic(; _source(c.source)..., c.rectification_id, c.source.aspect, c.yadif, c.blur,
-        c.n_corners, c.checker_width, rectification_diagnostics)
+Rectification(c::Checkerboard{Missing}) =
+    from_extrinsic(; _source(c.source)..., c.source.file, c.source.extrinsic, c.source.aspect,
+        c.yadif, c.blur, c.n_corners, c.checker_width)
 
 # A MATLAB rectification reads the camera model (intrinsics, distortion, and the pose picked by
-# extrinsic_index) from the .mat file; the source video supplies the frame size (already
-# cross-checked against the .mat's ImageSize) and the extrinsic timestamp for the diagnostics.
-Rectification(c::MATLAB; rectification_diagnostics::Bool) =
-    from_matlab(; _source(c.source)..., c.rectification_id, c.source.aspect, c.matlab_file,
-        c.extrinsic_index, rectification_diagnostics)
+# extrinsic_index) from the .mat file; the source video supplies only the frame size (already
+# cross-checked against the .mat's ImageSize) and, to `build_rectifications` rather than to the
+# builder, the extrinsic timestamp the diagnostic image is warped from.
+Rectification(c::MATLAB) =
+    from_matlab(; _source(c.source)..., c.source.aspect, c.matlab_file, c.extrinsic_index)
 
-Rectification(c::Uniform; rectification_diagnostics::Bool) =
-    from_uniform(; _source(c.source)..., c.rectification_id, c.source.aspect, c.pixel_width,
-        rectification_diagnostics)
+Rectification(c::Uniform) =
+    from_uniform(; _source(c.source)..., c.source.aspect, c.pixel_width)
 
 # An AprilTag rectification builds its shared reference from the extrinsic frame (detecting the tags
-# and fitting the metric map) and carries the centre/north gauge. There is no diagnostic image to
-# render at build time — the top-down diagnostic is produced per-run during tracking — so
-# `rectification_diagnostics` is accepted and deliberately not forwarded.
-#
-# Accepted EXPLICITLY rather than swallowed by a `kwargs...`: this method used to take one and
-# discard whatever arrived, so `rectification_diagnostics = true` was a silent no-op here and a
-# misspelled keyword was silent everywhere. Naming the single argument it ignores makes anything
-# else a MethodError.
-Rectification(c::Apriltag; rectification_diagnostics::Bool) =
-    ApriltagRectification(; _source(c.source)..., c.source.aspect, ntags = c.apriltags, c.family,
-        c.tag_cell_width)
-
+# and fitting the metric map) and carries the centre/north gauge.
+Rectification(c::Apriltag) =
+    ApriltagRectification(; _source(c.source)..., c.source.file, c.source.extrinsic, c.source.aspect,
+        ntags = c.apriltags, c.family, c.tag_cell_width)

@@ -10,6 +10,7 @@ using StaticArrays: SVector, SMatrix
 using LinearAlgebra: svd, det, norm
 using AprilTags: AprilTags, AprilTagDetector, freeDetector!
 using ..Rectifications: i2r_centering_northing
+import ..Rectifications: save_diagnostic   # extended on ApriltagRectification (a type this module owns)
 
 # The tag families the AprilTag detector supports (`@enum TagFamilies tag36h11 tag25h9 tag16h5`),
 # keyed by the `family` CSV value, and how many cells span each tag's black border corner to
@@ -183,6 +184,18 @@ struct ApriltagRectification{I}
     width::Int
     height::Int
 end
+
+# The other arm of `Rectifications.save_diagnostic`, whose `StaticRectification` method renders the
+# warped extrinsic frame `rectification_diagnostics` asks for. There is no such image for this kind:
+# it has no fixed image→real map to warp a frame through, and its top-down diagnostic is the per-run
+# video produced during tracking instead. So `build_rectifications` asking for one lands here and
+# does nothing, rather than being a MethodError the user would have to decode.
+#
+# The method lives here, and not beside the one it pairs with, because a signature is evaluated at
+# definition time and `Rectifications` is included BEFORE `PawsomeTracker` (src/Fromage.jl) — it
+# cannot name this type. This module owns the type, which is what makes extending someone else's
+# function on it legitimate; same shape as `VerifyRuns`' `import ..Parsing: mytryparse`.
+save_diagnostic(::ApriltagRectification, file, extrinsic, rectification_id) = nothing
 
 # family CSV value → detector enum; also the validity gate for the `family` column.
 function april_family(family::AbstractString)

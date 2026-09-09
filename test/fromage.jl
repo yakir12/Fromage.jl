@@ -186,9 +186,16 @@ end
         println(io, "beetle,drone,$vid,\"$sl\",12")
     end
     outdir = mktempdir()
-    runs = cd(() -> main(dir), outdir)
+    # `rectification_diagnostics = true` deliberately: `build_rectifications` renders the warped
+    # extrinsic frame from whatever the builder returned, and this kind has no fixed image→real map
+    # to warp one through — its top-down diagnostic is the per-run video below instead. So asking
+    # for the image here must be a quiet no-op (the `save_diagnostic` arm in PawsomeTracker/apriltag.jl),
+    # not a MethodError, and it must leave no trace. This is the only apriltag row in the suite that
+    # asks.
+    runs = cd(() -> main(dir; rectification_diagnostics = true), outdir)
 
     @test nrow(runs) == 1
+    @test !ispath(joinpath(outdir, "results_dir", "rectifications"))   # asked for, and rightly absent
     rect = only(runs.rectification)
     @test rect isa Fromage.PawsomeTracker.ApriltagRectification   # the joined rectification is the apriltag kind
     @test rect.ratio > 0

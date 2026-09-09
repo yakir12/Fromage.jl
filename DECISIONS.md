@@ -324,6 +324,44 @@ dispatching means either duplicating that across two methods or threading eight 
 helper. Both are harder to read than the branch. The rule exists to serve clarity; here it would
 cost it.
 
+### A builder returns a rectification and writes nothing (#209)
+
+The three builders that produce a `StaticRectification` — `from_checkerboard`/`from_extrinsic`
+(through their shared `_rectification`), `from_matlab`, `from_uniform` — used to write the
+diagnostic jpeg on the line immediately before their `return`. `build_rectifications` writes it now,
+from the value the builder just handed back: `width`, `height`, `ratio` and `real2image` are all
+fields of that value, so nothing extra has to be threaded down to reach the renderer.
+
+What that bought is not the line count — the diff is roughly neutral — but the argument lists.
+`rectification_diagnostics` is a caller instruction, a `Bool`, and it travelled five frames from
+`main`'s signature to reach a file write buried inside three otherwise-pure functions. It stops at
+`build_rectifications` now, so `Rectification(c)` takes no keyword at all and `test/quality.jl`'s
+"every builder keyword is a rectifications.csv column" no longer needs it carved out of the allowed
+set (#140/#141 got *tighter*, not looser). Three more arguments went with it: `file`, `extrinsic`
+and `rectification_id` were the diagnostic's only consumers in `from_matlab`, `from_uniform` and
+`_rectification`, so those three take neither the video nor the id that names the image. Neither
+`from_uniform` nor `from_matlab` touches the source video any more — `from_uniform` reads nothing at
+all, and `from_matlab` reads only its `.mat`. The cost had been landing on the tests, which
+fabricated `file = "unused.mp4"`, `extrinsic = 0.0` and `rectification_diagnostics = false` at nine
+call sites that wanted none of them.
+
+`rectification_diagnostics` remains on `main` and `only_rectify` unchanged: it is user-facing and
+documented in `docs/src/help.md`. Only the builder surface lost it.
+
+**Considered and not done.** Rendering inside the five `Rectification(c)` dispatchers, one frame
+lower, keeps them the single place that knows about each rectification kind — but it repeats the
+same render line five times and leaves the flag as a dispatcher keyword, which is exactly the
+journey this removes. Keeping `rectification_id` on the builders "for symmetry" was rejected for
+the plainer reason that it would then be an argument no builder reads. And a
+`save_diagnostic(::Any, args...) = nothing` fallback in `Rectifications` would have avoided the
+second method entirely, at the price of silently doing nothing for any future rectification shape
+that forgets to define one. So the AprilTag no-op is typed. It sits in `PawsomeTracker`, beside the
+struct, and not in `Rectifications` beside the method it pairs with, because `Rectifications` is
+included first and cannot name `ApriltagRectification` in a signature; `VerifyRectifications` can
+see both modules and was the other candidate, but it owns neither the function nor the type, where
+`PawsomeTracker` owns the type — the same ownership test `VerifyRuns` passes when it extends
+`Parsing.mytryparse` on `MyWindow`.
+
 ### The camera model is a type, and the builders' shared tail is keyword-only
 
 #68 made the four public rectification builders keyword-only, for a reason it stated plainly: their
