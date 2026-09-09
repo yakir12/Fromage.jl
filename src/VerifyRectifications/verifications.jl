@@ -287,33 +287,47 @@ function note_saved_frame(issue, saved)
     return string(issue, " — saved the extrinsic frame to ", saved, " for inspection")
 end
 
+# The tail the two extrinsic passes share, and the third does not: dump the frame the detector
+# actually saw, null :extrinsic so nothing downstream builds from it, and point the issue at the
+# saved image. It sits here rather than inside `detect_per_group!` because all of it is domain
+# knowledge — that a group's identity names one frame, and which column holds it — and because
+# verify_intrinsics! scans a whole window, so it has no single frame to dump. `get_frame` is how
+# each detector reads its own: deinterlaced/blurred gray for the checkerboard, raw for AprilTag.
+#
+# The message is built before `blank!`, and must stay that way: a group key is a live view onto the
+# parent's columns, so :extrinsic read back through `k` after the blank is `missing`.
+function flag_extrinsic!(g::AbstractDataFrame, k, issue, session_dir, get_frame)
+    saved = save_issue_frame(session_dir, k.file, k.extrinsic, get_frame)
+    note = note_saved_frame(issue, saved)
+    blank!(g, :extrinsic)
+    push!.(g.issues, note)
+    return nothing
+end
+
 function verify_extrinsics!(df::AbstractDataFrame, session_dir; progress = true)
     # :file is the canonical resolved path, so grouping on it corner-detects a file reached via different
     # spellings once per (extrinsic, blur, n_corners).
     checkerboards = subset(df, :type => ByRow(passmissing(==("checkerboard"))); view = true, skipmissing = true)
-    # Rows already flagged are skipped, as in verify_intrinsics! and verify_apriltag_extrinsics!.
-    # This check was the only one of the three that re-scanned them, and it cost twice over: a row
-    # whose probe failed was read again — four ffmpeg attempts, ShareIO's retry — and reported a
-    # second time for the same unreadable file. Worse, a failed probe blanks :duration/:dimension
-    # but leaves :file and :extrinsic intact, so such a row reached the read with :width/:height
-    # still missing. That only stayed harmless while the read failed too: had it succeeded (the
-    # probe failing transiently and the read not — the share reconnect this package exists to
-    # survive), `reshape(buf, missing, missing)` is a MethodError, which _detection_failure rightly
-    # refuses to classify as a detection failure, so it would escape the tmap and abort the whole
-    # verification. :width/:height are dropped as well, so that stays impossible even if a later
-    # change lets an unflagged row through without them.
-    clean = subset(checkerboards, :issues => ByRow(isempty); view = true)
-    usable = dropmissing(clean, [:file, :extrinsic, :blur, :n_corners, :width, :height]; view = true)
-    gs = groupby(usable, [:file, :extrinsic, :yadif, :blur, :width, :height, :n_corners])
-    ks = collect(keys(gs))
-    issues = @showprogress desc = "Validating extrinsics..." enabled = progress tmap(k -> extrinsic_issue(k.file, k.extrinsic, k.yadif, k.blur, k.width, k.height, k.n_corners), ks)
-    for (g, k, issue) in zip(gs, ks, issues)
-        isnothing(issue) && continue
-        # dump the frame the detector saw (deinterlaced/blurred) so the user can see what went wrong
-        saved = save_issue_frame(session_dir, k.file, k.extrinsic, () -> extrinsic_gray_frame(k.file, k.extrinsic, _vf(k.yadif, k.blur), k.width, k.height))
-        blank!(g, :extrinsic)
-        push!.(g.issues, note_saved_frame(issue, saved))
-    end
+    # `detect_per_group!` skips rows already flagged, as it does for verify_intrinsics! and
+    # verify_apriltag_extrinsics!. This check was the only one of the three that re-scanned them,
+    # and it cost twice over: a row whose probe failed was read again — four ffmpeg attempts,
+    # ShareIO's retry — and reported a second time for the same unreadable file. Worse, a failed
+    # probe blanks :duration/:dimension but leaves :file and :extrinsic intact, so such a row
+    # reached the read with :width/:height still missing. That only stayed harmless while the read
+    # failed too: had it succeeded (the probe failing transiently and the read not — the share
+    # reconnect this package exists to survive), `reshape(buf, missing, missing)` is a MethodError,
+    # which _detection_failure rightly refuses to classify as a detection failure, so it would
+    # escape the tmap and abort the whole verification. :width/:height are in the required list
+    # below for that reason, so it stays impossible even if a later change lets an unflagged row
+    # through without them.
+    detect_per_group!(checkerboards,
+        [:file, :extrinsic, :blur, :n_corners, :width, :height],
+        [:file, :extrinsic, :yadif, :blur, :width, :height, :n_corners],
+        "Validating extrinsics...",
+        k -> extrinsic_issue(k.file, k.extrinsic, k.yadif, k.blur, k.width, k.height, k.n_corners),
+        (g, k, issue) -> flag_extrinsic!(g, k, issue, session_dir,
+            () -> extrinsic_gray_frame(k.file, k.extrinsic, _vf(k.yadif, k.blur), k.width, k.height));
+        progress)
 end
 
 # The camera-model fit needs at least 3 frames with detectable corners sampled from the
@@ -343,20 +357,18 @@ function intrinsic_issue(file, intrinsic_start, intrinsic_stop, temporal_step, y
 end
 
 function verify_intrinsics!(df::AbstractDataFrame; progress = true)
-    # Rows already flagged are skipped: a failed probe, extrinsic or window check implies this
-    # (expensive) scan would fail too — re-running it wastes frame reads and re-reports noise.
-    # A missing intrinsic window (both bounds blank) is skipped like everywhere else.
+    # Rows already flagged are skipped by `detect_per_group!`: a failed probe, extrinsic or window
+    # check implies this (expensive) scan would fail too — re-running it wastes frame reads and
+    # re-reports noise. A missing intrinsic window (both bounds blank) is skipped like everywhere
+    # else. The one pass with no frame to dump, so it flags the bare issue.
     checkerboards = subset(df, :type => ByRow(passmissing(==("checkerboard"))); view = true, skipmissing = true)
-    clean = subset(checkerboards, :issues => ByRow(isempty); view = true)
-    usable = dropmissing(clean, [:file, :intrinsic_start, :intrinsic_stop, :temporal_step, :width, :height, :n_corners]; view = true)
-    gs = groupby(usable, [:file, :intrinsic_start, :intrinsic_stop, :temporal_step, :yadif, :blur, :width, :height, :n_corners])
-    issues = @showprogress desc = "Validating intrinsics..." enabled = progress tmap(k -> intrinsic_issue(k.file, k.intrinsic_start, k.intrinsic_stop, k.temporal_step, k.yadif, k.blur, k.width, k.height, k.n_corners), keys(gs))
-    for (g, issue) in zip(gs, issues)
-        if !isnothing(issue)
-            blank!(g, :intrinsic_start, :intrinsic_stop)
-            push!.(g.issues, issue)
-        end
-    end
+    detect_per_group!(checkerboards,
+        [:file, :intrinsic_start, :intrinsic_stop, :temporal_step, :width, :height, :n_corners],
+        [:file, :intrinsic_start, :intrinsic_stop, :temporal_step, :yadif, :blur, :width, :height, :n_corners],
+        "Validating intrinsics...",
+        k -> intrinsic_issue(k.file, k.intrinsic_start, k.intrinsic_stop, k.temporal_step, k.yadif, k.blur, k.width, k.height, k.n_corners),
+        (g, _, issue) -> (blank!(g, :intrinsic_start, :intrinsic_stop); push!.(g.issues, issue); nothing);
+        progress)
 end
 
 # The AprilTag analogue of verify_extrinsics!: at the extrinsic frame, ≥ `apriltags` tags of
@@ -365,18 +377,12 @@ end
 # checked once per (extrinsic, apriltags, family, tag_cell_width).
 function verify_apriltag_extrinsics!(df::AbstractDataFrame, session_dir; progress = true)
     tags = subset(df, :type => ByRow(passmissing(==("apriltag"))); view = true, skipmissing = true)
-    clean = subset(tags, :issues => ByRow(isempty); view = true)
-    usable = dropmissing(clean, [:file, :extrinsic, :apriltags, :family, :tag_cell_width]; view = true)
-    gs = groupby(usable, [:file, :extrinsic, :apriltags, :family, :tag_cell_width])
-    ks = collect(keys(gs))
-    issues = @showprogress desc = "Validating AprilTag extrinsics..." enabled = progress tmap(k -> PawsomeTracker.apriltag_extrinsic_issue(k.file, k.extrinsic, k.apriltags, k.family, k.tag_cell_width), ks)
-    for (g, k, issue) in zip(gs, ks, issues)
-        isnothing(issue) && continue
-        # dump the extrinsic frame the tag detector saw so the user can see what went wrong
-        saved = save_issue_frame(session_dir, k.file, k.extrinsic, () -> collect(PawsomeTracker.read_frame_at(k.file, k.extrinsic)))
-        blank!(g, :extrinsic)
-        push!.(g.issues, note_saved_frame(issue, saved))
-    end
+    cols = [:file, :extrinsic, :apriltags, :family, :tag_cell_width]   # nothing here is imputed, so it both requires and groups on all five
+    detect_per_group!(tags, cols, cols, "Validating AprilTag extrinsics...",
+        k -> PawsomeTracker.apriltag_extrinsic_issue(k.file, k.extrinsic, k.apriltags, k.family, k.tag_cell_width),
+        (g, k, issue) -> flag_extrinsic!(g, k, issue, session_dir,
+            () -> collect(PawsomeTracker.read_frame_at(k.file, k.extrinsic)));
+        progress)
 end
 
 # Within one group of rectifications that count as the same, the first row in csv order stands and

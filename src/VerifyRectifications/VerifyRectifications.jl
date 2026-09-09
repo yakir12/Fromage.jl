@@ -7,9 +7,9 @@ import ..Rectifications: Rectification                     # extended below on t
 using ..PawsomeTracker: PawsomeTracker, ApriltagRectification
 using FileIO: FileIO
 using DataFrames: AbstractDataFrame, ByRow, DataFrame, Not, allowmissing!, completecases,
-    dropmissing, groupby, nonunique, nrow, passmissing, subset
-using ..Gateway: backfill!, blank!, issue_report, read_per_file!, read_rows, report_issues, resolve_paths!,
-    verify!, verify_id_filename!
+    groupby, nonunique, nrow, passmissing, subset
+using ..Gateway: backfill!, blank!, detect_per_group!, issue_report, read_per_file!, read_rows,
+    report_issues, resolve_paths!, verify!, verify_id_filename!
 using ..Parsing: Parsing, MyTemporal, filled, parseto!
 using ..Paths: DEFAULT_ISSUES_DIR, session_issues_dir
 using ..Probing: frame_geometry, is_interlaced, no_video_stream, parse_sample_aspect, probe_fields

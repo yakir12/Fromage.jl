@@ -914,6 +914,51 @@ return a negative `Float64` for a negative numerator, where `VerifyRuns.parse_sa
 square-pixel fallback. Both now take the fallback. No caller could use a negative aspect ratio, and
 every case either suite pins was already agreed on by both.
 
+### The frame dump stays out of `detect_per_group!` (#210)
+
+`Gateway.detect_per_group!` is the sibling of `read_per_file!` one level down: where that one asks
+"what does this physical file say", this one asks "does this combination of parameters actually work
+on it". The three `VerifyRectifications` detector passes — `verify_extrinsics!`,
+`verify_intrinsics!`, `verify_apriltag_extrinsics!` — had written that skeleton out three times.
+
+The reason it took a ticket rather than an afternoon is that the three passes vary on *three* axes,
+not the two an obvious reading finds. Each has its own detector call and its own `blank!` column
+list, yes — but two of them also dump the frame the detector saw into the issues folder and point
+the message at it, and `verify_intrinsics!` does not, because it scans a whole window and so has no
+single frame to dump.
+
+Two shapes for that third axis were rejected:
+
+* **A keyword on `detect_per_group!`** (`annotate = (k, issue) -> issue`, defaulting to identity).
+  It would have put a third, optional callback channel on a function that already takes two, for the
+  benefit of two call sites out of three — the open-channel shape #140/#141 exist to keep out.
+* **Teaching `Gateway` to dump the frame.** It cannot: which column names a frame, that `:extrinsic`
+  is the field to null, and how to read the frame at all are `VerifyRectifications` knowledge, and
+  `Gateway` deliberately knows nothing about either domain.
+
+What it is instead: `detect_per_group!` takes `detect(key)` and `flag!(group, key, issue)`, mirroring
+`read_per_file!`'s `read`/`apply!` pair exactly, and handles only the one case that is not
+domain-specific — a `nothing` from `detect` means the group passed, so `flag!` only ever sees a real
+failure. The shared tail then sits in `VerifyRectifications.flag_extrinsic!`, a five-line helper the
+two extrinsic passes call from their `flag!` and the intrinsic pass does not. Two seams, each at the
+level that owns what it knows, rather than one seam with a hole cut in it.
+
+One hazard the extraction surfaced and the tests now pin: a group key is a **live view** onto the
+parent's columns, not a snapshot, so a field a `flag!` nulls reads back through the key as `missing`.
+Both frame-dumping passes build their whole message before calling `blank!`, and must keep doing so.
+
+Allocations are flat across the change (`check_rectifications` 8339 → 8350 on the 5-row gateway
+benchmark; `check_runs` 54144 → 54142, and that gateway does not use the new seam at all).
+
+The line count is worth recording because the ticket predicted the opposite: it expected ~40 lines
+out of `verifications.jl`, and the change is net **+7 code lines** across both files (`verifications.jl`
+276 → 272, `gateway.jl` 105 → 116). The skeleton itself did concentrate — three copies of ~6 lines
+became one of 7 — but each call site paid most of that back as an explicit argument list, because
+the two column lists, the description and the two callbacks all have to be named somewhere. So the
+deletion test, read as line count, fails here; read as definition sites, it passes, and that is the
+one that was worth having. Do not go looking for the missing 40 lines by folding the arguments back
+into a keyword bundle.
+
 ### Plain DataFrames, not DataFramesMeta macros (#68)
 
 Both gateways ran their columns through `@transform!`, `@chain`, `@groupby` and `@rtransform!` —
