@@ -160,9 +160,8 @@ end
 # however, are read off a GUI (Gimp, Photoshop) by hand, so they are:
 # 1. pixel coordinates with width first and height second, (w, h)
 # 2. at an aspect ratio of 1, whatever `aspect` says
-function from_checkerboard(; file, extrinsic, rectification_id, intrinsic_start, intrinsic_stop, temporal_step, yadif, blur,
-        width, height, n_corners, checker_width, aspect, radial_parameters, center, north,
-        rectification_diagnostics::Bool)
+function from_checkerboard(; file, extrinsic, intrinsic_start, intrinsic_stop, temporal_step, yadif, blur,
+        width, height, n_corners, checker_width, aspect, radial_parameters, center, north)
     vf = _vf(yadif, blur)
     intrinsic_task = Threads.@spawn extract_intrinsics(file, intrinsic_start, intrinsic_stop, temporal_step, vf, width, height, n_corners)
     extrinsic_corners = get_corners(file, extrinsic, vf, width, height, n_corners)
@@ -175,8 +174,8 @@ function from_checkerboard(; file, extrinsic, rectification_id, intrinsic_start,
     imgpointss = fetch(intrinsic_task)
     ismissing(extrinsic_corners) && error("no corners detected at extrinsic time stamp")
     push!(imgpointss, extrinsic_corners)
-    return _rectification(; file, extrinsic, rectification_id, imgpointss, width, height, n_corners,
-                          checker_width, aspect, radial_parameters, center, north, rectification_diagnostics)
+    return _rectification(; imgpointss, width, height, n_corners, checker_width, aspect,
+                          radial_parameters, center, north)
 end
 
 """
@@ -193,19 +192,18 @@ than flagged; everything else (`yadif`, `blur`, `n_corners`, `checker_width`, `a
 DECISIONS.md for why this asymmetry is deliberate.
 """
 function from_extrinsic(; file, extrinsic, yadif, blur, width, height, n_corners, checker_width,
-        aspect, center, north, rectification_id, rectification_diagnostics::Bool)
+        aspect, center, north)
     vf = _vf(yadif, blur)
     extrinsic_corners = get_corners(file, extrinsic, vf, width, height, n_corners)
     ismissing(extrinsic_corners) && error("no corners detected at extrinsic time stamp")
-    return _rectification(; file, extrinsic, rectification_id, imgpointss = [extrinsic_corners], width, height,
-                          n_corners, checker_width, aspect, radial_parameters = 0, center, north,
-                          rectification_diagnostics)
+    return _rectification(; imgpointss = [extrinsic_corners], width, height, n_corners, checker_width,
+                          aspect, radial_parameters = 0, center, north)
 end
 
 # Shared tail of both constructors above: fit the camera model to the collected views (the
 # extrinsic frame is always the LAST view) and compose the transform pipeline off its pose.
-function _rectification(; file, extrinsic, rectification_id, imgpointss, width, height, n_corners,
-                        checker_width, aspect, radial_parameters, center, north, rectification_diagnostics)
+function _rectification(; imgpointss, width, height, n_corners, checker_width, aspect,
+                        radial_parameters, center, north)
     objpoints = XYZ.(Tuple.(CartesianIndices((0:(n_corners[1] - 1), 0:(n_corners[2] - 1), 0:0))))
     # (height, width), not (width, height): every point handed to OpenCV lives in the TRANSPOSED
     # view (see `get_corners` — the frame goes in as `reshape(img, 1, h, w)` and OpenCV.jl's `Mat`
@@ -220,7 +218,6 @@ function _rectification(; file, extrinsic, rectification_id, imgpointss, width, 
                       m.frow, m.fcol, m.crow, m.ccol, m.k)
     image2real, real2image = _maps(cam; checker_width, width, height, aspect, center, north)
     ratio = checker_width/checker_width_pixel(extrinsic_corners, n_corners)
-    _diagnostic(rectification_diagnostics, file, extrinsic, rectification_id, width, height, ratio, real2image)
     return StaticRectification(image2real, real2image, ratio, width, height)
 end
 

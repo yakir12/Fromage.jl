@@ -165,10 +165,9 @@
         checker = 1.0
         # Keyword-only since the argument-list change: the tail used to read `1.0, 0, missing,
         # missing, false` with nothing at the call site to say which was which.
-        rect = R._rectification(; file = "unused.mp4", extrinsic = 0.0, rectification_id = "regression",
-                                imgpointss = [corners], width = Wf, height = Hf, n_corners = ncr,
+        rect = R._rectification(; imgpointss = [corners], width = Wf, height = Hf, n_corners = ncr,
                                 checker_width = checker, aspect = 1.0, radial_parameters = 0,
-                                center = missing, north = missing, rectification_diagnostics = false)
+                                center = missing, north = missing)
         metric = map(rect.image2real, corners)
         down   = vec([hypot((metric[i + 1, j] - metric[i, j])...) for i in 1:ncr[1] - 1, j in 1:ncr[2]])
         across = vec([hypot((metric[i, j + 1] - metric[i, j])...) for i in 1:ncr[1], j in 1:ncr[2] - 1])

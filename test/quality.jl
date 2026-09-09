@@ -78,9 +78,11 @@ using Fromage
                         Fromage.Rectifications.from_matlab, Fromage.Rectifications.from_uniform,
                         PT.ApriltagRectification]
             # width/height are probed from the video; `ntags` is the `apriltags` column under the
-            # name the builder gives it; `rectification_diagnostics` is a caller instruction, not
-            # data — it is the one thing here `main` legitimately defaults.
-            allowed = Set(VRect.COLUMNS) ∪ Set([:width, :height, :ntags, :rectification_diagnostics])
+            # name the builder gives it. Nothing else is carved out: since #209 the one exception
+            # this set used to carry — `rectification_diagnostics`, a caller instruction rather than
+            # data — is no longer a builder keyword at all, so every builder keyword is now a
+            # rectifications.csv column or a probed frame size, with no third category.
+            allowed = Set(VRect.COLUMNS) ∪ Set([:width, :height, :ntags])
             for f in builders, m in methods(f)
                 @testset "$(nameof(f)) @ $(basename(string(m.file))):$(m.line)" begin
                     @test Set(Base.kwarg_decl(m)) ⊆ allowed
@@ -104,13 +106,16 @@ using Fromage
             @test Set(keys(VRect.DEFAULTS)) ⊆ consumed ∪ Set([:apriltags])
         end
 
-        @testset "the rectification dispatchers swallow nothing" begin
+        @testset "the rectification dispatchers take a row and nothing else" begin
             # `Rectification(c; kwargs...)` used to splat whatever arrived onward — and the
             # apriltag method forwarded none of it, so even a correct keyword was a silent no-op.
+            # #68 replaced the splat with one required keyword, `rectification_diagnostics`; #209
+            # took that away too, by moving the diagnostic image to the caller. A dispatcher now
+            # takes the row and nothing else, so any keyword at all is a MethodError.
             @test !isempty(methods(Fromage.Rectifications.Rectification))
             for m in methods(Fromage.Rectifications.Rectification)
                 @testset "$(basename(string(m.file))):$(m.line)" begin
-                    @test Base.kwarg_decl(m) == [:rectification_diagnostics]
+                    @test isempty(Base.kwarg_decl(m))
                 end
             end
         end

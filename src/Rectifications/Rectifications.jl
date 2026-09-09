@@ -94,13 +94,16 @@ include("from_matlab.jl")
 include("plotting.jl")
 
 """
-    Rectification(c; rectification_diagnostics)
+    Rectification(c)
 
 The image ↔ real map pair for one verified rectification `c`, chosen by `c`'s type. The methods live
 in `VerifyRectifications`, which owns those types; each reads `c`'s fields and calls one of the
 builders here — `from_checkerboard`, `from_extrinsic`, `from_matlab`, `from_uniform` — or
 `PawsomeTracker.ApriltagRectification`, by keyword. Declared here because this module owns the
 concept and `Fromage` reaches for the name through it.
+
+Building a rectification is all it does: the diagnostic image `rectification_diagnostics` asks for
+is rendered by the caller, from the returned value (`save_diagnostic`).
 """
 function Rectification end
 
