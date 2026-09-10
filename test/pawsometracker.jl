@@ -290,6 +290,22 @@ const DATADIR = mktempdir()
         @test tracking_rmse(ij, seg_exp) < 1
     end
 
+    @testset "two windows of one file: the run's clock closes the gap up (#153)" begin
+        # A run may be several windows of ONE file — that is how an untrackable stretch is left
+        # out. The run's timeline is one clock: it starts at the FIRST segment's `start` and
+        # advances one sampling interval per tracked frame, so the second window's own `start`
+        # (1.2 s, a time in the same file) never appears and the 0.4 s left out is closed up.
+        # Nothing else asserts the timestamps of a multi-segment run.
+        ts, ij = track1([base_file, base_file]; start = [0.4, 1.2], stop = [0.8, 1.6],
+                        start_location = [(55, 50), missing])
+        # 25 fps, sampled at its own rate: 10 frames per 0.4 s window.
+        @test length(ts) == 20
+        @test length(ij) == length(ts)
+        @test first(ts) == 0.4                   # the first segment's start, not the file's zero
+        @test step(ts) == 1 / 25
+        @test last(ts) ≈ 0.4 + 19 / 25           # continuous: no jump where the gap was
+    end
+
     @testset "background_length: no subtraction (0) and a short window (30) both track" begin
         # 0 ⇒ the DoG runs on the raw frame (the 2-slice stack only feeds detect the current
         # frame); the clean synthetic scene must track just as well without a background model

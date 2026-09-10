@@ -139,6 +139,55 @@ function verify_run_consistency!(df::AbstractDataFrame)
     end
 end
 
+# A run's segments may be several windows of ONE file — that is how an untrackable stretch is cut
+# out of a run (runs.md). Times within one file are comparable, so those windows can be ordered:
+# each one's `start` must be at or after the previous one's `stop`. Touching (`start` exactly at
+# the previous `stop`) is legal, and so is a gap — leaving a stretch out is the point, and the
+# run's clock closes the gap up deliberately (DECISIONS, #153).
+#
+# Segments in DIFFERENT files are never compared, and that is not an omission: each file's
+# `start`/`stop` are in its own seconds and nothing in the data relates two files' clocks, so the
+# csv row order is the user's statement and there is nothing to check it against. Grouping by
+# :file does both jobs at once — it is also what makes `a, b, a` fine as long as file a's two
+# windows increase.
+#
+# The key is the resolved path, so this belongs in the second tier: `resolve_paths!` has already
+# collapsed every spelling of one file onto one canonical key. Compared only among otherwise-clean
+# rows, as the run-level check above is — a row whose `start` was nulled by a failed check would
+# read as a spurious overlap. That gate does more work here than there: the neighbour's `allequal`
+# tolerates a `missing`, while the `<` below would see one and throw, so the gate is what keeps a
+# nulled field out rather than merely quiet. Deliberately not a `coalesce(…, false)`: reading a
+# `missing` as "no overlap" would accept a run this cannot vouch for, which is worse than the
+# throw. Unlike that check it flags only the offending PAIR: a disagreement has no single guilty
+# row, an overlap has two.
+#
+# Comparing ADJACENT windows is enough to accept only genuinely disjoint ones. `start must come
+# before stop` above has already established `start < stop` within each window, so a run this
+# reports nothing about has `start[i] ≥ stop[i-1] > start[i-1]` throughout: both ends increase, and
+# no non-adjacent pair can overlap either. (A run it does flag may still hold an unflagged
+# non-adjacent overlap — `(0,5), (1,2), (3,4)` flags the first pair only — but that run is rejected,
+# and the next pass over the corrected csv sees whatever is left.)
+function verify_segment_windows!(df::AbstractDataFrame)
+    for g in groupby(df, :run_id)
+        (nrow(g) > 1 && !ismissing(g.run_id[1]) && all(isempty, g.issues)) || continue
+        for windows in groupby(g, :file)
+            # Marked first and pushed once: a middle window overlapping both of its neighbours is
+            # in two offending pairs, and must still say so only once.
+            overlapping = falses(nrow(windows))
+            for i in 2:nrow(windows)
+                windows.start[i] < windows.stop[i - 1] || continue
+                overlapping[i - 1] = true
+                overlapping[i] = true
+            end
+            # A `view`, not an index: these are the parent's own issue vectors, and `push!` into
+            # them needs no assignment back — as in `verify!`.
+            push!.(view(windows.issues, overlapping),
+                "segments from the same file must not overlap: start must be at or after the previous segment's stop")
+        end
+    end
+    return df
+end
+
 # The second tier: everything that has to open a file, plus the value checks that depend on what
 # those files report. `verify_ids!` has already run and passed (or, on the `check_*` path, flagged
 # the rows it rejected — which every stage below skips, since they all subset to unflagged rows).
@@ -208,6 +257,10 @@ function verifications!(df::AbstractDataFrame, data_path; progress = true)
 
     # Cross-row: segments of one run (shared :run_id) must agree on the run-level parameters.
     verify_run_consistency!(df)
+
+    # Cross-row, per file: windows of one file within one run must not overlap or run backwards.
+    # After the per-row temporal checks above, whose failures null the very fields it compares.
+    verify_segment_windows!(df)
 
     return df
 end

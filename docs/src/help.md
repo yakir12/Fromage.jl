@@ -23,6 +23,7 @@ Among the things checked:
 - the checkerboard is detected at the `extrinsic` timestamp, and — when a rectification window is given — at least 3 sampled frames within the intrinsic window [`intrinsic_start`, `intrinsic_stop`] have a detectable board (this is the expensive part of validation — it reads real frames);
 - for an `apriltag` rectification, at least `apriltags` tags of the chosen `family` are detected at the `extrinsic` frame and their metric fit converges;
 - segments of a multi-segment run agree on all their shared parameters;
+- segments of one run cut from the **same** video file are in order and do not overlap — each one's `start` at or after the previous one's `stop` (segments in *different* files cannot be compared, so their order is yours to get right);
 - every `rectification_id` used in `runs.csv` exists in `rectifications.csv`.
 
 ## "The tracker followed the wrong thing"
