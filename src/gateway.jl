@@ -5,6 +5,11 @@
 # What stays in each gateway is what actually differs — its column list, its defaults, its row
 # parsers, and its checks. This module knows nothing about either domain; every message it emits is
 # either passed in or built from a column name.
+#
+# Those messages — this module's own, and both gateways' — are worded to one convention, because a
+# rejected csv is the only thing the user reads: `<column> must <requirement>`, with `must not` for a
+# prohibition. DECISIONS, "Issue messages are written as `<column> must …`" (#226), is the definition
+# site, and says which messages are deliberately exempt.
 module Gateway
 
 using CSV: CSV
@@ -68,14 +73,6 @@ end
 
 # Subset the rows whose `args` trip `predicate`, null the offending field (first of `args`) so later
 # checks skip them, and record `msg`. `passmissing`/`skipmissing` leave already-missing fields alone.
-#
-# `msg` follows one convention across both gateways, because a rejected csv is the only thing the
-# user reads: a rule about a cell reads `<column> must <requirement>`, spelling the column exactly as
-# the csv header does; a prohibition reads `must not` (never `cannot`, never `can not`); a derived
-# quantity names its inputs and still states the rule. Only a genuine EVENT — detection found
-# nothing, a file could not be read, a run's segments contradict each other — stays a statement of
-# fact, and even then it names the column or file it is about. See DECISIONS, "Issue messages are
-# written as `<column> must …`" (#226).
 function verify!(df::AbstractDataFrame, predicate, msg, args...)
     bad = subset(df, Cols(args...) => ByRow(passmissing(predicate)); view = true, skipmissing = true)
     # `[!, col]` and not `[:, col]`: the field being nulled may still be a concrete-typed column, and
@@ -176,13 +173,13 @@ end
 # ffmpeg concat list) escapes it properly now.
 const BAD_ID_CHARS = ('/', '\\', ':', '*', '?', '"', '<', '>', '|')
 
-# Returns the fault as a predicate phrase ("must not contain …"), or `nothing`. A missing or blank id is
-# already reported by the parser, so it is passed over rather than reported twice.
+# Returns the fault as a predicate phrase ("must not contain …"), or `nothing`. A missing or blank
+# id is already reported by the parser, so it is passed over rather than reported twice.
 function id_filename_issue(id)
     (ismissing(id) || isempty(id)) && return nothing
     i = findfirst(c -> c in BAD_ID_CHARS || iscntrl(c), id)
-    isnothing(i) || return "must not contain $(repr(id[i])): it cannot appear in a file name"
-    id in (".", "..") && return "must not be $(repr(id)): it cannot be a file name"
+    isnothing(i) || return "must not contain $(repr(id[i])) — it becomes a file name"
+    id in (".", "..") && return "must not be $(repr(id)) — it becomes a file name"
     return nothing
 end
 
@@ -224,7 +221,7 @@ function verify_cross_references!(defined::AbstractDataFrame, used::AbstractData
     for r in eachrow(used)
         id = r[idcol]
         (ismissing(id) || id in defined_ids) && continue
-        push!(r.issues, "references $idcol $id, which is not in $defined_name — it will not be validated or built")
+        push!(r.issues, "$idcol $id is not defined in $defined_name — it will not be validated or built")
         coherent = false
     end
     return coherent

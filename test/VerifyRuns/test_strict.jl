@@ -32,7 +32,7 @@
                 e
             end
         end
-        @test occursin("cannot appear in a file name", out)
+        @test occursin("must not contain", out)
         @test !occursin("issue reading from video file", out)
     end
 
@@ -40,7 +40,7 @@
         rows = [runrow(run_id = "ok", file = ART.corrupt),
                 runrow(run_id = "bad/name", file = ART.a)]
         df = check("tier1_quarantine.csv", rows)
-        @test flagged(df, 2, "cannot appear in a file name")
+        @test flagged(df, 2, "must not contain")
         @test flagged(df, 1, "issue reading from video file")
     end
 

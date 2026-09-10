@@ -561,7 +561,7 @@ end
             end
         end
         # both halves are reported in one pass: together they diagnose the typo
-        @test occursin("references rectification_id c9, which is not in rectifications.csv", out)
+        @test occursin("rectification_id c9 is not defined in rectifications.csv", out)
         @test occursin("rectification_id c1 is not used by any row in runs.csv", out)
     end
 end

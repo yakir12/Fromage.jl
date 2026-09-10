@@ -63,8 +63,8 @@
     end
 
     @testset "intrinsic_start/intrinsic_stop must be paired (both directions)" begin
-        @test flagged(check([checkerboardrow(intrinsic_start = "00:00:02", intrinsic_stop = missing)]),     1, "both present or both missing")
-        @test flagged(check([checkerboardrow(intrinsic_start = missing, intrinsic_stop = "00:00:08")]),     1, "both present or both missing")
+        @test flagged(check([checkerboardrow(intrinsic_start = "00:00:02", intrinsic_stop = missing)]),     1, "must be either both present or both missing")
+        @test flagged(check([checkerboardrow(intrinsic_start = missing, intrinsic_stop = "00:00:08")]),     1, "must be either both present or both missing")
     end
 
     @testset "a filled column irrelevant to the row's type is flagged" begin

@@ -1120,7 +1120,7 @@ construction) turn it back into a throw themselves.
 
 The messages the two gateways report are the package's primary interface for a bad csv — a lab
 member with a rejected `runs.csv` reads nothing else — and they had drifted into four grammatical
-forms, with `cannot` spelled two ways. They are one form now:
+forms, with `cannot` spelled two ways. They follow one form now, with stated exceptions:
 
 1. A rule about a cell's value reads `<column> must <requirement>`, naming the column exactly as the
    csv header spells it.
@@ -1134,9 +1134,14 @@ forms, with `cannot` spelled two ways. They are one form now:
 
 The reader is deciding what to type instead, which is why the rule beats the symptom:
 `start_location is outside the frame` did not say the frame is measured in *display* pixels, and
-`temporal_step too short` did not say what "too short" was. The one message class deliberately left
-alone is the parser's own `wrong <column> format` / `<column> is missing`, which is already
-column-first and is quoted throughout the docs.
+`temporal_step too short` did not say what "too short" was.
+
+Two classes are exempt. The parse failures — `wrong <column> format`, `wrong type`, `<column> is
+missing`, and `read_rows`' `unrecognized column/s in <what> file` — are already column-first, say the
+one thing there is to say about a cell that could not be interpreted at all, and are quoted
+throughout the docs. So is `<column> is not used by type <type>`: it names both the column and the
+type, and phrasing it as a rule about the column would point at the wrong cell, since what is
+usually wrong is the `type`.
 
 No behaviour changed — the same rows are rejected for the same reasons — but the text moved, so an
 old issue report no longer matches the new one word for word.
@@ -1158,8 +1163,8 @@ reference them. The same canonical path is the identity used for duplicate detec
 ### Duplicate detection compares only clean rows
 
 A row that already failed a check has had its offending field nulled to `missing`, which can make
-two genuinely distinct rows collapse into a spurious "duplicate". Such rows are already reported,
-so nothing is lost by excluding them.
+two genuinely distinct rows be spuriously flagged as repeats of one another. Such rows are already
+reported, so nothing is lost by excluding them.
 
 What counts as a duplicate is type-dependent: `matlab` and `only_scale` rows must match on every
 field; `video` rows match on an identity key (file, window, extrinsic, centre, north), since one

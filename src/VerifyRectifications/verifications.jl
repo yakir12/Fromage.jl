@@ -254,11 +254,11 @@ function extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
     try
         vf = _vf(yadif, blur)
         res = get_corners(file, extrinsic, vf, width, height, n_corners)
-        return ismissing(res) ? "no corners detected" : nothing
+        return ismissing(res) ? "no corners detected at the extrinsic time stamp" : nothing
     catch e
         err = _unwrap_task(e)
         _detection_failure(err) || rethrow()
-        return "issue with corner detection: $(_failure_message(err))"
+        return "issue with corner detection at the extrinsic time stamp: $(_failure_message(err))"
     end
 end
 
@@ -346,9 +346,10 @@ end
 
 # The camera-model fit needs at least 3 frames with detectable corners sampled from the
 # [intrinsic_start, intrinsic_stop] window — the "temporal_step must yield at least 3 images"
-# check only guarantees 3 *sampled* frames, not 3 *detectable* ones. Detection stops as soon as 3 succeed, so a good window costs ~3 frame reads
-# and only a genuinely bad one scans to the end. Frames are read in parallel batches of 4, which is
-# the only thing bounding the concurrent opens: the global read limiter this used to name
+# check only guarantees 3 *sampled* frames, not 3 *detectable* ones. Detection stops as soon as 3
+# succeed, so a good window costs ~3 frame reads and only a genuinely bad one scans to the end.
+# Frames are read in parallel batches of 4, which is the only thing bounding the concurrent opens:
+# the global read limiter this used to name
 # (`READ_SEM`) was measured against the real share, found to prevent nothing, and deleted — see
 # WHY-FRAMES-FAIL.md.
 function intrinsic_issue(file, intrinsic_start, intrinsic_stop, temporal_step, yadif, blur, width, height, n_corners)
@@ -360,7 +361,7 @@ function intrinsic_issue(file, intrinsic_start, intrinsic_stop, temporal_step, y
             found += count(!ismissing, corners)
             found ≥ 3 && return nothing
         end
-        return "fewer than 3 frames with detectable corners in the intrinsic window"
+        return "fewer than 3 frames with detectable corners between intrinsic_start and intrinsic_stop"
     catch e
         # the reads run under `tmap`, so unwrap before classifying (see _unwrap_task) — and report
         # the original rather than a nested TaskFailedException dump
@@ -419,14 +420,14 @@ function verify_unique_rectifications!(df::AbstractDataFrame)
     #   * matlab / uniform: identical on *every* field (rectification_id and issues aside).
     #   * checkerboard: identical on the identity key below. The remaining parameters are NOT part of
     #     identity (one checkerboard video can carry several rectifications differing only in, say,
-    #     blur), but two same-identity rows still *should* agree on them — when they don't, the duplicate also
-    #     gets a conflicting-parameters issue.
+    #     blur), but two same-identity rows still *should* agree on them — when they don't, the
+    #     duplicate also gets the "must not disagree on its other parameters" issue.
     # :file is already the canonical resolved path, so equivalent spellings compare equal with no
     # per-call realpath.
     #
     # Only rows that are otherwise valid take part: a row that failed an earlier check has had its
     # offending field nulled to `missing`, which can collapse two genuinely distinct rows into a
-    # spurious "duplicate". Such rows are already reported anyway.
+    # spuriously flagged as repeats of one another. Such rows are already reported anyway.
     candidates = @view df[isempty.(df.issues), :]
     ischeckerboard = coalesce.(candidates.type .== "checkerboard", false)
 
