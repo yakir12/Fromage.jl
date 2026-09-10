@@ -583,8 +583,9 @@ same-file segment by its own `start` and produce an honest, non-uniform timeline
   number the analysis is choosing to discard.
 
 The other half of #153 — validating that segments are in order and do not overlap — is not covered
-by this entry and remains worth doing *within a file*. Across files it is impossible, and was ruled
-out rather than deferred: each file's `start`/`stop` are in its own seconds, so nothing in the data
+by this entry, and was done *within a file*: `verify_segment_windows!` requires each window's
+`start` to be at or after the previous same-file window's `stop`. Across files it is impossible,
+and was ruled out rather than deferred: each file's `start`/`stop` are in its own seconds, so nothing in the data
 relates two files. Container `creation_time` would be the only lead, and reading it was declined as
 too unreliable (frequently absent, frequently mangled by timezone) to reject good footage over. The
 csv row order is the user's statement of what follows what, and the user's to get right.

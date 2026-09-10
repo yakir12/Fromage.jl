@@ -53,6 +53,9 @@ segments cut from one file can be ordered, overlapped or found to leave a hole b
 two segments in different files cannot be compared at all — each file's clock starts at its own
 zero, and nothing in the data says which was filmed first. The csv row order *is* that statement,
 and it is the user's to get right.
+`verify_segment_windows!` is the comparable half enforced: within one run, each window of a file
+must start at or after the previous window of that file stopped. Touching and gaps are legal;
+overlapping, repeated and reversed windows are reported.
 
 The run's timeline follows from that: it begins at the first segment's `start` and advances one
 sampling interval per tracked frame (`_concat_timestamps`). Whatever lies between two segments — a

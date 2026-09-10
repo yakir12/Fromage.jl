@@ -151,4 +151,102 @@
         # so a second call is free
         @test [s.start_location for s in VR.resolved_segments(r, (11, 13), nothing)] == [(11, 13)]
     end
+    # ---- windows of one file (#153) ---------------------------------------------------------
+    # A run's segments may be several windows of ONE file — that is how an untrackable stretch is
+    # left out. Times within one file are comparable, so those windows can be checked: each one's
+    # `start` must be at or after the previous one's `stop`. Windows of DIFFERENT files are never
+    # compared; each file's clock starts at its own zero and nothing relates them.
+    OVERLAP = "segments from the same file must not overlap"
+
+    @testset "windows of one file must not overlap" begin
+        df = check([runrow(run_id = "w", file = ART.a, start = "0", stop = "3"),
+                    runrow(run_id = "w", file = ART.a, start = "2", stop = "4")])
+        @test flagged(df, 1, OVERLAP)
+        @test flagged(df, 2, OVERLAP)
+    end
+
+    @testset "windows of one file must not run backwards" begin
+        df = check([runrow(run_id = "w", file = ART.a, start = "3", stop = "4"),
+                    runrow(run_id = "w", file = ART.a, start = "0", stop = "1")])
+        @test flagged(df, 1, OVERLAP)
+        @test flagged(df, 2, OVERLAP)
+    end
+
+    @testset "two identical rows are two overlapping windows" begin
+        df = check([runrow(run_id = "w", file = ART.a, start = "0", stop = "1"),
+                    runrow(run_id = "w", file = ART.a, start = "0", stop = "1")])
+        @test flagged(df, 1, OVERLAP)
+        @test flagged(df, 2, OVERLAP)
+    end
+
+    @testset "touching windows are legal" begin
+        # `start` exactly at the previous `stop` is correct: nothing is tracked twice.
+        runs = check([runrow(run_id = "t", file = ART.a, start = "0", stop = "2"),
+                      runrow(run_id = "t", file = ART.a, start = "2", stop = "4")])
+        @test clean(runs)
+        @test length(only(runs).segments) == 2
+    end
+
+    @testset "a gap between two windows is legal" begin
+        # The supported way to leave an untrackable stretch out. The gap is closed up in the
+        # run's timeline, deliberately (DECISIONS, #153).
+        runs = check([runrow(run_id = "g", file = ART.a, start = "0", stop = "1"),
+                      runrow(run_id = "g", file = ART.a, start = "2", stop = "3")])
+        @test clean(runs)
+        @test length(only(runs).segments) == 2
+    end
+
+    @testset "windows are compared per file, not per adjacent row" begin
+        # a, b, a: file a's two windows increase, so the b in between changes nothing.
+        runs = check([runrow(run_id = "i", file = ART.a, start = "0", stop = "1"),
+                      runrow(run_id = "i", file = ART.b, start = "0", stop = "1"),
+                      runrow(run_id = "i", file = ART.a, start = "2", stop = "3")])
+        @test clean(runs)
+        @test length(only(runs).segments) == 3
+
+        # ...and the same three rows with file a's windows overlapping flag a's two rows only
+        df = check([runrow(run_id = "i", file = ART.a, start = "0", stop = "3"),
+                    runrow(run_id = "i", file = ART.b, start = "0", stop = "1"),
+                    runrow(run_id = "i", file = ART.a, start = "2", stop = "4")])
+        @test flagged(df, 1, OVERLAP)
+        @test !flagged(df, 2, OVERLAP)
+        @test flagged(df, 3, OVERLAP)
+    end
+
+    @testset "only the offending pair is flagged" begin
+        # Three windows of one file, of which only the last two overlap.
+        df = check([runrow(run_id = "p", file = ART.a, start = "0", stop = "1"),
+                    runrow(run_id = "p", file = ART.a, start = "2", stop = "4"),
+                    runrow(run_id = "p", file = ART.a, start = "3", stop = "5")])
+        @test !flagged(df, 1, OVERLAP)
+        @test flagged(df, 2, OVERLAP)
+        @test flagged(df, 3, OVERLAP)
+    end
+
+    @testset "the same file in two different runs is never compared" begin
+        # Different runs are unrelated: each may cut whatever window it likes out of the file.
+        runs = check([runrow(run_id = "u", file = ART.a, start = "0", stop = "3"),
+                      runrow(run_id = "v", file = ART.a, start = "2", stop = "4")])
+        @test clean(runs)
+        @test length(runs) == 2
+    end
+
+    @testset "two spellings of one path are one file" begin
+        # The comparison keys on the canonical resolved path, so it runs after `resolve_paths!`
+        # and is blind to how the cell was spelled.
+        df = check([runrow(run_id = "s", file = ART.a, start = "0", stop = "3"),
+                    runrow(run_id = "s", path = "./", file = "./" * ART.a, start = "2", stop = "4")])
+        @test flagged(df, 1, OVERLAP)
+        @test flagged(df, 2, OVERLAP)
+    end
+
+    @testset "an already-flagged row does not also collect an overlap" begin
+        # The second row's window is backwards, which nulls its `start`; without the clean-rows
+        # gate the pair would then read as a second, spurious complaint.
+        df = check([runrow(run_id = "f", file = ART.a, start = "0", stop = "3"),
+                    runrow(run_id = "f", file = ART.a, start = "4", stop = "2")])
+        @test flagged(df, 2, "start must come before stop")
+        @test !flagged(df, 1, OVERLAP)
+        @test !flagged(df, 2, OVERLAP)
+    end
 end
