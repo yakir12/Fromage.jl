@@ -560,6 +560,35 @@ fear of rejecting one recording whose containers spell the same rate differently
 unchanged (the imputed rate has always reached the consistency check through the blank-cell path),
 and declaring the rate is now the way out of such a rejection rather than a way into one.
 
+### The run's clock counts frames, and closes up whatever lies between segments (#153)
+
+A run's timestamps are one range: the first segment's `start`, the shared step, and the total
+sample count (`_concat_timestamps`). Every later segment's own `start` is discarded. So a run whose
+segments are two windows of one file, cut either side of an untrackable stretch, produces timestamps
+that run straight through the stretch as if it had been tracked — measured, on a 2 s fixture cut at
+0.0–0.8 and 1.2–2.0: `0.0:0.04:1.56`, 40 samples, the 0.4 s hole gone and every sample after the
+seam labelled 0.4 s early.
+
+That is deliberate, and the alternative was considered and declined. Preserving the real jump is
+possible *within a file* — those times are comparable — so `_concat_timestamps` could offset each
+same-file segment by its own `start` and produce an honest, non-uniform timeline. It was not taken:
+
+- The lab cuts stretches out to remove what should not be tracked (animal out of view, a hand in
+  the arena, unusable footage). The track is meant to read as one continuous crossing, and speeds
+  derived from it are meant to ignore the removed time, not to average over it.
+- The removed time is never lost: it is in `runs.csv`, and can be put back post-hoc by anyone who
+  wants it.
+- `ts` stays a `StepRangeLen`. Preserving the jump makes it a `Vector{Float64}`, which changes
+  `track`'s return contract, the `track` column of `main`'s DataFrame, and the track writer, for a
+  number the analysis is choosing to discard.
+
+The other half of #153 — validating that segments are in order and do not overlap — is not covered
+by this entry and remains worth doing *within a file*. Across files it is impossible, and was ruled
+out rather than deferred: each file's `start`/`stop` are in its own seconds, so nothing in the data
+relates two files. Container `creation_time` would be the only lead, and reading it was declined as
+too unreliable (frequently absent, frequently mangled by timezone) to reject good footage over. The
+csv row order is the user's statement of what follows what, and the user's to get right.
+
 ### The background stack stores `Gray{N0f8}`, and `detect` widens before subtracting (#27)
 
 The stack is the largest allocation in the program: a 1080p frame at `background_length = 250` is

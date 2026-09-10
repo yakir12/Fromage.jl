@@ -18,7 +18,7 @@ Everything starts with one folder holding videos and two csv files.
 | file | one row per | describes |
 |---|---|---|
 | `rectifications.csv` | rectification | how pixels in one camera view become real-world coordinates |
-| `runs.csv` | run *video* | an experimental run to track, and how to track it |
+| `runs.csv` | *segment* | an experimental run to track, and how to track it — one row per segment, several rows to a run when it has several |
 
 They are joined on `rectification_id`, which is a column of both.
 
@@ -32,17 +32,33 @@ scientific questions through repetition, and each repeat is a run.
 A run is an **event in the world, not a file**. Fromage meets it twice: as the `runs.csv` rows
 describing it, and as the **track** it yields.
 
-- A run may be recorded across several video files. Each piece is a **segment**. They are one run
-  because they share a `run_id`.
+- A run is tracked as one or more **segments**, each a video file and a window of it. They are one
+  run because they share a `run_id`.
+- Segments and files are **not** one-to-one. A run recorded across several files has a segment per
+  file; a run that cuts unwanted stretches out of one file has several segments in that one file.
 - A run therefore has **one timeline, one set of run-level parameters, and one track file** —
-  however many videos it spans.
+  however many segments and files it spans.
 
 "Run" never means an execution of Fromage (that is a **session**) and never means the track.
 
 ### Segment
 
 One piece of a run: a video file and the window of it to track. "Segment" names a *division of the
-run*, whether you look at it as the input video portion or the track portion it yields.
+run*, whether you look at it as the input video portion or the track portion it yields. A segment
+never spans two files: it holds one `file` with one `start` and one `stop`, so a division that
+crosses a file boundary is two segments, not one.
+
+**Times compare only within a file.** `start` and `stop` are in their own file's seconds, so two
+segments cut from one file can be ordered, overlapped or found to leave a hole between them, while
+two segments in different files cannot be compared at all — each file's clock starts at its own
+zero, and nothing in the data says which was filmed first. The csv row order *is* that statement,
+and it is the user's to get right.
+
+The run's timeline follows from that: it begins at the first segment's `start` and advances one
+sampling interval per tracked frame (`_concat_timestamps`). Whatever lies between two segments — a
+stretch cut out of one file, or the join between two files — is closed up, and the track carries no
+sign of it. Removed time is recoverable from `runs.csv`; the track and any speed derived from it
+ignore it by design (see DECISIONS).
 
 ### Track
 

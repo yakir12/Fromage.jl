@@ -19,10 +19,12 @@ function concatenate(path, files)
 end
 
 # Save one run's track to results_dir/<run_id>.csv: one row per coordinate, with the `time` stamp
-# (seconds into the video) and the `x`/`y` real-world coordinates. `track` returns coordinates the
-# rectification's `image2real` has already been applied to, so the origin is at the rectification's
-# `center`, north-aligned when `north` was given, in the rectification's real-world unit. Axis follows
-# the image — x rightward, y downward — as `(y-direction, x-direction)`, hence the `y, x` unpack.
+# (seconds on the run's clock — the first segment's `start`, plus one sampling interval per tracked
+# frame, so time left out between segments is closed up) and the `x`/`y` real-world coordinates.
+# `track` returns coordinates the rectification's `image2real` has already been applied to, so the
+# origin is at the rectification's `center`, north-aligned when `north` was given, in the
+# rectification's real-world unit. Axis follows the image — x rightward, y downward — as
+# `(y-direction, x-direction)`, hence the `y, x` unpack.
 # That order is the `real` row of CONTEXT.md's table, which `Spaces` documents; this unpack is where
 # the package's output contract meets it, and the only place the convention is undone.
 # A `missing` coordinate (AprilTag tracking, where a frame's target couldn't be localized) keeps its
@@ -168,8 +170,9 @@ Returns a `DataFrame` with one row per run, carrying `run_id`, `rectification_id
 `rectification`, and `track` — the track itself, as `(timestamps, coordinates)`.
 
 Everything produced lands under `results_dir/`, created in the folder Julia was started in: one
-`<run_id>.csv` per run (a row per coordinate, with `time` in seconds into the video and `x`/`y` in
-the rectification's real-world unit, origin at its `center`), and `diagnostic.mp4`.
+`<run_id>.csv` per run (a row per coordinate, with `time` in seconds on the run's clock — starting
+at its first segment's `start` — and `x`/`y` in the rectification's real-world unit, origin at its
+`center`), and `diagnostic.mp4`.
 
 # Keyword arguments
 
