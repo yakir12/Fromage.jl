@@ -430,8 +430,9 @@ git workflow.
 
 ### Triage labels
 
-The five canonical roles, each label string equal to its name; only `wontfix` exists on the repo so
-far. See `docs/agents/triage-labels.md`.
+The five canonical roles, each label string equal to its name, and all five exist on the repo —
+`/triage` only ever *applies* labels, so a missing one would surface as a failed `gh issue edit`.
+See `docs/agents/triage-labels.md`, which carries the table and the commands that created them.
 
 ### Domain docs
 
