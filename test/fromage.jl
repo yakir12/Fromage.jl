@@ -324,6 +324,16 @@ end
     @test dia.label == "run7"
     close(dia)
 
+    # The do-block form's cleanup (#160), on the mode that does NOT go through `diagnose`: a failed
+    # AprilTag export closes its writer and takes its half-written file with it, exactly as the
+    # video path does. Both go through `with_diagnostic`, and this is what says so.
+    failed = joinpath(dir, "aprilfail.mp4")
+    err = @test_throws ErrorException PT.diagnose_apriltag(failed, rect, true, 25) do _
+        error("injected apriltag export failure")
+    end
+    @test err.value.msg == "injected apriltag export failure"
+    @test !isfile(failed)
+
     # and it reaches the *pixels*: two diagnostics differing only in file name must differ in
     # content. The encoder is deterministic, so before the label they came out byte-identical.
     outs = map(("aaaa", "wwww")) do name
