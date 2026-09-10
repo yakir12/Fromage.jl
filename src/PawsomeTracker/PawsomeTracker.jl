@@ -480,6 +480,12 @@ _apply_image2real(f, coords) = map(c -> ismissing(c) ? missing : f(c), coords)
 
 # The segments' timestamps are one clock: the first segment's start and step, running to the total
 # number of samples. Segments share a frame rate (see runs.md), so the step is the same throughout.
+#
+# Each segment's own `start` is therefore dropped: it is a time in ITS file, and only the first
+# segment's file anchors the run. What lies between two segments — a stretch cut out of one file,
+# or the join between two files — is closed up, and the track carries no sign of it. That is the
+# documented normalization, not an oversight: the removed time is recoverable from `runs.csv`, and
+# the track and any speed derived from it ignore it deliberately (DECISIONS, #153).
 _concat_timestamps(tss) = range(tss[1][1], step = step(tss[1]), length = sum(length, tss))
 
 """
@@ -491,7 +497,10 @@ sampling `tuning.sample_fps` frames per second (which the gateway has capped at
 frames — `native_fps / skip`; the returned timestamps always describe the rate actually used, never
 the one requested).
 
-Returns `(ts, coords)`: timestamps and the target's per-frame position. With a `rectification`,
+Returns `(ts, coords)`: timestamps and the target's per-frame position. `ts` is the run's one clock
+— the first segment's `start`, one sampling interval per tracked frame — so a later segment's own
+`start` (a time in its own file) does not appear in it, and time left out between segments is closed
+up. With a `rectification`,
 `coords` are **real-world** coordinates (the rectification's `image2real` applied); with `nothing`,
 they are raw `(row, col)` pixels in the original frame — `tuning.downscale` trades precision for
 speed, and coordinates are always reported unscaled.

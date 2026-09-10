@@ -1,8 +1,8 @@
 # runs.csv — your run videos
 
-`runs.csv` describes your **runs**. A run is **one repeat of your experiment** — one trial, one animal crossing the arena once. One row per run video. (A run split across multiple video files uses several rows — see [Runs that span multiple videos](#Runs-that-span-multiple-videos) below.)
+`runs.csv` describes your **runs**. A run is **one repeat of your experiment** — one trial, one animal crossing the arena once. One row per **segment** — one video file and the window of it to track. A run is usually one segment, so usually one row; a run split across several files, or one with a stretch cut out of the middle, uses several rows — see [Runs made of several segments](#Runs-made-of-several-segments) below.
 
-Each run yields one **track**: the target's position over time, written to `results_dir/<run_id>.csv`. A run has one timeline, one set of run-level tracking parameters, and one track file, however many video files it was recorded across.
+Each run yields one **track**: the target's position over time, written to `results_dir/<run_id>.csv`. A run has one timeline, one set of run-level tracking parameters, and one track file, however many segments and video files it is made of.
 
 Not sure about the general formatting rules (timestamps, coordinates, blank cells)? See [the data folder](data-folder.md#Rules-both-csv-files-share) first.
 
@@ -39,7 +39,7 @@ beetle03.mp4,afternoon
 | `initial_search_factor` | `4` | when no start location is known at all, the target is searched for in a window of size `min(width, height) / initial_search_factor` centered on the frame. Larger values → smaller initial search window. |
 | `downscale` | `1` | spatial downsampling factor (0 < downscale ≤ 1) applied before tracking; e.g. `0.5` tracks on half-resolution frames (faster). Returned coordinates are always in original-resolution pixels. The scaled target (`target_width × downscale`) must remain at least 1 pixel wide. Lowering it costs precision: on clean footage the tracking error is a fraction of a percent of `target_width` down to about `0.25`, a few percent by `0.1`, and worse below that — so treat it as a speed knob for large frames, not a default to reduce. |
 | `background_length` | `250` | how many tracked frames form the rolling background model the target is detected against. Counted at the sampling rate, so the model spans `background_length / sample_fps` seconds; memory scales with it. `0` disables background subtraction entirely — fine for clean, high-contrast scenes (and much lighter on memory), but static dark marks then compete with the target. Must be `0` or at least `25`. |
-| `run_id` | row number | identifies the run; only needed for multi-video runs (below). All-or-nothing: either every row has a `run_id`, or none does. It also names your track file, so it has to be usable as one — see below. |
+| `run_id` | row number | identifies the run; only needed when one run is tracked from more than one row (below). All-or-nothing: either every row has a `run_id`, or none does. It also names your track file, so it has to be usable as one — see below. |
 | `path` | `.` | the **folder** containing `file`, relative to the location of the csv file. Just the folder — the file name belongs in `file`, not here. |
 | `comment` | — | free text, ignored. |
 
@@ -81,9 +81,11 @@ The starting position for a run is determined by the first available of:
 2. the `center` of the run's rectification in `rectifications.csv`,
 3. nothing — the target is searched for near the center of the frame, within a window of `min(width, height) / initial_search_factor` pixels.
 
-## Runs that span multiple videos
+## Runs made of several segments
 
-If a single run was recorded across several consecutive video files (e.g. the camera splits long recordings), give all its rows the **same `run_id`**, one row per video file, in chronological order:
+One row of `runs.csv` is one **segment**: one video file, and the window of it (`start` to `stop`) to track. A run may be made of several segments — give all its rows the **same `run_id`**, in the order they should be tracked. There are two reasons to do that, and they combine freely.
+
+**The run was recorded across several files** (the camera splits long recordings). One row per file, in chronological order:
 
 ```csv
 run_id,rectification_id,file,start,stop,start_location
@@ -91,11 +93,24 @@ long,afternoon,beetle03_a.mp4,0,,"(210, 400)"
 long,afternoon,beetle03_b.mp4,0,00:01:03,
 ```
 
+**A stretch in the middle should be left out** — the animal was out of view, someone reached into the arena, the footage is untrackable there. Cut the run into windows of the *same* file, in increasing order of time:
+
+```csv
+run_id,rectification_id,file,start,stop,start_location
+beetle07,afternoon,beetle07.mp4,0,00:00:38,"(210, 400)"
+beetle07,afternoon,beetle07.mp4,00:01:12,00:02:05,"(180, 260)"
+```
+
+Both are one run: one track file, one diagnostic, one set of parameters.
+
 - `file`, `start`, `stop`, and `start_location` are per segment; all other parameters (`target_width`, `sample_fps`, `rectification_id`, …) must be identical across the segments of one run, and all segments must come from the same camera setup (same frame size).
-- The segments are assumed to have been **filmed at the same frame rate** — they are pieces of one continuous recording, so normally they are. Footage that genuinely mixes frame rates is outside what Fromage tracks: a run has one timeline, and every timestamp in its track file is spaced at one rate. Left blank, the rate is read from each video and the segments must agree on it, so mismatched footage is reported rather than silently mistimed.
+- **Segments cut from the same file must be in order and must not overlap**: each one's `start` at or after the previous one's `stop`. Starting exactly where the previous segment stopped is fine. (Nothing checks this yet, so it is on you to get it right — an overlap silently tracks the same frames twice.)
+- **Segments in different files cannot be compared**, so their order is *your* statement: each file's `start` and `stop` are in that file's own seconds, and nothing in the video says which file was filmed first. Rows in the wrong order are tracked in the wrong order, silently.
+- **Time you leave out is closed up, not represented.** The run's timeline starts at its first segment's `start` and then counts tracked frames, so a stretch cut out of a file — and the join between two files — leaves no gap in the track file's `time` column. Speeds computed from the track ignore it, which is the intent; the real times are still in `runs.csv` if you need to put them back.
+- The segments are assumed to have been **filmed at the same frame rate** — they are pieces of one recording, so normally they are. Footage that genuinely mixes frame rates is outside what Fromage tracks: a run has one timeline, and every timestamp in its track file is spaced at one rate. Left blank, the rate is read from each video and the segments must agree on it, so mismatched footage is reported rather than silently mistimed.
 - A `native_fps` written on **any** row of a run is a statement about the whole recording, and applies to every one of its segments — so you write it once, on whichever row is convenient, and leave it blank on the rest. Two rows claiming *different* native rates cannot both be true and are rejected.
-- Leave `start_location` blank on the second segment onwards: tracking continues from where the previous segment ended.
-- `run_id` is all-or-nothing: as soon as one row has a `run_id`, every row needs one (rows with a `run_id` all of their own are ordinary single-video runs). If no row has one, each row is its own run.
+- Leave `start_location` blank on the second segment onwards and tracking continues from where the previous segment ended — right for a run that was merely split, and wrong when you cut a stretch out and the target moved while it was out. Give such a segment its own `start_location`, as the second example above does.
+- `run_id` is all-or-nothing: as soon as one row has a `run_id`, every row needs one (rows with a `run_id` all of their own are ordinary single-segment runs). If no row has one, each row is its own run.
 - `run_id` becomes a **file name**: your track file is `<run_id>.csv`, and the diagnostic video is assembled from per-run parts named the same way. So it may not contain `/`, `\`, `:`, `*`, `?`, `"`, `<`, `>` or `|`, and may not be `.` or `..` — a bad one is reported along with everything else in the file, before any tracking starts. Spaces and apostrophes are fine (`beetle's run 3` works).
 
 ## Next

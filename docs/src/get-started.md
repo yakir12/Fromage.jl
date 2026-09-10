@@ -28,7 +28,7 @@ Put your video files together with two small spreadsheet files, `rectifications.
 ```
 my experiment/
 ├── rectifications.csv        ← one row per rectification video
-├── runs.csv          ← one row per run video
+├── runs.csv          ← one row per run (or per segment, for a run made of several)
 ├── calib_morning.mp4
 ├── beetle01.mp4
 ├── beetle02.mp4

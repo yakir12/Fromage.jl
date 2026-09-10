@@ -8,8 +8,11 @@ Each run's track is written to `results_dir/<run_id>.csv` — a plain csv you ca
 
 | column | content |
 | --- | --- |
-| `time` | the timestamp, in seconds into the video, of each detected coordinate. |
+| `time` | the timestamp of each detected coordinate, in seconds on the run's clock — which starts at the run's first `start` and advances one sampling interval per coordinate. For a run tracked from a single row, that is simply seconds into the video. |
 | `x`, `y` | the target's **real-world** coordinates at that time. |
+
+!!! note "`time` when a run has several segments"
+    The clock counts tracked frames, so time you left out of the run does not appear in it: a stretch cut out between two [segments](runs.md#Runs-made-of-several-segments) of one file, and the join between two files, are both closed up rather than shown as a jump. Speeds computed from the track therefore ignore them, which is the intent. The real times are still in `runs.csv` if you need to put them back.
 
 The coordinates are already fully converted — lens distortion, perspective, and scale are all corrected:
 
@@ -75,7 +78,7 @@ Open the frame and look at it — a blurry, over-exposed, or half-out-of-shot bo
 | column | content |
 | --- | --- |
 | `run_id`, `rectification_id` | the identifiers from the csv files. |
-| `track` | a tuple `(ts, coords)` of timestamps (seconds into the video) and the target's **real-world** coordinates — the same data as the track file. |
+| `track` | a tuple `(ts, coords)` of timestamps (seconds on the run's clock, as in the track file) and the target's **real-world** coordinates — the same data as the track file. |
 | `rectification` | the rectification: a `StaticRectification`, whose `image2real` function converts pixel coordinates to real-world coordinates and whose `real2image` is its inverse. Drone runs instead carry an `ApriltagRectification`, which registers each frame against a shared reference and so has no single `real2image`. |
 | `r`, `c` | the parsed run and rectification entries (all the resolved parameter values). |
 

@@ -5,11 +5,14 @@
 # not a file — Fromage meets it twice, as the `runs.csv` rows that describe it and as the TRACK it
 # yields.
 #
-# A run may be split across several video files (the camera divided one recording), and each piece
-# is a SEGMENT. They are one run because they share a `run_id`. Three consequences follow, and each
-# is enforced somewhere below: one timeline (`_concat_timestamps` — the segments' timestamps are one
-# clock), one set of run-level parameters (`verify_run_consistency!`), and one track file
-# (`save2csv` writes `<run_id>.csv`).
+# A run is tracked as one or more SEGMENTS, each one file and a window of it, sharing a `run_id`.
+# Segments are not files: a run the camera divided has a segment per file, and a run with an
+# untrackable stretch cut out of it has several segments in one file. Times compare only WITHIN a
+# file — two segments of one file can be ordered, two segments of different files cannot, so csv
+# row order is the user's statement of what follows what. Three consequences follow, and each is
+# enforced somewhere below: one timeline (`_concat_timestamps` — the segments' timestamps are one
+# clock, and time left out between them is closed up), one set of run-level parameters
+# (`verify_run_consistency!`), and one track file (`save2csv` writes `<run_id>.csv`).
 #
 # The word is NOT used for an execution of Fromage — that is a SESSION (see `session_issues_dir` in
 # paths.jl) — and not for the track itself, which `main` returns in a column called `track`.
