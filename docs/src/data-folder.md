@@ -42,7 +42,7 @@ And the video files can live in other folders via the `path` column in either cs
     | `videos/beetle01.mp4` | *(blank)* | ✔ also fine — `path` defaults to the csv's own folder |
     | `beetle01.mp4` | `videos/beetle01.mp4` | ✘ `path` must not repeat the file name |
 
-    Putting the video in `path` is reported as *"path is a file, not a folder"*.
+    Putting the video in `path` is reported as *"path must be the folder holding the video, not a file"*.
 
 ## Editing csv files
 

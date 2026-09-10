@@ -84,7 +84,7 @@
         end
         # display-space bounds, both directions: the sar-1/2 video stores 200×100 but displays
         # 100×100, so x = 150 is out; the sar-2 video stores 50×100 but displays 100×100, so x = 80 is in
-        @test flagged(check([runrow(file = only(sar05), start_location = "(150, 50)")]), 1, "start_location is outside the frame")
+        @test flagged(check([runrow(file = only(sar05), start_location = "(150, 50)")]), 1, "start_location must not be larger than the dimensions of the frame")
         @test clean(check([runrow(file = only(sar2),  start_location = "(80, 50)")]))
         # anamorphic and downscaled at once
         ij = tracked([runrow(file = only(sar2), start_location = "(55, 50)", downscale = "0.5")])

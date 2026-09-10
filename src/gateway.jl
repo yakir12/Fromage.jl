@@ -68,6 +68,14 @@ end
 
 # Subset the rows whose `args` trip `predicate`, null the offending field (first of `args`) so later
 # checks skip them, and record `msg`. `passmissing`/`skipmissing` leave already-missing fields alone.
+#
+# `msg` follows one convention across both gateways, because a rejected csv is the only thing the
+# user reads: a rule about a cell reads `<column> must <requirement>`, spelling the column exactly as
+# the csv header does; a prohibition reads `must not` (never `cannot`, never `can not`); a derived
+# quantity names its inputs and still states the rule. Only a genuine EVENT — detection found
+# nothing, a file could not be read, a run's segments contradict each other — stays a statement of
+# fact, and even then it names the column or file it is about. See DECISIONS, "Issue messages are
+# written as `<column> must …`" (#226).
 function verify!(df::AbstractDataFrame, predicate, msg, args...)
     bad = subset(df, Cols(args...) => ByRow(passmissing(predicate)); view = true, skipmissing = true)
     # `[!, col]` and not `[:, col]`: the field being nulled may still be a concrete-typed column, and
@@ -87,7 +95,7 @@ end
 # onto the one key that later steps group physical files by.
 function resolve_paths!(df::AbstractDataFrame, data_path, filecols...)
     df.path .= passmissing(joinpath).(data_path, df.path)
-    verify!(df, isfile, "path is a file, not a folder — it should be the folder holding the video, with the file name in the `file` column", :path)
+    verify!(df, isfile, "path must be the folder holding the video, not a file — the file name belongs in the `file` column", :path)
     verify!(df, !isdir, "path does not exist", :path)
     for col in filecols
         # `verify!` skips missing, so a column only some row types carry (VerifyRectifications'
@@ -168,13 +176,13 @@ end
 # ffmpeg concat list) escapes it properly now.
 const BAD_ID_CHARS = ('/', '\\', ':', '*', '?', '"', '<', '>', '|')
 
-# Returns the fault as a predicate phrase ("contains …"), or `nothing`. A missing or blank id is
+# Returns the fault as a predicate phrase ("must not contain …"), or `nothing`. A missing or blank id is
 # already reported by the parser, so it is passed over rather than reported twice.
 function id_filename_issue(id)
     (ismissing(id) || isempty(id)) && return nothing
     i = findfirst(c -> c in BAD_ID_CHARS || iscntrl(c), id)
-    isnothing(i) || return "contains $(repr(id[i])), which cannot appear in a file name"
-    id in (".", "..") && return "is $(repr(id)), which cannot be a file name"
+    isnothing(i) || return "must not contain $(repr(id[i])): it cannot appear in a file name"
+    id in (".", "..") && return "must not be $(repr(id)): it cannot be a file name"
     return nothing
 end
 

@@ -208,8 +208,8 @@ function verifications!(df::AbstractDataFrame, data_path; progress = true)
     # *display* pixels, like a rectification's center/north, while ffprobe's width is in stored
     # pixels — so x is bounds-checked against the display width, width × sar, and y against height,
     # which sar does not affect.
-    verify!(df, x -> any(<(1), x), "start_location cannot be smaller than 1", :start_location)
-    verify!(df, (sl, dim, sar) -> sl[1] > dim[1] * sar || sl[2] > dim[2], "start_location is outside the frame", :start_location, :dimension, :sar)
+    verify!(df, x -> any(<(1), x), "start_location must be at least 1", :start_location)
+    verify!(df, (sl, dim, sar) -> sl[1] > dim[1] * sar || sl[2] > dim[2], "start_location must not be larger than the dimensions of the frame", :start_location, :dimension, :sar)
 
     # Value ranges. Only what would make `track` error or misbehave nonsensically is flagged.
     verify!(df, ≤(0), "target_width must be larger than zero", :target_width)
@@ -219,18 +219,18 @@ function verifications!(df::AbstractDataFrame, data_path; progress = true)
     # Sampling advances whole frames, so the fastest rate obtainable is the video's own: asking for
     # more cannot produce more, it can only produce a run whose timestamps claim a rate that was
     # never delivered. Both sides may have come from the csv, and the check is the same either way.
-    verify!(df, (s, n) -> s > n, "sample_fps cannot exceed native_fps", :sample_fps, :native_fps)
+    verify!(df, (s, n) -> s > n, "sample_fps must not exceed native_fps", :sample_fps, :native_fps)
     verify!(df, ≤(0), "initial_search_factor must be larger than zero", :initial_search_factor)
     verify!(df, ≤(0), "downscale must be larger than zero", :downscale)
     # A downsampling factor; > 1 would artificially enlarge the frames for no benefit.
-    verify!(df, >(1), "downscale cannot be larger than one", :downscale)
+    verify!(df, >(1), "downscale must not be larger than one", :downscale)
     # The tracker works in the scaled frame, so it is the *scaled* target width that must span at
     # least one pixel — each factor can be individually fine while their product is degenerate.
     # Below roughly half a pixel the tracker stops finding the target at all, and does NOT throw, so
     # without this check the result is a plausible-looking track of nothing (#24). The check uses
     # the *declared* target_width, so over-declaring it permits a downscale too small for the real
     # target.
-    verify!(df, (tw, sc) -> tw * sc < 1, "scaled target width (target_width × downscale) is smaller than one pixel", :target_width, :downscale)
+    verify!(df, (tw, sc) -> tw * sc < 1, "scaled target width (target_width × downscale) must be at least one pixel", :target_width, :downscale)
     # 0 is a real mode (no background subtraction); 1–24 is a background model too short to model
     # anything, and negatives are nonsense — the predicate covers both.
     verify!(df, b -> b != 0 && b < 25, "background_length must be 0 (disables background subtraction) or at least 25", :background_length)
@@ -239,21 +239,21 @@ function verifications!(df::AbstractDataFrame, data_path; progress = true)
     # on failure, so a negative start does not also trip "start must come before stop".
     verify!(df, <(0), "start must be larger than or equal to zero", :start)
     verify!(df, (a, o) -> a ≥ o, "start must come before stop", :start, :stop)
-    verify!(df, (o, d) -> o > d, "stop can not come after video duration", :stop, :duration)
-    verify!(df, (a, d) -> a > d, "start can not come after video duration", :start, :duration)
+    verify!(df, (o, d) -> o > d, "stop must not come after the video duration", :stop, :duration)
+    verify!(df, (a, d) -> a > d, "start must not come after the video duration", :start, :duration)
     # A declared `native_fps` reinterprets the RATE, not the clock: `start`/`stop` stay in the
     # file's own seconds. So a rate above the one the file reports claims that window holds more
     # frames than it does, and the sampler runs off the end of the video partway through the run —
     # the one way a declared rate could break this gateway's promise that `track` cannot error. A
     # file that overstates its rate is the case worth declaring; one that understates it cannot be
     # expressed this way, because the extra frames it would need are not there.
-    verify!(df, (n, p) -> n > p, "native_fps cannot exceed the frame rate the video file reports", :native_fps, :probed_fps)
+    verify!(df, (n, p) -> n > p, "native_fps must not exceed the frame rate the video file reports", :native_fps, :probed_fps)
     # A window shorter than half a frame period is not what anyone asking for a window meant. It
     # does not crash: `Video` floors its sample count at one (`max(1, floor(Int, …))`), so such a
     # segment yields a single-sample track instead — silently, which is why this is checked here.
     # (This used to claim a zero-frame segment crashed the multi-segment track. That `max` has made
     # it impossible, and a wrong reason invites someone to delete the check once they find out.)
-    verify!(df, (o, a, f) -> round(Int, f * (o - a)) < 1, "temporal window is too short to contain a single frame at this sample_fps", :stop, :start, :sample_fps)
+    verify!(df, (o, a, f) -> round(Int, f * (o - a)) < 1, "temporal window (start to stop) must be long enough to contain a single frame at this sample_fps", :stop, :start, :sample_fps)
 
     # Cross-row: segments of one run (shared :run_id) must agree on the run-level parameters.
     verify_run_consistency!(df)

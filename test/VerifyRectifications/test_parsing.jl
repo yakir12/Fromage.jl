@@ -98,9 +98,9 @@
     @testset "north without center" begin
         # verify_center2north is called from a separate branch of parse_row per type; assert all three
         # call sites, not just video (the matlab/uniform wiring was the original 2.1 bug).
-        @test flagged(check([checkerboardrow(center = missing, north = (250, 1))] ), 1, "supplying north without center")
-        @test flagged(check([matlabrow(center = missing, north = (160, 1))]), 1, "supplying north without center")
-        @test flagged(check([uniformrow(center = missing, north = (320, 1))]),  1, "supplying north without center")
+        @test flagged(check([checkerboardrow(center = missing, north = (250, 1))] ), 1, "north must not be supplied without center")
+        @test flagged(check([matlabrow(center = missing, north = (160, 1))]), 1, "north must not be supplied without center")
+        @test flagged(check([uniformrow(center = missing, north = (320, 1))]),  1, "north must not be supplied without center")
     end
 
     @testset "defaults applied (with correct values) when optional fields omitted" begin

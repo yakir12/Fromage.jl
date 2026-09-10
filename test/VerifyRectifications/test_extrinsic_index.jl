@@ -38,7 +38,7 @@
 
     @testset "index past the number of poses is flagged" begin
         df = check([matlabrow(extrinsic_index = MATLAB_N_EXTRINSICS + 1)])
-        @test flagged(df, 1, "exceeds the number of extrinsics")
+        @test flagged(df, 1, "must not exceed the number of extrinsics")
     end
 
     @testset "translation/rotation pose-count mismatch is flagged" begin

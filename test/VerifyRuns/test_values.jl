@@ -17,10 +17,10 @@
     end
 
     @testset "start_location bounds" begin
-        @test flagged(check([runrow(start_location = "(0, 100)")]),   1, "start_location cannot be smaller than 1")
-        @test flagged(check([runrow(start_location = "(700, 100)")]), 1, "start_location is outside the frame")
+        @test flagged(check([runrow(start_location = "(0, 100)")]),   1, "start_location must be at least 1")
+        @test flagged(check([runrow(start_location = "(700, 100)")]), 1, "start_location must not be larger than the dimensions of the frame")
         # only one coordinate out of bounds still trips it
-        @test flagged(check([runrow(start_location = "(100, 700)")]), 1, "start_location is outside the frame")
+        @test flagged(check([runrow(start_location = "(100, 700)")]), 1, "start_location must not be larger than the dimensions of the frame")
         # on the boundary is allowed (checks are strict < 1 and > dimension)
         @test clean(check([runrow(start_location = "(640, 480)")]))
     end
@@ -37,16 +37,16 @@
         @test flagged(check([runrow(downscale = "0")]),    1, "downscale must be larger than zero")
         @test flagged(check([runrow(downscale = "-0.5")]), 1, "downscale must be larger than zero")
         # > 1 would artificially enlarge the frames
-        @test flagged(check([runrow(downscale = "1.5")]),  1, "downscale cannot be larger than one")
+        @test flagged(check([runrow(downscale = "1.5")]),  1, "downscale must not be larger than one")
         @test clean(check([runrow(downscale = "1")]))      # exactly one (no scaling) is allowed
         @test clean(check([runrow(downscale = "0.5")]))
     end
 
     @testset "the scaled target width must span at least one pixel" begin
         # each factor is individually valid; the product is degenerate
-        @test flagged(check([runrow(target_width = "2", downscale = "0.1")]), 1, "smaller than one pixel")
+        @test flagged(check([runrow(target_width = "2", downscale = "0.1")]), 1, "must be at least one pixel")
         # downscale omitted (defaults to 1): a sub-pixel target_width alone also trips it
-        @test flagged(check([runrow(target_width = "0.5")]),              1, "smaller than one pixel")
+        @test flagged(check([runrow(target_width = "0.5")]),              1, "must be at least one pixel")
         # exactly one pixel is allowed
         @test clean(check([runrow(target_width = "2", downscale = "0.5")]))
     end
@@ -70,7 +70,7 @@
 
     @testset "the temporal window must contain at least one frame" begin
         # 0.05 s at 5 samples/s → round(5 × 0.05) = 0 frames
-        @test flagged(check([runrow(stop = "0.05", sample_fps = "5")]), 1, "too short to contain a single frame")
+        @test flagged(check([runrow(stop = "0.05", sample_fps = "5")]), 1, "must be long enough to contain a single frame")
         # 0.2 s at 5 samples/s → exactly one frame, allowed
         @test clean(check([runrow(stop = "0.2", sample_fps = "5")]))
     end
@@ -81,21 +81,21 @@
         @test flagged(check([runrow(native_fps = "-5")]), 1, "native_fps must be larger than zero")
     end
 
-    @testset "sample_fps cannot exceed native_fps" begin
-        @test flagged(check([runrow(sample_fps = "60")]), 1, "sample_fps cannot exceed native_fps")
+    @testset "sample_fps must not exceed native_fps" begin
+        @test flagged(check([runrow(sample_fps = "60")]), 1, "sample_fps must not exceed native_fps")
         @test clean(check([runrow(sample_fps = "30")]))   # == the video's own rate is allowed
         @test clean(check([runrow(sample_fps = "10")]))   # below is fine
         # bounded by the DECLARED rate, not the probed one: 20 is under the file's 30 and over the
         # 15 this row says the file really runs at
-        @test flagged(check([runrow(native_fps = "15", sample_fps = "20")]), 1, "sample_fps cannot exceed native_fps")
+        @test flagged(check([runrow(native_fps = "15", sample_fps = "20")]), 1, "sample_fps must not exceed native_fps")
         @test clean(check([runrow(native_fps = "15", sample_fps = "15")]))
     end
 
-    @testset "native_fps cannot exceed the rate the file reports" begin
+    @testset "native_fps must not exceed the rate the file reports" begin
         # a.mp4 is 30 fps. `start`/`stop` stay in the file's own seconds whatever the declaration,
         # so claiming 60 claims twice the frames the window holds and the sampler would run off the
         # end of the video partway through the run.
-        msg = "native_fps cannot exceed the frame rate the video file reports"
+        msg = "native_fps must not exceed the frame rate the video file reports"
         @test flagged(check([runrow(native_fps = "60")]), 1, msg)
         @test clean(check([runrow(native_fps = "30")]))   # == what the file reports
         @test clean(check([runrow(native_fps = "15")]))   # below it: the case worth declaring
@@ -109,8 +109,8 @@
     @testset "temporal window" begin
         @test flagged(check([runrow(start = "-1")]),                1, "start must be larger than or equal to zero")
         @test flagged(check([runrow(start = "4", stop = "2")]),     1, "start must come before stop")
-        @test flagged(check([runrow(stop = "99")]),                 1, "stop can not come after video duration")
+        @test flagged(check([runrow(stop = "99")]),                 1, "stop must not come after the video duration")
         # an inverted window must not also emit a "stop after duration" cascade for an in-range stop
-        @test !flagged(check([runrow(start = "4", stop = "2")]),  1, "stop can not come after")
+        @test !flagged(check([runrow(start = "4", stop = "2")]),  1, "stop must not come after")
     end
 end

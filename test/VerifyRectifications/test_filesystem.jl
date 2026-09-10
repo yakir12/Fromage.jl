@@ -13,7 +13,7 @@
         # The targeted message runs first and nulls :path, so the existence check does not also
         # fire with the misleading "path does not exist".
         df = check([checkerboardrow(path = ART.board)])
-        @test flagged(df, 1, "path is a file, not a folder")
+        @test flagged(df, 1, "path must be the folder holding the video, not a file")
         @test !flagged(df, 1, "path does not exist")
     end
 

@@ -95,8 +95,8 @@
         # on both rows from the one read.
         df = check([checkerboardrow(rectification_id = "v1", path = ".",   center = (9000, 9000)),
                     checkerboardrow(rectification_id = "v2", path = "./.", center = (9000, 9000))])
-        @test flagged(df, 1, "center cannot be larger than the dimensions")
-        @test flagged(df, 2, "center cannot be larger than the dimensions")
+        @test flagged(df, 1, "center must not be larger than the dimensions")
+        @test flagged(df, 2, "center must not be larger than the dimensions")
     end
 
     @testset "save_issue_frame is best-effort, but does not swallow interrupts" begin
