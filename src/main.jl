@@ -6,10 +6,32 @@
 # ffmpeg takes each path in the list single-quoted, and a literal quote inside one is written
 # `'\''` — close the string, escape the quote, reopen. An apostrophe is a legal file-name character
 # and a plausible `run_id` ("beetle's run"); unescaped it closed the line early and took the segment
-# with it.
+# with it. Everything else a file name may legally hold survives that quoting unchanged: backslashes
+# and double quotes are literal inside it, spaces and control characters are preserved by it, and
+# non-ASCII never mattered. That is asserted against real ffmpeg in the concat tests rather than
+# reasoned about, the rule being ffmpeg's and not ours; absolute and drive-prefixed paths are what
+# the `-safe 0` below allows, and ffmpeg rejects both without it.
+#
+# Two characters the quoting cannot rescue: the list holds one line per file, and ffmpeg ends a line
+# at a newline or a carriage return whether or not it sits inside the quotes. Such a path splits into
+# two entries, and what ffmpeg then says ("Line 2: unknown keyword") names neither the path nor the
+# run it came from — so it is refused by name instead, and refused as soon as the path exists. That
+# is the reason the gateway checks `run_id` rather than leaving it to fail at write time: the
+# alternative is finding out after every run has already been tracked. The `run_id` half of each
+# path is barred from every control character there (`id_filename_issue`), which leaves the temp
+# root the segments sit under — checked in `main`, where that root is chosen.
+function check_concat_representable(f)
+    i = findfirst(c -> c == '\n' || c == '\r', f)
+    isnothing(i) || throw(ArgumentError(
+        "cannot write $(repr(f)) into ffmpeg's concat list: it contains $(repr(f[i])), and the \
+         list holds one line per file — ffmpeg ends the line there whether or not it is quoted"))
+    return nothing
+end
+
 concat_escape(f) = replace(f, "'" => raw"'\''")
 
 function concatenate(path, files)
+    foreach(check_concat_representable, files)   # all of them, before any of the list is written
     list = joinpath(path, "list.txt")
     open(list, "w") do io
         foreach(f -> println(io, "file '", concat_escape(f), "'"), files)
@@ -223,6 +245,9 @@ function main(data_path::String; rectifications_file = "rectifications.csv", run
 
     mktempdir() do path
         transform!(runs, :run_id => (x -> joinpath.(path, string.(x, ".mp4"))) => :diagnostic_file)
+        # Before anything is tracked: a segment path the concat list cannot hold would otherwise
+        # surface only after every run had been built, which is the cost `concatenate` cannot undo.
+        foreach(check_concat_representable, runs.diagnostic_file)
         build_run(r, c, rectification, diagnostic_file) =
             track(r, c.source.center, rectification, diagnostic_file)
         runs.track .= @showprogress desc = "Building runs" tmap(
