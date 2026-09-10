@@ -297,7 +297,7 @@ const DATADIR = mktempdir()
         # (1.2 s, a time in the same file) never appears and the 0.4 s left out is closed up.
         # Nothing else asserts the timestamps of a multi-segment run.
         ts, ij = track1([base_file, base_file]; start = [0.4, 1.2], stop = [0.8, 1.6],
-                        start_location = Union{Missing, NTuple{2, Int}}[(55, 50), missing])
+                        start_location = [(55, 50), missing])
         # 25 fps, sampled at its own rate: 10 frames per 0.4 s window.
         @test length(ts) == 20
         @test length(ij) == length(ts)

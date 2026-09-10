@@ -154,8 +154,19 @@ end
 # The key is the resolved path, so this belongs in the second tier: `resolve_paths!` has already
 # collapsed every spelling of one file onto one canonical key. Compared only among otherwise-clean
 # rows, as the run-level check above is — a row whose `start` was nulled by a failed check would
-# read as a spurious overlap. Unlike that check it flags only the offending PAIR: a disagreement
-# has no single guilty row, an overlap has two.
+# read as a spurious overlap. That gate does more work here than there: the neighbour's `allequal`
+# tolerates a `missing`, while the `<` below would see one and throw, so the gate is what keeps a
+# nulled field out rather than merely quiet. Deliberately not a `coalesce(…, false)`: reading a
+# `missing` as "no overlap" would accept a run this cannot vouch for, which is worse than the
+# throw. Unlike that check it flags only the offending PAIR: a disagreement has no single guilty
+# row, an overlap has two.
+#
+# Comparing ADJACENT windows is enough to accept only genuinely disjoint ones. `start must come
+# before stop` above has already established `start < stop` within each window, so a run this
+# reports nothing about has `start[i] ≥ stop[i-1] > start[i-1]` throughout: both ends increase, and
+# no non-adjacent pair can overlap either. (A run it does flag may still hold an unflagged
+# non-adjacent overlap — `(0,5), (1,2), (3,4)` flags the first pair only — but that run is rejected,
+# and the next pass over the corrected csv sees whatever is left.)
 function verify_segment_windows!(df::AbstractDataFrame)
     for g in groupby(df, :run_id)
         (nrow(g) > 1 && !ismissing(g.run_id[1]) && all(isempty, g.issues)) || continue
@@ -168,7 +179,9 @@ function verify_segment_windows!(df::AbstractDataFrame)
                 overlapping[i - 1] = true
                 overlapping[i] = true
             end
-            push!.(windows.issues[overlapping],
+            # A `view`, not an index: these are the parent's own issue vectors, and `push!` into
+            # them needs no assignment back — as in `verify!`.
+            push!.(view(windows.issues, overlapping),
                 "segments from the same file must not overlap: start must be at or after the previous segment's stop")
         end
     end
