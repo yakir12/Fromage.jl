@@ -115,13 +115,13 @@ end
 function verify_pair(dict, row, k1, k2)
     filled(row, k1) == filled(row, k2) && return
     dict[k1] = dict[k2] = missing
-    push!(dict[:issues], "$k1 and $k2 should be either both present or both missing")
+    push!(dict[:issues], "$k1 and $k2 must be either both present or both missing")
 end
 
 function verify_center2north(dict)
     if ismissing(dict[:center]) && !ismissing(dict[:north])
         dict[:north] = missing
-        push!(dict[:issues], "supplying north without center doesn't make sense")
+        push!(dict[:issues], "north must not be supplied without center")
     end
 end
 

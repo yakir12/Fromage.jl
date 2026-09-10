@@ -254,11 +254,11 @@ function extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
     try
         vf = _vf(yadif, blur)
         res = get_corners(file, extrinsic, vf, width, height, n_corners)
-        return ismissing(res) ? "no corners detected" : nothing
+        return ismissing(res) ? "no corners detected at the extrinsic time stamp" : nothing
     catch e
         err = _unwrap_task(e)
         _detection_failure(err) || rethrow()
-        return "issue with corner detection: $(_failure_message(err))"
+        return "issue with corner detection at the extrinsic time stamp: $(_failure_message(err))"
     end
 end
 
@@ -345,10 +345,11 @@ function verify_extrinsics!(df::AbstractDataFrame, session_dir; progress = true)
 end
 
 # The camera-model fit needs at least 3 frames with detectable corners sampled from the
-# [intrinsic_start, intrinsic_stop] window — the "temporal_step too short" check only guarantees
-# 3 *sampled* frames, not 3 *detectable* ones. Detection stops as soon as 3 succeed, so a good window costs ~3 frame reads
-# and only a genuinely bad one scans to the end. Frames are read in parallel batches of 4, which is
-# the only thing bounding the concurrent opens: the global read limiter this used to name
+# [intrinsic_start, intrinsic_stop] window — the "temporal_step must yield at least 3 images"
+# check only guarantees 3 *sampled* frames, not 3 *detectable* ones. Detection stops as soon as 3
+# succeed, so a good window costs ~3 frame reads and only a genuinely bad one scans to the end.
+# Frames are read in parallel batches of 4, which is the only thing bounding the concurrent opens:
+# the global read limiter this used to name
 # (`READ_SEM`) was measured against the real share, found to prevent nothing, and deleted — see
 # WHY-FRAMES-FAIL.md.
 function intrinsic_issue(file, intrinsic_start, intrinsic_stop, temporal_step, yadif, blur, width, height, n_corners)
@@ -360,7 +361,7 @@ function intrinsic_issue(file, intrinsic_start, intrinsic_stop, temporal_step, y
             found += count(!ismissing, corners)
             found ≥ 3 && return nothing
         end
-        return "fewer than 3 frames with detectable corners in the intrinsic window"
+        return "fewer than 3 frames with detectable corners between intrinsic_start and intrinsic_stop"
     catch e
         # the reads run under `tmap`, so unwrap before classifying (see _unwrap_task) — and report
         # the original rather than a nested TaskFailedException dump
@@ -410,7 +411,7 @@ function reject_duplicates!(df::AbstractDataFrame, g::AbstractDataFrame)
     nrow(g) > 1 || return Int[]
     dups = parentindices(g)[1][2:end]
     df[dups, :rectification_id] .= missing
-    push!.(df[dups, :issues], "duplicate rectification")
+    push!.(df[dups, :issues], "rectification must not repeat an earlier row")
     return dups
 end
 
@@ -419,14 +420,14 @@ function verify_unique_rectifications!(df::AbstractDataFrame)
     #   * matlab / uniform: identical on *every* field (rectification_id and issues aside).
     #   * checkerboard: identical on the identity key below. The remaining parameters are NOT part of
     #     identity (one checkerboard video can carry several rectifications differing only in, say,
-    #     blur), but two same-identity rows still *should* agree on them — when they don't, the duplicate also
-    #     gets a conflicting-parameters issue.
+    #     blur), but two same-identity rows still *should* agree on them — when they don't, the
+    #     duplicate also gets the "must not disagree on its other parameters" issue.
     # :file is already the canonical resolved path, so equivalent spellings compare equal with no
     # per-call realpath.
     #
     # Only rows that are otherwise valid take part: a row that failed an earlier check has had its
     # offending field nulled to `missing`, which can collapse two genuinely distinct rows into a
-    # spurious "duplicate". Such rows are already reported anyway.
+    # spuriously flagged as repeats of one another. Such rows are already reported anyway.
     candidates = @view df[isempty.(df.issues), :]
     ischeckerboard = coalesce.(candidates.type .== "checkerboard", false)
 
@@ -441,7 +442,7 @@ function verify_unique_rectifications!(df::AbstractDataFrame)
     for g in groupby(@view(candidates[ischeckerboard, :]), [:file, :intrinsic_start, :intrinsic_stop, :extrinsic, :center, :north])
         dups = reject_duplicates!(df, g)
         if !isempty(dups) && any(c -> !allequal(g[!, c]), other)
-            push!.(df[dups, :issues], "same rectification with conflicting parameters")
+            push!.(df[dups, :issues], "repeated rectification must not disagree on its other parameters")
         end
     end
 end
@@ -473,12 +474,12 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = DEFAULT_I
     # center/north are optional and left missing when omitted (no imputation). verify! skips missing
     # rows, so a missing center or north is simply not bounds-checked.
     for point in (:center, :north)
-        verify!(df, x -> any(<(1), x), "$point cannot be smaller than 1", point)
+        verify!(df, x -> any(<(1), x), "$point must be at least 1", point)
         # Display space, like start_location's bounds in the runs gateway: `center`/`north` are
         # (x, y) as read off a screen, so x is checked against the display width (stored × aspect)
         # while y, which aspect does not affect, is checked against the height (#130).
         verify!(df, (poi, dim, asp) -> poi[1] > dim[1] * asp || poi[2] > dim[2],
-                "$point cannot be larger than the dimensions of the frame", point, :dimension, :aspect)
+                "$point must not be larger than the dimensions of the frame", point, :dimension, :aspect)
     end
     # if north wasn't missing, but center was wrong and set to missing here, then now we have a missing center but existing north. the following fixes that:
     df.north[ismissing.(df.center)] .= missing
@@ -486,12 +487,12 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = DEFAULT_I
     verify!(df, ≤(0), "aspect must be larger than zero", :aspect)
     verify!(df, ≤(0), "pixel_width must be larger than zero", :pixel_width)
     verify!(df, ≤(0), "extrinsic_index must be larger than zero", :extrinsic_index)
-    verify!(df, (i, n) -> i > n, "extrinsic_index exceeds the number of extrinsics in the matlab file", :extrinsic_index, :n_extrinsics)
+    verify!(df, (i, n) -> i > n, "extrinsic_index must not exceed the number of extrinsics in the matlab file", :extrinsic_index, :n_extrinsics)
     verify!(df, ≤(0), "checker_width must be larger than zero", :checker_width)
     # apriltag-only value checks (non-apriltag rows leave these missing ⇒ skipped by verify!):
     verify!(df, ≤(0), "tag_cell_width must be larger than zero", :tag_cell_width)
     verify!(df, <(1), "apriltags must be at least 1", :apriltags)
-    verify!(df, f -> !PawsomeTracker.valid_apriltag_family(f), "family is not a supported AprilTag family (" * join(PawsomeTracker.APRIL_FAMILY_NAMES, ", ") * ")", :family)
+    verify!(df, f -> !PawsomeTracker.valid_apriltag_family(f), "family must be a supported AprilTag family (" * join(PawsomeTracker.APRIL_FAMILY_NAMES, ", ") * ")", :family)
     verify!(df, ∉(1:3), "radial_parameters must be 1, 2, or 3", :radial_parameters)
     verify!(df, <(0), "blur must be larger than or equal to zero", :blur)
     # OpenCV's findChessboardCorners requires both pattern dimensions to be strictly bigger than 2,
@@ -503,13 +504,14 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = DEFAULT_I
     verify!(df, (e, d) -> e ≥ d, "extrinsic must come before the video duration", :extrinsic, :duration)
     # The intrinsic-calibration window must be sane and lie within the video. These run before the
     # temporal_step checks and null intrinsic_start/intrinsic_stop on failure, so a bad window does
-    # not also trip the misleading "temporal_step too short" message (skipped once either bound is missing).
+    # not also trip the misleading "temporal_step must yield at least 3 images" message (which is
+    # skipped once either bound is missing).
     verify!(df, <(0), "intrinsic_start must be larger than or equal to zero", :intrinsic_start)
     verify!(df, (a, o) -> a ≥ o, "intrinsic_start must come before intrinsic_stop", :intrinsic_start, :intrinsic_stop)
-    verify!(df, (o, d) -> o > d, "intrinsic_stop can not come after video duration", :intrinsic_stop, :duration)
+    verify!(df, (o, d) -> o > d, "intrinsic_stop must not come after the video duration", :intrinsic_stop, :duration)
 
     verify!(df, ≤(0), "temporal_step must be larger than zero", :temporal_step)
-    verify!(df, (t, a, o) -> (o - a) ÷ t + 1 < 3, "temporal_step too short (results in less than 3 intrinsic images)", :temporal_step, :intrinsic_start, :intrinsic_stop)
+    verify!(df, (t, a, o) -> (o - a) ÷ t + 1 < 3, "temporal_step must yield at least 3 images across the intrinsic window (intrinsic_start to intrinsic_stop)", :temporal_step, :intrinsic_start, :intrinsic_stop)
 
     # the extrinsic time stamp must actually yield a detectable frame; only meaningful once the
     # time stamp itself has been range-checked above

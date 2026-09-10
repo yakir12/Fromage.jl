@@ -2,17 +2,17 @@
     # baseline board.mp4 has dimension (500, 376); each row overrides one field.
 
     @testset "center bounds" begin
-        @test flagged(check([checkerboardrow(center = (0, 0))]),     1, "center cannot be smaller than 1")
-        @test flagged(check([checkerboardrow(center = (600, 600))]), 1, "center cannot be larger than the dimensions")
+        @test flagged(check([checkerboardrow(center = (0, 0))]),     1, "center must be at least 1")
+        @test flagged(check([checkerboardrow(center = (600, 600))]), 1, "center must not be larger than the dimensions")
         # only one coordinate out of bounds still trips any(.>)
-        @test flagged(check([checkerboardrow(center = (600, 100))]), 1, "center cannot be larger than the dimensions")
+        @test flagged(check([checkerboardrow(center = (600, 100))]), 1, "center must not be larger than the dimensions")
         # center == dimension is allowed (the check is strict >)
         @test clean(check([checkerboardrow(center = (500, 376))]))
     end
 
     @testset "north bounds" begin
-        @test flagged(check([checkerboardrow(north = (0, 0))]),     1, "north cannot be smaller than 1")
-        @test flagged(check([checkerboardrow(north = (600, 600))]), 1, "north cannot be larger than the dimensions")
+        @test flagged(check([checkerboardrow(north = (0, 0))]),     1, "north must be at least 1")
+        @test flagged(check([checkerboardrow(north = (600, 600))]), 1, "north must not be larger than the dimensions")
     end
 
     # A clean load returns Vector{RectificationMethod}; the scenario row is element 1, and center/north
@@ -50,6 +50,15 @@
         @test flagged(check([checkerboardrow(aspect = -1.2)]),           1, "aspect must be larger than zero")
     end
 
+    @testset "apriltag field ranges" begin
+        # apriltag-only columns, checked here rather than left to fail inside the detector. `verify!`
+        # nulls the offending field, so the (expensive) tag detection skips these rows entirely.
+        df = check([apriltagrow(family = "tag99h99")])
+        @test flagged(df, 1, "family must be a supported AprilTag family")
+        @test flagged(df, 1, "tag36h11")          # the message lists the families that do work
+        @test flagged(check([apriltagrow(apriltags = 0)]), 1, "apriltags must be at least 1")
+    end
+
     @testset "extrinsic timing" begin
         @test flagged(check([checkerboardrow(extrinsic = "-1")]),         1, "extrinsic must be larger than or equal to zero")
         @test flagged(check([checkerboardrow(extrinsic = "00:01:00")]),   1, "extrinsic must come before the video duration")
@@ -58,9 +67,9 @@
         @test flagged(check([checkerboardrow(extrinsic = string(d))]), 1, "extrinsic must come before the video duration")
     end
 
-    @testset "temporal_step too short" begin
+    @testset "temporal_step must yield at least 3 images" begin
         df = check([checkerboardrow(intrinsic_start = "00:00:00", intrinsic_stop = "00:00:01", temporal_step = 2)])
-        @test flagged(df, 1, "temporal_step too short")
+        @test flagged(df, 1, "temporal_step must yield at least 3 images")
     end
 
     @testset "intrinsic window" begin
@@ -71,9 +80,9 @@
                       1, "intrinsic_start must come before intrinsic_stop")
         # a window that runs past the end of the video is caught
         @test flagged(check([checkerboardrow(intrinsic_start = "00:00:01", intrinsic_stop = "00:10:00")]),
-                      1, "intrinsic_stop can not come after video duration")
-        # an inverted window must NOT also emit the misleading "temporal_step too short"
+                      1, "intrinsic_stop must not come after the video duration")
+        # an inverted window must NOT also emit the misleading "temporal_step must yield at least 3 images"
         @test !flagged(check([checkerboardrow(intrinsic_start = "00:00:04", intrinsic_stop = "00:00:01")]),
-                       1, "temporal_step too short")
+                       1, "temporal_step must yield at least 3 images")
     end
 end

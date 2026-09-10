@@ -1116,12 +1116,42 @@ tells the user everything that is wrong with their CSV.
 that have nowhere to put a message (`ApriltagRectification`, and direct `ReferenceFrame`
 construction) turn it back into a throw themselves.
 
+### Issue messages are written as `<column> must …` (#226)
+
+The messages the two gateways report are the package's primary interface for a bad csv — a lab
+member with a rejected `runs.csv` reads nothing else — and they had drifted into four grammatical
+forms, with `cannot` spelled two ways. They follow one form now, with stated exceptions:
+
+1. A rule about a cell's value reads `<column> must <requirement>`, naming the column exactly as the
+   csv header spells it.
+2. A prohibition reads `must not` — never `cannot`, never `can not`.
+3. A derived quantity names its inputs and still states the rule: `scaled target width (target_width
+   × downscale) must be at least one pixel`, not `… is smaller than one pixel`.
+4. Where the problem is an EVENT rather than a violated rule — detection found nothing, a file could
+   not be read, a run's segments contradict each other — the message stays a statement of fact, but
+   names the column or the file it is about. `no corners detected` is not improved by being forced
+   into "must", so the convention is a rule with an exception rather than a blanket rewrite.
+
+The reader is deciding what to type instead, which is why the rule beats the symptom:
+`start_location is outside the frame` did not say the frame is measured in *display* pixels, and
+`temporal_step too short` did not say what "too short" was.
+
+Two classes are exempt. The parse failures — `wrong <column> format`, `wrong type`, `<column> is
+missing`, and `read_rows`' `unrecognized column/s in <what> file` — are already column-first, say the
+one thing there is to say about a cell that could not be interpreted at all, and are quoted
+throughout the docs. So is `<column> is not used by type <type>`: it names both the column and the
+type, and phrasing it as a rule about the column would point at the wrong cell, since what is
+usually wrong is the `type`.
+
+No behaviour changed — the same rows are rejected for the same reasons — but the text moved, so an
+old issue report no longer matches the new one word for word.
+
 ### A failed check nulls its own field
 
 `verify!` sets the offending field to `missing` after recording the issue, which makes every later
 check skip that row rather than pile on. It is what keeps an inverted intrinsic window from also
-reporting "temporal_step too short", and a bad `path` from also reporting "file does not exist".
-The ordering of the checks in `verifications!` is therefore load-bearing.
+reporting "temporal_step must yield at least 3 images", and a bad `path` from also reporting
+"file does not exist". The ordering of the checks in `verifications!` is therefore load-bearing.
 
 ### Every read happens once per physical file
 
@@ -1133,8 +1163,8 @@ reference them. The same canonical path is the identity used for duplicate detec
 ### Duplicate detection compares only clean rows
 
 A row that already failed a check has had its offending field nulled to `missing`, which can make
-two genuinely distinct rows collapse into a spurious "duplicate". Such rows are already reported,
-so nothing is lost by excluding them.
+two genuinely distinct rows be spuriously flagged as repeats of one another. Such rows are already
+reported, so nothing is lost by excluding them.
 
 What counts as a duplicate is type-dependent: `matlab` and `only_scale` rows must match on every
 field; `video` rows match on an identity key (file, window, extrinsic, centre, north), since one
@@ -1198,7 +1228,7 @@ hundreds of pixels away — without throwing. The check uses the *declared* `tar
 over-declaring it permits a scale too small for the real target; one more reason `target_width` is
 worth measuring.
 
-### "path is a file, not a folder" (#33)
+### "path must be the folder holding the video, not a file" (#33)
 
 Putting the video itself in `path` is the common slip, and `isdir` alone reported it as "path does
 not exist" — false, and it sends the user looking for a file that is plainly there. The targeted

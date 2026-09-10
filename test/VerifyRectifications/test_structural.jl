@@ -29,8 +29,8 @@
         # the non-identity params also match it does NOT get the conflicting-parameters issue.
         df = check([checkerboardrow(rectification_id = "a"),
                     checkerboardrow(rectification_id = "b")])
-        @test flagged(df, 2, "duplicate rectification")
-        @test !flagged(df, 2, "same rectification with conflicting parameters")
+        @test flagged(df, 2, "rectification must not repeat an earlier row")
+        @test !flagged(df, 2, "repeated rectification must not disagree on its other parameters")
     end
 
     @testset "video duplicate with conflicting non-identity params" begin
@@ -39,10 +39,10 @@
         # non-identity parameter disagrees, the duplicate also gets the conflicting-parameters issue.
         df = check([checkerboardrow(rectification_id = "k1", checker_width = 4),
                     checkerboardrow(rectification_id = "k2", checker_width = 8)])
-        @test flagged(df, 2, "duplicate rectification")
-        @test flagged(df, 2, "same rectification with conflicting parameters")
-        @test !flagged(df, 1, "duplicate rectification")
-        @test !flagged(df, 1, "same rectification with conflicting parameters")
+        @test flagged(df, 2, "rectification must not repeat an earlier row")
+        @test flagged(df, 2, "repeated rectification must not disagree on its other parameters")
+        @test !flagged(df, 1, "rectification must not repeat an earlier row")
+        @test !flagged(df, 1, "repeated rectification must not disagree on its other parameters")
     end
 
     @testset "video duplicate with conflicting yadif is also flagged" begin
@@ -50,44 +50,44 @@
         # progressive (probed false), so an explicit yadif = true on the copy is a parameter conflict.
         df = check([checkerboardrow(rectification_id = "y1"),
                     checkerboardrow(rectification_id = "y2", yadif = true)])
-        @test flagged(df, 2, "duplicate rectification")
-        @test flagged(df, 2, "same rectification with conflicting parameters")
+        @test flagged(df, 2, "rectification must not repeat an earlier row")
+        @test flagged(df, 2, "repeated rectification must not disagree on its other parameters")
     end
 
     @testset "video duplicate with conflicting aspect is also flagged" begin
         # likewise aspect: probed 1.0 on row 1, explicit 2.0 on the same-identity copy.
         df = check([checkerboardrow(rectification_id = "a1"),
                     checkerboardrow(rectification_id = "a2", aspect = 2.0)])
-        @test flagged(df, 2, "duplicate rectification")
-        @test flagged(df, 2, "same rectification with conflicting parameters")
+        @test flagged(df, 2, "rectification must not repeat an earlier row")
+        @test flagged(df, 2, "repeated rectification must not disagree on its other parameters")
     end
 
     @testset "video NOT a duplicate when an identity field differs" begin
         # center is part of the identity key, so differing center -> distinct rectifications, no flags.
         df = check([checkerboardrow(rectification_id = "i1", center = (250, 180)),
                     checkerboardrow(rectification_id = "i2", center = (240, 170))])
-        @test !flagged(df, 2, "duplicate rectification")
-        @test !flagged(df, 2, "same rectification with conflicting parameters")
+        @test !flagged(df, 2, "rectification must not repeat an earlier row")
+        @test !flagged(df, 2, "repeated rectification must not disagree on its other parameters")
     end
 
     @testset "uniform duplicate = identical except id/issues" begin
         # uniform: same iff every field matches (id aside). Identical -> 2nd duplicate;
         # differ on any field (here pixel_width) -> not a duplicate.
         dup = check([uniformrow(rectification_id = "s1"), uniformrow(rectification_id = "s2")])
-        @test flagged(dup, 2, "duplicate rectification")
-        @test !flagged(dup, 1, "duplicate rectification")
+        @test flagged(dup, 2, "rectification must not repeat an earlier row")
+        @test !flagged(dup, 1, "rectification must not repeat an earlier row")
         diff = check([uniformrow(rectification_id = "s1", pixel_width = 9.5),
                       uniformrow(rectification_id = "s2", pixel_width = 10.5)])
-        @test !flagged(diff, 2, "duplicate rectification")
+        @test !flagged(diff, 2, "rectification must not repeat an earlier row")
     end
 
     @testset "matlab duplicate = identical except id/issues" begin
         dup = check([matlabrow(rectification_id = "m1"), matlabrow(rectification_id = "m2")])
-        @test flagged(dup, 2, "duplicate rectification")
-        @test !flagged(dup, 1, "duplicate rectification")
+        @test flagged(dup, 2, "rectification must not repeat an earlier row")
+        @test !flagged(dup, 1, "rectification must not repeat an earlier row")
         diff = check([matlabrow(rectification_id = "m1", center = (160, 120)),
                       matlabrow(rectification_id = "m2", center = (100, 100))])
-        @test !flagged(diff, 2, "duplicate rectification")
+        @test !flagged(diff, 2, "rectification must not repeat an earlier row")
     end
 
     @testset "duplicate rectification (same file via different path spelling)" begin
@@ -97,20 +97,20 @@
         # (in a copy) so the second row is still flagged.
         df = check([checkerboardrow(rectification_id = "p1", path = "."),
                     checkerboardrow(rectification_id = "p2", path = "./.")])
-        @test flagged(df, 2, "duplicate rectification")
-        @test !flagged(df, 1, "duplicate rectification")
+        @test flagged(df, 2, "rectification must not repeat an earlier row")
+        @test !flagged(df, 1, "rectification must not repeat an earlier row")
     end
 
     @testset "no false duplicate from rows nulled by earlier checks" begin
         # two DISTINCT matlab rows (different centers) that are both out of bounds: each center gets
         # nulled by the bounds check, which would make the rows look identical. Uniqueness
-        # skips rows that already carry issues, so neither gets a spurious "duplicate rectification".
+        # skips rows that already carry issues, so neither is spuriously flagged as a repeat.
         df = check([matlabrow(rectification_id = "a", center = (600, 600), north = missing),
                     matlabrow(rectification_id = "b", center = (700, 700), north = missing)])
-        @test flagged(df, 1, "center cannot be larger than the dimensions")
-        @test flagged(df, 2, "center cannot be larger than the dimensions")
-        @test !flagged(df, 1, "duplicate rectification")
-        @test !flagged(df, 2, "duplicate rectification")
+        @test flagged(df, 1, "center must not be larger than the dimensions")
+        @test flagged(df, 2, "center must not be larger than the dimensions")
+        @test !flagged(df, 1, "rectification must not repeat an earlier row")
+        @test !flagged(df, 2, "rectification must not repeat an earlier row")
     end
 
     @testset "a duplicate loses its rectification_id" begin
@@ -120,7 +120,7 @@
                     checkerboardrow(rectification_id = "drop")])
         @test df.rectification_id[1] == "keep"
         @test ismissing(df.rectification_id[2])
-        @test occursin("row 2: duplicate rectification", VRect.rectifications_report(df))
+        @test occursin("row 2: rectification must not repeat an earlier row", VRect.rectifications_report(df))
     end
 
     @testset "three identical rows: the first is kept, both others flagged" begin
@@ -128,9 +128,9 @@
         df = check([checkerboardrow(rectification_id = "a"),
                     checkerboardrow(rectification_id = "b"),
                     checkerboardrow(rectification_id = "c")])
-        @test !flagged(df, 1, "duplicate rectification")
-        @test flagged(df, 2, "duplicate rectification")
-        @test flagged(df, 3, "duplicate rectification")
+        @test !flagged(df, 1, "rectification must not repeat an earlier row")
+        @test flagged(df, 2, "rectification must not repeat an earlier row")
+        @test flagged(df, 3, "rectification must not repeat an earlier row")
         @test df.rectification_id[1] == "a"
         @test ismissing(df.rectification_id[2]) && ismissing(df.rectification_id[3])
     end
@@ -140,10 +140,10 @@
         # never be duplicates of each other, and each half keeps its own first occurrence.
         df = check([checkerboardrow(rectification_id = "v1"), checkerboardrow(rectification_id = "v2"),
                     matlabrow(rectification_id = "m1"), matlabrow(rectification_id = "m2")])
-        @test !flagged(df, 1, "duplicate rectification")
-        @test flagged(df, 2, "duplicate rectification")
-        @test !flagged(df, 3, "duplicate rectification")
-        @test flagged(df, 4, "duplicate rectification")
+        @test !flagged(df, 1, "rectification must not repeat an earlier row")
+        @test flagged(df, 2, "rectification must not repeat an earlier row")
+        @test !flagged(df, 3, "rectification must not repeat an earlier row")
+        @test flagged(df, 4, "rectification must not repeat an earlier row")
     end
 
     @testset "negative control: same file+type, different extrinsic is fine" begin
