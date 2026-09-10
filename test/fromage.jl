@@ -466,14 +466,14 @@ end
     end
 end
 
-@testset "an apostrophe in a segment path survives the concat list" begin
-    # ffmpeg takes each path in the concat list single-quoted, so an unescaped apostrophe closed the
-    # line early and the segment after it was silently dropped. An apostrophe is a legal file-name
-    # character and a plausible run_id ("beetle's run"), so it is escaped rather than rejected — and
-    # asserted against real ffmpeg here, since the escaping is ffmpeg's rule and not ours to assume.
+# The three concat testsets below all build one list out of real videos and read the joined result
+# back, because the escaping is ffmpeg's rule and only real ffmpeg can say whether a name survived
+# it. `stems` are file-name stems; the return is the file `concatenate` writes, always
+# `results_dir/diagnostic.mp4` under the current directory. Each segment is 5 frames.
+function concat_stems(stems)
     dir = mktempdir()
-    segs = map(1:2) do k
-        f = joinpath(dir, "beetle's run $k.mp4")
+    segs = map(stems) do stem
+        f = joinpath(dir, "$stem.mp4")
         make_video(f; duration = 1, size = (64, 64), rate = 5)
         f
     end
@@ -482,10 +482,51 @@ end
         mkpath("results_dir")                       # `main` makes it; this calls concatenate directly
         Fromage.concatenate(dir, segs)
     end
-    joined = joinpath(outdir, "results_dir", "diagnostic.mp4")
+    return joinpath(outdir, "results_dir", "diagnostic.mp4")
+end
+
+@testset "an apostrophe in a segment path survives the concat list" begin
+    # ffmpeg takes each path in the concat list single-quoted, so an unescaped apostrophe closed the
+    # line early and the segment after it was silently dropped. An apostrophe is a legal file-name
+    # character and a plausible run_id ("beetle's run"), so it is escaped rather than rejected — and
+    # asserted against real ffmpeg here, since the escaping is ffmpeg's rule and not ours to assume.
+    joined = concat_stems(["beetle's run 1", "beetle's run 2"])
     @test isfile(joined)
     # both 5-frame segments, not just the one before the apostrophe broke the line
     @test probe_stream(joined).nframes == 10
+end
+
+@testset "every other legal file-name character survives the concat list too" begin
+    # The apostrophe is not the only character that could have broken a line, and the rest are
+    # escaped rather than rejected on the strength of this: backslashes and double quotes are
+    # literal inside the quotes, spaces and control characters are preserved by them, non-ASCII
+    # never mattered. One list holding all of them at once also asserts the entries stay separate —
+    # a path that broke its line would take its neighbours' frames with it.
+    #
+    # Windows gets the shorter set: `\`, `"` and every control character are illegal in a file name
+    # there (much the list the gateway rejects a `run_id` for), so there is no such path to assert
+    # about. What is Windows-specific — drive-prefixed absolute paths, which the concat demuxer
+    # accepts only under `-safe 0` — goes through the same list in the `main` testsets above.
+    stems = Sys.iswindows() ? ["spa ce", "üñí çodé"] :
+            ["back\\slash", "double\"quote", "spa ce", "tab\there", "bell\ahere", "üñí çodé"]
+    joined = concat_stems(stems)
+    @test isfile(joined)
+    @test probe_stream(joined).nframes == 5 * length(stems)   # every segment, one entry each
+end
+
+@testset "a path the concat list cannot carry is refused by name" begin
+    # The two characters the quoting cannot rescue: either one ends the list line whether or not it
+    # sits inside the quotes, so the entry splits in two and ffmpeg reports the halves as junk
+    # ("Line 2: unknown keyword"), naming neither the path nor the run it came from.
+    dir = mktempdir()
+    for bad in ("seg\nment.mp4", "seg\rment.mp4")
+        @testset "path = $(repr(bad))" begin
+            f = joinpath(dir, bad)
+            e = (@test_throws ArgumentError Fromage.concatenate(dir, [f])).value
+            @test occursin(repr(f), e.msg)          # the offending path, in full
+            @test occursin("concat list", e.msg)    # and the format that cannot hold it
+        end
+    end
 end
 
 # `verify` is the debugging entry point: report everything wrong with both files and hand them
