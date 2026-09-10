@@ -12,7 +12,7 @@ using Fromage.PawsomeTracker: Gray, N0f8
 using Random: Xoshiro
 # For `VideoIO._active_writers`: a PRIVATE name, and the only direct evidence that a diagnostic
 # left nothing open (#160). An `UndefVarError` on it is a dependency rename, not a regression.
-# `isopen` needs no import — it is Base's, with a VideoIO method for the writer.
+# `isopen` needs no import — it is Base's, with VideoIO methods for the writer and the reader.
 using VideoIO: VideoIO
 const PT = PawsomeTracker
 
@@ -358,6 +358,73 @@ const DATADIR = mktempdir()
         track1(base_file; native_fps = 5, diagnostic_file = df_slow)
         @test probe_stream(df_told).fps ≈ probe_stream(df_read).fps
         @test probe_stream(df_slow).fps ≉ probe_stream(df_read).fps
+    end
+
+    # #149: the reader is closed on every path out of `Video`'s construction. Unlike the diagnostic
+    # writer of #160, the fallible steps here CANNOT be reordered before the open — `read`,
+    # `gettime`, `seek` and `aspect_ratio` are reads of the reader itself, and on the share they are
+    # exactly the calls that fail (WHY-FRAMES-FAIL.md). The guard is the whole mechanism.
+    @testset "a failed Video construction closes its reader" begin
+        # `downscale = NaN` fails at the `WarpedView` extent — `ImageTransformations._autorange`
+        # rounds the transformed corners — and that line consumes `img`, the frame `read(vid)`
+        # returned. So the injection is after the open by construction, not by luck: moving it
+        # earlier would mean moving the decode earlier, which needs the reader anyway. (The
+        # arithmetic steps throw too, but they sit at the top and a later edit could lift them above
+        # the open, turning this green for the wrong reason.)
+        @test_throws InexactError PT.Video(base_file, 25, 25, 0, 2, NaN)
+
+        # …and the reader really is gone. An unclosed `VideoReader` holds exactly one descriptor,
+        # so leaks count: before the fix, 15 failures leaked 15 descriptors — "exhaust OS
+        # descriptors over a large batch" (#149) in miniature, and the repeated-failure batch the
+        # issue asks to verify. Linux only: /proc is where a process can see its own descriptors.
+        #
+        # GC OFF for the loop, and this is load-bearing rather than tidy. `AVFormatContextPtr`
+        # carries a finalizer that closes the input, so a collection reclaims leaked readers and the
+        # count comes back clean — measured: a leaking build shows +15 with a quiet heap and +0 once
+        # the loop allocates enough to trigger a GC. Without this the assertion would pass against
+        # the very bug it exists to catch, on any machine that collects at the wrong moment.
+        if Sys.islinux()
+            nfd() = length(readdir("/proc/self/fd"))
+            GC.gc()
+            before = nfd()
+            GC.enable(false)
+            try
+                for _ in 1:15
+                    try
+                        PT.Video(base_file, 25, 25, 0, 2, NaN)
+                    catch e
+                        e isa InexactError || rethrow()
+                    end
+                end
+                # `==`, not `<=`: with the collector off nothing can close a descriptor behind us,
+                # so the count can only have grown, and it must not have. `GC.enable` is
+                # process-global — fine while this file runs sequentially, worth revisiting if the
+                # testset ever moves under `tforeach`.
+                @test nfd() == before
+            finally
+                GC.enable(true)
+            end
+        end
+
+        # The guard, not just the close. Every assertion above still passes if `warn_on_failure` is
+        # swapped for a bare `close(vid)` — so this pins the other half of the mechanism, the half
+        # that keeps a failing cleanup from replacing the failure on its way to the caller. A real
+        # reader's `close` cannot be made to throw on demand, so the claim is made of the helper
+        # both closes go through.
+        err = @test_logs (:warn,) match_mode = :any (
+            @test_throws ErrorException try
+                error("the failure the caller must see")
+            finally
+                PT.warn_on_failure(() -> error("a close that failed"), "close the video reader")
+            end)
+        @test err.value.msg == "the failure the caller must see"
+
+        # The successful path is unchanged: the reader is left OPEN for the caller, which is what
+        # `video` and the tests above rely on when they close `vid.vid` themselves.
+        vid = PT.Video(base_file, 25, 25, 0, 2, 1.0)
+        @test isopen(vid.vid)
+        close(vid.vid)
+        @test !isopen(vid.vid)
     end
 
     # #160: the writer is opened last and closed on every path out of the diagnostic — a

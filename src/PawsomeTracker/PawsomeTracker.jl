@@ -74,6 +74,27 @@ open_gray_video(file) =
 # tracking. Reads and decoding stay concurrent — only the detect is serial.
 const APRILTAG_LOCK = ReentrantLock()
 
+# Cleanup on a failing path, for both native resources this module owns: the diagnostic writer
+# (#160) and the video reader (#149). An exception raised inside a `finally` silently replaces the
+# one already on its way out — the one that explains what went wrong — so a close that fails says
+# so in a warning instead of in the caller's stacktrace.
+#
+# Deliberately broad, in the same shape as the precompile workloads and `save_issue_frame`: what
+# ffmpeg and the filesystem report here is a plain `ErrorException`/`IOError` with nothing narrower
+# to match on, and the point is precisely that NOTHING from cleanup reaches the caller. The
+# exception is not lost — it goes to the log, with its backtrace. Ctrl-C still gets through. The
+# cost is that a `MethodError` from a bug in here is demoted to a warning too (DECISIONS, "No bare
+# `catch`").
+function warn_on_failure(step!, what)
+    try
+        step!()
+    catch e
+        e isa InterruptException && rethrow()
+        @warn "could not $what while cleaning up after an earlier failure" exception = (e, catch_backtrace())
+    end
+    return nothing
+end
+
 include("types.jl")
 include("diagnose.jl")
 include("apriltag.jl")
@@ -148,35 +169,55 @@ struct Video
     # and asking the file again would give the native rate a second definition site, the exact
     # shape of #140/#141: a run verified against one rate would then be sampled at another, and a
     # declared rate would be silently ignored by the only code that matters.
+    # The reader is opened first and every step below it can throw, so the open is guarded rather
+    # than moved: unlike the diagnostic writer's constructor (#160), the fallible work here IS the
+    # reader — `read`, `gettime`, `seek`, `aspect_ratio`, and the `WarpedView` extent measured on
+    # the frame `read` returned — and those are exactly the calls the share fails
+    # (WHY-FRAMES-FAIL.md). Without the guard each failure leaked a descriptor and a decoder
+    # context, and tracking opens one reader per segment under `tmap` (#149).
+    #
+    # A successfully built `Video` still hands its reader to the caller to close — see `video`,
+    # which is the only thing that should be constructing one.
     function Video(file, native_fps, sample_fps, start, stop, downscale)
         vid = open_gray_video(file)          # serialized open (openvideo isn't thread-safe); see OPENVIDEO_LOCK
-        skip = frame_skip(native_fps, sample_fps)
-        sample_fps = native_fps / skip       # the rate actually delivered; `sample_fps` means this from here on
-        img = read(vid)
-        t₀ = gettime(vid)
-        # The tracked frame is the scaled one, so :width/:height are the WARPED extent, not the
-        # video's. `WarpedView`'s axes depend only on `axes(img)` and the transform, so wrapping the
-        # frame we already hold measures it without decoding or allocating a second one.
-        height, width = size(WarpedView(img, LinearMap(1/downscale); fillvalue = zero(eltype(img))))
-        seek(vid, start + t₀)
-        # Frames the window holds at the video's own rate, then how many of them the stride visits.
-        # Sample i reads raw frame (i-1)*skip, and `cld` is exactly the count keeping that index
-        # inside the window — cld(n, s) == fld(n - 1, s) + 1 — so the reads cannot run off the end.
-        # The epsilon absorbs a duration that computes to 59.999999996 rather than 60; the `max`
-        # makes a window shorter than one frame period yield the single frame `seek` lands on.
-        navailable = max(1, floor(Int, (stop - start) * native_fps + 1e-9))
-        nframes = cld(navailable, skip)
-        sar = aspect_ratio(vid)
-        new(vid, img, skip, nframes, downscale, width, height, stop - start, sample_fps, sar)
+        built = false
+        return try
+            skip = frame_skip(native_fps, sample_fps)
+            sample_fps = native_fps / skip       # the rate actually delivered; `sample_fps` means this from here on
+            img = read(vid)
+            t₀ = gettime(vid)
+            # The tracked frame is the scaled one, so :width/:height are the WARPED extent, not the
+            # video's. `WarpedView`'s axes depend only on `axes(img)` and the transform, so wrapping the
+            # frame we already hold measures it without decoding or allocating a second one.
+            height, width = size(WarpedView(img, LinearMap(1/downscale); fillvalue = zero(eltype(img))))
+            seek(vid, start + t₀)
+            # Frames the window holds at the video's own rate, then how many of them the stride visits.
+            # Sample i reads raw frame (i-1)*skip, and `cld` is exactly the count keeping that index
+            # inside the window — cld(n, s) == fld(n - 1, s) + 1 — so the reads cannot run off the end.
+            # The epsilon absorbs a duration that computes to 59.999999996 rather than 60; the `max`
+            # makes a window shorter than one frame period yield the single frame `seek` lands on.
+            navailable = max(1, floor(Int, (stop - start) * native_fps + 1e-9))
+            nframes = cld(navailable, skip)
+            sar = aspect_ratio(vid)
+            v = new(vid, img, skip, nframes, downscale, width, height, stop - start, sample_fps, sar)
+            built = true
+            v
+        finally
+            # A flag rather than a `catch`, as in `Diagnostic` (#160): `finally` cannot tell success
+            # from failure on its own, and this keeps a catch-everything out of the package.
+            built || warn_on_failure(() -> close(vid), "close the video reader")
+        end
     end
 end
 
+# Guarded like the constructor's own close, and over a wider window: `f` here is the whole tracking
+# run, so a close that threw on top of a failed run would replace the exception explaining the run.
 function video(f, file, native_fps, sample_fps, start, stop, downscale)
     vid = Video(file, native_fps, sample_fps, start, stop, downscale)
     return try
         f(vid)
     finally
-        close(vid.vid)
+        warn_on_failure(() -> close(vid.vid), "close the video reader")
     end
 end
 

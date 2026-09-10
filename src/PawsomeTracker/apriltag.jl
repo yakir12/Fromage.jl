@@ -213,7 +213,10 @@ function read_frame_at(file, t)
         seek(vid, t + gettime(vid))
         return read(vid)
     finally
-        close(vid)
+        # Guarded as every close of a reader in this module is (#149): this one sits on the share
+        # read that WHY-FRAMES-FAIL.md is about, where the exception being replaced would be the
+        # one naming the failure.
+        warn_on_failure(() -> close(vid), "close the video reader")
     end
 end
 
