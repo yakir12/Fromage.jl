@@ -115,6 +115,15 @@ const DATADIR = mktempdir()
         @test PT.Segment(base_file, 0.0, 2.0, missing).start_location === missing
     end
 
+    @testset "Video declares no duration field (#231)" begin
+        # A `Float64` span computed on construction and never read — on a struct built once per
+        # segment, under `tmap`, on the tracking path. The span the tracker actually consumes is
+        # the RUN's, which `VerifyRuns.run_duration` sums over a run's segments and hands to
+        # `get_window`; `Video`'s constructor still forms `stop - start` for its own frame count,
+        # uses it there and drops it. Reinstating the field needs a reader for it.
+        @test !hasfield(PT.Video, :duration)
+    end
+
     @testset "the background stack stores frames at their decoded width (#27)" begin
         # The stack is the largest allocation in the program — a 1080p frame at background_length
         # 250 is ~494 MB as N0f8 against ~1978 MB as Float32 — and its values come from an N0f8

@@ -152,7 +152,6 @@ struct Video
     downscale::Float64
     width::Int
     height::Int
-    duration::Float64
     sample_fps::Float64
     # `Rational{Int}`, not a bare `Rational`: the unparameterised spelling is abstract, so the field
     # would be boxed and every read of it untyped. `VideoIO.aspect_ratio` returns
@@ -199,7 +198,7 @@ struct Video
             navailable = max(1, floor(Int, (stop - start) * native_fps + 1e-9))
             nframes = cld(navailable, skip)
             sar = aspect_ratio(vid)
-            v = new(vid, img, skip, nframes, downscale, width, height, stop - start, sample_fps, sar)
+            v = new(vid, img, skip, nframes, downscale, width, height, sample_fps, sar)
             built = true
             v
         finally
