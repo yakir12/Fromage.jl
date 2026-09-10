@@ -1214,11 +1214,13 @@ Where a check can replace a catch, it does: `matlab_dimension` and `matlab_extri
 validate the shape and element type of the `Any` they read instead of catching the `InexactError`
 that a malformed value would eventually cause.
 
-**Cleanup inverts the rule (#160).** A `catch` whose job is to stop cleanup from *becoming* the
+**Cleanup inverts the rule (#160, #149).** A `catch` whose job is to stop cleanup from *becoming* the
 failure the caller sees catches everything and warns, rethrowing only `InterruptException` — the
 opposite shape to every other catch here, and deliberate. `PawsomeTracker.warn_on_failure` is the one
-that names it: it runs the closing and the removal of a diagnostic that failed halfway, both from inside
-a `finally`, where anything raised silently replaces the exception already on its way out. That
+that names it, and every close of a native resource in that module goes through it: the diagnostic
+writer of a failed export (#160), and the video reader, whether its `Video` construction failed, its
+tracking run threw, or it was the one-shot extrinsic read (#149). All of them close from inside a
+`finally`, where anything raised silently replaces the exception already on its way out. That
 exception is the one explaining what went wrong, so nothing from cleanup may reach the caller.
 Narrowing is not available anyway — ffmpeg surfaces through VideoIO as a plain `ErrorException`,
 and an unlink on the share reports what the share reports. Nothing is lost: the cleanup failure

@@ -144,21 +144,6 @@ function discard(close!, file)
     return nothing
 end
 
-# Deliberately broad, in the same shape as the precompile workloads and `save_issue_frame`: what
-# ffmpeg and the filesystem report here is a plain `ErrorException`/`IOError` with nothing narrower
-# to match on, and the point is precisely that NOTHING from cleanup reaches the caller. The
-# exception is not lost — it goes to the log, with its backtrace. Ctrl-C still gets through. The
-# cost is that a `MethodError` from a bug in here is demoted to a warning too (DECISIONS).
-function warn_on_failure(step!, what)
-    try
-        step!()
-    catch e
-        e isa InterruptException && rethrow()
-        @warn "could not $what while cleaning up after an earlier failure" exception = (e, catch_backtrace())
-    end
-    return nothing
-end
-
 remove_partial(file::AbstractString) = rm(file; force = true)   # `force`: the open may have thrown
 remove_partial(::Nothing) = nothing                             # before ffmpeg created anything
 
