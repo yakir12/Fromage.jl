@@ -48,13 +48,32 @@ struct Diagnostic{S}
     scene::S
 end
 
+# The open comes LAST: every fallible step is done while there is nothing to leak — the font load
+# especially, which reads a file from disk, and used to sit between the open and the return with
+# nothing holding the writer if it threw (#160). The guard covers what the ordering cannot: the
+# field conversion the inner constructor does is still a step after the open, as would be anything
+# a later edit adds there.
 function Diagnostic(file::AbstractString, darker_target, fps, scene; radius, font)
     skip = diagnostic_stride(fps)
+    label = first(splitext(basename(file)))
+    trace = CircularBuffer{CartesianIndex{2}}(TRACE_BUFFER_SIZE)
+    color = darker_target ? Gray{N0f8}(1) : Gray{N0f8}(0)
+    face = FTFont(String(FONT))
     writer = open_video_out(file, canvas_prototype(scene); framerate = diagnostic_framerate(fps, skip),
         encoder_private_options = DIAGNOSTIC_ENCODER)
-    return Diagnostic(first(splitext(basename(file))), writer,
-        CircularBuffer{CartesianIndex{2}}(TRACE_BUFFER_SIZE), Ref(0), skip,
-        darker_target ? Gray{N0f8}(1) : Gray{N0f8}(0), radius, font, FTFont(String(FONT)), scene)
+    built = false
+    return try
+        dia = Diagnostic(label, writer, trace, Ref(0), skip, color, radius, font, face, scene)
+        built = true
+        dia
+    finally
+        # A flag, because `finally` cannot tell success from failure on its own. `catch; discard;
+        # rethrow()` would do the same job — the flag is what keeps a catch-everything out of a
+        # package whose rule against them has an issue number (DECISIONS, "No bare `catch`").
+        built || discard(file) do
+            close_video_out!(writer)
+        end
+    end
 end
 
 # Written frames are 1, skip+1, 2*skip+1, … — the counter is tested BEFORE it is bumped. Bumping
@@ -91,14 +110,64 @@ diagnose(::Nothing, _, _, _) = Dont()
 Base.close(::Dont) = nothing
 update_ratio!(::Dont, _) = nothing
 
-function diagnose(f, file, darker_target, rectification, fps)
-    dia = diagnose(file, darker_target, rectification, fps)
+# An export that did not finish is not a diagnostic: the encoder wrote a header and however many
+# frames it got to, and neither the concatenation nor a user opening the file can tell that
+# truncation from a short run. So the failure path closes the writer AND takes the file with it,
+# while the success path keeps what it wrote (#160). `file` is `nothing` when no diagnostic was
+# asked for — `dia` is then a `Dont`, and there is nothing to close or remove.
+function with_diagnostic(f, dia, file)
+    finished = false
     return try
-        f(dia)
+        result = f(dia)
+        close(dia)          # finalization: the writer flushes and writes its trailer here, so a
+        finished = true     # failure in it is a failure of the export like any other
+        result
     finally
-        close(dia)
+        # One rule, no exceptions: an export stopped by Ctrl-C is a failed export too, and its file
+        # goes with the rest. Interrupting `main` loses them anyway — its diagnostics live in a
+        # `mktempdir` that unwinds with the exception.
+        finished || discard(file) do
+            close(dia)
+        end
     end
 end
+
+# Cleanup must not become the failure the caller sees: an exception raised inside a `catch` or a
+# `finally` silently replaces the one already on its way out, which is the one that explains what
+# went wrong. BOTH steps here can fail — `close_video_out!` through ffmpeg, `rm` through the
+# filesystem — so each is guarded on its own, which also means a close that fails does not cost us
+# the removal. Two closes are safe: `close_video_out!` frees its pointers in its own `finally` and
+# no-ops on a writer already closed.
+function discard(close!, file)
+    warn_on_failure(close!, "close the diagnostic")
+    warn_on_failure(() -> remove_partial(file), "remove the partial diagnostic")
+    return nothing
+end
+
+# Deliberately broad, in the same shape as the precompile workloads and `save_issue_frame`: what
+# ffmpeg and the filesystem report here is a plain `ErrorException`/`IOError` with nothing narrower
+# to match on, and the point is precisely that NOTHING from cleanup reaches the caller. The
+# exception is not lost — it goes to the log, with its backtrace. Ctrl-C still gets through. The
+# cost is that a `MethodError` from a bug in here is demoted to a warning too (DECISIONS).
+function warn_on_failure(step!, what)
+    try
+        step!()
+    catch e
+        e isa InterruptException && rethrow()
+        @warn "could not $what while cleaning up after an earlier failure" exception = (e, catch_backtrace())
+    end
+    return nothing
+end
+
+remove_partial(file::AbstractString) = rm(file; force = true)   # `force`: the open may have thrown
+remove_partial(::Nothing) = nothing                             # before ffmpeg created anything
+
+# `darker_target::Bool` for the same reason the four-argument forms annotate it: the two do-block
+# forms take `rectification` and `darker_target` in opposite orders, and with nothing annotated a
+# transposed call would compile and run (see `reference_size` in apriltag.jl on unassertable
+# transpositions). The annotation makes the swap a `MethodError`.
+diagnose(f, file, darker_target::Bool, rectification, fps) =
+    with_diagnostic(f, diagnose(file, darker_target, rectification, fps), file)
 
 # Only the raw scene has anything to update; the warping ones map through a rectification that is
 # fixed at construction, so they answer with a no-op.

@@ -15,6 +15,14 @@ Rotations = "6038ab10-8711-5258-84ad-4b1120ba62dc"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+VideoIO = "d6d074c3-1acf-5d4c-9a43-ef38773959a2"
+
+# `VideoIO._active_writers`, which test/pawsometracker.jl asserts on (#160), does not exist before
+# 1.6.1. This is the suite's floor, not the package's: Project.toml still declares VideoIO = "1.1"
+# for users, and nothing below 1.6.1 is exercised here — nor was it before, the Manifest pinning
+# 1.8.0 and CI running no downgrade job.
+[compat]
+VideoIO = "1.6.1"
 
 [sources]
 Fromage = {path = ".."}

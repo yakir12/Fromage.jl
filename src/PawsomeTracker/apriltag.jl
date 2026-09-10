@@ -528,6 +528,13 @@ diagnose_apriltag(file::AbstractString, rectification, darker_target, fps) =
     Diagnostic(file, darker_target, fps, ApriltagScene(rectification.reference, rectification.image2real);
                radius = max(2, DIAGNOSTIC_SIZE ÷ 60), font = DIAGNOSTIC_SIZE ÷ 16)
 
+# The do-block form, as `diagnose` has: the diagnostic is closed on every path out and a failed
+# export takes its half-written file with it (#160). Both modes go through `with_diagnostic`, so
+# neither can acquire a cleanup rule the other lacks. `darker_target::Bool` because this form and
+# `diagnose`'s take it and `rectification` in opposite orders — see the note there.
+diagnose_apriltag(f, file, rectification, darker_target::Bool, fps) =
+    with_diagnostic(f, diagnose_apriltag(file, rectification, darker_target, fps), file)
+
 # The reference space's (rows, cols), from a rectification that stores `width` then `height`. A
 # named function rather than an inline `(r.height, r.width)`, because that is a transposition, and
 # an inline one is unassertable: it used to sit at `track`'s call site, thirteen positions into a

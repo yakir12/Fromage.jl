@@ -497,15 +497,12 @@ function track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnos
         # `GroundXY` (the same type as `RowCol`, see Spaces): what track_apriltag returns is metric
         # ground (x, y), and the gauge below is what turns it into real coordinates.
         segs = Vector{Vector{Union{Missing, GroundXY}}}(undef, nsegments)
-        dia = diagnose_apriltag(diagnostic_file, rectification, tuning.darker_target, dia_fps)
-        try
+        diagnose_apriltag(diagnostic_file, rectification, tuning.darker_target, dia_fps) do dia
             for (i, s) in enumerate(segments)
                 # The `Segment` itself, unresolved: nothing chains here, so its start_location
                 # is already final — what the csv said, or `missing` for a centre search.
                 tss[i], segs[i] = track_apriltag(s, tuning, scaled, dia, rectification)
             end
-        finally
-            close(dia)
         end
         return (_concat_timestamps(tss), _apply_image2real(rectification.image2real, reduce(vcat, segs)))
     end

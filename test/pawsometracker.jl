@@ -10,6 +10,10 @@ using Fromage: PawsomeTracker
 # `Gray`/`N0f8` through the submodule, as test/apriltag.jl does — they are not test deps.
 using Fromage.PawsomeTracker: Gray, N0f8
 using Random: Xoshiro
+# For `VideoIO._active_writers`: a PRIVATE name, and the only direct evidence that a diagnostic
+# left nothing open (#160). An `UndefVarError` on it is a dependency rename, not a regression.
+# `isopen` needs no import — it is Base's, with a VideoIO method for the writer.
+using VideoIO: VideoIO
 const PT = PawsomeTracker
 
 # `track` takes no keyword arguments; `track1`/`tuning`/`segments` (test/fixtures.jl) build its
@@ -21,6 +25,16 @@ using ..Fixtures
 # how many layers of view sit in between is nobody's business but `build_stack`'s. Unwrap to the
 # storage rather than naming a depth, so a change in the pipe doesn't read as a test failure.
 storage(a) = parent(a) === a ? a : storage(parent(a))
+
+# Finalization is `close` itself, and `close_video_out!` cannot be made to fail on demand — it frees
+# its pointers in its own `finally` and no-ops on a writer already closed. So the failure is
+# injected around a REAL diagnostic: the writer really is finalized, and the throw that follows is
+# what a caller would see from a finalization that failed (#160). Wrapping rather than faking keeps
+# the leak assertions meaningful — there is an actual writer to have leaked.
+struct CloseThenFail{D}
+    dia::D
+end
+Base.close(c::CloseThenFail) = (close(c.dia); error("injected finalization failure"))
 
 const DATADIR = mktempdir()
 
@@ -344,6 +358,118 @@ const DATADIR = mktempdir()
         track1(base_file; native_fps = 5, diagnostic_file = df_slow)
         @test probe_stream(df_told).fps ≈ probe_stream(df_read).fps
         @test probe_stream(df_slow).fps ≉ probe_stream(df_read).fps
+    end
+
+    # #160: the writer is opened last and closed on every path out of the diagnostic — a
+    # construction that fails after the open, a body that throws mid-export, and a finalization that
+    # fails. None of them may leave a writer registered or a half-written file that a later reader
+    # (the concatenation, or a user) would take for a complete diagnostic.
+    @testset "a failed diagnostic export leaks no writer and leaves no file" begin
+        # VideoIO's own registry: `open_video_out` adds to it and `close_video_out!` removes from
+        # it (from inside its own `finally`, so a writer that failed to flush is still unregistered).
+        # A delta of zero across a failed export is the direct evidence that nothing stayed open —
+        # file existence alone would only show that the cleanup reached its last step. Read without
+        # taking VideoIO's lock, which is sound only because everything below opens its writers on
+        # this task: keep it that way, or take `VideoIO._active_writers_lock` too.
+        nactive() = length(VideoIO._active_writers)
+        # A frame the raw scene can resize, and a point inside it. Seeded: a failure must reproduce.
+        frame = Gray{N0f8}.(rand(Xoshiro(20260910), N0f8, 80, 60))
+
+        @testset "a successful export keeps its file and closes its writer" begin
+            df = joinpath(DATADIR, "diag_ok.mp4")
+            before = nactive()
+            writer = Ref{VideoIO.VideoWriter}()
+            PT.diagnose(df, false, nothing, 25.0) do dia
+                writer[] = dia.writer
+                PT.update_ratio!(dia, size(frame))
+                dia(frame, (10, 10))
+            end
+            @test isfile(df)
+            @test filesize(df) > 0
+            @test isassigned(writer)        # the body ran at all, before anything is asked of it
+            @test !isopen(writer[])
+            @test nactive() == before
+        end
+
+        @testset "a failure in construction, after the open" begin
+            df = joinpath(DATADIR, "diag_init.mp4")
+            before = nactive()
+            # The one fallible step left after the open is the construction itself: `radius` is an
+            # `Int` field, and the constructor a parametric struct generates annotates its
+            # arguments with the field types, so 1.5 does not even match it. What it stands for is
+            # any step a later edit might add there — the writer is open by then, and only the
+            # guard around it can close it. Before the fix this left the writer registered, and
+            # VideoIO's `atexit` barrier timed out on it at the end of the session.
+            err = @test_throws MethodError PT.Diagnostic(df, false, 25.0, PT.RawScene(); radius = 1.5, font = 20)
+            # …and it is the ten-argument inner call that failed, not the four-argument one: a
+            # `MethodError` raised BEFORE the open would satisfy every other assertion here for the
+            # wrong reason, and go green on a constructor that leaks again.
+            @test err.value.f === PT.Diagnostic
+            @test length(err.value.args) == 10
+            @test nactive() == before
+            @test !isfile(df)
+        end
+
+        @testset "a failure while writing frames" begin
+            df = joinpath(DATADIR, "diag_body.mp4")
+            before = nactive()
+            writer = Ref{VideoIO.VideoWriter}()
+            err = @test_throws ErrorException PT.diagnose(df, false, nothing, 25.0) do dia
+                writer[] = dia.writer
+                PT.update_ratio!(dia, size(frame))
+                dia(frame, (10, 10))            # a real frame first, so the file is genuinely partial
+                error("injected frame-writing failure")
+            end
+            @test err.value.msg == "injected frame-writing failure"   # unchanged in type and message
+            @test isassigned(writer)
+            @test !isopen(writer[])
+            @test nactive() == before
+            @test !isfile(df)
+        end
+
+        @testset "a failure at finalization does not hide behind its own cleanup" begin
+            df = joinpath(DATADIR, "diag_final.mp4")
+            before = nactive()
+            dia = PT.diagnose(df, false, nothing, 25.0)
+            PT.update_ratio!(dia, size(frame))
+            dia(frame, (10, 10))
+            w = dia.writer
+            # The load-bearing assertions here are the message and the missing file: the writer is
+            # already closed by `CloseThenFail` itself, which is what makes the throw a FINALIZATION
+            # failure rather than a fake one. The cleanup closes a second time and throws a second
+            # time; the warning is where that goes, and the caller still gets the first exception.
+            err = @test_logs (:warn,) match_mode = :any (
+                @test_throws ErrorException PT.with_diagnostic(identity, CloseThenFail(dia), df))
+            @test err.value.msg == "injected finalization failure"
+            @test !isopen(w)
+            @test nactive() == before
+            @test !isfile(df)
+        end
+
+        @testset "a failing removal does not hide the exception either" begin
+            # The other half of the cleanup, and the other way it could mask the failure: `file` is
+            # a non-empty directory, so `rm(file; force = true)` throws on every platform — standing
+            # in for the share's EACCES on an unlink, or a Windows handle still held. A `Dont` is
+            # the diagnostic, so nothing but the removal can fail.
+            undeletable = joinpath(DATADIR, "undeletable.mp4")
+            mkpath(undeletable)
+            touch(joinpath(undeletable, "occupant"))
+            err = @test_logs (:warn,) match_mode = :any (
+                @test_throws ErrorException PT.with_diagnostic(PT.Dont(), undeletable) do _
+                    error("injected failure the removal must not replace")
+                end)
+            @test err.value.msg == "injected failure the removal must not replace"
+        end
+
+        @testset "no diagnostic requested: nothing to close, nothing to remove" begin
+            before = nactive()
+            @test PT.diagnose(dia -> dia isa PT.Dont, nothing, false, nothing, 25.0)
+            err = @test_throws ErrorException PT.diagnose(nothing, false, nothing, 25.0) do _
+                error("injected failure with no diagnostic")
+            end
+            @test err.value.msg == "injected failure with no diagnostic"
+            @test nactive() == before
+        end
     end
 
     @testset "diagnostic playback speed holds for a non-divisor sample_fps (#55)" begin

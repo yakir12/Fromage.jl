@@ -1214,6 +1214,19 @@ Where a check can replace a catch, it does: `matlab_dimension` and `matlab_extri
 validate the shape and element type of the `Any` they read instead of catching the `InexactError`
 that a malformed value would eventually cause.
 
+**Cleanup inverts the rule (#160).** A `catch` whose job is to stop cleanup from *becoming* the
+failure the caller sees catches everything and warns, rethrowing only `InterruptException` — the
+opposite shape to every other catch here, and deliberate. `PawsomeTracker.warn_on_failure` is the one
+that names it: it runs the closing and the removal of a diagnostic that failed halfway, both from inside
+a `finally`, where anything raised silently replaces the exception already on its way out. That
+exception is the one explaining what went wrong, so nothing from cleanup may reach the caller.
+Narrowing is not available anyway — ffmpeg surfaces through VideoIO as a plain `ErrorException`,
+and an unlink on the share reports what the share reports. Nothing is lost: the cleanup failure
+goes to the log with its backtrace. The cost is the one #34 and #25 were about — a `MethodError`
+from a bug in the cleanup itself is demoted to a warning too — and it is accepted here because the
+alternative is losing the failure the user actually needs to see. The same shape, for the same
+reason, is already in `save_issue_frame` and both precompile workloads.
+
 ### Process failures print what happened, not the `Cmd` (#67)
 
 `showerror` on a `ProcessFailedException` prints the whole failed `Cmd`, including the env-baked
