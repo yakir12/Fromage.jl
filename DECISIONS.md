@@ -1531,6 +1531,41 @@ The unconditional assignment is free. The `Union{Nothing,…}` union-splits, lea
 loop body, and costs nothing when `subtract` is off — measured against the alternative of an
 always-concrete empty region, which allocates an empty slice every frame instead.
 
+### The depot cache is named for what it holds, not for the workflow that filled it
+
+`julia-actions/cache` defaults its key to `julia-cache;workflow=<workflow>;job=<job>`. It is now
+`julia-cache;version=<minor>`, with the action still appending the OS.
+
+Two separate faults, both invisible until the keys were read directly
+(`gh api repos/yakir12/Fromage.jl/actions/caches`).
+
+**The version was never in the key at all.** The action builds the key body from
+`toJSON(matrix)`, and inside a *reusable* workflow the `matrix` context is empty — the matrix
+lives in the caller. So six matrix legs shared three cache entries, and the two Julia minors on
+each OS took turns overwriting each other's `compiled/`. The symptom was variance nobody had
+attributed: the windows leg's `julia-runtest` step ran 923, 365, 910, 425, 891, 948, 803 and 985
+seconds across eight consecutive runs of barely-changed content. That is a restore/miss lottery,
+not test noise. Pinning one minor fixed it by accident; naming the version fixes it on purpose,
+so raising the pin starts a clean line instead of thrashing against the old one.
+
+**`workflow=` in the key kept PRs permanently cold.** A cache written on a branch is visible only
+to that branch; one written on the default branch is visible to all of them. With `Test` and
+`Test on PRs` under different names, a PR job could never restore `main`'s depot — it rebuilt one
+every time. The sizes said so before any timing did: 365 MB and 319 MB on the `Test on PRs` keys
+against 1408 MB and 1455 MB on `Test`'s.
+
+**What it was worth.** Identical content, same three legs, warm versus cold: 9m00 against 26m18
+for the workflow, and 534s against 1570s for the macOS leg. `Test on PRs` went from a 14.6–17.9
+minute spread to 9m30. A cold depot roughly doubles the matrix, so this is the largest single
+lever in the pipeline — larger than the matrix cut that preceded it.
+
+`save-always: false` rides along: a failed job's depot is not worth a cache generation, and the
+repository sits near the 10 GB Actions cap where eviction is already in play.
+
+`Docs` and `Persistent tasks` deliberately keep their own lines. Their depots are much smaller
+(714 MB and 361 MB), so pointing them at the full test depot would spend storage to buy speed on
+jobs that are not on the release path.
+
 ### JET runs once, on ubuntu
 
 JET is a whole-package abstract interpretation of source and IR, so running it on three platforms

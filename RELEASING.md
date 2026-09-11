@@ -19,10 +19,20 @@ push to main
                     └─► docs build for the tag ─► /stable/ on github.io advances
 ```
 
-Expect a release to land roughly **15–35 minutes after the push** — the Test matrix is
-the wait, and the macOS Intel runner is usually the long pole (slow to queue). "I
-pushed and nothing happened yet" is almost always just queue time; only start
-debugging if the Test run itself has finished green and no release appeared.
+Expect a release to land roughly **12–15 minutes after the push**: about 9 for the Test
+matrix, seconds for AutoRelease, and about 3 for the tag's docs build. Measured on
+2026-09-11, warm — see "What the numbers were, and what they mean" below before treating
+any of it as a promise.
+
+**Two things this used to say, that measurement contradicted.** It is not queue time: the
+median wait from job created to job started was **3–5 seconds** on every platform, Intel
+macOS included. And macOS is not reliably the long pole — the three legs now finish within
+about 80 seconds of each other. So if a push seems stuck, look at the run, not at the
+queue: the usual real cause is a cold depot cache (below), which roughly doubles the
+matrix.
+
+Only start debugging the release itself if the Test run has finished green and no release
+appeared.
 
 Consequences of the design:
 
@@ -33,6 +43,47 @@ Consequences of the design:
   merge once.
 - Documentation-only changes also release (a patch bump). That is intentional: it is
   what moves `/stable/` on the docs site.
+
+## What the numbers were, and what they mean
+
+Measured 2026-09-11, across v0.2.53 → v0.3.2, while cutting the release path roughly in
+half. Recorded because the figures they replaced were wrong in a way that sent debugging
+in the wrong direction for a long time, not because these ones are exact.
+
+| stage | before | after |
+| --- | --- | --- |
+| local suite, threaded | 6m30, run *before* pushing | 6m00, now overlapped with PR CI |
+| `Test on PRs` | 17m10 | ~9m30 |
+| `Test` on `main` | 25m40 | ~9m00 |
+| AutoRelease | 15s | 15s |
+| tag docs build → `/stable/` | ~3m | ~3m |
+| **push → released** | **~29m** | **~12m** |
+
+Where it went: the matrix dropped from six legs to three (one Julia minor instead of two —
+see DECISIONS, "One Julia version, pinned"), JET stopped running once per platform, and the
+depot cache stopped being named after the workflow that filled it, so a PR can restore what
+`main` last saved.
+
+**The single most useful number here is the cost of a cold cache.** Identical content, same
+three legs, warm versus cold:
+
+| leg | warm | cold |
+| --- | --- | --- |
+| ubuntu | 454s | 880s |
+| windows | 522s | 1009s |
+| macos-15-intel | 534s | 1570s |
+| **workflow** | **9m00** | **26m18** |
+
+So a cold depot roughly triples the worst leg and doubles the matrix. That is what you are
+looking at when a run takes far longer than the table above — after a dependency bump, after
+the cache key changes, or when the repository is over the 10 GB Actions cache cap and entries
+are being evicted (`gh api repos/yakir12/Fromage.jl/actions/cache/usage`).
+
+**Treat all of this as indicative, not as a contract.** CI timings are stochastic: before the
+cache fix the same branch produced windows legs of 441s and 1071s on consecutive runs. The
+"after" column is a small number of samples taken on one afternoon, it will drift upward as
+the suite grows, and a figure pinned to a version is stale by the next one. Re-measure rather
+than trust it — `gh run list --workflow=Test.yml --json createdAt,updatedAt` is enough.
 
 ## Commit-message rules
 
