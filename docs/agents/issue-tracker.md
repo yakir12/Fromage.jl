@@ -12,12 +12,13 @@ for all operations; it infers the repo from `git remote -v` when run inside the 
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
 - **Close**: `gh issue close <number> --comment "..."`
 
-### This machine's `gh` is old
+### This machine's `gh`
 
-`gh` here is **2.23.0** (early 2023), so a few flags in the commands above are missing.
-`gh api`, `gh run list --json` and `gh release view --json` work; `gh pr checks --json` and
-`gh release list --json` do not. If a `--json` invocation fails, fall back to `gh api` on the
-REST endpoint rather than assuming the issue or field does not exist. See `CLAUDE.md` §6.
+`gh` here is **2.100.0** (2026-09-03), upgraded from 2.23.0 on 2026-09-11. Every command on this
+page works as written, `--json` flags included; the old version's missing flags and its
+Projects-classic GraphQL failures on `gh issue view` and `gh pr edit` are gone. **A `gh` failure is
+now a real failure** — investigate it rather than falling back to `gh api` as a version workaround,
+which is what the old advice here told you to do. See `CLAUDE.md` §6 for what was retested.
 
 ## Pull requests as a triage surface
 
