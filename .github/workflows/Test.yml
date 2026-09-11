@@ -54,15 +54,33 @@ jobs:
       version: ${{ matrix.version }}
       arch: ${{ matrix.arch }}
       allow_failure: ${{ matrix.allow_failure }}
-      run_codecov: ${{ matrix.version == '1' && matrix.os == 'ubuntu-latest' }}
+      # Matches TestOnPRs.yml now that there is a single version: coverage is measured once, on
+      # ubuntu. If a version axis ever comes back, this needs a `matrix.version ==` clause again or
+      # every version's ubuntu leg will upload.
+      run_codecov: ${{ matrix.os == 'ubuntu-latest' }}
     secrets:
       codecov_token: ${{ secrets.CODECOV_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
         version:
-          - "1.11"
-          - "1"
+          # ONE version, and an explicit minor rather than "1". Both halves are deliberate.
+          #
+          # One, because the two axes cover different risks and the cross product mostly repeats
+          # them: the OS axis covers the native libraries (AprilTags, OpenCV and FFMPEG binaries,
+          # Windows path and mmap handling), the version axis covers Julia semantics and what JET
+          # can see. Only a bug needing BOTH a specific OS and a specific minor justified six legs,
+          # and none has appeared. Project.toml's `julia` floor moved to 1.13 in the same commit,
+          # so this tests exactly what the package claims to support.
+          #
+          # Explicit, because "1" is a moving target and it moved silently. It resolved to 1.12
+          # until 1.13.0 was published on 2026-09-10, and from the next run on it meant 1.13 —
+          # which was not on test/runtests.jl's JET allowlist, so those legs quietly stopped
+          # running JET at all while staying green. Pinning the minor means the tested version and
+          # the analysed version move together, in a commit someone wrote on purpose. Raising this
+          # pin means checking JET is clean on the new minor FIRST, then raising the allowlist in
+          # test/runtests.jl with it — see DECISIONS, "One Julia version, pinned".
+          - "1.13"
         os:
           - ubuntu-latest
           # Local deviation from BestieTemplate's macOS-latest: those runners are Apple Silicon,

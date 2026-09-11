@@ -1493,9 +1493,26 @@ testset at all, so a failure did not say which case produced it.
 ### JET runs on an allowlist of Julia minors, not on all of them
 
 JET couples to compiler internals, so a new Julia release must not be able to break the suite
-through it. The gate in `runtests.jl` is therefore an allowlist — currently `(1.11, 1.12)`, both
-already in the CI matrix — and not a lower bound: a minor nobody has vetted runs no JET at all,
-rather than running it and going red for a reason no change in this repo caused.
+through it. The gate in `runtests.jl` is therefore an allowlist — `JET_MINORS`, currently `(13,)`,
+the same minor `Test.yml` pins — and not a lower bound: a minor nobody has vetted runs no JET at
+all, rather than running it and going red for a reason no change in this repo caused.
+
+**The allowlist must be read together with the matrix, and for a while it was not.** The list said
+`(1.11, 1.12)` while `Test.yml` said `version: "1"`. When Julia 1.13.0 was published on
+2026-09-10, `"1"` began resolving to 1.13 on the very next run, 1.13 was not on the list, and those
+legs ran no JET at all while reporting green. Nothing failed; the analysis simply stopped
+happening. CI had been the only place JET ran, so it stopped running anywhere.
+
+Two changes came out of that, and neither is the obvious one. Widening the allowlist would have
+been wrong — the point of an allowlist is that an unvetted minor is skipped. Instead:
+
+- the matrix pins an explicit minor rather than `"1"`, so the tested version and the analysed
+  version can only move together, in a commit someone wrote on purpose (see "One Julia version,
+  pinned" below); and
+- **the skip is loud.** An off-allowlist run now emits a warning and reports a
+  `JET (SKIPPED — …)` testset, so it shows up in the summary rather than in the absence of one.
+  Silence was the whole failure: a green suite that had quietly stopped checking is worse than a
+  red one, because nobody goes looking.
 
 It was a single pin (1.11) until 1.12 was shown to be clean. Keeping it a single pin had a cost
 that only showed up when someone looked: 1.12's inference reported `protect` and `keep` as
@@ -1513,6 +1530,39 @@ JET locally. Adding a further minor means checking it is clean first, then listi
 The unconditional assignment is free. The `Union{Nothing,…}` union-splits, leaving no union in the
 loop body, and costs nothing when `subtract` is off — measured against the alternative of an
 always-concrete empty region, which allocates an empty slice every frame instead.
+
+### One Julia version, pinned
+
+The matrix tested two minors on three platforms. It now tests one minor — an explicit `"1.13"` —
+on the same three platforms, and `Project.toml`'s `julia` floor moved to 1.13 with it so the
+package tests exactly what it claims to support.
+
+**Why one.** The two axes cover different risks and the cross product mostly repeats them. The OS
+axis covers the native libraries: AprilTags, OpenCV and FFMPEG binaries, and Windows path and mmap
+handling — which is where this package has actually broken. The version axis covers Julia
+semantics and what JET can see. Only a bug needing *both* a specific OS and a specific minor is
+paid for by the other three legs, and none has appeared. What it cost was real: six legs put the
+repository's Actions cache at 10.6 GB against a 10 GB cap, so entries were being evicted
+continuously, and the slowest leg — `1.11 / macos-15-intel`, 1429 s — set the release's critical
+path on its own.
+
+**Why an explicit minor rather than `"1"`.** Because `"1"` moved, silently, and took the JET
+analysis with it (see the entry above). A pin cannot do that. The cost is the honest one: when a
+new minor ships, this repository does not test it until someone raises the pin, and raising it
+means checking JET is clean on that minor first, then moving `JET_MINORS` and the matrix in the
+same commit. That is a chore. It is a chore that announces itself, which the previous arrangement
+was not.
+
+**What this gives up.** The `julia` compat entry is `"1.13"`, which Pkg reads as `[1.13, 2.0)`, so
+a user on a later minor may install a version nobody tested. That is the ordinary Julia convention
+and the alternative — an upper bound like `~1.13` — would make the package uninstallable the day
+1.14 ships, for ten lab users who would then be stuck. The gap is accepted and named rather than
+closed.
+
+**What was checked before pinning**, because the entry above requires it: Julia 1.13.0 was
+published 2026-09-10; CI's `"1"` legs ran it green on all three platforms on 2026-09-11 before
+this change; and `test/jet.jl` forced on 1.13 locally passes 8/8 with JET v0.12.1. The floor was
+not raised on the strength of the release being current.
 
 ### Aqua's persistent-task check is the one network-dependent check, and it runs alone (#159)
 

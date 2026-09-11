@@ -4,11 +4,20 @@
 # internals, so a new Julia release must not be able to break the suite through JET. An unlisted
 # minor runs no JET at all rather than running it and risking a red suite nobody caused.
 #
-# The list is (1.11, 1.12), both already in the CI matrix. 1.12 was added once it was clean: it
-# reported `protect`/`keep` as maybe-undefined in the two tracking loops, which 1.11 did not, and
-# which was a genuine (if unreachable) correlated-guard weakness rather than a JET artefact. With
-# that fixed, running here is what stops it — and anything else 1.12's inference can see — from
-# coming back unnoticed. Adding a new minor means checking it is clean FIRST, then listing it.
+# The list is `JET_MINORS` in runtests.jl, and it holds exactly the minor Test.yml pins — today
+# (1.13,). Keeping the two in step is the whole discipline: when the matrix said "1" and the list
+# said (1.11, 1.12), Julia 1.13.0 shipped, "1" started meaning 1.13, and those legs ran no JET
+# while reporting green. The analysis disappeared and nothing said so.
+#
+# The history is worth keeping, because it is the argument for running JET at all. The list was a
+# single pin (1.11) until 1.12 was checked and added; 1.12 then reported `protect`/`keep` as
+# maybe-undefined in the two tracking loops where 1.11 had not, and that was a genuine (if
+# unreachable) correlated-guard weakness rather than a JET artefact. A minor nobody has vetted is
+# still skipped rather than trusted — but runtests.jl now says so out loud instead of silently.
+#
+# Raising the pin means checking the new minor is clean FIRST, then moving `JET_MINORS` and the
+# Test.yml matrix together. 1.13 was verified clean before it was pinned: JET v0.12.1 resolves
+# there and this file passes 8/8.
 using JET: JET, @test_opt
 using Fromage: Fromage, Rectifications, PawsomeTracker
 using StaticArrays: SVector, SMatrix

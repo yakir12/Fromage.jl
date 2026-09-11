@@ -4,7 +4,7 @@ This page takes you from nothing to your first tracked videos. You'll do three t
 
 ## 1. Install Julia
 
-Fromage needs Julia **1.11 or newer**. Follow the instructions at [julialang.org/downloads](https://julialang.org/downloads/) — the recommended `juliaup` installer keeps Julia up to date for you.
+Fromage needs Julia **1.13 or newer**. Follow the instructions at [julialang.org/downloads](https://julialang.org/downloads/) — the recommended `juliaup` installer keeps Julia up to date for you.
 
 !!! warning "Using a Mac with an Apple Silicon chip (M1/M2/M3/…)?"
     Almost everything works, but the AprilTag features (drone tracking and `type = apriltag` rectifications) currently don't run natively on Apple Silicon. If you need those, install the **Intel (x86_64) Julia binary** and run it under Rosetta 2. Everything else — checkerboard rectifications and ordinary fixed-camera tracking — works natively. Details on the [Help page](help.md#Macs).
