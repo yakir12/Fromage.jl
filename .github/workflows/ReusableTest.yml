@@ -47,6 +47,18 @@ jobs:
         uses: julia-actions/cache@v3
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
+        with:
+          # julia-runtest defaults `coverage` to true, and nothing here used to override it, so
+          # every leg instrumented the package while only the `run_codecov` leg processed or
+          # uploaded the result — five of six legs in Test.yml, one of two in TestOnPRs.yml,
+          # producing lcov data that was then discarded. Tying it to the same input as the two
+          # steps below means the instrumentation happens exactly where it is read.
+          #
+          # Measured at +6.5% on the suite (391.8 s -> 417.1 s locally, threaded). Small, because
+          # `Pkg.test(coverage=true)` resolves to `--code-coverage=@<pkgroot>` (Pkg's
+          # Operations.jl, `gen_subprocess_flags`) rather than `user` — instrumenting the whole
+          # dependency stack would cost roughly 3x, and is not what runs here.
+          coverage: ${{ inputs.run_codecov }}
         # Local addition on top of BestieTemplate (which has no multi-threading option, as of
         # v0.18.6): run the suite multi-threaded — the package's tmap concurrency (rectification
         # building, run tracking) is otherwise never exercised on CI. "auto" = all runner cores.
