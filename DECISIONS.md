@@ -1502,6 +1502,35 @@ since dropped to about 42 s — see "Aqua's persistent-task check is the one net
 below — which changes none of the arithmetic that follows.) A fixture cache
 would have added machinery to save well under 1% of the run, so the duplicate encodes stay.
 
+### Cutting the test suite was measured and declined
+
+A full audit of where `Pkg.test()`'s 373 s goes — every file, testset and fixture timed, and the
+overlaps between suites enumerated. It is written up in `WHY-THE-SUITE-IS-SLOW.md`; the short
+version is that **the candidate cuts came to about 17 s and were not taken**, because disturbing
+tests that have caught real defects is not worth 4.6% of the clock.
+
+The one finding worth carrying forward on its own is why that number is so small. **Roughly 47% of
+the suite is Julia's first-call compilation, not test execution** (measured by including every file
+twice in one process: `test/VerifyRectifications/test_parsing.jl` runs 53.45 s cold and 4.63 s
+warm). That inverts the usual intuition. A *redundant* test recovers only the work it does — about
+0.06 s for a gateway scenario — because its code paths are compiled by whatever else covers them.
+A *non-redundant* one costs about 0.25 s, because it is the only thing compiling the package branch
+it exercises. So the tests that are cheap to remove are the ones you do not want to remove.
+
+Three plausible speedups were implemented, timed and reverted, and the file records each with its
+numbers so they are not re-attempted: funnelling the gateway helpers' keyword overrides into a
+`Dict` to kill the per-signature specialisations (159.9 s → 158.4 s, no effect — the isolated
+benchmark that promised 10× was an ordering artefact), warming the gateway with one representative
+call before the suite (net worse: a 20.7 s warm-up absorbed 18.3 s), and shrinking the bigpan
+AprilTag flight (fails its own straightness bound at 100 frames).
+
+The largest single item that *would* have worked, if the trade is ever wanted:
+`test/fromage.jl`'s large-pan AprilTag testset spends 18.2 s in `track1`, and the cost is the
+250-slice registered background stack rather than the 300-frame flight. At `background_length = 60`
+the same fixture gives bit-identical output — same missing indices, same displacement, same
+straightness to four decimals — in 4.98 s. What it gives up is exercising the *registered* stack at
+the shipped default length.
+
 ### Scenario csv names are generated, not invented (#68)
 
 Every gateway scenario is loaded as its own csv, so each of 255 `check` calls used to open with a
