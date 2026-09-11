@@ -387,8 +387,9 @@ branch starts from `main`, and if `main` has moved, rebase onto it rather than s
    or limitations. Report the actual line delta against the estimate honestly: extracting shared
    code costs lines here, deleting a structure saves them.
 6. **Watch the PR's CI** — by polling `gh pr checks <n>` in a loop, *not* with `--watch` (see the
-   note below; `--watch` is silent from a non-interactive session). **`TestOnPRs` triggers only on
-   `src/**`, `test/**`, `*.toml` and `.github/workflows/**`**, and **`Format` only on `**.jl`** —
+   `gh` notes below). Poll on the **exit code**, not on the table: 8 means checks are still pending,
+   0 that every one passed. **`TestOnPRs` triggers only on `src/**`, `test/**`, `*.toml` and
+   `.github/workflows/**`**, and **`Format` only on `**.jl`** —
    so a docs-only or top-level-`*.md` PR legitimately has no *`TestOnPRs`* run, while a PR touching
    only `docs/make.jl` gets `Format`, `Lint` and `Docs` (all three match `docs/**`) but still no
    `TestOnPRs`. Absent checks there is expected, not something to wait on.
@@ -432,21 +433,35 @@ of those is "done" on its own, and none of them should be reported as done.
   or `.copier-answers.yml` skip the test workflow and are not released. Anything under `src/` or
   `docs/` does release — so batch a `docs/src/` correction into the PR that needs it, or it costs
   a second version bump.
-- The `gh` on this machine is old (2.23.0, from early 2023), so a few flags you might expect are
-  missing: `gh pr checks --json` and `gh release list --json` are not available, while `gh api`,
-  `gh run list --json` and `gh release view --json` are.
-- **Do not follow a PR with `gh pr checks <n> --watch` from here.** It draws a redrawing terminal
-  display, so with stdout redirected — which is what a backgrounded tool call does — it emitted
-  **zero bytes** across ten minutes of genuinely pending checks, and a silent watcher is
-  indistinguishable from a hung one. (It is fine typed at a real terminal, and fine when every
-  check has already settled, which is why it can look like it works.) Poll `gh pr checks <n>`
-  in a loop instead and print each check as it settles, so progress is visible and a broken query
-  is too. Same rule for the post-merge chain with `gh run list`.
-- When polling `gh` in a loop, run the query once on its own first — an unsupported flag swallowed
-  by `2>/dev/null` becomes a watcher that polls forever and says nothing, which is hard to tell
-  from a slow CI run. A first-iteration heartbeat line makes that distinction visible if you would
-  rather not pre-check. Give the loop an explicit failure branch too: a filter that only matches
-  success is silent through a crash, which reads exactly like "still running".
+- **`gh` here is 2.100.0 (released 2026-09-03), upgraded from 2.23.0 on 2026-09-11.** Every
+  limitation this file used to record is gone. What follows was *retested* on the new version, not
+  assumed: `gh issue view <n>` and `gh pr edit` both used to die with a Projects-classic GraphQL
+  error (`repository.issue.projectCards`) — and `gh pr edit` **printed that error while silently
+  changing nothing**, which is how a PR description once stayed a placeholder after an edit that
+  looked like it had failed loudly and harmlessly. Both work now. So do `gh pr checks --json` and
+  `gh release list --json`, which 2.23.0 did not have. `gh api`, `gh run list --json` and
+  `gh release view --json` still work. **If a `gh` call fails now, it is a real failure — do not
+  reach for `gh api` as a version workaround.**
+- **`gh pr checks` exits 8 while any check is still pending**, 0 when all have passed, 1 when one
+  failed; `--json` carries a `bucket` field sorting each check into `pass`/`fail`/`pending`/
+  `skipping`/`cancel`. That pair is the polling primitive to build a watcher on — an exit-code test
+  beats counting rows out of the human-readable table.
+- **Do not follow a PR with `gh pr checks <n> --watch` from here** — diagnosed on 2.23.0 and
+  deliberately **not** retested on 2.100.0, because retesting needs a PR with genuinely pending
+  checks and manufacturing one means a push that cuts a release. On the old version it drew a
+  redrawing terminal display, so with stdout redirected — which is what a backgrounded tool call
+  does — it emitted **zero bytes** across ten minutes of genuinely pending checks, and a silent
+  watcher is indistinguishable from a hung one. (It was fine typed at a real terminal, and fine
+  when every check had already settled, which is why it could look like it works.) Whether 2.100.0
+  fixed it does not matter: polling on exit code 8 is visible, cheap and already correct. Poll
+  `gh pr checks <n>` in a loop and print each check as it settles, so progress is visible and a
+  broken query is too. Same rule for the post-merge chain with `gh run list`.
+- When polling `gh` in a loop, run the query once on its own first. The original reason was a
+  missing flag on 2.23.0, which no longer applies, but the failure shape outlives it: **any** query
+  that breaks behind `2>/dev/null` becomes a watcher that polls forever and says nothing, which is
+  hard to tell from a slow CI run. A first-iteration heartbeat line makes that distinction visible
+  if you would rather not pre-check. Give the loop an explicit failure branch too: a filter that
+  only matches success is silent through a crash, which reads exactly like "still running".
 
 ---
 
@@ -471,9 +486,9 @@ Configuration the installed engineering skills read. Distinct from §4, which is
 
 ### Issue tracker
 
-GitHub issues on `yakir12/Fromage.jl`, via the `gh` CLI (2.23.0 — some `--json` flags are missing).
-See `docs/agents/issue-tracker.md`. Delivering the work still follows §6, not a skill's generic
-git workflow.
+GitHub issues on `yakir12/Fromage.jl`, via the `gh` CLI (2.100.0 — every `--json` flag the skills
+use works; see §6's `gh` notes). See `docs/agents/issue-tracker.md`. Delivering the work still
+follows §6, not a skill's generic git workflow.
 
 ### Triage labels
 

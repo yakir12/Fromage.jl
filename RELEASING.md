@@ -161,8 +161,9 @@ prevents an infinite release loop (bump commit → Test → AutoRelease → bump
   workflow on the dashboard is green, and there is no tag and no release. A green run is
   therefore *not* evidence that a release happened; the new tag is. Check
   `gh api repos/yakir12/Fromage.jl/releases/latest --jq .tag_name`, or `version` in
-  `Project.toml` on `main`. (`gh release list --json` is not available on the `gh` in
-  this environment; `gh api` and `gh release view --json` are.)
+  `Project.toml` on `main`. (`gh release list --json` works since the 2026-09-11 upgrade
+  to `gh` 2.100.0, and carries an `isLatest` field; `gh api` and `gh release view --json`
+  work too.)
 - **A skipped release cannot be rescued with `workflow_dispatch`.** AutoRelease requires
   `github.event.workflow_run.event == 'push'`, so a hand-dispatched Test run finishes
   green and triggers nothing at all. The only things that restart the chain are a real
