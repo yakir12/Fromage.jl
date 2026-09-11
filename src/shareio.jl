@@ -9,8 +9,8 @@
 #
 # Three code paths open that share — ffmpeg frame reads, ffprobe probes, and VideoIO tracking opens
 # — and all three need the same treatment. They used to have one retry between them, on the
-# smallest of the three, which left the ~386 probe opens and ~372 tracking opens PER SESSION with
-# no protection at all (the reference session has 372 runs, one tracking open each). Rather than grow two more private copies of the same loop, every one of them
+# smallest of the three, which left the ~386 probe opens and ~372 tracking opens PER INVOCATION with
+# no protection at all (the reference dataset has 372 runs, one tracking open each). Rather than grow two more private copies of the same loop, every one of them
 # now calls `withretry` here, and the two subprocess paths share `capture` outright.
 #
 # **This module exists to be deleted.** It compensates for a mount, not for anything in this

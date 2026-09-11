@@ -309,6 +309,24 @@ function verify(
 end
 
 """
+    Fromage.empty_caches!()
+
+Forget every memoized read and detection, so the next call to [`main`](@ref) or [`verify`](@ref)
+re-probes, re-reads and re-detects everything from disk.
+
+Verification remembers what it read — one ffprobe per video, one `matread` per calibration file,
+one detection per rectification — for the life of the Julia session, so re-running `main` after
+fixing a csv row re-does only what that row changed (#233). Those memos are keyed on file PATHS and
+are never revalidated against the files themselves, so this is what to call after changing the
+contents of a video or `.mat` file **in place**, without changing its name — and after redefining
+one of Fromage's own functions under `Revise.jl`. Starting a fresh Julia session does the same
+thing.
+
+The caches are in `Fromage.Memo`, whose header states what each one holds and how it is keyed.
+"""
+empty_caches!() = (foreach(empty!, Memo.CACHES); nothing)
+
+"""
     only_track(data_path; runs_file = "runs.csv", tracking_defaults = (;), run_ids = nothing)
 
 Track the runs in `runs.csv` without any rectification, and return the tracks. A debugging entry

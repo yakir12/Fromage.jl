@@ -332,7 +332,19 @@ valid_apriltag_family(family) = haskey(APRIL_FAMILIES, family)
 # string (unreadable frame, too few tags, non-coplanar / mis-detected tags), so it composes with the
 # gateway's other checks. A plain type test, since `reference_space` already reports those as
 # strings — a genuine error propagates rather than being reformatted as a rectification issue.
+#
+# Memoized on its whole argument list (see `Memo`), which is every input the detection reads — the
+# frame (file, extrinsic) and what is being looked for in it (ntags, family, tag_cell_width). The
+# `ReferenceSpace` itself is deliberately NOT cached: it is rebuilt by `ApriltagRectification`, and
+# handing the same mutable one to two rectifications is not what this memo is for. The frame DUMP a
+# failure triggers stays outside the memo too, in `flag_extrinsic!` (#86, #210).
 function apriltag_extrinsic_issue(file, extrinsic, ntags, family, tag_cell_width)
+    return get!(APRILTAG_DETECTIONS, (file, extrinsic, ntags, family, tag_cell_width)) do
+        _apriltag_extrinsic_issue(file, extrinsic, ntags, family, tag_cell_width)
+    end
+end
+
+function _apriltag_extrinsic_issue(file, extrinsic, ntags, family, tag_cell_width)
     ref = reference_space(file, extrinsic, ntags, family, tag_cell_width)
     return ref isa String ? ref : nothing
 end

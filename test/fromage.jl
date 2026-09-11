@@ -381,33 +381,35 @@ end
     end
     # named for what it does here; `verify` is now an exported entry point of its own
     check_calibs() = Fromage.VerifyRectifications.check_rectifications(dir, joinpath(dir, "rectifications.csv"); issues_dir = idir)
-    session_dirs() = filter(isdir, readdir(idir; join = true))
+    invocation_dirs() = filter(isdir, readdir(idir; join = true))
     frames(d) = filter(endswith(".png"), readdir(d; join = true))
 
     df = check_calibs()
     @test any(m -> occursin("only 4 of 6 AprilTags", m), only(df.issues))
     @test any(m -> occursin("saved the extrinsic frame", m), only(df.issues))
-    first_session = only(session_dirs())
-    @test length(frames(first_session)) == 1 && filesize(only(frames(first_session))) > 0
+    first_invocation = only(invocation_dirs())
+    @test length(frames(first_invocation)) == 1 && filesize(only(frames(first_invocation))) > 0
 
+    # The second call is also the memo's guard (#233): the DETECTION is served from the cache by
+    # then, and the frame dump must still happen, into this invocation's own folder.
     df2 = check_calibs()
     @test any(m -> occursin("saved the extrinsic frame", m), only(df2.issues))
-    both = session_dirs()
-    @test length(both) == 2 && first_session in both       # the second run added a folder, it didn't replace one
+    both = invocation_dirs()
+    @test length(both) == 2 && first_invocation in both       # the second run added a folder, it didn't replace one
     @test all(d -> length(frames(d)) == 1, both)       # each folder holds only its own run's frame
-    @test isfile(only(frames(first_session)))              # the first run's frame survived the second run
+    @test isfile(only(frames(first_invocation)))              # the first run's frame survived the second run
     @test read(keepsake, String) == "hands off"        # and so did the user's file
 end
 
 @testset "issue folders never collide" begin
-    # session_issues_dir names a folder for the second the run started and counts past any folder that
+    # invocation_issues_dir names a folder for the second the invocation started and counts past any folder that
     # second already has, which is what keeps back-to-back runs apart. It only names the folder —
     # save_issue_frame creates it — so a run with nothing to report leaves the issues folder alone.
     P = Fromage.Paths
     d = mktempdir()
-    a = P.session_issues_dir(d); mkpath(a)
-    b = P.session_issues_dir(d); mkpath(b)
-    c = P.session_issues_dir(d)
+    a = P.invocation_issues_dir(d); mkpath(a)
+    b = P.invocation_issues_dir(d); mkpath(b)
+    c = P.invocation_issues_dir(d)
     @test allunique((a, b, c))
     @test all(==(d) ∘ dirname, (a, b, c))
     @test !ispath(c)

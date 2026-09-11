@@ -68,6 +68,39 @@ Fromage.only_track("path/to/data"; runs_file = "runs.csv", run_ids = ["run1", "l
 
 `main` and `only_rectify` also accept `rectification_diagnostics = true`, which saves each rectification's warped extrinsic frame to `results_dir/rectifications/` so you can check a rectification before tracking against it — see [the rectification images](results.md#The-rectification-images).
 
+## Re-running in the same Julia session
+
+Fixing a csv file usually takes a few passes: run `main`, read what it says, edit a row, run it
+again. Only the first pass pays for the reading. Everything Fromage reads or detects while checking
+your files — one `ffprobe` per video, one read per MATLAB calibration file, the checkerboard or
+AprilTag detection at each rectification's `extrinsic` timestamp, and the scan of each intrinsic
+window — is remembered for as long as that Julia session is alive, so the rows you did not touch
+cost nothing the second time. Edit a row and only what that row changed is re-read.
+
+This matters most where it hurts most: on a network share, reading a video is the slow part of
+checking a dataset, and a second run over a 300-run folder used to cost the same as the first.
+
+There is one assumption in it, and it is worth knowing:
+
+!!! warning "A file is remembered by its name, not by its contents"
+    Fromage never re-checks a file it has already read. If you **replace a video or a `.mat` file in
+    place** — re-copying a corrupt recording, re-exporting a calibration — while Julia is still
+    running, Fromage will keep reporting what the old file said. So will `Revise.jl` users who
+    change Fromage itself mid-session.
+
+    Two ways out, either is fine:
+
+    ```julia
+    Fromage.empty_caches!()   # forget everything read so far; the next run reads it all again
+    ```
+
+    or simply quit Julia and start again. Renaming the new file instead of overwriting the old one
+    also works, since the name is what is remembered.
+
+Nothing else is affected: the report you get is exactly the report you would have got from a cold
+start, and the [issues folder](results.md#The-issues-folder) still gets a fresh, time-stamped folder
+on every run.
+
 ## Changing a default for all rows at once
 
 The default of every *tuning* column can be overridden globally from `main`, so you don't have to fill in the same value on every row. The hierarchy is: a csv cell always wins over a global default, which wins over the built-in default (including the value probed from the video, for `yadif` and `native_fps`):

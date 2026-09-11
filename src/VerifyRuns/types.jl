@@ -14,7 +14,7 @@
 # clock, and time left out between them is closed up), one set of run-level parameters
 # (`verify_run_consistency!`), and one track file (`save2csv` writes `<run_id>.csv`).
 #
-# The word is NOT used for an execution of Fromage — that is a SESSION (see `session_issues_dir` in
+# The word is NOT used for an execution of Fromage — that is an INVOCATION (see `invocation_issues_dir` in
 # paths.jl) — and not for the track itself, which `main` returns in a column called `track`.
 #
 # A verified run: everything `PawsomeTracker.track` needs, guaranteed not to error. It is held as a

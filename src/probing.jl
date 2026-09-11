@@ -7,12 +7,21 @@
 # but Dates — spawning ffprobe has no business widening that.
 module Probing
 
+using ..Memo: VIDEO_PROBES
 using ..ShareIO: ShareIO, ShareReadError
 using FFMPEG: ffprobe
 
 # Run one ffprobe over `file` asking for `entries` (a `-show_entries` spec), and return its output
 # as a `key => value` dict — or an issue string if the file could not be read.
 #
+# Memoized on its whole argument list, which is the rule every memo in this package follows (see
+# `Memo`, which also owns the "a cached read is never revalidated against the file" contract this
+# inherits): one spawn per (file, entries) for the life of the session, so the same dataset verified
+# twice spawns ffprobe once. Both gateways share this cache; they ask for different entries, so a
+# file used by both is still probed once per gateway, exactly as before. The Dict handed back is the
+# cached one — callers only `get` from it, and nothing may mutate it.
+probe_fields(file, entries) = get!(() -> _probe_fields(file, entries), VIDEO_PROBES, (file, entries))
+
 # Only the spawn is fallible in a way worth catching: ffprobe failing on an unreadable or corrupt
 # file (`ShareReadError`), or the spawn/pipe itself failing (IOError, SystemError). Anything else is
 # not an unreadable video and propagates. The non-do-block `ffprobe()` gives an env-baked Cmd, safe
@@ -20,11 +29,11 @@ using FFMPEG: ffprobe
 #
 # The read goes through `ShareIO.capture`, which retries transient share failures and keeps
 # ffprobe's stderr. Both matter here, and neither used to happen. This stage opens the share ~386
-# times per SESSION across the two gateways — more often than the frame-read path everybody worried
-# about — and had no retry whatsoever, so a single EAGAIN aborted the whole session at verification, before
+# times per INVOCATION across the two gateways — more often than the frame-read path everybody worried
+# about — and had no retry whatsoever, so a single EAGAIN aborted the whole invocation at verification, before
 # any work was done. It also sent stderr to `devnull`, leaving the failure describable only by its
 # exception type, and it was described as a corrupt file. See WHY-FRAMES-FAIL.md.
-function probe_fields(file, entries)
+function _probe_fields(file, entries)
     exe = ffprobe()
     cmd = `$exe -v error -select_streams v:0 -show_entries $entries -of default=noprint_wrappers=1 $file`
     out = try

@@ -17,6 +17,7 @@ using StaticArrays: SVector, SDiagonal
 using OpenCV: OpenCV
 using CoordinateTransformations: LinearMap, Transformation
 using LinearAlgebra: I
+using ..Memo: APRILTAG_DETECTIONS
 using ..Spaces: GroundXY, RowCol, stored_x, to_stored
 
 # Confidence gate for `detect`: when the window's peak DoG response falls below GATE_FRACTION of
@@ -49,7 +50,7 @@ export track, ApriltagRectification, Segment, Tuning
 const OPENVIDEO_LOCK = ReentrantLock()
 
 # The open is retried like every other read of the share (see `ShareIO`). This path had no retry,
-# and it is ONE open per run — ~372 of them in the reference session, which has 372 runs
+# and it is ONE open per run — ~372 of them in the reference dataset, which has 372 runs
 # (CIFS-SHARE-INVESTIGATION.md). This used to read "~372 opens per run", which is the ratio
 # backwards by a factor of 372.
 #

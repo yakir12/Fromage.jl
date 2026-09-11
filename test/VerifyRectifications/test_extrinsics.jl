@@ -63,8 +63,8 @@
         @test flagged(df, 1, "no corners detected")
         @test flagged(df, 1, "saved the extrinsic frame")          # the message points at the file
         @test isfile(joinpath(idir, "stale.png"))                  # nothing of the caller's is removed
-        session_dir = only(filter(isdir, readdir(idir; join = true)))   # this session's own folder
-        pngs = filter(endswith(".png"), readdir(session_dir; join = true))
+        invocation_dir = only(filter(isdir, readdir(idir; join = true)))   # this invocation's own folder
+        pngs = filter(endswith(".png"), readdir(invocation_dir; join = true))
         @test length(pngs) == 1                                    # exactly the one failing frame
         @test filesize(only(pngs)) > 0                             # a real, non-empty image
     end

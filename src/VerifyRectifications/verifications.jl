@@ -142,7 +142,14 @@ end
 # header, unreadable file, absent required key or misshapen camera array is a structure issue (the
 # caller nulls :matlab_file);
 # otherwise returns the extrinsic count (or its issue) and the .mat's ImageSize dimension (or its issue).
-function matlab_metadata(file)
+#
+# Memoized on its whole argument list (see `Memo`): one matread per .mat for the life of the
+# session, so re-verifying a dataset re-reads no calibration file. What is remembered is this
+# derived metadata, not the parsed dict — the dict is the large object, and nothing outside this
+# function reads it.
+matlab_metadata(file) = get!(() -> _matlab_metadata(file), MATLAB_METADATA, (file,))
+
+function _matlab_metadata(file)
     dict = read_matlab(file)
     dict isa String && return dict
     keys_issue = matlab_missing_keys(dict)
@@ -296,7 +303,17 @@ _detection_failure(e) = e isa ShareReadError || e isa Base.IOError || e isa Syst
 # broken), so there is nothing left to substitute.
 _failure_message(e) = sprint(showerror, e)
 
+# Memoized on its whole argument list (see `Memo`), which is every input the detection reads: the
+# frame is decided by (file, extrinsic, yadif, blur, width, height) and the pattern by n_corners. The
+# frame DUMP a failure triggers stays outside the memo, in `flag_extrinsic!` — every invocation
+# dumps its own frame into its own issues folder, with its own path in the message (#86, #210).
 function extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
+    return get!(EXTRINSIC_DETECTIONS, (file, extrinsic, yadif, blur, width, height, n_corners)) do
+        _extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
+    end
+end
+
+function _extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
     try
         vf = _vf(yadif, blur)
         res = get_corners(file, extrinsic, vf, width, height, n_corners)
@@ -308,14 +325,14 @@ function extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
     end
 end
 
-# Save the frame that failed detection into this session's issues folder (created on demand) for the
+# Save the frame that failed detection into this invocation's issues folder (created on demand) for the
 # user to inspect, named by the video and extrinsic timestamp — e.g. `board_t1.0s.png`. `get_frame`
 # reads the frame lazily; best effort throughout, returning `nothing` if anything goes wrong.
-function save_issue_frame(session_dir, file, extrinsic, get_frame)
+function save_issue_frame(invocation_dir, file, extrinsic, get_frame)
     try
         image = get_frame()
-        mkpath(session_dir)
-        path = joinpath(session_dir, string(first(splitext(basename(file))), "_t", extrinsic, "s.png"))
+        mkpath(invocation_dir)
+        path = joinpath(invocation_dir, string(first(splitext(basename(file))), "_t", extrinsic, "s.png"))
         FileIO.save(path, image)
         return path
     catch e
@@ -344,10 +361,10 @@ end
 # parent's columns, so :extrinsic read back through `k` after the blank is `missing`.
 #
 # `(g, k, issue)` is positional because `detect_per_group!` calls `flag!` that way; the two captures
-# are keywords because `issue` and `session_dir` are both strings and adjacent, and transposing them
+# are keywords because `issue` and `invocation_dir` are both strings and adjacent, and transposing them
 # would compile, run, and write the frame into a folder named by the issue message.
-function flag_extrinsic!(g::AbstractDataFrame, k, issue; session_dir, get_frame)
-    saved = save_issue_frame(session_dir, k.file, k.extrinsic, get_frame)
+function flag_extrinsic!(g::AbstractDataFrame, k, issue; invocation_dir, get_frame)
+    saved = save_issue_frame(invocation_dir, k.file, k.extrinsic, get_frame)
     note = note_saved_frame(issue, saved)
     blank!(g, :extrinsic)
     push!.(g.issues, note)
@@ -363,7 +380,7 @@ function flag_intrinsic!(g::AbstractDataFrame, issue)
     return nothing
 end
 
-function verify_extrinsics!(df::AbstractDataFrame, session_dir; progress = true)
+function verify_extrinsics!(df::AbstractDataFrame, invocation_dir; progress = true)
     # :file is the canonical resolved path, so grouping on it corner-detects a file reached via different
     # spellings once per (extrinsic, blur, n_corners).
     checkerboards = subset(df, :type => ByRow(passmissing(==("checkerboard"))); view = true, skipmissing = true)
@@ -386,7 +403,7 @@ function verify_extrinsics!(df::AbstractDataFrame, session_dir; progress = true)
         "Validating extrinsics...",
         k -> extrinsic_issue(k.file, k.extrinsic, k.yadif, k.blur, k.width, k.height, k.n_corners),
         (g, k, issue) -> flag_extrinsic!(
-            g, k, issue; session_dir,
+            g, k, issue; invocation_dir,
             get_frame = () -> extrinsic_gray_frame(k.file, k.extrinsic, _vf(k.yadif, k.blur), k.width, k.height)
         );
         progress
@@ -402,7 +419,17 @@ end
 # the global read limiter this used to name
 # (`READ_SEM`) was measured against the real share, found to prevent nothing, and deleted — see
 # WHY-FRAMES-FAIL.md.
+# Memoized on its whole argument list (see `Memo`): the window (start, stop, temporal_step), the
+# frame (file, yadif, blur, width, height) and the pattern (n_corners) are all of what the scan
+# reads, so a second verification of an unedited window scans nothing.
 function intrinsic_issue(file, intrinsic_start, intrinsic_stop, temporal_step, yadif, blur, width, height, n_corners)
+    key = (file, intrinsic_start, intrinsic_stop, temporal_step, yadif, blur, width, height, n_corners)
+    return get!(INTRINSIC_DETECTIONS, key) do
+        _intrinsic_issue(file, intrinsic_start, intrinsic_stop, temporal_step, yadif, blur, width, height, n_corners)
+    end
+end
+
+function _intrinsic_issue(file, intrinsic_start, intrinsic_stop, temporal_step, yadif, blur, width, height, n_corners)
     vf = _vf(yadif, blur)
     found = 0
     try
@@ -443,14 +470,14 @@ end
 # `family` must be detectable and their metric fit must converge (coplanar, not mis-detected). Reads
 # real frames, so it runs only on otherwise-clean apriltag rows, grouped so one physical file is
 # checked once per (extrinsic, apriltags, family, tag_cell_width).
-function verify_apriltag_extrinsics!(df::AbstractDataFrame, session_dir; progress = true)
+function verify_apriltag_extrinsics!(df::AbstractDataFrame, invocation_dir; progress = true)
     tags = subset(df, :type => ByRow(passmissing(==("apriltag"))); view = true, skipmissing = true)
     cols = [:file, :extrinsic, :apriltags, :family, :tag_cell_width]   # nothing here is imputed, so it both requires and groups on all five
     detect_per_group!(
         tags, cols, cols, "Validating AprilTag extrinsics...",
         k -> PawsomeTracker.apriltag_extrinsic_issue(k.file, k.extrinsic, k.apriltags, k.family, k.tag_cell_width),
         (g, k, issue) -> flag_extrinsic!(
-            g, k, issue; session_dir,
+            g, k, issue; invocation_dir,
             get_frame = () -> collect(PawsomeTracker.read_frame_at(k.file, k.extrinsic))
         );
         progress
@@ -512,12 +539,14 @@ function verifications!(
         progress = true
     )
 
-    # This SESSION's frames go in a folder of their own, named for the moment it started, so the
-    # folder reflects only this session without anything being deleted to make that true —
+    # This INVOCATION's frames go in a folder of their own, named for the moment it started, so the
+    # folder reflects only this invocation without anything being deleted to make that true —
     # `issues_dir` itself is the caller's, and Fromage only ever adds to it (#86). save_issue_frame
-    # creates the folder on the first frame it dumps, so a session that finds nothing to report
-    # writes nothing. (A `Run` is an experimental run; this folder is per execution — see paths.jl.)
-    session_dir = session_issues_dir(issues_dir)
+    # creates the folder on the first frame it dumps, so an invocation that finds nothing to report
+    # writes nothing. It is per EXECUTION, not per Julia session and not per `Run` — see paths.jl.
+    # The detectors below are memoized for the life of the session (`Memo`); the frame dump is not,
+    # so a re-verified failure is reported afresh, with this invocation's own path in the message.
+    invocation_dir = invocation_issues_dir(issues_dir)
 
     # The resolved :file is the identity every later step uses (the read passes, duplicate
     # detection); :matlab_file (the .mat, matlab rows only) groups the .mat reads.
@@ -576,14 +605,14 @@ function verifications!(
 
     # the extrinsic time stamp must actually yield a detectable frame; only meaningful once the
     # time stamp itself has been range-checked above
-    verify_extrinsics!(df, session_dir; progress)
+    verify_extrinsics!(df, invocation_dir; progress)
 
     # the intrinsic window must actually contain ≥ 3 detectable-corner frames; runs after
     # verify_extrinsics! so rows whose extrinsic already failed are skipped, not re-scanned
     verify_intrinsics!(df; progress)
 
     # apriltag rows: the extrinsic frame must yield a valid shared reference (tags detectable + coplanar)
-    verify_apriltag_extrinsics!(df, session_dir; progress)
+    verify_apriltag_extrinsics!(df, invocation_dir; progress)
 
     return verify_unique_rectifications!(df)
 

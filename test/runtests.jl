@@ -57,5 +57,6 @@ const RUN_STATIC = get(ENV, "FROMAGE_RUN_STATIC", "true") != "false"
     include("apriltag_pipeline.jl")
     include("verifyrectifications.jl")
     include("verifyruns.jl")
+    include("memo.jl")
     include("fromage.jl")
 end
