@@ -52,6 +52,31 @@ jobs:
           arch: ${{ inputs.arch }}
       - name: Use Julia cache
         uses: julia-actions/cache@v3
+        with:
+          # Name the cache for what it actually holds — a depot for one OS and one Julia version —
+          # instead of for the workflow that happened to fill it.
+          #
+          # The default prefix is `julia-cache;workflow=<workflow>;job=<job>`, which put Test and
+          # TestOnPRs on separate lines for byte-identical depots. Because a cache written on a
+          # branch is only visible to that branch, while one written on the default branch is
+          # visible to all of them, that naming meant a PR job could never restore main's depot and
+          # started cold every time. The sizes said so plainly: 319 MB and 365 MB on the TestOnPRs
+          # keys against 1408 MB and 1455 MB on Test's, and PR legs that swung 2.4x run to run
+          # (windows 441 s then 1071 s on the same branch). Dropping `workflow=` lets a PR restore
+          # what main last saved.
+          #
+          # `version=` is here for a different reason, and is deliberate rather than redundant
+          # while the matrix pins a single minor: the default key never carried the Julia version
+          # at all, because julia-actions/cache builds it from `toJSON(matrix)`, and inside a
+          # REUSABLE workflow the matrix context is empty — the matrix lives in the caller. So when
+          # the matrix held two minors, both legs on one OS shared a key and overwrote each other's
+          # `compiled/`. Pinning one version fixed that by accident; naming the version fixes it on
+          # purpose, so raising the pin starts a clean line instead of thrashing against the old one.
+          cache-name: julia-cache;version=${{ inputs.version }}
+          # A failed job's depot is not worth a cache generation. The default saves regardless,
+          # which spends quota on runs whose state we would rather not inherit — and the repository
+          # sits at 9.9 GB against a 10 GB cap, where eviction is already in play.
+          save-always: false
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
         with:
