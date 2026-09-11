@@ -1,0 +1,68 @@
+name: Persistent tasks
+
+# Aqua's persistent-task check, which the test suite deliberately does not run: it is the only
+# check whose result depends on the network (#159). It generates a temporary package, `Pkg.develop`s
+# this one into it and precompiles the result, so it asks Pkg to resolve a fresh environment — which
+# downloads the General registry, and clones it from GitHub when the depot has none.
+#
+# Its own workflow, not a step in Test.yml, for the reason RELEASING.md already gives for Lint:
+# AutoRelease gates on the Test workflow's conclusion, so anything inside Test can stop a release.
+# A GitHub outage must not stop the lab from getting a tracker fix, and the check is low-stakes
+# here — nothing depends on this package, so a lingering Task blocks nobody's precompilation but
+# ours. This way a failure is a plainly named red check that costs a release nothing, which is the
+# distinction #159 asked CI to draw between a code failure and an unavailable external service.
+#
+# The flip side is that red here blocks nothing, so it has to be *read*. See test/persistent_tasks.jl.
+
+on:
+  push:
+    branches:
+      - main
+    # TestOnPRs.yml's filter, narrowed from `.github/workflows/**` to this workflow's own file —
+    # nothing else here changes what loading the package leaves running. Written out twice rather
+    # than shared with a YAML anchor: GitHub Actions does not expand anchors in workflow files.
+    paths:
+      - "src/**"
+      - "test/**"
+      - "*.toml"
+      - ".github/workflows/PersistentTasks.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "test/**"
+      - "*.toml"
+      - ".github/workflows/PersistentTasks.yml"
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+
+jobs:
+  persistent-tasks:
+    # Named for the platform, like ToleranceResiduals.yml's job, so the check reads
+    # "Persistent tasks / ubuntu-latest" rather than repeating the workflow name.
+    name: ubuntu-latest
+    # One platform, one Julia version: the check is about what loading this package leaves running,
+    # which is not a platform-dependent question. Matches the leg Test.yml measures coverage on.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: "1"
+          arch: default
+      - uses: julia-actions/cache@v3
+      - uses: julia-actions/julia-buildpkg@v1
+      - name: Check
+        # `test` is a workspace project of the root one (Project.toml's [workspace]), so this
+        # resolves against the same manifest buildpkg just instantiated.
+        run: |
+          julia --project=test -e 'using Pkg; Pkg.instantiate()'
+          julia --project=test test/persistent_tasks.jl

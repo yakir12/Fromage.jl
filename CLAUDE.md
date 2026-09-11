@@ -64,7 +64,8 @@ follow this file. Rule 6 below exists because that has actually gone wrong.
 | `src/VerifyRuns/`, `src/VerifyRectifications/` | The two csv gateways: parsers, types, verifications |
 | `test/fixtures.jl` | Synthetic ffmpeg media + analytic ground truth (a module; shared by tests *and* benchmarks) |
 | `test/harness.jl` | Gateway CSV plumbing shared by the two gateway suites |
-| `test/quality.jl` | Aqua, ExplicitImports, and the single-definition-site invariant (#140/#141) |
+| `test/quality.jl` | Aqua, ExplicitImports, the single-definition-site invariant (#140/#141) and the offline invariant (#159) |
+| `test/persistent_tasks.jl` | Aqua's persistent-task check — the one network-dependent check, run by its own non-gating workflow (#159) |
 | `test/jet.jl` | JET; gated on an allowlist of Julia minors (currently 1.11 and 1.12) |
 | `benchmark/benchmarks.jl` | BenchmarkTools `SUITE`, `"micro"` + `"macro"`. Deliberately **not** in CI |
 | `docs/src/` | The user-facing site (`get-started`, `data-folder`, `runs`, `rectifications`, `results`, `help`) |
@@ -173,6 +174,11 @@ Never `julia` without `--project`; the global environment does not have this pac
 - Full suite: `JULIA_NUM_THREADS=auto julia --project -e 'using Pkg; Pkg.test()'`.
   `JULIA_NUM_THREADS` is not optional — it is what exercises the threaded read/detect/track
   paths, and CI sets it too.
+- The suite needs no network once the deps are installed, and `test/quality.jl` asserts that it
+  stays that way (#159). The one check whose result depends on it — Aqua's persistent-task check —
+  is not in `runtests.jl`: run `julia --project=test test/persistent_tasks.jl`, which is what the
+  `PersistentTasks` workflow does. That workflow is **not** gating, on the same terms as `Lint`, so
+  a red one blocks no release and has to be read rather than waited on.
 - A single suite while iterating: run `test/runtests.jl` with the other `include`s commented, or
   include `test/fixtures.jl` + `test/harness.jl` and then the one file you care about.
 - The gateway helper `check` in `test/harness.jl` returns the **built objects** for a clean file — a

@@ -1462,7 +1462,9 @@ reaches. Two short explicit definitions beat one shared indirect one here.
 Encoding each shared video once and copying it, rather than re-encoding the same content per suite,
 was on the table: roughly 19 of the ~45 ffmpeg invocations produce content another suite has
 already built. Timed, the entire generator set costs about 2.5 s — against `quality` (Aqua and
-ExplicitImports) at 71 s, `PawsomeTracker` at 56 s and `Rectifications` at 26 s. A fixture cache
+ExplicitImports) at 71 s, `PawsomeTracker` at 56 s and `Rectifications` at 26 s. (`quality` has
+since dropped to about 42 s — see "Aqua's persistent-task check is the one network-dependent check"
+below — which changes none of the arithmetic that follows.) A fixture cache
 would have added machinery to save well under 1% of the run, so the duplicate encodes stay.
 
 ### Scenario csv names are generated, not invented (#68)
@@ -1511,6 +1513,55 @@ JET locally. Adding a further minor means checking it is clean first, then listi
 The unconditional assignment is free. The `Union{Nothing,…}` union-splits, leaving no union in the
 loop body, and costs nothing when `subtract` is off — measured against the alternative of an
 always-concrete empty region, which allocates an empty slice every frame instead.
+
+### Aqua's persistent-task check is the one network-dependent check, and it runs alone (#159)
+
+`Aqua.test_all` runs `test_persistent_tasks` by default, and unlike every other check it asks Pkg to
+*resolve a fresh environment* rather than reading what is already on disk. The suite disables it and
+it lives in `test/persistent_tasks.jl`, whose header says what the check does and why it is kept;
+the `PersistentTasks` workflow and `julia --project=test test/persistent_tasks.jl` run it.
+
+The reason to record this is that **the failure is conditional, so running the check offline is not
+a way to find out whether the split is still needed**. Measured three ways on one machine:
+
+| depot | network | result |
+|---|---|---|
+| registry installed | yes | passes |
+| registry installed | no | passes, after a `could not download https://pkg.julialang.org/registries` warning |
+| no registry | no | errors — `download_default_registries` tries to clone General from GitHub |
+
+Only the third row is the hard failure, and in that state `Pkg.test()` fails the same way before a
+single test runs, which is Pkg's business and not this repo's. What the second row shows is the part
+worth acting on: the check reaches for the network on *every* run and survives only because the
+resolution happens to land on versions the depot already holds. Nothing about this package makes
+that true, and a resolution that picks one uninstalled version turns it into the third row.
+
+The cost settled it. The check spends ~30 s warm — minutes on a cold depot — re-precompiling a
+dependency stack the suite has already precompiled, once per leg of a six-leg matrix. Moving it took
+the `quality` testset from 68 s to 42 s.
+
+It is kept rather than deleted: a package that leaves a `Task` running after load blocks
+precompilation of everything downstream, and nothing else in the suite would notice.
+
+**It is a separate workflow, not a step inside `Test`, and that is the load-bearing part.**
+`AutoRelease` gates on `Test`'s conclusion, so a network-dependent check placed anywhere inside
+`Test` can stop a release — which is the same complaint #159 opened with, moved one step to the
+right rather than answered. `RELEASING.md` already decided this case for `Lint`: a dead external
+link must not stop the lab getting a tracker fix. A registry outage is the same argument, and the
+stakes here are lower still, since nothing depends on this package. So a failure is a plainly named
+red check that costs a release nothing — which is also the distinction the issue asked CI to draw
+between a code failure and an unavailable external service.
+
+The price is that red here blocks nothing, so it has to be read. That is the same exposure as
+`benchmark/` (never in CI) and `test/tolerance_residuals.jl` (manual dispatch only), but smaller:
+this one at least runs on every push and PR that touches `src/`, `test/` or a `*.toml`.
+
+`test/quality.jl` holds the split in place by parsing — not grepping — every file `runtests.jl`
+reaches: no call to `test_persistent_tasks`, every `test_all` call passing `persistent_tasks =
+false`, and `test/persistent_tasks.jl` still calling the check, so hollowing it out cannot leave a
+green workflow behind. The first draft grepped the text and failed on its own explanatory comment,
+which is the argument for the parser in one line. An `include` it cannot follow throws rather than
+being skipped, for the same reason.
 
 ### The precompile workloads are excluded from coverage
 
