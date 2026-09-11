@@ -10,8 +10,12 @@
     end
 
     @testset "segmented run across two videos" begin
-        runs = check([runrow(run_id = "g2", file = ART.a, start = "0", stop = "1", start_location = "(100, 100)"),
-                      runrow(run_id = "g2", file = ART.b, start = "0", stop = "1")])
+        runs = check(
+            [
+                runrow(run_id = "g2", file = ART.a, start = "0", stop = "1", start_location = "(100, 100)"),
+                runrow(run_id = "g2", file = ART.b, start = "0", stop = "1"),
+            ]
+        )
         @test clean(runs)
         t, ij = VR.track(only(runs), missing, nothing, nothing)
         @test length(t) == length(ij) > 0

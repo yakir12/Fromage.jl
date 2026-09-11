@@ -37,9 +37,13 @@ using ..Harness: capturing
 
     # main writes results_dir/diagnostic.mp4 relative to the current directory
     outdir = mktempdir()
-    runs = cd(() -> main(dir; rectification_defaults = (n_corners = (5, 8),),
-                              tracking_defaults = (target_width = 10,),
-                              rectification_diagnostics = true), outdir)
+    runs = cd(
+        () -> main(
+            dir; rectification_defaults = (n_corners = (5, 8),),
+            tracking_defaults = (target_width = 10,),
+            rectification_diagnostics = true
+        ), outdir
+    )
 
     @test runs isa DataFrame
     @test nrow(runs) == 1
@@ -132,8 +136,12 @@ end
         println(io, "solo_b,c1,$(only(target)),\"(55, 50)\",0")
     end
     named_out = mktempdir()
-    cd(() -> Fromage.only_track(dir; runs_file = "named.csv", run_ids = ["solo_b"],
-                                tracking_defaults = (target_width = 10,)), named_out)
+    cd(
+        () -> Fromage.only_track(
+            dir; runs_file = "named.csv", run_ids = ["solo_b"],
+            tracking_defaults = (target_width = 10,)
+        ), named_out
+    )
     @test isfile(joinpath(named_out, "results_dir", "solo_b.mp4"))
     @test !isfile(joinpath(named_out, "results_dir", "1.mp4"))
 end
@@ -219,8 +227,10 @@ end
     @test maximum(abs((p - a)[1] * d[2] - (p - a)[2] * d[1]) for p in present) < 0.5
     # the no-subtraction path (background_length = 0) through track_apriltag: the 2-slice
     # registered stack still cancels the pan, and the same displacement contract holds
-    _, xy0 = track1(joinpath(dir, vid); rectification = rect,
-        start_location = sl, target_width = 12, background_length = 0)
+    _, xy0 = track1(
+        joinpath(dir, vid); rectification = rect,
+        start_location = sl, target_width = 12, background_length = 0
+    )
     @test !any(ismissing, xy0)
     p0 = collect(skipmissing(xy0))
     @test hypot((p0[end] - p0[1])...) ≈ ground_disp rtol = 0.05
@@ -246,8 +256,10 @@ end
     vid, groundpath, sl, nframes = make_apriltag_video(dir, "bigpan"; nframes = 300, amp = 55, occlude = occluded)
     file = joinpath(dir, vid)
     # extrinsic at t = 0.2 s (frame 6): the frames around t = 0 have the occluded tag
-    rect = Fromage.PawsomeTracker.ApriltagRectification(; aspect = 1.0, file = file, extrinsic = 0.2, ntags = 4, family = "tag36h11",
-        tag_cell_width = 8, center = missing, north = missing, width = 480, height = 480)
+    rect = Fromage.PawsomeTracker.ApriltagRectification(;
+        aspect = 1.0, file = file, extrinsic = 0.2, ntags = 4, family = "tag36h11",
+        tag_cell_width = 8, center = missing, north = missing, width = 480, height = 480
+    )
     ts, xy = track1(file; rectification = rect, start_location = sl, target_width = 12)
     @test length(xy) == nframes
     @test findall(ismissing, xy) == occluded            # a lost tag ⇒ missing, exactly there
@@ -273,19 +285,23 @@ end
     vidB, _, slB, nB = make_apriltag_video(dir, "segB"; nframes = 40)
     fileA, fileB = joinpath(dir, vidA), joinpath(dir, vidB)
     # the reference comes from segment A's extrinsic frame and serves both segments
-    rect = Fromage.PawsomeTracker.ApriltagRectification(; aspect = 1.0, file = fileA, extrinsic = 0.2, ntags = 4, family = "tag36h11",
-        tag_cell_width = 8, center = missing, north = missing, width = 480, height = 480)
+    rect = Fromage.PawsomeTracker.ApriltagRectification(;
+        aspect = 1.0, file = fileA, extrinsic = 0.2, ntags = 4, family = "tag36h11",
+        tag_cell_width = 8, center = missing, north = missing, width = 480, height = 480
+    )
 
     diag = joinpath(dir, "segmented.mp4")
     sls = Vector{Union{Missing, NTuple{2, Int}}}([slA, slB])
-    ts, xy = track1([fileA, fileB]; rectification = rect, start_location = sls,
-                    target_width = 12, diagnostic_file = diag)
+    ts, xy = track1(
+        [fileA, fileB]; rectification = rect, start_location = sls,
+        target_width = 12, diagnostic_file = diag
+    )
 
     @test length(xy) == nA + nB                        # both segments, concatenated
     @test length(ts) == length(xy)
     # the stitched timestamps continue at the tracked rate across the join — the vector method
     # rebuilds the range from the first segment's step, so a wrong step shows up only here
-    @test step(ts) ≈ 1 / 25 rtol = 1e-6
+    @test step(ts) ≈ 1 / 25 rtol = 1.0e-6
     @test first(ts) == 0
 
     # tags are visible throughout these fixtures, so every frame should have registered
@@ -305,7 +321,7 @@ end
     # ±0.16 s while one diagnostic frame is 2/25 = 0.08 s, so it passed a diagnostic that was a
     # whole frame short — measured 0.0 residual, and vacuous anyway.
     @test s.nframes == (nA + nB) ÷ 2
-    @test s.fps ≈ 25 rtol = 1e-6
+    @test s.fps ≈ 25 rtol = 1.0e-6
 end
 
 @testset "the AprilTag diagnostic carries the run's label (#22)" begin
@@ -316,8 +332,10 @@ end
     vid, _, sl, _ = make_apriltag_video(dir, "lbl"; nframes = 40)
     file = joinpath(dir, vid)
     PT = Fromage.PawsomeTracker
-    rect = PT.ApriltagRectification(; aspect = 1.0, file = file, extrinsic = 0.2, ntags = 4, family = "tag36h11",
-        tag_cell_width = 8, center = missing, north = missing, width = 480, height = 480)
+    rect = PT.ApriltagRectification(;
+        aspect = 1.0, file = file, extrinsic = 0.2, ntags = 4, family = "tag36h11",
+        tag_cell_width = 8, center = missing, north = missing, width = 480, height = 480
+    )
 
     # the label is the diagnostic file's name — which `main` sets to the run_id
     dia = PT.diagnose_apriltag(joinpath(dir, "run7.mp4"), rect, true, 25)
@@ -338,8 +356,10 @@ end
     # content. The encoder is deterministic, so before the label they came out byte-identical.
     outs = map(("aaaa", "wwww")) do name
         d = joinpath(dir, "$name.mp4")
-        track1(file; rectification = rect, start_location = sl, target_width = 12,
-               diagnostic_file = d)
+        track1(
+            file; rectification = rect, start_location = sl, target_width = 12,
+            diagnostic_file = d
+        )
         read(d)
     end
     @test outs[1] != outs[2]
@@ -404,21 +424,25 @@ end
     file = joinpath(dir, vid)
     corrupt = make_corrupt_video(joinpath(dir, "corrupt.mp4"))
 
-    @test PT.reference_space(file, 0.2, 4, "tag36h11", 8)    isa PT.ReferenceSpace   # success
-    @test PT.reference_space(file, 0.2, 99, "tag36h11", 8)   isa String              # too few tags
-    @test PT.reference_space(file, 0.2, 4, "tag99x9", 8)     isa String              # unsupported family
+    @test PT.reference_space(file, 0.2, 4, "tag36h11", 8) isa PT.ReferenceSpace   # success
+    @test PT.reference_space(file, 0.2, 99, "tag36h11", 8) isa String              # too few tags
+    @test PT.reference_space(file, 0.2, 4, "tag99x9", 8) isa String              # unsupported family
     @test PT.reference_space(corrupt, 0.2, 4, "tag36h11", 8) isa String              # unreadable frame
 
     # the verification hook is now a plain type test, with no catch of its own
-    @test PT.apriltag_extrinsic_issue(file, 0.2, 4, "tag36h11", 8)    === nothing
-    @test PT.apriltag_extrinsic_issue(file, 0.2, 99, "tag36h11", 8)   isa String
+    @test PT.apriltag_extrinsic_issue(file, 0.2, 4, "tag36h11", 8) === nothing
+    @test PT.apriltag_extrinsic_issue(file, 0.2, 99, "tag36h11", 8) isa String
     @test PT.apriltag_extrinsic_issue(corrupt, 0.2, 4, "tag36h11", 8) isa String
 
     # ...while the rectification builder, which has nowhere to put a message, still throws
-    @test_throws ErrorException PT.ApriltagRectification(; aspect = 1.0, file = corrupt, extrinsic = 0.2, ntags = 4, family = "tag36h11",
-        tag_cell_width = 8, center = missing, north = missing, width = 480, height = 480)
-    @test_throws ErrorException PT.ApriltagRectification(; aspect = 1.0, file = file, extrinsic = 0.2, ntags = 99, family = "tag36h11",
-        tag_cell_width = 8, center = missing, north = missing, width = 480, height = 480)
+    @test_throws ErrorException PT.ApriltagRectification(;
+        aspect = 1.0, file = corrupt, extrinsic = 0.2, ntags = 4, family = "tag36h11",
+        tag_cell_width = 8, center = missing, north = missing, width = 480, height = 480
+    )
+    @test_throws ErrorException PT.ApriltagRectification(;
+        aspect = 1.0, file = file, extrinsic = 0.2, ntags = 99, family = "tag36h11",
+        tag_cell_width = 8, center = missing, north = missing, width = 480, height = 480
+    )
 end
 
 @testset "diagnostic video: multi-run, mixed calibrations" begin
@@ -429,12 +453,17 @@ end
     make_video(joinpath(dir, "cal_big.mp4"); size = (640, 480))
     make_video(joinpath(dir, "cal_small.mp4"); size = (320, 240))
     # fronto-parallel pinhole; ImageSize [480, 640] matches cal_big.mp4 (the cross-check)
-    matwrite(joinpath(dir, "cal.mat"), Dict("cameraParams" => Dict(
-        "ImageSize" => [480.0, 640.0],
-        "K" => [500.0 0.0 320.0; 0.0 500.0 240.0; 0.0 0.0 1.0],
-        "RotationVectors" => zeros(2, 3),
-        "TranslationVectors" => [0.0 0.0 100.0; 0.0 0.0 200.0],
-        "RadialDistortion" => [0.0, 0.0])))
+    matwrite(
+        joinpath(dir, "cal.mat"), Dict(
+            "cameraParams" => Dict(
+                "ImageSize" => [480.0, 640.0],
+                "K" => [500.0 0.0 320.0; 0.0 500.0 240.0; 0.0 0.0 1.0],
+                "RotationVectors" => zeros(2, 3),
+                "TranslationVectors" => [0.0 0.0 100.0; 0.0 0.0 200.0],
+                "RadialDistortion" => [0.0, 0.0]
+            )
+        )
+    )
     targets = [make_target_video(dir, "t$i") for i in 1:4]
     open(joinpath(dir, "rectifications.csv"), "w") do io
         println(io, "rectification_id,type,file,extrinsic,pixel_width,matlab_file,extrinsic_index")
@@ -508,7 +537,7 @@ end
     # about. What is Windows-specific — drive-prefixed absolute paths, which the concat demuxer
     # accepts only under `-safe 0` — goes through the same list in the `main` testsets above.
     stems = Sys.iswindows() ? ["spa ce", "üñí çodé"] :
-            ["back\\slash", "double\"quote", "spa ce", "tab\there", "bell\ahere", "üñí çodé"]
+        ["back\\slash", "double\"quote", "spa ce", "tab\there", "bell\ahere", "üñí çodé"]
     joined = concat_stems(stems)
     @test isfile(joined)
     @test probe_stream(joined).nframes == 5 * length(stems)   # every segment, one entry each
@@ -572,10 +601,14 @@ end
     outdir = mktempdir()
 
     @testset "a calibration no run uses is rejected, before anything is opened" begin
-        write(joinpath(dir, "rectifications.csv"),
-              "rectification_id,type,file,extrinsic,pixel_width\nc1,uniform,cal.mp4,1,2\nc2,uniform,broken.mp4,1,2\n")
-        write(joinpath(dir, "runs.csv"),
-              "rectification_id,file,start_location\nc1,$(only(target)),\"(55, 50)\"\n")
+        write(
+            joinpath(dir, "rectifications.csv"),
+            "rectification_id,type,file,extrinsic,pixel_width\nc1,uniform,cal.mp4,1,2\nc2,uniform,broken.mp4,1,2\n"
+        )
+        write(
+            joinpath(dir, "runs.csv"),
+            "rectification_id,file,start_location\nc1,$(only(target)),\"(55, 50)\"\n"
+        )
         _, out = capturing() do
             try
                 cd(() -> main(dir; tracking_defaults = (target_width = 10,)), outdir)
@@ -590,10 +623,14 @@ end
     end
 
     @testset "a run naming a calibration that does not exist is rejected, and both files reported" begin
-        write(joinpath(dir, "rectifications.csv"),
-              "rectification_id,type,file,extrinsic,pixel_width\nc1,uniform,cal.mp4,1,2\n")
-        write(joinpath(dir, "runs.csv"),
-              "rectification_id,file,start_location\nc9,$(only(target)),\"(55, 50)\"\n")
+        write(
+            joinpath(dir, "rectifications.csv"),
+            "rectification_id,type,file,extrinsic,pixel_width\nc1,uniform,cal.mp4,1,2\n"
+        )
+        write(
+            joinpath(dir, "runs.csv"),
+            "rectification_id,file,start_location\nc9,$(only(target)),\"(55, 50)\"\n"
+        )
         _, out = capturing() do
             try
                 cd(() -> main(dir; tracking_defaults = (target_width = 10,)), outdir)
@@ -615,11 +652,15 @@ end
     make_video(joinpath(dir, "cal2.mp4"); size = (320, 240), duration = 2)
     t1, _ = make_target_video(dir, "n1")
     t2, _ = make_target_video(dir, "n2")
-    write(joinpath(dir, "rectifications.csv"),
-          "rectification_id,type,file,extrinsic,pixel_width\nc1,uniform,cal1.mp4,1,2\nc2,uniform,cal2.mp4,1,2\n")
-    write(joinpath(dir, "runs.csv"),
-          "run_id,rectification_id,file,start_location\n" *
-          "r1,c1,$(only(t1)),\"(55, 50)\"\nr2,c2,$(only(t2)),\"(55, 50)\"\n")
+    write(
+        joinpath(dir, "rectifications.csv"),
+        "rectification_id,type,file,extrinsic,pixel_width\nc1,uniform,cal1.mp4,1,2\nc2,uniform,cal2.mp4,1,2\n"
+    )
+    write(
+        joinpath(dir, "runs.csv"),
+        "run_id,rectification_id,file,start_location\n" *
+            "r1,c1,$(only(t1)),\"(55, 50)\"\nr2,c2,$(only(t2)),\"(55, 50)\"\n"
+    )
     outdir = mktempdir()
 
     runs = cd(() -> main(dir; run_ids = ["r1"], tracking_defaults = (target_width = 10,)), outdir)

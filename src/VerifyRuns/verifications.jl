@@ -25,15 +25,15 @@ end
 # frame rate) and :sample_fps (← :native_fps).
 function read_video_metadata!(df::AbstractDataFrame; progress = true)
     blank!(df, :dimension, :duration, :sar, :probed_fps)
-    read_per_file!(df, :file, [:file], "Reading runs videos...", probe_video, apply_video_metadata!; progress)
+    return read_per_file!(df, :file, [:file], "Reading runs videos...", probe_video, apply_video_metadata!; progress)
 end
 
 apply_video_metadata!(g, issue::String) = push!.(g.issues, issue)
 
 function apply_video_metadata!(g, m::NamedTuple)
-    g.dimension  .= Ref((m.width, m.height))  # Ref, or the tuple broadcasts one element per row
-    g.duration   .= m.duration
-    g.sar        .= m.sar
+    g.dimension .= Ref((m.width, m.height))  # Ref, or the tuple broadcasts one element per row
+    g.duration .= m.duration
+    g.sar .= m.sar
     # kept, though :native_fps may now say otherwise: it is what bounds a declared rate below (a
     # declaration cannot conjure frames the file does not hold), and nothing else reads it
     g.probed_fps .= m.fps
@@ -93,8 +93,10 @@ window_nonpositive(x) = x ≤ 0
 # `2997/100`); that exposure is unchanged, because the rate has always reached this check anyway
 # through the blank-cell imputation of what is now `sample_fps`. What has changed is that a run can
 # now say what its rate is and be believed, which is the way out of such a rejection.
-const SHARED_PARAMS = (:target_width, :window_size, :darker_target, :native_fps, :sample_fps,
-    :initial_search_factor, :downscale, :background_length, :dimension, :sar)
+const SHARED_PARAMS = (
+    :target_width, :window_size, :darker_target, :native_fps, :sample_fps,
+    :initial_search_factor, :downscale, :background_length, :dimension, :sar,
+)
 
 # ---- first tier: identity ---------------------------------------------------------------------
 # Everything here reads `run_id` and `rectification_id` and nothing else — no filesystem, no decoding.
@@ -137,6 +139,7 @@ function verify_run_consistency!(df::AbstractDataFrame)
         isempty(conflicts) && continue
         push!.(g.issues, "run segments disagree on " * join(conflicts, ", "))
     end
+    return
 end
 
 # A run's segments may be several windows of ONE file — that is how an untrackable stretch is cut
@@ -181,8 +184,10 @@ function verify_segment_windows!(df::AbstractDataFrame)
             end
             # A `view`, not an index: these are the parent's own issue vectors, and `push!` into
             # them needs no assignment back — as in `verify!`.
-            push!.(view(windows.issues, overlapping),
-                "segments from the same file must not overlap: start must be at or after the previous segment's stop")
+            push!.(
+                view(windows.issues, overlapping),
+                "segments from the same file must not overlap: start must be at or after the previous segment's stop"
+            )
         end
     end
     return df

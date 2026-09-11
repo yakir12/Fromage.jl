@@ -13,7 +13,7 @@ end
 function verify_unique_ids!(df::AbstractDataFrame)
     tf = nonunique(df, :rectification_id) .&& completecases(df, :rectification_id)
     df.rectification_id[tf] .= missing
-    push!.(df.issues[tf], "rectification_id must not repeat")
+    return push!.(df.issues[tf], "rectification_id must not repeat")
 end
 
 # One ffprobe call per physical video file yields width, height, duration, sample (pixel) aspect
@@ -27,24 +27,24 @@ function read_video_metadata!(df::AbstractDataFrame; progress = true)
     blank!(df, :duration, :dimension, :width, :height)
     # Every type carries a source video (:file), so every group is probed once: the read fills
     # :duration/:dimension/:width/:height for all, plus imputes :aspect (and :yadif for video).
-    read_per_file!(df, :file, [:file, :type], "Reading rectification videos...", probe_video, apply_video_metadata!; progress)
+    return read_per_file!(df, :file, [:file, :type], "Reading rectification videos...", probe_video, apply_video_metadata!; progress)
 end
 
 function apply_video_metadata!(g, issue::String)
     blank!(g, :duration, :dimension)
-    push!.(g.issues, issue)
+    return push!.(g.issues, issue)
 end
 
 function apply_video_metadata!(g, m::NamedTuple)
     g.dimension .= Ref((m.width, m.height))   # Ref, or the tuple broadcasts one element per row
-    g.duration  .= m.duration
+    g.duration .= m.duration
     # width/height are the real frame size (used to decode the video); always taken from the probe.
-    g.width  .= m.width
+    g.width .= m.width
     g.height .= m.height
     # aspect is imputed only when the CSV left it blank — a user-supplied value wins.
     g.aspect .= coalesce.(g.aspect, m.aspect)
     g.type[1] == "checkerboard" || return                     # yadif (interlacing) is a checkerboard-only field
-    g.yadif  .= coalesce.(g.yadif,  m.yadif)
+    g.yadif .= coalesce.(g.yadif, m.yadif)
     return
 end
 
@@ -110,7 +110,7 @@ function matlab_magic_issue(file)
         e isa SystemError || e isa Base.IOError || rethrow()
         return "error reading matlab file: $e"
     end
-    magic == codeunits("MATLAB") ? nothing : "file is not a matlab file (missing \"MATLAB\" magic bytes)"
+    return magic == codeunits("MATLAB") ? nothing : "file is not a matlab file (missing \"MATLAB\" magic bytes)"
 end
 
 # Read a .mat once: magic-check the header (cheap, specific) then matread. Returns the parsed dict, or
@@ -146,8 +146,10 @@ end
 function read_matlab_metadata!(df::AbstractDataFrame; progress = true)
     blank!(df, :n_extrinsics)
     # matlab_file is set for matlab rows only, so non-matlab rows form no group and are untouched.
-    read_per_file!(df, :matlab_file, [:matlab_file], "Reading matlab calibration files...",
-                   matlab_metadata, apply_matlab_metadata!; progress)
+    return read_per_file!(
+        df, :matlab_file, [:matlab_file], "Reading matlab calibration files...",
+        matlab_metadata, apply_matlab_metadata!; progress
+    )
 end
 
 # Pure read+derive: one matread, then structure/extrinsic-count/dimension off the same dict. A bad
@@ -163,7 +165,7 @@ end
 
 function apply_matlab_metadata!(g::AbstractDataFrame, structure_issue::String)
     blank!(g, :matlab_file)
-    push!.(g.issues, structure_issue)
+    return push!.(g.issues, structure_issue)
 end
 
 # Each half of the payload is either the value or an issue string, and gateway.jl states the rule
@@ -187,7 +189,7 @@ end
 
 function apply_matlab_metadata!(g::AbstractDataFrame, m::NamedTuple)
     apply_extrinsic_count!(g, m.n_extrinsics)
-    apply_matlab_dimension!(g, m.dimension)
+    return apply_matlab_dimension!(g, m.dimension)
 end
 
 # A matlab calibration file holds one extrinsic pose per calibration image: TranslationVectors and
@@ -218,9 +220,11 @@ function probe_video(file)
     geometry = frame_geometry(fields)
     isnothing(geometry) && return no_video_stream("width/height/duration")
     # aspect and field order have documented fallbacks, so a missing one is not an error.
-    return (; geometry...,
-              aspect = parse_sample_aspect(get(fields, "sample_aspect_ratio", "1:1")),
-              yadif  = is_interlaced(fields))
+    return (;
+        geometry...,
+        aspect = parse_sample_aspect(get(fields, "sample_aspect_ratio", "1:1")),
+        yadif = is_interlaced(fields),
+    )
 end
 
 # Errors raised inside a `tmap` come back wrapped in a TaskFailedException — but only when the
@@ -228,7 +232,7 @@ end
 # single-element batch, say). Both shapes must be unwrapped before classifying, or the narrowing
 # silently stops catching under the threaded path.
 _unwrap_task(e) = e isa TaskFailedException ? _unwrap_task(e.task.result) :
-                  e isa CompositeException ? _unwrap_task(first(e.exceptions)) : e
+    e isa CompositeException ? _unwrap_task(first(e.exceptions)) : e
 
 # What corner detection can legitimately fail with, as opposed to a bug here: the frame read raises
 # ShareReadError/IOError/SystemError (see ShareIO, which already retried the transient ones); a seek
@@ -236,7 +240,7 @@ _unwrap_task(e) = e isa TaskFailedException ? _unwrap_task(e.task.result) :
 # error as a plain ErrorException. ErrorException is therefore as narrow as this can honestly get,
 # and it still excludes the MethodError/BoundsError of a bug on our side.
 _detection_failure(e) = e isa ShareReadError || e isa Base.IOError || e isa SystemError ||
-                        e isa DimensionMismatch || e isa ErrorException
+    e isa DimensionMismatch || e isa ErrorException
 
 # How to say it once classified. Every one of these prints short and true, so all of them stay
 # verbatim.
@@ -333,14 +337,18 @@ function verify_extrinsics!(df::AbstractDataFrame, session_dir; progress = true)
     # escape the tmap and abort the whole verification. :width/:height are in the required-column list
     # below for that reason, so it stays impossible even if a later change lets an unflagged row
     # through without them.
-    detect_per_group!(checkerboards,
+    detect_per_group!(
+        checkerboards,
         [:file, :extrinsic, :blur, :n_corners, :width, :height],
         [:file, :extrinsic, :yadif, :blur, :width, :height, :n_corners],
         "Validating extrinsics...",
         k -> extrinsic_issue(k.file, k.extrinsic, k.yadif, k.blur, k.width, k.height, k.n_corners),
-        (g, k, issue) -> flag_extrinsic!(g, k, issue; session_dir,
-            get_frame = () -> extrinsic_gray_frame(k.file, k.extrinsic, _vf(k.yadif, k.blur), k.width, k.height));
-        progress)
+        (g, k, issue) -> flag_extrinsic!(
+            g, k, issue; session_dir,
+            get_frame = () -> extrinsic_gray_frame(k.file, k.extrinsic, _vf(k.yadif, k.blur), k.width, k.height)
+        );
+        progress
+    )
     return df
 end
 
@@ -377,13 +385,15 @@ function verify_intrinsics!(df::AbstractDataFrame; progress = true)
     # re-reports noise. A missing intrinsic window (both bounds blank) is skipped like everywhere
     # else. The one pass with no frame to dump — see `flag_intrinsic!`.
     checkerboards = subset(df, :type => ByRow(passmissing(==("checkerboard"))); view = true, skipmissing = true)
-    detect_per_group!(checkerboards,
+    detect_per_group!(
+        checkerboards,
         [:file, :intrinsic_start, :intrinsic_stop, :temporal_step, :width, :height, :n_corners],
         [:file, :intrinsic_start, :intrinsic_stop, :temporal_step, :yadif, :blur, :width, :height, :n_corners],
         "Validating intrinsics...",
         k -> intrinsic_issue(k.file, k.intrinsic_start, k.intrinsic_stop, k.temporal_step, k.yadif, k.blur, k.width, k.height, k.n_corners),
         (g, _, issue) -> flag_intrinsic!(g, issue);
-        progress)
+        progress
+    )
     return df
 end
 
@@ -394,11 +404,15 @@ end
 function verify_apriltag_extrinsics!(df::AbstractDataFrame, session_dir; progress = true)
     tags = subset(df, :type => ByRow(passmissing(==("apriltag"))); view = true, skipmissing = true)
     cols = [:file, :extrinsic, :apriltags, :family, :tag_cell_width]   # nothing here is imputed, so it both requires and groups on all five
-    detect_per_group!(tags, cols, cols, "Validating AprilTag extrinsics...",
+    detect_per_group!(
+        tags, cols, cols, "Validating AprilTag extrinsics...",
         k -> PawsomeTracker.apriltag_extrinsic_issue(k.file, k.extrinsic, k.apriltags, k.family, k.tag_cell_width),
-        (g, k, issue) -> flag_extrinsic!(g, k, issue; session_dir,
-            get_frame = () -> collect(PawsomeTracker.read_frame_at(k.file, k.extrinsic)));
-        progress)
+        (g, k, issue) -> flag_extrinsic!(
+            g, k, issue; session_dir,
+            get_frame = () -> collect(PawsomeTracker.read_frame_at(k.file, k.extrinsic))
+        );
+        progress
+    )
     return df
 end
 
@@ -445,13 +459,16 @@ function verify_unique_rectifications!(df::AbstractDataFrame)
             push!.(df[dups, :issues], "repeated rectification must not disagree on its other parameters")
         end
     end
+    return
 end
 
 # The second tier: everything that has to open a file, plus the value checks that depend on what
 # those files report. `verify_ids!` has already run and passed (or, on the `check_*` path, flagged
 # the rows it rejected — which every stage below skips, since they all subset to unflagged rows).
-function verifications!(df::AbstractDataFrame, data_path, issues_dir = DEFAULT_ISSUES_DIR;
-        progress = true)
+function verifications!(
+        df::AbstractDataFrame, data_path, issues_dir = DEFAULT_ISSUES_DIR;
+        progress = true
+    )
 
     # This SESSION's frames go in a folder of their own, named for the moment it started, so the
     # folder reflects only this session without anything being deleted to make that true —
@@ -478,8 +495,10 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = DEFAULT_I
         # Display space, like start_location's bounds in the runs gateway: `center`/`north` are
         # (x, y) as read off a screen, so x is checked against the display width (stored × aspect)
         # while y, which aspect does not affect, is checked against the height (#130).
-        verify!(df, (poi, dim, asp) -> poi[1] > dim[1] * asp || poi[2] > dim[2],
-                "$point must not be larger than the dimensions of the frame", point, :dimension, :aspect)
+        verify!(
+            df, (poi, dim, asp) -> poi[1] > dim[1] * asp || poi[2] > dim[2],
+            "$point must not be larger than the dimensions of the frame", point, :dimension, :aspect
+        )
     end
     # if north wasn't missing, but center was wrong and set to missing here, then now we have a missing center but existing north. the following fixes that:
     df.north[ismissing.(df.center)] .= missing
@@ -524,6 +543,6 @@ function verifications!(df::AbstractDataFrame, data_path, issues_dir = DEFAULT_I
     # apriltag rows: the extrinsic frame must yield a valid shared reference (tags detectable + coplanar)
     verify_apriltag_extrinsics!(df, session_dir; progress)
 
-    verify_unique_rectifications!(df)
+    return verify_unique_rectifications!(df)
 
 end

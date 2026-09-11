@@ -9,7 +9,7 @@
 
     # Render a checkerboard with `inner` inner-corners, `sq`-px squares and an `m`-px white quiet
     # border, in the (1, h, w) UInt8 layout `_detect_corners` expects.
-    function checkerboard(inner::Tuple{Int,Int}; sq = 30, m = 40)
+    function checkerboard(inner::Tuple{Int, Int}; sq = 30, m = 40)
         nx, ny = inner                       # inner corners ⇒ (nx+1)×(ny+1) squares
         bw, bh = (nx + 1) * sq, (ny + 1) * sq
         w, h = bw + 2m, bh + 2m
@@ -25,12 +25,12 @@
 
     # Standard OpenCV pinhole + radial distortion (zero tangential), matching what `fit_model` fits.
     function project(Xo, Rmat, t, fx, fy, cx, cy, k)
-        Xc = Rmat * SVector{3,Float64}(Xo) + t
+        Xc = Rmat * SVector{3, Float64}(Xo) + t
         x = Xc[1] / Xc[3]
         y = Xc[2] / Xc[3]
         r2 = x^2 + y^2
         rad = 1 + k[1] * r2 + k[2] * r2^2 + k[3] * r2^3
-        SVector{2,Float32}(fx * x * rad + cx, fy * y * rad + cy)
+        SVector{2, Float32}(fx * x * rad + cx, fy * y * rad + cy)
     end
 
     W, H = 640, 480
@@ -40,15 +40,19 @@
     objpoints = R.XYZ.(Tuple.(CartesianIndices((0:(n_corners[1] - 1), 0:(n_corners[2] - 1), 0:0))))
 
     # a spread of board poses (varied orientation + translation) so calibration is well-posed
-    rvecs = [SVector(0.0, 0.0, 0.0), SVector(0.2, -0.1, 0.0), SVector(-0.15, 0.2, 0.05),
-             SVector(0.1, 0.25, -0.1), SVector(-0.25, -0.1, 0.0), SVector(0.05, -0.2, 0.15),
-             SVector(0.3, 0.0, 0.1), SVector(-0.1, -0.25, -0.05), SVector(0.18, 0.18, 0.0)]
-    tvecs = [SVector(-3.0, -2.5, 16.0), SVector(-3.2, -2.0, 15.0), SVector(-2.5, -2.8, 17.0),
-             SVector(-3.5, -2.5, 16.5), SVector(-2.8, -2.2, 15.5), SVector(-3.0, -3.0, 18.0),
-             SVector(-3.3, -2.4, 16.0), SVector(-2.6, -2.6, 15.0), SVector(-3.1, -2.3, 17.5)]
+    rvecs = [
+        SVector(0.0, 0.0, 0.0), SVector(0.2, -0.1, 0.0), SVector(-0.15, 0.2, 0.05),
+        SVector(0.1, 0.25, -0.1), SVector(-0.25, -0.1, 0.0), SVector(0.05, -0.2, 0.15),
+        SVector(0.3, 0.0, 0.1), SVector(-0.1, -0.25, -0.05), SVector(0.18, 0.18, 0.0),
+    ]
+    tvecs = [
+        SVector(-3.0, -2.5, 16.0), SVector(-3.2, -2.0, 15.0), SVector(-2.5, -2.8, 17.0),
+        SVector(-3.5, -2.5, 16.5), SVector(-2.8, -2.2, 15.5), SVector(-3.0, -3.0, 18.0),
+        SVector(-3.3, -2.4, 16.0), SVector(-2.6, -2.6, 15.0), SVector(-3.1, -2.3, 17.5),
+    ]
 
     make_views(fy, k) = map(zip(rvecs, tvecs)) do (rv, t)
-        Rmat = SMatrix{3,3,Float64}(RotationVec(rv...))
+        Rmat = SMatrix{3, 3, Float64}(RotationVec(rv...))
         [project(Xo, Rmat, t, fx, fy, cx, cy, k) for Xo in objpoints]
     end
 
@@ -57,8 +61,8 @@
         sse = 0.0
         n = 0
         for (idx, ips) in enumerate(ipss)
-            Rm = SMatrix{3,3,Float64}(RotationVec(res.Rs[idx]...))
-            t = SVector{3,Float64}(res.ts[idx])
+            Rm = SMatrix{3, 3, Float64}(RotationVec(res.Rs[idx]...))
+            t = SVector{3, Float64}(res.ts[idx])
             for (Xo, p) in zip(objpoints, ips)
                 q = project(Xo, Rm, t, res.frow, res.fcol, res.crow, res.ccol, res.k)
                 sse += (q[1] - p[1])^2 + (q[2] - p[2])^2
@@ -110,7 +114,7 @@
         res = R.fit_model((W, H), objpoints, views, n_corners, 1, aspect)
         @test res.frow ≈ fx atol = 3.0
         @test res.fcol ≈ aspect * fx atol = 4.0
-        @test res.fcol / res.frow ≈ aspect atol = 1e-6           # CALIB_FIX_ASPECT_RATIO holds it exactly
+        @test res.fcol / res.frow ≈ aspect atol = 1.0e-6           # CALIB_FIX_ASPECT_RATIO holds it exactly
         @test res.crow ≈ cx atol = 3.0
         @test res.ccol ≈ cy atol = 3.0
         @test reproj_rms(res, views) < 0.2
@@ -152,27 +156,31 @@
         objs = R.XYZ.(Tuple.(CartesianIndices((0:(ncr[1] - 1), 0:(ncr[2] - 1), 0:0))))
         f = 900.0
         crow_true, ccol_true = (Hf - 1) / 2, (Wf - 1) / 2
-        Rm = SMatrix{3,3,Float64}(RotationVec(0.35, -0.22, 0.08))
+        Rm = SMatrix{3, 3, Float64}(RotationVec(0.35, -0.22, 0.08))
         tvec = SVector(-2.4, -3.0, 12.0)
         # The board seen obliquely, in the detector's own (row, col) convention. Named apart from
         # the `project` above: a method definition for a name already local to the enclosing scope
         # extends that function rather than shadowing it, and the extra captured variable would
         # then be unassigned on the earlier calls.
-        oblique(Xo) = (Xc = Rm * SVector{3,Float64}(Xo) + tvec;
-                       R.RowCol(f * Xc[1] / Xc[3] + crow_true, f * Xc[2] / Xc[3] + ccol_true))
+        oblique(Xo) = (
+            Xc = Rm * SVector{3, Float64}(Xo) + tvec;
+            R.RowCol(f * Xc[1] / Xc[3] + crow_true, f * Xc[2] / Xc[3] + ccol_true)
+        )
         corners = reshape(map(oblique, objs), ncr)
 
         checker = 1.0
         # Keyword-only since the argument-list change: the tail used to read `1.0, 0, missing,
         # missing, false` with nothing at the call site to say which was which.
-        rect = R._rectification(; imgpointss = [corners], width = Wf, height = Hf, n_corners = ncr,
-                                checker_width = checker, aspect = 1.0, radial_parameters = 0,
-                                center = missing, north = missing)
+        rect = R._rectification(;
+            imgpointss = [corners], width = Wf, height = Hf, n_corners = ncr,
+            checker_width = checker, aspect = 1.0, radial_parameters = 0,
+            center = missing, north = missing
+        )
         metric = map(rect.image2real, corners)
-        down   = vec([hypot((metric[i + 1, j] - metric[i, j])...) for i in 1:ncr[1] - 1, j in 1:ncr[2]])
-        across = vec([hypot((metric[i, j + 1] - metric[i, j])...) for i in 1:ncr[1], j in 1:ncr[2] - 1])
+        down = vec([hypot((metric[i + 1, j] - metric[i, j])...) for i in 1:(ncr[1] - 1), j in 1:ncr[2]])
+        across = vec([hypot((metric[i, j + 1] - metric[i, j])...) for i in 1:ncr[1], j in 1:(ncr[2] - 1)])
         # a correct fit reproduces the board exactly (residual ~1e-7 checker units)
-        @test maximum(abs, vcat(down, across) .- checker) < 1e-4
+        @test maximum(abs, vcat(down, across) .- checker) < 1.0e-4
     end
 
 end

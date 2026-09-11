@@ -69,10 +69,14 @@ run_duration(segments) = sum(s -> s.stop - s.start, segments)
 function _tuning(g::AbstractDataFrame, frame_format::FrameFormat, segments::Vector{Segment})
     target_width = g.target_width[1]
     sample_fps = g.sample_fps[1]
-    window_size = @coalesce g.window_size[1] get_window(target_width, sample_fps,
-        min(frame_format.height, frame_format.width), run_duration(segments))
-    return Tuning(target_width, window_size, g.darker_target[1], sample_fps, g.native_fps[1],
-        g.initial_search_factor[1], g.downscale[1], g.background_length[1])
+    window_size = @coalesce g.window_size[1] get_window(
+        target_width, sample_fps,
+        min(frame_format.height, frame_format.width), run_duration(segments)
+    )
+    return Tuning(
+        target_width, window_size, g.darker_target[1], sample_fps, g.native_fps[1],
+        g.initial_search_factor[1], g.downscale[1], g.background_length[1]
+    )
 end
 
 # Build the run for one `run_id` group (rows in CSV order, one row per segment). The identity
@@ -82,8 +86,10 @@ end
 function Run(g::AbstractDataFrame)
     width, height = g.dimension[1]
     frame_format = FrameFormat(width, height, g.sar[1])
-    segments = Segment[Segment(f, a, o, sl)
-                       for (f, a, o, sl) in zip(g.file, g.start, g.stop, g.start_location)]
+    segments = Segment[
+        Segment(f, a, o, sl)
+            for (f, a, o, sl) in zip(g.file, g.start, g.stop, g.start_location)
+    ]
     return Run(g.run_id[1], g.rectification_id[1], _tuning(g, frame_format, segments), frame_format, segments)
 end
 
@@ -119,8 +125,10 @@ resolved_segments(r::Run, _, ::ApriltagRectification) = r.segments
 function resolved_segments(r::Run, center, rectification)
     out = copy(r.segments)
     s = out[1]
-    out[1] = Segment(s.file, s.start, s.stop,
-                     @coalesce s.start_location center frame_center(r.frame_format))
+    out[1] = Segment(
+        s.file, s.start, s.stop,
+        @coalesce s.start_location center frame_center(r.frame_format)
+    )
     return out
 end
 

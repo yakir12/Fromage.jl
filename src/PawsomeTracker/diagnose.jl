@@ -59,8 +59,10 @@ function Diagnostic(file::AbstractString, darker_target, fps, scene; radius, fon
     trace = CircularBuffer{CartesianIndex{2}}(TRACE_BUFFER_SIZE)
     color = darker_target ? Gray{N0f8}(1) : Gray{N0f8}(0)
     face = FTFont(String(FONT))
-    writer = open_video_out(file, canvas_prototype(scene); framerate = diagnostic_framerate(fps, skip),
-        encoder_private_options = DIAGNOSTIC_ENCODER)
+    writer = open_video_out(
+        file, canvas_prototype(scene); framerate = diagnostic_framerate(fps, skip),
+        encoder_private_options = DIAGNOSTIC_ENCODER
+    )
     built = false
     return try
         dia = Diagnostic(label, writer, trace, Ref(0), skip, color, radius, font, face, scene)
@@ -192,7 +194,7 @@ end
 function RectifiedScene(rect)
     m = DIAGNOSTIC_SIZE
     D = LinearMap(SDiagonal{2}((min(rect.width, rect.height) / m) * rect.ratio * I))
-    return RectifiedScene((-m÷2:m÷2 - 1, -m÷2:m÷2 - 1), inv(D) ∘ rect.image2real, rect.real2image ∘ D)
+    return RectifiedScene(((-m ÷ 2):(m ÷ 2 - 1), (-m ÷ 2):(m ÷ 2 - 1)), inv(D) ∘ rect.image2real, rect.real2image ∘ D)
 end
 
 canvas_prototype(s::RectifiedScene) = Matrix{Gray{N0f8}}(undef, length.(s.indices)...)
@@ -208,5 +210,7 @@ function (s::RectifiedScene)(img, point)
 end
 
 diagnose(file::AbstractString, darker_target::Bool, rectification, fps) =
-    Diagnostic(file, darker_target, fps, RectifiedScene(rectification);
-               radius = DIAGNOSTIC_SIZE ÷ 30, font = DIAGNOSTIC_SIZE ÷ 16)
+    Diagnostic(
+    file, darker_target, fps, RectifiedScene(rectification);
+    radius = DIAGNOSTIC_SIZE ÷ 30, font = DIAGNOSTIC_SIZE ÷ 16
+)

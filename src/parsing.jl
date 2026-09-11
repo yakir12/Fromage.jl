@@ -45,12 +45,12 @@ end
 mytryparse(::Type{String}, x) = String(strip(string(x)))
 
 function set!(dict, y, k, _)
-    dict[k] = y
+    return dict[k] = y
 end
 
 function set!(dict, ::Nothing, k, msg)
     dict[k] = missing
-    push!(dict[:issues], msg)
+    return push!(dict[:issues], msg)
 end
 
 # Does the csv actually say something in this cell? A present-but-blank cell (whitespace only)
@@ -61,7 +61,7 @@ filled(row, k) = haskey(row, k) && !ismissing(row[k]) &&
     !(row[k] isa AbstractString && isempty(strip(row[k])))
 
 function parseto!(dict, row, k, ::Type{T}, default = nothing) where {T}
-    if filled(row, k)
+    return if filled(row, k)
         y = mytryparse(T, row[k])
         set!(dict, y, k, "wrong $k format")
     else
@@ -81,14 +81,16 @@ function resolve_defaults(overrides, defaults, types, what)
     # `convert` has no non-throwing counterpart, so this stays a caught exception — but only the two
     # a rejected value can raise over the whitelisted types: `MethodError` (no such conversion:
     # "yes" -> Bool) or `InexactError` (a lossy one: 1.5 -> Int). Anything else propagates.
-    converted = NamedTuple{keys(overrides)}(map(keys(overrides)) do k
-        try
-            convert(types[k], overrides[k])
-        catch e
-            e isa MethodError || e isa InexactError || rethrow()
-            throw(ArgumentError("$what default $k must be convertible to $(types[k]), got $(repr(overrides[k]))"))
+    converted = NamedTuple{keys(overrides)}(
+        map(keys(overrides)) do k
+            try
+                convert(types[k], overrides[k])
+            catch e
+                e isa MethodError || e isa InexactError || rethrow()
+                throw(ArgumentError("$what default $k must be convertible to $(types[k]), got $(repr(overrides[k]))"))
+            end
         end
-    end)
+    )
     return merge(defaults, converted)
 end
 

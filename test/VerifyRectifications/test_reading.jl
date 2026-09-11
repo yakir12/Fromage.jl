@@ -37,7 +37,7 @@
         # A real MAT-file begins with the ASCII text "MATLAB"; matlab_magic_issue returns nothing for
         # a genuine .mat and a message otherwise. bad.mat ("this is not a mat file") fails the check.
         @test VRect.matlab_magic_issue(joinpath(DATADIR, ART.good_mat)) === nothing
-        @test VRect.matlab_magic_issue(joinpath(DATADIR, ART.bad_mat))  isa String
+        @test VRect.matlab_magic_issue(joinpath(DATADIR, ART.bad_mat)) isa String
         # an unreadable path (here: absent) is a SystemError from `read`, reported as an issue
         @test VRect.matlab_magic_issue(joinpath(DATADIR, "definitely_not_here.mat")) isa String
         # end-to-end: a non-mat file is flagged and has :matlab_file nulled (the source video :file is fine)
@@ -58,10 +58,10 @@
         # matlab_missing_keys returns nothing when all of MATLAB_REQUIRED_KEYS are present (searched
         # nested), and a message listing the absent ones otherwise. read_matlab turns a non-mat /
         # unreadable file into an issue string before any dict is produced.
-        @test VRect.matlab_missing_keys(MAT.matread(joinpath(DATADIR, ART.good_mat)))    === nothing
-        @test VRect.matlab_missing_keys(MAT.matread(joinpath(DATADIR, ART.nested_mat)))  === nothing
+        @test VRect.matlab_missing_keys(MAT.matread(joinpath(DATADIR, ART.good_mat))) === nothing
+        @test VRect.matlab_missing_keys(MAT.matread(joinpath(DATADIR, ART.nested_mat))) === nothing
         @test VRect.matlab_missing_keys(MAT.matread(joinpath(DATADIR, ART.partial_mat))) isa String
-        @test VRect.read_matlab(joinpath(DATADIR, ART.bad_mat))                          isa String  # unreadable / not a mat
+        @test VRect.read_matlab(joinpath(DATADIR, ART.bad_mat)) isa String  # unreadable / not a mat
 
         # end-to-end: a structurally-complete matlab row loads clean...
         @test clean(check([matlabrow()]))                 # good.mat has all fields
@@ -86,15 +86,23 @@
         # "." and "./." resolve to the same dir, so both rows point at one physical .mat. The reading
         # passes group on the canonical (realpath) matlab_file, so the file is read once and the result
         # is applied to every spelling — here a structure failure is reported on both rows.
-        df = check([matlabrow(rectification_id = "c1", path = ".",   matlab_file = ART.partial_mat, center = missing, north = missing),
-                    matlabrow(rectification_id = "c2", path = "./.", matlab_file = ART.partial_mat, center = missing, north = missing)])
+        df = check(
+            [
+                matlabrow(rectification_id = "c1", path = ".", matlab_file = ART.partial_mat, center = missing, north = missing),
+                matlabrow(rectification_id = "c2", path = "./.", matlab_file = ART.partial_mat, center = missing, north = missing),
+            ]
+        )
         @test flagged(df, 1, "missing required calibration field(s)")
         @test flagged(df, 2, "missing required calibration field(s)")
 
         # likewise a video read (dimension) applied across spellings: an out-of-bounds center is caught
         # on both rows from the one read.
-        df = check([checkerboardrow(rectification_id = "v1", path = ".",   center = (9000, 9000)),
-                    checkerboardrow(rectification_id = "v2", path = "./.", center = (9000, 9000))])
+        df = check(
+            [
+                checkerboardrow(rectification_id = "v1", path = ".", center = (9000, 9000)),
+                checkerboardrow(rectification_id = "v2", path = "./.", center = (9000, 9000)),
+            ]
+        )
         @test flagged(df, 1, "center must not be larger than the dimensions")
         @test flagged(df, 2, "center must not be larger than the dimensions")
     end
@@ -158,8 +166,10 @@
     @testset "malformed ImageSize is flagged, never thrown" begin
         # ImageSize present but the wrong shape/eltype must yield an issue string, not an uncaught
         # error (InexactError/MethodError) and not a silently-wrong dimension.
-        for (nm, val) in ("three_elem" => [1, 2, 3], "noninteger" => [1.5, 2.5],
-                          "scalar" => 42, "stringval" => "hello")
+        for (nm, val) in (
+                "three_elem" => [1, 2, 3], "noninteger" => [1.5, 2.5],
+                "scalar" => 42, "stringval" => "hello",
+            )
             p = joinpath(DATADIR, "badimsize_$nm.mat")
             # include the required calibration fields so the structure check passes and the row
             # reaches the ImageSize validation under test.

@@ -67,7 +67,7 @@
             @testset "$name" begin
                 c = check([r])
                 @test c isa Vector
-                @test c[1].source.width  == probed.width
+                @test c[1].source.width == probed.width
                 @test c[1].source.height == probed.height
                 @test !hasproperty(c[1], :yadif)                 # yadif is only on the Checkerboard struct
             end

@@ -41,7 +41,9 @@
         # unconvertible value
         @test_throws ArgumentError check([runrow()]; defaults = (darker_target = "yes",))
         # a convertible but nonsensical value flows into the normal verification
-        @test flagged(check([runrow()]; defaults = (target_width = -5,)),
-                      1, "target_width must be larger than zero")
+        @test flagged(
+            check([runrow()]; defaults = (target_width = -5,)),
+            1, "target_width must be larger than zero"
+        )
     end
 end

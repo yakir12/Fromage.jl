@@ -19,59 +19,59 @@
 
     @testset "missing required fields" begin
         @test flagged(check([checkerboardrow(rectification_id = missing)]), 1, "rectification_id is missing")
-        @test flagged(check([checkerboardrow(file = missing)]),           1, "file is missing")
-        @test flagged(check([uniformrow(pixel_width = missing)]),          1, "pixel_width is missing")
-        @test flagged(check([checkerboardrow(extrinsic = missing)]),      1, "extrinsic is missing")
+        @test flagged(check([checkerboardrow(file = missing)]), 1, "file is missing")
+        @test flagged(check([uniformrow(pixel_width = missing)]), 1, "pixel_width is missing")
+        @test flagged(check([checkerboardrow(extrinsic = missing)]), 1, "extrinsic is missing")
         # parse_matlab! / parse_uniform! are separate hand-written field lists; assert the required
         # fields shared with checkerboard are wired in those branches too (not just in parse_checkerboard!).
         @test flagged(check([matlabrow(rectification_id = missing)]), 1, "rectification_id is missing")
-        @test flagged(check([matlabrow(file = missing)]),           1, "file is missing")
+        @test flagged(check([matlabrow(file = missing)]), 1, "file is missing")
         # matlab_file (the .mat) is the matlab-only required path field, separate from the source video `file`
-        @test flagged(check([matlabrow(matlab_file = missing)]),    1, "matlab_file is missing")
+        @test flagged(check([matlabrow(matlab_file = missing)]), 1, "matlab_file is missing")
         # extrinsic_index is the matlab-only required field added alongside the MATLAB struct's extrinsic_index
         @test flagged(check([matlabrow(extrinsic_index = missing)]), 1, "extrinsic_index is missing")
         # extrinsic is now mandatory for ALL types (it lives in the shared Source struct), not just video
-        @test flagged(check([matlabrow(extrinsic = missing)]),      1, "extrinsic is missing")
-        @test flagged(check([uniformrow(extrinsic = missing)]),       1, "extrinsic is missing")
-        @test flagged(check([uniformrow(rectification_id = missing)]),  1, "rectification_id is missing")
-        @test flagged(check([uniformrow(file = missing)]),            1, "file is missing")
+        @test flagged(check([matlabrow(extrinsic = missing)]), 1, "extrinsic is missing")
+        @test flagged(check([uniformrow(extrinsic = missing)]), 1, "extrinsic is missing")
+        @test flagged(check([uniformrow(rectification_id = missing)]), 1, "rectification_id is missing")
+        @test flagged(check([uniformrow(file = missing)]), 1, "file is missing")
     end
 
     @testset "blank (whitespace-only) cell is treated as missing" begin
         # a required field reports "is missing" rather than silently becoming an empty string
         @test flagged(check([checkerboardrow(rectification_id = "   ")]), 1, "rectification_id is missing")
-        @test flagged(check([checkerboardrow(file = "   ")]),           1, "file is missing")
+        @test flagged(check([checkerboardrow(file = "   ")]), 1, "file is missing")
         # an optional field falls back to its default ("." for path) and still resolves
         @test clean(check([checkerboardrow(path = "  ")]))
     end
 
     @testset "wrong formats" begin
-        @test flagged(check([checkerboardrow(center = "abc")]),            1, "wrong center format")
+        @test flagged(check([checkerboardrow(center = "abc")]), 1, "wrong center format")
         # a coordinate that overflows Int64 must be a graceful "wrong format", not an uncaught OverflowError
         @test flagged(check([checkerboardrow(center = "(10000000000000000000,1)", north = missing)]), 1, "wrong center format")
-        @test flagged(check([checkerboardrow(north = "1;2")]),             1, "wrong north format")
-        @test flagged(check([checkerboardrow(extrinsic = "not_a_time")]),  1, "wrong extrinsic format")
-        @test flagged(check([checkerboardrow(n_corners = "five")]),        1, "wrong n_corners format")
-        @test flagged(check([checkerboardrow(checker_width = "big")]),      1, "wrong checker_width format")
+        @test flagged(check([checkerboardrow(north = "1;2")]), 1, "wrong north format")
+        @test flagged(check([checkerboardrow(extrinsic = "not_a_time")]), 1, "wrong extrinsic format")
+        @test flagged(check([checkerboardrow(n_corners = "five")]), 1, "wrong n_corners format")
+        @test flagged(check([checkerboardrow(checker_width = "big")]), 1, "wrong checker_width format")
         @test flagged(check([checkerboardrow(radial_parameters = "2.5")]), 1, "wrong radial_parameters format")
-        @test flagged(check([checkerboardrow(aspect = "wide")]),           1, "wrong aspect format")
+        @test flagged(check([checkerboardrow(aspect = "wide")]), 1, "wrong aspect format")
         # malformed center/north on the non-video types (same shared parseto!/mytryparse path, for symmetry)
         @test flagged(check([matlabrow(center = "abc")]), 1, "wrong center format")
-        @test flagged(check([uniformrow(north = "1;2")]),   1, "wrong north format")
+        @test flagged(check([uniformrow(north = "1;2")]), 1, "wrong north format")
         # extrinsic_index must parse as an Int (matlab only)
         @test flagged(check([matlabrow(extrinsic_index = "two")]), 1, "wrong extrinsic_index format")
     end
 
     @testset "intrinsic_start/intrinsic_stop must be paired (both directions)" begin
-        @test flagged(check([checkerboardrow(intrinsic_start = "00:00:02", intrinsic_stop = missing)]),     1, "must be either both present or both missing")
-        @test flagged(check([checkerboardrow(intrinsic_start = missing, intrinsic_stop = "00:00:08")]),     1, "must be either both present or both missing")
+        @test flagged(check([checkerboardrow(intrinsic_start = "00:00:02", intrinsic_stop = missing)]), 1, "must be either both present or both missing")
+        @test flagged(check([checkerboardrow(intrinsic_start = missing, intrinsic_stop = "00:00:08")]), 1, "must be either both present or both missing")
     end
 
     @testset "a filled column irrelevant to the row's type is flagged" begin
-        @test flagged(check([checkerboardrow(pixel_width = 9.5)]),         1, "pixel_width is not used by type checkerboard")
+        @test flagged(check([checkerboardrow(pixel_width = 9.5)]), 1, "pixel_width is not used by type checkerboard")
         @test flagged(check([checkerboardrow(extrinsic_index = 1)]), 1, "extrinsic_index is not used by type checkerboard")
-        @test flagged(check([matlabrow(checker_width = 4)]),   1, "checker_width is not used by type matlab")
-        @test flagged(check([uniformrow(n_corners = (5, 8))]),  1, "n_corners is not used by type uniform")
+        @test flagged(check([matlabrow(checker_width = 4)]), 1, "checker_width is not used by type matlab")
+        @test flagged(check([uniformrow(n_corners = (5, 8))]), 1, "n_corners is not used by type uniform")
         # blank cells in irrelevant columns stay fine — mixed-type CSVs share one header
         @test clean(check([checkerboardrow(), matlabrow(), uniformrow()]))
         # a bad type still short-circuits: no irrelevant-column cascade on top of "wrong type"
@@ -91,26 +91,34 @@
         # a comment on one row of a mixed-type file, blank on the others, is also fine
         @test clean(check([checkerboardrow(), matlabrow(comment = note), uniformrow()]))
         # and the check it was caught by still works — the exemption is for `comment` alone
-        @test flagged(check([checkerboardrow(comment = note, pixel_width = 9.5)]),
-                      1, "pixel_width is not used by type checkerboard")
+        @test flagged(
+            check([checkerboardrow(comment = note, pixel_width = 9.5)]),
+            1, "pixel_width is not used by type checkerboard"
+        )
     end
 
     @testset "north without center" begin
         # verify_center2north is called from a separate branch of parse_row per type; assert all three
         # call sites, not just video (the matlab/uniform wiring was the original 2.1 bug).
-        @test flagged(check([checkerboardrow(center = missing, north = (250, 1))] ), 1, "north must not be supplied without center")
+        @test flagged(check([checkerboardrow(center = missing, north = (250, 1))]), 1, "north must not be supplied without center")
         @test flagged(check([matlabrow(center = missing, north = (160, 1))]), 1, "north must not be supplied without center")
-        @test flagged(check([uniformrow(center = missing, north = (320, 1))]),  1, "north must not be supplied without center")
+        @test flagged(check([uniformrow(center = missing, north = (320, 1))]), 1, "north must not be supplied without center")
     end
 
     @testset "defaults applied (with correct values) when optional fields omitted" begin
-        df = check([checkerboardrow(n_corners = missing, checker_width = missing,
-                             temporal_step = missing, radial_parameters = missing, blur = missing)])
-        @test df.n_corners[1]         == (7, 10)
-        @test df.checker_width[1]      == 4.0
-        @test df.temporal_step[1]     == 2.0
+        df = check(
+            [
+                checkerboardrow(
+                    n_corners = missing, checker_width = missing,
+                    temporal_step = missing, radial_parameters = missing, blur = missing
+                ),
+            ]
+        )
+        @test df.n_corners[1] == (7, 10)
+        @test df.checker_width[1] == 4.0
+        @test df.temporal_step[1] == 2.0
         @test df.radial_parameters[1] == 1
-        @test df.blur[1]              == 1.0
+        @test df.blur[1] == 1.0
     end
 
     @testset "whitespace is trimmed from string fields" begin
@@ -118,8 +126,12 @@
         @test clean(check([checkerboardrow(type = "checkerboard ")]))   # "checkerboard " -> checkerboard, not "wrong type"
         @test clean(check([checkerboardrow(file = " " * ART.board)]))    # " board.mp4" still resolves
         # leading/trailing space on an id is trimmed, so two such ids collide and the repeat is caught
-        df = check([checkerboardrow(rectification_id = "dup",  extrinsic = "00:00:01"),
-                    checkerboardrow(rectification_id = "dup ", extrinsic = "00:00:03")])
+        df = check(
+            [
+                checkerboardrow(rectification_id = "dup", extrinsic = "00:00:01"),
+                checkerboardrow(rectification_id = "dup ", extrinsic = "00:00:03"),
+            ]
+        )
         @test flagged(df, 2, "rectification_id must not repeat")
     end
 

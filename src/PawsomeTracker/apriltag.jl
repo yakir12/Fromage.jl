@@ -22,8 +22,9 @@ import ..Rectifications: save_diagnostic   # extended on ApriltagRectification (
 # family added to one and not the other was a KeyError waiting at `canon_square`.
 const APRIL_FAMILIES = Dict(
     "tag36h11" => (detector = AprilTags.tag36h11, cells = 8),
-    "tag25h9"  => (detector = AprilTags.tag25h9,  cells = 7),
-    "tag16h5"  => (detector = AprilTags.tag16h5,  cells = 6))
+    "tag25h9" => (detector = AprilTags.tag25h9, cells = 7),
+    "tag16h5" => (detector = AprilTags.tag16h5, cells = 6)
+)
 
 const APRIL_FAMILY_NAMES = sort!(collect(keys(APRIL_FAMILIES)))
 
@@ -38,7 +39,7 @@ unknown_family_message(family) =
 # tag36h11 at 12 cm/cell ⇒ a 96 cm black-border square — on which the geometry unit tests are built.
 function canon_square(family, cell)
     h = APRIL_FAMILIES[family].cells * cell / 2
-    SVector{2, Float64}[SVector(-h, h), SVector(h, h), SVector(h, -h), SVector(-h, -h)]
+    return SVector{2, Float64}[SVector(-h, h), SVector(h, h), SVector(h, -h), SVector(-h, -h)]
 end
 const TAG_SIZE_CM = 96.0
 const CANON = canon_square("tag36h11", 12.0)
@@ -63,20 +64,22 @@ function homography_dlt(src, dst)
     for i in 1:n
         x, y = ns[i]
         xp, yp = nd[i]
-        A[2i-1, :] .= (-x, -y, -1, 0, 0, 0, xp*x, xp*y, xp)
-        A[2i,   :] .= (0, 0, 0, -x, -y, -1, yp*x, yp*y, yp)
+        A[2i - 1, :] .= (-x, -y, -1, 0, 0, 0, xp * x, xp * y, xp)
+        A[2i, :] .= (0, 0, 0, -x, -y, -1, yp * x, yp * y, yp)
     end
     h = svd(A).V[:, end]                          # null space → the homography (up to scale)
-    Hn = SMatrix{3,3,Float64}(h[1], h[4], h[7], h[2], h[5], h[8], h[3], h[6], h[9])  # row-major
+    Hn = SMatrix{3, 3, Float64}(h[1], h[4], h[7], h[2], h[5], h[8], h[3], h[6], h[9])  # row-major
     H = inv(Td) * Hn * Ts                         # undo the normalization
-    H / H[3, 3]
+    return H / H[3, 3]
 end
 
 # worst deviation (real units) of any tag edge from the true side length `side`, under an
 # image→ground homography `M`
 _worst_side(M, tag_corners, side = TAG_SIZE_CM) =
-    maximum(abs(norm(apply_h(M, tc[i]) - apply_h(M, tc[mod1(i+1, 4)])) - side)
-            for tc in tag_corners for i in 1:4)
+    maximum(
+    abs(norm(apply_h(M, tc[i]) - apply_h(M, tc[mod1(i + 1, 4)])) - side)
+        for tc in tag_corners for i in 1:4
+)
 
 # Rigid Procrustes (Kabsch): the best-fit rotation + translation, no scale, mapping point set `A`
 # onto `B`, returned as a function. Used to pin the metric fit's global gauge each iteration.
@@ -110,20 +113,22 @@ place_square(D, canon = CANON) = map(rigid_align(canon, D), canon)
 # Returns `(M, worst_error)`: it computes, it does not decide. Whether that error is acceptable is
 # the caller's policy (see METRIC_FIT_TOLERANCE), which lets `reference_space` report a
 # non-converged fit as an issue string rather than catch a throw from in here.
-function fit_metric(tag_corners; canon = CANON, maxiter = 1000, tol = 1e-9)
+function fit_metric(tag_corners; canon = CANON, maxiter = 1000, tol = 1.0e-9)
     side = norm(canon[1] - canon[2])
     flat = reduce(vcat, tag_corners)
     # The first bootstrap doubles as the fallback result: `beste` starts at its UNREFINED error, so
     # if no refinement anywhere beats it, that fit is what comes back. It is therefore computed
     # before the loop — and reused when the loop reaches it, rather than fitted a second time.
-    fit(boot) = (M = homography_dlt(collect(tag_corners[boot]), canon);
-                 (M, _worst_side(M, tag_corners, side)))
+    fit(boot) = (
+        M = homography_dlt(collect(tag_corners[boot]), canon);
+        (M, _worst_side(M, tag_corners, side))
+    )
     boots = eachindex(tag_corners)
     bestM, beste = fit(first(boots))
     for boot in boots
         M, e = boot == first(boots) ? (bestM, beste) : fit(boot)
         for _ in 1:maxiter
-            sq = [place_square(SVector{2,Float64}[apply_h(M, p) for p in tc], canon) for tc in tag_corners]
+            sq = [place_square(SVector{2, Float64}[apply_h(M, p) for p in tc], canon) for tc in tag_corners]
             T = rigid_align(sq[1], canon)                     # pin gauge: tag 1 → canonical square
             G = reduce(vcat, [[T(g) for g in s] for s in sq])
             Mn = homography_dlt(flat, G)
@@ -164,7 +169,7 @@ end
 function ReferenceSpace(ids::AbstractVector{<:Integer}, tag_corners; kw...)
     M, err = fit_metric(tag_corners; kw...)
     err > METRIC_FIT_TOLERANCE && error(metric_fit_issue(err))
-    ReferenceSpace(collect(Int, ids), reduce(vcat, tag_corners), M)
+    return ReferenceSpace(collect(Int, ids), reduce(vcat, tag_corners), M)
 end
 
 # ---- the shared reference as a rectification -------------------------------------------------
@@ -233,7 +238,7 @@ function reference_space(file, extrinsic, ntags, family, tag_cell_width)
     # Serialize the WHOLE read + detect: the one-shot VideoIO read races under the callers' `tmap`,
     # and the AprilTag detector is not reentrant. Reference building is one-time setup over a handful
     # of rectifications, so this costs essentially nothing.
-    lock(APRILTAG_LOCK) do
+    return lock(APRILTAG_LOCK) do
         # VideoIO reports an unreadable/corrupt file, and a seek past the end, as a plain
         # ErrorException, so that is as narrow as this gets — it still excludes the
         # MethodError/BoundsError of a bug here, and InterruptException.
@@ -307,8 +312,10 @@ end
 # `aspect` has no default: the rectifications gateway reads it from the video (or the csv) for every row,
 # so a default here would be a second definition of a value the caller always has -- exactly the
 # duplication #140/#141 were about. Square pixels are spelled `aspect = 1.0` at the call site.
-function ApriltagRectification(; file, extrinsic, ntags, family, tag_cell_width, center, north,
-        width, height, aspect)
+function ApriltagRectification(;
+        file, extrinsic, ntags, family, tag_cell_width, center, north,
+        width, height, aspect
+    )
     ref = reference_space(file, extrinsic, ntags, family, tag_cell_width)
     # Building a rectification has nowhere to put an issue string, so the report becomes a throw
     # here. In the normal pipeline this is unreachable: VerifyRectifications ran
@@ -391,7 +398,7 @@ function detect_tags(det, img, ids)
     tags = detect_locked(det, collect(img))
     byid = Dict(t.id => t for t in tags)
     all(haskey(byid, i) for i in ids) || return nothing
-    [SVector{2,Float64}[SVector(p[1], p[2]) for p in byid[i].p] for i in ids]
+    return [SVector{2, Float64}[SVector(p[1], p[2]) for p in byid[i].p] for i in ids]
 end
 
 # tag geometry is (x, y) = (col, row); the DoG tracker works in (row, col). This bridges the two.
@@ -427,8 +434,10 @@ const ROI_GROW = 250       # px the box expands on each side when the tag isn't 
 function tag_box(corners, sz)
     cols = first.(corners)
     rows = last.(corners)
-    (clamp(floor(Int, minimum(rows)) - ROI_MARGIN, 1, sz[1]), clamp(floor(Int, minimum(cols)) - ROI_MARGIN, 1, sz[2]),
-     clamp(ceil(Int, maximum(rows)) + ROI_MARGIN, 1, sz[1]), clamp(ceil(Int, maximum(cols)) + ROI_MARGIN, 1, sz[2]))
+    return (
+        clamp(floor(Int, minimum(rows)) - ROI_MARGIN, 1, sz[1]), clamp(floor(Int, minimum(cols)) - ROI_MARGIN, 1, sz[2]),
+        clamp(ceil(Int, maximum(rows)) + ROI_MARGIN, 1, sz[1]), clamp(ceil(Int, maximum(cols)) + ROI_MARGIN, 1, sz[2]),
+    )
 end
 
 # find tag `id` by local search from `box`, expanding until found or the box is the whole frame.
@@ -439,13 +448,14 @@ function find_tag_roi(det, img, id, box, sz)
         tags = detect_locked(det, collect(@view img[r1:r2, c1:c2]))
         k = findfirst(t -> t.id == id, tags)
         if k !== nothing
-            corners = SVector{2,Float64}[SVector(p[1] + c1 - 1, p[2] + r1 - 1) for p in tags[k].p]
+            corners = SVector{2, Float64}[SVector(p[1] + c1 - 1, p[2] + r1 - 1) for p in tags[k].p]
             return corners, tag_box(corners, sz)
         end
         (r1 == 1 && c1 == 1 && r2 == sz[1] && c2 == sz[2]) && return nothing, box
         r1 = max(1, r1 - ROI_GROW); c1 = max(1, c1 - ROI_GROW)
         r2 = min(sz[1], r2 + ROI_GROW); c2 = min(sz[2], c2 + ROI_GROW)
     end
+    return
 end
 
 # detect all tags by per-tag local search, updating `boxes` in place; corners aligned to `ids`
@@ -503,9 +513,11 @@ update_ratio!(::ApriltagScene, _) = nothing
 # (y, x)-ordered — every rectification's `image2real` convention — so the row reads component 1 and
 # the column component 2. With `north` given, `i2r_northing` puts it on the negative first axis,
 # which is up the canvas.
-_canvas_to_real(s::ApriltagScene, i, j) = SVector(s.yc + (i - s.m/2)/s.ppc, s.xc + (j - s.m/2)/s.ppc)
-_real_to_canvas(s::ApriltagScene, r) = CartesianIndex(round(Int, (r[1]-s.yc)*s.ppc + s.m/2),
-                                                      round(Int, (r[2]-s.xc)*s.ppc + s.m/2))
+_canvas_to_real(s::ApriltagScene, i, j) = SVector(s.yc + (i - s.m / 2) / s.ppc, s.xc + (j - s.m / 2) / s.ppc)
+_real_to_canvas(s::ApriltagScene, r) = CartesianIndex(
+    round(Int, (r[1] - s.yc) * s.ppc + s.m / 2),
+    round(Int, (r[2] - s.xc) * s.ppc + s.m / 2)
+)
 
 # Warp `frame` into the canvas via this frame's image→ground homography `H`. `beetle` is `missing` on
 # frames without a full tag set, and `H` is `nothing` when there is no map at all — then every canvas
@@ -516,7 +528,7 @@ function (s::ApriltagScene)(frame, beetle, H)
     tf = idx -> begin
         isnothing(Hinv) && return SVector(-1.0, -1.0)           # no map → fill (out of bounds)
         c = s.ungauge(_canvas_to_real(s, idx[1], idx[2])); v = Hinv * SVector(c[1], c[2], 1.0)
-        SVector(v[2]/v[3], v[1]/v[3])                           # (row, col) = (img_y, img_x)
+        SVector(v[2] / v[3], v[1] / v[3])                           # (row, col) = (img_y, img_x)
     end
     # `convert` rather than a broadcast, for the reason given at RectifiedScene: `frame` is a stack
     # slice in the prefill loop and `vid.img` in the rolling one, both `Gray{N0f8}` already.
@@ -528,8 +540,10 @@ end
 # too, and passing the one object keeps the two halves of the map from drifting apart at the call site.
 diagnose_apriltag(::Nothing, _, _, _) = Dont()
 diagnose_apriltag(file::AbstractString, rectification, darker_target, fps) =
-    Diagnostic(file, darker_target, fps, ApriltagScene(rectification.reference, rectification.image2real);
-               radius = max(2, DIAGNOSTIC_SIZE ÷ 60), font = DIAGNOSTIC_SIZE ÷ 16)
+    Diagnostic(
+    file, darker_target, fps, ApriltagScene(rectification.reference, rectification.image2real);
+    radius = max(2, DIAGNOSTIC_SIZE ÷ 60), font = DIAGNOSTIC_SIZE ÷ 16
+)
 
 # The do-block form, as `diagnose` has: the diagnostic is closed on every path out and a failed
 # export takes its half-written file with it (#160). Both modes go through `with_diagnostic`, so
@@ -574,14 +588,16 @@ reference_size(r::ApriltagRectification) = (r.height, r.width)
 # `family` is the detector family it was built with; `ref_sz` is that space's (rows, cols), which
 # the run's own resolution may differ from. `dia` is an AprilTag `Diagnostic`/`Dont` created and
 # closed by the caller, shared across a run's segments.
-function track_apriltag(segment::Segment, tuning::Tuning, scaled::ScaledTuning, dia,
-                        rectification::ApriltagRectification)
+function track_apriltag(
+        segment::Segment, tuning::Tuning, scaled::ScaledTuning, dia,
+        rectification::ApriltagRectification
+    )
     ref = rectification.reference
     family = rectification.family
     ref_sz = reference_size(rectification)
     ids = ref.ids
     ntags = length(ids)
-    video(segment.file, tuning.native_fps, tuning.sample_fps, segment.start, segment.stop, tuning.downscale) do vid
+    return video(segment.file, tuning.native_fps, tuning.sample_fps, segment.start, segment.stop, tuning.downscale) do vid
         dets = [set_detector!(AprilTagDetector(family)) for _ in 1:ntags]   # one per tag
         try
             canvas = round.(Int, vid.downscale .* ref_sz)      # the reference viewport, tracker-scaled
@@ -614,7 +630,7 @@ function track_apriltag(segment::Segment, tuning::Tuning, scaled::ScaledTuning, 
                 next!(vid)
                 populate_slice!(stack, i, vid)
                 tc = seeded ? detect_tags_roi!(dets, vid.img, ids, boxes, sz) :
-                              detect_tags(dets[1], vid.img, ids)             # whole-frame relocation
+                    detect_tags(dets[1], vid.img, ids)             # whole-frame relocation
                 if isnothing(tc)
                     Hs[i] = nothing
                     seeded && (warp.Hinvs[i] = lastHinv)   # pre-seed slices are backfilled below
@@ -626,7 +642,7 @@ function track_apriltag(segment::Segment, tuning::Tuning, scaled::ScaledTuning, 
                     if !seeded
                         boxes = [tag_box(c, sz) for c in tc]
                         seedR = R
-                        for k in 1:i-1
+                        for k in 1:(i - 1)
                             warp.Hinvs[k] = lastHinv
                         end
                         seeded = true

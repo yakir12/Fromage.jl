@@ -55,11 +55,11 @@ include("verifications.jl")
 # folder of its own inside it, so what a run dumped is exactly what its folder holds; nothing here is
 # ever deleted, including anything the user keeps in the folder they name.
 function load_rectifications(file; defaults = (;), issues_dir = DEFAULT_ISSUES_DIR, progress = true)
-    load_rectifications(dirname(file), file; defaults, issues_dir, progress)
+    return load_rectifications(dirname(file), file; defaults, issues_dir, progress)
 end
 
 function check_rectifications(file; defaults = (;), issues_dir = DEFAULT_ISSUES_DIR, progress = true)
-    check_rectifications(dirname(file), file; defaults, issues_dir, progress)
+    return check_rectifications(dirname(file), file; defaults, issues_dir, progress)
 end
 
 # `defaults` globally replaces the hardcoded fallbacks of the whitelisted rectification parameters
@@ -89,8 +89,10 @@ function parse_rectifications(data_path, file; defaults = (;), progress = true)
 end
 
 # a blank rectification_id cell is itself flagged as an issue, so it can be missing here
-rectifications_report(df) = issue_report(df, :rectification_id, "rectifications.csv";
-    mention = (i, cid) -> !ismissing(cid))
+rectifications_report(df) = issue_report(
+    df, :rectification_id, "rectifications.csv";
+    mention = (i, cid) -> !ismissing(cid)
+)
 report_rectifications(df, strict) = report_issues(rectifications_report(df), "rectification", strict)
 
 # The comprehension pins the element type to the abstract `Vector{RectificationMethod}` (as in
@@ -100,8 +102,10 @@ build_methods(df) = RectificationMethod[RectificationMethod(r) for r in eachrow(
 # Build the rectification methods, or throw. Always returns `Vector{RectificationMethod}`.
 # The first-tier gate; see the matching comment in `load_runs`. This aborts before a single video is
 # probed or corner-detected.
-function load_rectifications(data_path, file; defaults = (;), issues_dir = DEFAULT_ISSUES_DIR,
-        progress = true)
+function load_rectifications(
+        data_path, file; defaults = (;), issues_dir = DEFAULT_ISSUES_DIR,
+        progress = true
+    )
     df, identities_ok = parse_rectifications(data_path, file; defaults, progress)
     identities_ok || report_rectifications(df, true)
     verifications!(df, data_path, issues_dir; progress)
@@ -111,8 +115,10 @@ end
 
 # Validate and report, never throw. Always returns the annotated DataFrame — see `check_runs` for
 # why that unconditional return is the point.
-function check_rectifications(data_path, file; defaults = (;), issues_dir = DEFAULT_ISSUES_DIR,
-        progress = true)
+function check_rectifications(
+        data_path, file; defaults = (;), issues_dir = DEFAULT_ISSUES_DIR,
+        progress = true
+    )
     df, identities_ok = parse_rectifications(data_path, file; defaults, progress)
     identities_ok || report_rectifications(df, false)
     verifications!(df, data_path, issues_dir; progress)

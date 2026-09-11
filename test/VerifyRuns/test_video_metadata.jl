@@ -8,9 +8,9 @@
 
     @testset "the video's pixel dimensions are carried onto the run's Source" begin
         r = only(check([runrow()]))
-        @test r.frame_format.width  == 640                    # ← probed from the video itself
+        @test r.frame_format.width == 640                    # ← probed from the video itself
         @test r.frame_format.height == 480
-        @test r.frame_format.sar    == 1                      # square pixels; anamorphic: test_tracking.jl
+        @test r.frame_format.sar == 1                      # square pixels; anamorphic: test_tracking.jl
     end
 
     @testset "the video's own frame rate is carried onto the run's Tuning" begin
@@ -48,10 +48,10 @@
     # parse_framerate moved to test/probing.jl with its import: VerifyRuns reaches the rate
     # through `native_framerate` now, so the raw parser is no longer part of this gateway's surface.
     @testset "parse_sar: undefined ratios fall back to square pixels" begin
-        @test VR.parse_sar("64:45") == 64//45
-        @test VR.parse_sar("1:1")   == 1//1
-        @test VR.parse_sar("N/A")   == 1//1
-        @test VR.parse_sar("0:1")   == 1//1             # undefined
-        @test VR.parse_sar("")      == 1//1
+        @test VR.parse_sar("64:45") == 64 // 45
+        @test VR.parse_sar("1:1") == 1 // 1
+        @test VR.parse_sar("N/A") == 1 // 1
+        @test VR.parse_sar("0:1") == 1 // 1             # undefined
+        @test VR.parse_sar("") == 1 // 1
     end
 end

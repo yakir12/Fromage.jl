@@ -13,7 +13,7 @@
         i2r = LinearMap(SDiagonal(SVector(2.0, 3.0)))
         c = SVector(4.0, 5.0)
         centering = R.i2r_centering(i2r, c)
-        @test (centering ∘ i2r)(c) ≈ SVector(0.0, 0.0) atol = 1e-12
+        @test (centering ∘ i2r)(c) ≈ SVector(0.0, 0.0) atol = 1.0e-12
     end
 
     @testset "i2r_northing" begin
@@ -25,7 +25,7 @@
         n = SVector(2.0, 5.0)
         northing = R.i2r_northing(i2r, cen, n)
         p = (northing ∘ cen)(n)
-        @test p[2] ≈ 0.0 atol = 1e-12
+        @test p[2] ≈ 0.0 atol = 1.0e-12
         @test p[1] < 0
     end
 
@@ -33,7 +33,7 @@
         i2r = LinearMap(SDiagonal(SVector(1.5, 2.0)))
         c, n = SVector(3.0, 4.0), SVector(6.0, 9.0)
         centering, northing = R.i2r_centering_northing(i2r, c, n)
-        @test (centering ∘ i2r)(c) ≈ SVector(0.0, 0.0) atol = 1e-12
+        @test (centering ∘ i2r)(c) ≈ SVector(0.0, 0.0) atol = 1.0e-12
         @test centering == R.i2r_centering(i2r, c)
     end
 
@@ -45,14 +45,14 @@
         i2r, r2i = R.add_center_north(image2real, real2image, center, north, aspect)
         # image2real and real2image stay mutual inverses after augmentation
         for p in (SVector(0.0, 0.0), SVector(12.0, -7.0), SVector(100.0, 50.0))
-            @test (r2i ∘ i2r)(p) ≈ p atol = 1e-9
+            @test (r2i ∘ i2r)(p) ≈ p atol = 1.0e-9
         end
         # the (aspect-fixed) center maps to the world origin, north onto the −x axis
         fc_center = SVector(S.to_stored(center, aspect))
         fc_north = SVector(S.to_stored(north, aspect))
-        @test i2r(fc_center) ≈ SVector(0.0, 0.0) atol = 1e-9
+        @test i2r(fc_center) ≈ SVector(0.0, 0.0) atol = 1.0e-9
         pn = i2r(fc_north)
-        @test pn[2] ≈ 0.0 atol = 1e-9
+        @test pn[2] ≈ 0.0 atol = 1.0e-9
         @test pn[1] < 0
     end
 
@@ -60,7 +60,7 @@
         # depth(rc1, t, l) = -t / (l⋅rc1)
         @test R.depth(SVector(1.0, 2.0, 1.0), 5.0, SVector(0.0, 0.0, 2.0)) ≈ -2.5
         # get_inv_perspective_map: rc ↦ d·[rc; 1] with d from the extrinsic's last row & z-translation
-        inv_extrinsic = AffineMap(SMatrix{3,3}(1.0I), SVector(0.0, 0.0, 5.0))
+        inv_extrinsic = AffineMap(SMatrix{3, 3}(1.0I), SVector(0.0, 0.0, 5.0))
         f = R.get_inv_perspective_map(inv_extrinsic)
         rc = SVector(1.0, 2.0)
         out = f(rc)
@@ -82,15 +82,15 @@
             R.img2obj(intrinsic, extrinsic, pixel_width, k)
         # img2obj hands back genuine inverses of obj2img's components
         for p in (SVector(0.0, 0.0), SVector(123.0, -45.0))
-            @test (inv_intrinsic ∘ intrinsic)(p) ≈ p atol = 1e-9
+            @test (inv_intrinsic ∘ intrinsic)(p) ≈ p atol = 1.0e-9
         end
         for p in (SVector(0.1, 0.2, 0.3), SVector(-1.0, 2.0, 5.0))
-            @test (inv_extrinsic ∘ extrinsic)(p) ≈ p atol = 1e-9
-            @test (inv_scale ∘ pixel_width)(p) ≈ p atol = 1e-9
+            @test (inv_extrinsic ∘ extrinsic)(p) ≈ p atol = 1.0e-9
+            @test (inv_scale ∘ pixel_width)(p) ≈ p atol = 1.0e-9
         end
         # inv_distort inverts the forward radial map
         v = SVector(0.2, -0.1)
-        @test inv_distort(R.lens_distortion(v, k)) ≈ v atol = 1e-9
+        @test inv_distort(R.lens_distortion(v, k)) ≈ v atol = 1.0e-9
     end
 
     @testset "obj2img keeps frow on the row axis and fcol on the column axis" begin
@@ -98,8 +98,10 @@
         # It is invisible wherever `aspect == 1`, because `fit_model` fixes the aspect ratio and
         # then `frow == fcol` bit-for-bit — the same blind spot as #130 and #197, which is why the
         # focal lengths here are asymmetric and unequal.
-        cam = R.CameraModel(; R = (0.0, 0.0, 0.0), t = (0.0, 0.0, 1.0),
-                            frow = 800.0, fcol = 400.0, crow = 30.0, ccol = 70.0, k = (0.0, 0.0, 0.0))
+        cam = R.CameraModel(;
+            R = (0.0, 0.0, 0.0), t = (0.0, 0.0, 1.0),
+            frow = 800.0, fcol = 400.0, crow = 30.0, ccol = 70.0, k = (0.0, 0.0, 0.0)
+        )
         intrinsic, _, _ = R.obj2img(cam, 1.0)
         # a unit step along coordinate 1 (the ROW axis) is scaled by frow, not fcol
         @test intrinsic(SVector(1.0, 0.0)) == SVector(800.0 + 30.0, 70.0)
@@ -133,8 +135,10 @@
         # a perfectly regular grid with spacing d ⇒ averaged edge length is exactly d
         d = 2.5f0
         n_corners = (3, 4)
-        corners = [SVector{2,Float32}((i - 1) * d, (j - 1) * d)
-                   for i in 1:n_corners[1], j in 1:n_corners[2]]
+        corners = [
+            SVector{2, Float32}((i - 1) * d, (j - 1) * d)
+                for i in 1:n_corners[1], j in 1:n_corners[2]
+        ]
         @test R.checker_width_pixel(corners, n_corners) ≈ d
     end
 

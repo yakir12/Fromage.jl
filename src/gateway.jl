@@ -147,8 +147,10 @@ end
 # a row rejected by an earlier stage has had its offending field nulled, so a detector reached with
 # it can fail in ways it has no vocabulary for — see the note over `verify_extrinsics!`, which is
 # the pass that learned it.
-function detect_per_group!(df::AbstractDataFrame, requiredcols, groupcols, desc, detect, flag!;
-        progress = true)
+function detect_per_group!(
+        df::AbstractDataFrame, requiredcols, groupcols, desc, detect, flag!;
+        progress = true
+    )
     requiredcols ⊆ groupcols ||
         throw(ArgumentError("every required column must also be grouped on, or `detect` cannot read it; missing from groupcols: $(setdiff(requiredcols, groupcols))"))
     usable = subset(dropmissing(df, requiredcols; view = true), :issues => ByRow(isempty); view = true)
@@ -207,8 +209,10 @@ end
 # the uniqueness check that nulled it, and it cannot be matched against anything either way.
 #
 # Returns whether the two files cohere, which is what the caller's first-tier gate keys on.
-function verify_cross_references!(defined::AbstractDataFrame, used::AbstractDataFrame, idcol,
-        defined_name, used_name)
+function verify_cross_references!(
+        defined::AbstractDataFrame, used::AbstractDataFrame, idcol,
+        defined_name, used_name
+    )
     defined_ids = Set(skipmissing(defined[!, idcol]))
     used_ids = Set(skipmissing(used[!, idcol]))
     coherent = true
@@ -240,8 +244,12 @@ end
 function issue_report(df::AbstractDataFrame, idcol, csv_name; mention)
     any(!isempty, df.issues) || return nothing
     ids = df[!, idcol]
-    msg = join([string(mention(i, id) ? "row $i ($idcol: $id)" : "row $i", ": ", join(issues, ", "))
-                for (i, (id, issues)) in enumerate(zip(ids, df.issues)) if !isempty(issues)], '\n')
+    msg = join(
+        [
+            string(mention(i, id) ? "row $i ($idcol: $id)" : "row $i", ": ", join(issues, ", "))
+                for (i, (id, issues)) in enumerate(zip(ids, df.issues)) if !isempty(issues)
+        ], '\n'
+    )
     return string("\nThe following are issues with the $csv_name file:\n", msg)
 end
 

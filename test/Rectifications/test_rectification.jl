@@ -10,15 +10,15 @@
 
     Wimg, Himg = 640, 480
     fx, cx, cy = 1000.0, 320.0, 240.0
-    Kmat = SMatrix{3,3,Float64}(fx, 0, 0, 0, fx, 0, cx, cy, 1)   # [[fx 0 cx];[0 fy cy];[0 0 1]]
+    Kmat = SMatrix{3, 3, Float64}(fx, 0, 0, 0, fx, 0, cx, cy, 1)   # [[fx 0 cx];[0 fy cy];[0 0 1]]
     n_corners = (7, 6)
     checker_width = 25.0
 
     # Render a planar board at pose (rv, t) exactly: it is the homography H = K·[r1 r2 t] of the
     # board plane. We rasterize by inverse-mapping each pixel and evaluating the square parity.
     function render_frame(rv, t)
-        Rm = SMatrix{3,3,Float64}(RotationVec(rv...))
-        H = Kmat * hcat(Rm[:, 1], Rm[:, 2], SVector{3,Float64}(t))
+        Rm = SMatrix{3, 3, Float64}(RotationVec(rv...))
+        H = Kmat * hcat(Rm[:, 1], Rm[:, 2], SVector{3, Float64}(t))
         Hinv = inv(H)
         img = fill(0xff, Himg, Wimg)
         nx, ny = n_corners
@@ -34,20 +34,22 @@
 
     # 12 varied poses for a well-posed calibration, + 2 trailing padding frames so the extrinsic
     # timestamp (frame 11) is never at end-of-stream (ffmpeg input-seek at EOF is unreliable).
-    poses = [(SVector(0.0, 0.0, 0.0), SVector(-3.0, -2.5, 16.0)),
-             (SVector(0.22, -0.12, 0.0), SVector(-3.2, -2.0, 15.0)),
-             (SVector(-0.16, 0.2, 0.05), SVector(-2.5, -2.8, 17.0)),
-             (SVector(0.12, 0.26, -0.1), SVector(-3.5, -2.5, 16.5)),
-             (SVector(-0.26, -0.12, 0.0), SVector(-2.8, -2.2, 15.5)),
-             (SVector(0.06, -0.22, 0.16), SVector(-3.0, -3.0, 18.0)),
-             (SVector(0.3, 0.0, 0.1), SVector(-3.3, -2.4, 16.0)),
-             (SVector(-0.12, -0.26, -0.05), SVector(-2.6, -2.6, 15.0)),
-             (SVector(0.19, 0.19, 0.0), SVector(-3.1, -2.3, 17.5)),
-             (SVector(-0.2, 0.1, 0.08), SVector(-2.9, -2.7, 16.2)),
-             (SVector(0.1, -0.18, -0.06), SVector(-3.2, -2.6, 16.8)),
-             (SVector(-0.08, 0.22, 0.0), SVector(-2.7, -2.4, 15.8)),
-             (SVector(0.05, -0.05, 0.0), SVector(-3.0, -2.5, 16.0)),
-             (SVector(-0.1, 0.1, 0.0), SVector(-3.0, -2.5, 16.0))]
+    poses = [
+        (SVector(0.0, 0.0, 0.0), SVector(-3.0, -2.5, 16.0)),
+        (SVector(0.22, -0.12, 0.0), SVector(-3.2, -2.0, 15.0)),
+        (SVector(-0.16, 0.2, 0.05), SVector(-2.5, -2.8, 17.0)),
+        (SVector(0.12, 0.26, -0.1), SVector(-3.5, -2.5, 16.5)),
+        (SVector(-0.26, -0.12, 0.0), SVector(-2.8, -2.2, 15.5)),
+        (SVector(0.06, -0.22, 0.16), SVector(-3.0, -3.0, 18.0)),
+        (SVector(0.3, 0.0, 0.1), SVector(-3.3, -2.4, 16.0)),
+        (SVector(-0.12, -0.26, -0.05), SVector(-2.6, -2.6, 15.0)),
+        (SVector(0.19, 0.19, 0.0), SVector(-3.1, -2.3, 17.5)),
+        (SVector(-0.2, 0.1, 0.08), SVector(-2.9, -2.7, 16.2)),
+        (SVector(0.1, -0.18, -0.06), SVector(-3.2, -2.6, 16.8)),
+        (SVector(-0.08, 0.22, 0.0), SVector(-2.7, -2.4, 15.8)),
+        (SVector(0.05, -0.05, 0.0), SVector(-3.0, -2.5, 16.0)),
+        (SVector(-0.1, 0.1, 0.0), SVector(-3.0, -2.5, 16.0)),
+    ]
 
     mktempdir() do dir
         # write frames as concatenated raw gray bytes (row-major, matching _frame_at), then encode
@@ -65,9 +67,11 @@
         extrinsic_t, intrinsic_start, intrinsic_stop, step = 1.15, 0.05, 1.05, 0.1
         # The two `missing`s used to be positional here, and nothing said which was `yadif` and
         # which was `blur`.
-        common = (; file = vid, extrinsic = extrinsic_t, intrinsic_start, intrinsic_stop, temporal_step = step,
-                  yadif = missing, blur = missing, width = Wimg, height = Himg, n_corners,
-                  checker_width, aspect = 1.0, radial_parameters = 1)
+        common = (;
+            file = vid, extrinsic = extrinsic_t, intrinsic_start, intrinsic_stop, temporal_step = step,
+            yadif = missing, blur = missing, width = Wimg, height = Himg, n_corners,
+            checker_width, aspect = 1.0, radial_parameters = 1,
+        )
 
         # center = missing ⇒ defaults to the frame centre (the intended behaviour)
         rect = R.from_checkerboard(; common..., center = missing, north = missing)
@@ -92,9 +96,11 @@
             # no intrinsic window: pose + focal fit from the extrinsic frame alone, distortion pinned
             # at zero. The rendered clip is a pure pinhole with the principal point at the frame
             # centre, so the single-view fit (which fixes the principal point there) is well-posed.
-            rect0 = R.from_extrinsic(; file = vid, extrinsic = extrinsic_t, yadif = missing,
-                                     blur = missing, width = Wimg, height = Himg, n_corners,
-                                     checker_width, aspect = 1.0, center = missing, north = missing)
+            rect0 = R.from_extrinsic(;
+                file = vid, extrinsic = extrinsic_t, yadif = missing,
+                blur = missing, width = Wimg, height = Himg, n_corners,
+                checker_width, aspect = 1.0, center = missing, north = missing
+            )
             real_pts = map(rect0.image2real, ext_corners)
             spacing = R.checker_width_pixel(real_pts, n_corners)
             @test spacing ≈ checker_width rtol = 0.05
@@ -103,10 +109,16 @@
 
         @testset "center defaults to frame centre" begin
             # explicit frame-centre pixel must reproduce the center = missing result exactly
-            i2r_explicit = R.from_checkerboard(; common..., center = SVector(Wimg / 2, Himg / 2),
-                                        north = missing).image2real
-            @test all(a ≈ b for (a, b) in zip(map(image2real, ext_corners),
-                                              map(i2r_explicit, ext_corners)))
+            i2r_explicit = R.from_checkerboard(;
+                common..., center = SVector(Wimg / 2, Himg / 2),
+                north = missing
+            ).image2real
+            @test all(
+                a ≈ b for (a, b) in zip(
+                        map(image2real, ext_corners),
+                        map(i2r_explicit, ext_corners)
+                    )
+            )
         end
 
         @testset "diagnostic frame written" begin

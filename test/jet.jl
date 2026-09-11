@@ -50,7 +50,7 @@ const PT = PawsomeTracker
     @testset "no runtime dispatch on the numeric hot paths" begin
         k = (0.1, -0.02, 0.005)                      # the shape both producers now yield
         v = SVector(0.31, -0.12)
-        H = SMatrix{3, 3, Float64}(1.5, -0.03, 5e-6, 0.05, 1.5, 3e-6, 960.0, 540.0, 1.0)
+        H = SMatrix{3, 3, Float64}(1.5, -0.03, 5.0e-6, 0.05, 1.5, 3.0e-6, 960.0, 540.0, 1.0)
         pts = SVector{2, Float64}[SVector(0.0, 0.0), SVector(1.0, 0.0), SVector(1.0, 1.0), SVector(0.0, 1.0)]
         dst = SVector{2, Float64}[SVector(2.0, 3.0), SVector(3.0, 3.0), SVector(3.0, 4.0), SVector(2.0, 4.0)]
 

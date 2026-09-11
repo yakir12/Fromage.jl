@@ -64,8 +64,8 @@ const OPENVIDEO_LOCK = ReentrantLock()
 # under the lock would stall every other open in the process for the duration.
 open_gray_video(file) =
     ShareIO.withretry(; transient = ShareIO.videoio_transient) do
-        lock(() -> openvideo(file; target_format = AV_PIX_FMT_GRAY8), OPENVIDEO_LOCK)
-    end
+    lock(() -> openvideo(file; target_format = AV_PIX_FMT_GRAY8), OPENVIDEO_LOCK)
+end
 
 # The AprilTag C detector (`apriltag_detector_detect`) is not reentrant: it has global/static state
 # that concurrent calls corrupt, even across distinct per-thread detectors on distinct frames, and
@@ -188,14 +188,14 @@ struct Video
             # The tracked frame is the scaled one, so :width/:height are the WARPED extent, not the
             # video's. `WarpedView`'s axes depend only on `axes(img)` and the transform, so wrapping the
             # frame we already hold measures it without decoding or allocating a second one.
-            height, width = size(WarpedView(img, LinearMap(1/downscale); fillvalue = zero(eltype(img))))
+            height, width = size(WarpedView(img, LinearMap(1 / downscale); fillvalue = zero(eltype(img))))
             seek(vid, start + t₀)
             # Frames the window holds at the video's own rate, then how many of them the stride visits.
             # Sample i reads raw frame (i-1)*skip, and `cld` is exactly the count keeping that index
             # inside the window — cld(n, s) == fld(n - 1, s) + 1 — so the reads cannot run off the end.
             # The epsilon absorbs a duration that computes to 59.999999996 rather than 60; the `max`
             # makes a window shorter than one frame period yield the single frame `seek` lands on.
-            navailable = max(1, floor(Int, (stop - start) * native_fps + 1e-9))
+            navailable = max(1, floor(Int, (stop - start) * native_fps + 1.0e-9))
             nframes = cld(navailable, skip)
             sar = aspect_ratio(vid)
             v = new(vid, img, skip, nframes, downscale, width, height, sample_fps, sar)
@@ -222,7 +222,7 @@ end
 
 function next!(v::Video)
     read!(v.vid, v.img)
-    if !isone(v.skip)
+    return if !isone(v.skip)
         skipframes(v.vid, v.skip - 1, throwEOF = false)
     end
 end
@@ -257,14 +257,14 @@ struct Tracker
         # which stretched the matched filter across the rows while the anamorphic squeeze stretches
         # the columns: at sar 1/2 a target 9 rows by 18 columns was hunted with a 53x29 filter.
         # `h` below adds these two elementwise, so they must share an axis order (#36).
-        kernel = direction * Kernel.DoG((σ, σ/vid.sar))
+        kernel = direction * Kernel.DoG((σ, σ / vid.sar))
         h = radii .+ size(kernel)
 
         pad_indices = UnitRange.(1 .- h, sz .+ h)
         img = PaddedView(fillvalue, Matrix{Gray{Float32}}(undef, sz...), pad_indices)
         _buff = Matrix{Float64}(undef, length.(pad_indices))
         buff = OffsetMatrix(_buff, pad_indices)
-        new(img, buff, kernel, h, radii, sz, subtract ? (darker_target ? maximum : minimum) : nothing)
+        return new(img, buff, kernel, h, radii, sz, subtract ? (darker_target ? maximum : minimum) : nothing)
     end
 end
 
@@ -286,8 +286,8 @@ end
 # indexes the stack generically and simply stops paying for the warp.
 function build_stack(downscale, sz, n_bkgd, pad_indices)
     isone(downscale) && return PaddedView(zero(Gray{N0f8}), Array{Gray{N0f8}}(undef, sz..., n_bkgd), pad_indices)
-    tform = LinearMap(SDiagonal(SVector{3, Float64}(1/downscale, 1/downscale, 1)))
-    PaddedView(zero(Gray{N0f8}), WarpedView(Array{Gray{N0f8}}(undef, sz..., n_bkgd), tform; fillvalue = zero(Gray{N0f8})), pad_indices)
+    tform = LinearMap(SDiagonal(SVector{3, Float64}(1 / downscale, 1 / downscale, 1)))
+    return PaddedView(zero(Gray{N0f8}), WarpedView(Array{Gray{N0f8}}(undef, sz..., n_bkgd), tform; fillvalue = zero(Gray{N0f8})), pad_indices)
 end
 
 # Registered variant (AprilTag mode): `tform` composes each slice's registration with the inverse
@@ -296,7 +296,7 @@ end
 # `inv` for WarpedView's autorange.
 function build_stack(tform::Transformation, canvas_sz, raw_sz, n_bkgd, pad_indices)
     inds = (Base.OneTo.(canvas_sz)..., Base.OneTo(n_bkgd))
-    PaddedView(zero(Gray{N0f8}), WarpedView(Array{Gray{N0f8}}(undef, raw_sz..., n_bkgd), tform, inds; fillvalue = zero(Gray{N0f8})), pad_indices)
+    return PaddedView(zero(Gray{N0f8}), WarpedView(Array{Gray{N0f8}}(undef, raw_sz..., n_bkgd), tform, inds; fillvalue = zero(Gray{N0f8})), pad_indices)
 end
 
 # `background_length = 0` turns background subtraction off, but the stack itself stays (it doubles
@@ -307,12 +307,12 @@ n_background(vid, background_length) =
 
 function get_stack(vid, sz, h, n_bkgd::Int)
     pad_indices = UnitRange.(((1 .- h)..., 1), ((sz .+ h)..., n_bkgd))
-    build_stack(vid.downscale, size(vid.img), n_bkgd, pad_indices)
+    return build_stack(vid.downscale, size(vid.img), n_bkgd, pad_indices)
 end
 
 function get_stack(vid, sz, h, n_bkgd::Int, tform::Transformation)
     pad_indices = UnitRange.(((1 .- h)..., 1), ((sz .+ h)..., n_bkgd))
-    build_stack(tform, sz, size(vid.img), n_bkgd, pad_indices)
+    return build_stack(tform, sz, size(vid.img), n_bkgd, pad_indices)
 end
 
 populate_slice!(stack, i, vid) = copy!(selectdim(parent(parent(stack)), 3, i), vid.img)
@@ -326,8 +326,12 @@ populate_slice!(stack, i, vid) = copy!(selectdim(parent(parent(stack)), 3, i), v
 # needs the stationary spell to exceed the whole background window within the rolling phase.)
 function protect_target(stack, j, guess, radii, downscale)
     slice = selectdim(parent(parent(stack)), 3, j)
-    protect = CartesianIndices(UnitRange.(round.(Int, (guess .- radii) ./ downscale),
-                                          round.(Int, (guess .+ radii) ./ downscale))) ∩ CartesianIndices(slice)
+    protect = CartesianIndices(
+        UnitRange.(
+            round.(Int, (guess .- radii) ./ downscale),
+            round.(Int, (guess .+ radii) ./ downscale)
+        )
+    ) ∩ CartesianIndices(slice)
     return protect, slice[protect]
 end
 
@@ -339,9 +343,11 @@ end
 # to one frame of drone motion. Padding only widens the protected area.
 function protect_target(stack, j, guess, radii, canvas2raw::Function, pad::Int)
     slice = selectdim(parent(parent(stack)), 3, j)
-    corners = (canvas2raw(guess .- radii), canvas2raw(guess .+ radii),
-               canvas2raw((guess[1] - radii[1], guess[2] + radii[2])),
-               canvas2raw((guess[1] + radii[1], guess[2] - radii[2])))
+    corners = (
+        canvas2raw(guess .- radii), canvas2raw(guess .+ radii),
+        canvas2raw((guess[1] - radii[1], guess[2] + radii[2])),
+        canvas2raw((guess[1] + radii[1], guess[2] - radii[2])),
+    )
     lo = floor.(Int, min.(corners...)) .- pad
     hi = ceil.(Int, max.(corners...)) .+ pad
     protect = CartesianIndices(UnitRange.(lo, hi)) ∩ CartesianIndices(slice)
@@ -417,7 +423,7 @@ function track!(coords, stack, guess, tr, vid, dia)
     end
     n_bkgd = size(stack, 3)
     subtract = !isnothing(tr.bkgd_reduce)   # no background model ⇒ nothing to protect the target from
-    for i in n_bkgd + 1:vid.nframes
+    for i in (n_bkgd + 1):vid.nframes
         next!(vid)
         j = mod1(i, n_bkgd)
         # Assigned unconditionally so the restore below is guarded by the VALUE rather than by a
@@ -430,6 +436,7 @@ function track!(coords, stack, guess, tr, vid, dia)
         dia(selectdim(parent(parent(stack)), 3, j), round.(Int, Tuple(coords[i])))
         isnothing(protect) || restore_background!(stack, j, protect, keep)
     end
+    return
 end
 
 # `dia` is a `Diagnostic`/`Dont` created and closed by the caller, shared across a run's segments.
@@ -439,7 +446,7 @@ end
 # and a transposition among them compiled and returned a wrong track: swapping `target_width` with
 # `initial_search_factor` at the call site passed the entire tracker suite (#201 follow-up).
 function track_one(rseg::ResolvedSegment, tuning::Tuning, scaled::ScaledTuning, dia)
-    video(rseg.file, tuning.native_fps, tuning.sample_fps, rseg.start, rseg.stop, tuning.downscale) do vid
+    return video(rseg.file, tuning.native_fps, tuning.sample_fps, rseg.start, rseg.stop, tuning.downscale) do vid
         update_ratio!(dia, size(vid.img))
         subtract = tuning.background_length != 0
         tr = Tracker(vid, tuning.darker_target, scaled.width, scaled.window, (vid.height, vid.width), subtract)
@@ -470,7 +477,7 @@ function get_window(target_width, sample_fps, m, duration)
     distance = speed / sample_fps # distance traveled per sampled frame
     ws2 = round(Int, 2distance)
 
-    max(ws1, ws2)
+    return max(ws1, ws2)
 end
 
 # Apply an image2real map over a track that may hold `missing` frames (AprilTag mode reports

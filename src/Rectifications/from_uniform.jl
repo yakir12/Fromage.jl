@@ -13,4 +13,3 @@ function from_uniform(; pixel_width, aspect, center, north, width, height)
     image2real, real2image = add_center_north(image2real, real2image, center, north, aspect)
     return StaticRectification(image2real, real2image, pixel_width, width, height)
 end
-

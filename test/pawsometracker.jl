@@ -69,8 +69,8 @@ const DATADIR = mktempdir()
     # Anamorphic, both directions: sar 1/2 stores 200x100, sar 2 stores 50x100. Every other fixture
     # in this file is square at sar 1, where the two axes are interchangeable and a transposition
     # cannot show (#36).
-    sar05, _ = make_target_video(DATADIR, "pt_sar05"; sar = 1//2)
-    sar2, _ = make_target_video(DATADIR, "pt_sar2"; sar = 2//1)
+    sar05, _ = make_target_video(DATADIR, "pt_sar05"; sar = 1 // 2)
+    sar2, _ = make_target_video(DATADIR, "pt_sar2"; sar = 2 // 1)
     # Non-square, with the disc well off the diagonal. Every other trajectory fixture is 100x100
     # with the disc at (row 50, col 55): there a transposed start location lands 7 px away, a third
     # of the default search radius, so it still tracks and no assertion notices. Here row 30 and
@@ -188,7 +188,7 @@ const DATADIR = mktempdir()
         # and downscale != 1, so any transposition among them changes at least one field.
         t = PT.Tuning(10.0, (31, 21), true, 25.0, 25.0, 4.0, 0.5, 250)
         s = PT.ScaledTuning(t)
-        @test s.width  == 5.0                      # downscale * target_width
+        @test s.width == 5.0                      # downscale * target_width
         @test s.search == 2.0                      # downscale * initial_search_factor
         # (w, h) = (31, 21) -> fix_window_size -> (rows, cols) = (21, 31) -> scaled
         @test s.window == round.(Int, 0.5 .* (21, 31))
@@ -207,8 +207,10 @@ const DATADIR = mktempdir()
         # wide, columns 76..84 — the disc is not in it, and the tracker never finds the target.
         # That is the swap the square fixtures cannot see, because there the disc sits at the
         # centre and any box contains it.
-        _, ij = track1(wide_file; start_location = missing, target_width = 10,
-                       initial_search_factor = 1.0)
+        _, ij = track1(
+            wide_file; start_location = missing, target_width = 10,
+            initial_search_factor = 1.0
+        )
         @test tracking_rmse(ij, wide_exp) < 0.5
     end
 
@@ -225,7 +227,7 @@ const DATADIR = mktempdir()
         # ...and at sar 1/2 the x is converted to stored columns on the way, y untouched.
         anam = PT.Video(joinpath(DATADIR, only(sar05)), 25, 25, 0, 2, 1.0)
         try
-            @test anam.sar == 1//2
+            @test anam.sar == 1 // 2
             @test PT.get_guess((10, 90), nothing, anam, false, 0, 0, false) == (90, 20)
         finally
             close(anam.vid)
@@ -274,8 +276,8 @@ const DATADIR = mktempdir()
                 # each timestamp is the true time of the frame it labels — this is both issues:
                 # #15 (stride and count disagreeing) and #17 (the one-frame stretch from pinning
                 # the last sample to `stop`)
-                @test step(ts) ≈ 1 / effective rtol = 1e-9
-                @test last(ts) ≈ (length(ts) - 1) / effective rtol = 1e-9
+                @test step(ts) ≈ 1 / effective rtol = 1.0e-9
+                @test last(ts) ≈ (length(ts) - 1) / effective rtol = 1.0e-9
                 # and nothing may be labeled at or past the end of the window
                 @test last(ts) < 2
             end
@@ -305,8 +307,10 @@ const DATADIR = mktempdir()
         # advances one sampling interval per tracked frame, so the second window's own `start`
         # (1.2 s, a time in the same file) never appears and the 0.4 s left out is closed up.
         # Nothing else asserts the timestamps of a multi-segment run.
-        ts, ij = track1([base_file, base_file]; start = [0.4, 1.2], stop = [0.8, 1.6],
-                        start_location = [(55, 50), missing])
+        ts, ij = track1(
+            [base_file, base_file]; start = [0.4, 1.2], stop = [0.8, 1.6],
+            start_location = [(55, 50), missing]
+        )
         # 25 fps, sampled at its own rate: 10 frames per 0.4 s window.
         @test length(ts) == 20
         @test length(ij) == length(ts)
@@ -441,7 +445,8 @@ const DATADIR = mktempdir()
                 error("the failure the caller must see")
             finally
                 PT.warn_on_failure(() -> error("a close that failed"), "close the video reader")
-            end)
+            end
+        )
         @test err.value.msg == "the failure the caller must see"
 
         # The successful path is unchanged: the reader is left OPEN for the caller, which is what
@@ -531,7 +536,8 @@ const DATADIR = mktempdir()
             # failure rather than a fake one. The cleanup closes a second time and throws a second
             # time; the warning is where that goes, and the caller still gets the first exception.
             err = @test_logs (:warn,) match_mode = :any (
-                @test_throws ErrorException PT.with_diagnostic(identity, CloseThenFail(dia), df))
+                @test_throws ErrorException PT.with_diagnostic(identity, CloseThenFail(dia), df)
+            )
             @test err.value.msg == "injected finalization failure"
             @test !isopen(w)
             @test nactive() == before
@@ -549,7 +555,8 @@ const DATADIR = mktempdir()
             err = @test_logs (:warn,) match_mode = :any (
                 @test_throws ErrorException PT.with_diagnostic(PT.Dont(), undeletable) do _
                     error("injected failure the removal must not replace")
-                end)
+                end
+            )
             @test err.value.msg == "injected failure the removal must not replace"
         end
 
@@ -573,8 +580,10 @@ const DATADIR = mktempdir()
         f30 = joinpath(DATADIR, only(v30))
         for requested in (30, 25, 20, 12)
             df = joinpath(DATADIR, "diag_$requested.mp4")
-            track1(f30; sample_fps = requested, start_location = (55, 50), target_width = 10,
-                   diagnostic_file = df)
+            track1(
+                f30; sample_fps = requested, start_location = (55, 50), target_width = 10,
+                diagnostic_file = df
+            )
             s = probe_stream(df)
             @testset "sample_fps = $requested" begin
                 @test s.nframes > 0

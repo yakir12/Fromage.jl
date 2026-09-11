@@ -127,6 +127,8 @@ struct ScaledTuning
     window::NTuple{2, Int}
     search::Float64
 end
-ScaledTuning(t::Tuning) = ScaledTuning(t.downscale * t.target_width,
-                                       round.(Int, t.downscale .* fix_window_size(t.window_size)),
-                                       t.downscale * t.initial_search_factor)
+ScaledTuning(t::Tuning) = ScaledTuning(
+    t.downscale * t.target_width,
+    round.(Int, t.downscale .* fix_window_size(t.window_size)),
+    t.downscale * t.initial_search_factor
+)

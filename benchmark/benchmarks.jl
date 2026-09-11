@@ -57,8 +57,10 @@ lens["inverse, 640 px"] = @benchmarkable [R.inv_lens_distortion(v, $K, $RSTAR) f
 
 # A uniform rectification: no video is read at all (#209 moved the diagnostic image to the caller),
 # so this is a pure pair of coordinate maps.
-const RECT = R.from_uniform(; pixel_width = 0.05, aspect = 1.0, center = missing, north = missing,
-    width = 640, height = 480)
+const RECT = R.from_uniform(;
+    pixel_width = 0.05, aspect = 1.0, center = missing, north = missing,
+    width = 640, height = 480
+)
 const IMAGE_PTS = vec([SVector(float(r), float(c)) for r in 1:16:480, c in 1:16:640])
 const REAL_PTS = map(RECT.image2real, IMAGE_PTS)
 
@@ -86,8 +88,10 @@ const DOG = -1 * Kernel.DoG((SIGMA, SIGMA))
 const RADII = (10, 10)
 const FRAME_SZ = (480, 640)
 const PAD = UnitRange.(1 .- (RADII .+ size(DOG)), FRAME_SZ .+ (RADII .+ size(DOG)))
-const FILT_IN = PaddedView(zero(Gray{Float32}),
-    Gray{Float32}.(reshape(range(0, 1; length = prod(FRAME_SZ)), FRAME_SZ)), PAD)
+const FILT_IN = PaddedView(
+    zero(Gray{Float32}),
+    Gray{Float32}.(reshape(range(0, 1; length = prod(FRAME_SZ)), FRAME_SZ)), PAD
+)
 const FILT_OUT = OffsetMatrix(Matrix{Float64}(undef, length.(PAD)), PAD)
 const WINDOW = UnitRange.((240, 320) .- RADII, (240, 320) .+ RADII)
 
@@ -110,27 +114,39 @@ const MAIN_DIR = let dir = mktempdir()
     png = joinpath(@__DIR__, "..", "test", "VerifyRectifications", "fixtures", "checkerboard.png")
     make_checkerboard_video(joinpath(dir, "board.mp4"), png)
     target, _ = make_target_video(dir, "run")
-    write(joinpath(dir, "rectifications.csv"),
-        "rectification_id,file,type,extrinsic,intrinsic_start,intrinsic_stop,checker_width\nc1,board.mp4,checkerboard,1,0,4,4\n")
-    write(joinpath(dir, "runs.csv"),
-        "rectification_id,file,start_location\nc1,$(only(target)),\"(55, 50)\"\n")
+    write(
+        joinpath(dir, "rectifications.csv"),
+        "rectification_id,file,type,extrinsic,intrinsic_start,intrinsic_stop,checker_width\nc1,board.mp4,checkerboard,1,0,4,4\n"
+    )
+    write(
+        joinpath(dir, "runs.csv"),
+        "rectification_id,file,start_location\nc1,$(only(target)),\"(55, 50)\"\n"
+    )
     dir
 end
 
 # `main` writes results_dir relative to the working directory, so each run gets a fresh one.
-run_main() = cd(() -> main(MAIN_DIR; rectification_defaults = (n_corners = (5, 8),),
-                                     tracking_defaults = (target_width = 10,)), mktempdir())
+run_main() = cd(
+    () -> main(
+        MAIN_DIR; rectification_defaults = (n_corners = (5, 8),),
+        tracking_defaults = (target_width = 10,)
+    ), mktempdir()
+)
 
 # The gateways, without any video: every path points at a file that does not exist, so each row is
 # parsed, verified and reported but nothing is probed. That isolates the DataFrames work — column
 # typing, `subset`, `groupby`, the issue accumulation — from ffprobe, which otherwise dominates.
 const GATEWAY_DIR = let dir = mktempdir(), n = 200
-    write(joinpath(dir, "runs.csv"),
+    write(
+        joinpath(dir, "runs.csv"),
         "run_id,rectification_id,file,start_location\n" *
-        join(["r$i,c$(i % 5),nope_$i.mp4,\"(55, 50)\"" for i in 1:n], '\n') * "\n")
-    write(joinpath(dir, "rectifications.csv"),
+            join(["r$i,c$(i % 5),nope_$i.mp4,\"(55, 50)\"" for i in 1:n], '\n') * "\n"
+    )
+    write(
+        joinpath(dir, "rectifications.csv"),
         "rectification_id,type,file,extrinsic,pixel_width\n" *
-        join(["c$i,uniform,nope_$i.mp4,1,2" for i in 0:4], '\n') * "\n")
+            join(["c$i,uniform,nope_$i.mp4,1,2" for i in 0:4], '\n') * "\n"
+    )
     dir
 end
 
@@ -143,8 +159,10 @@ gates = SUITE["micro"]["gateways"] = BenchmarkGroup()
 gates["check_runs, 200 rows"] =
     @benchmarkable Fromage.VerifyRuns.check_runs(joinpath($GATEWAY_DIR, "runs.csv"); progress = false)
 gates["check_rectifications, 5 rows"] =
-    @benchmarkable Fromage.VerifyRectifications.check_rectifications(joinpath($GATEWAY_DIR, "rectifications.csv");
-                                                                     progress = false)
+    @benchmarkable Fromage.VerifyRectifications.check_rectifications(
+    joinpath($GATEWAY_DIR, "rectifications.csv");
+    progress = false
+)
 
 # `track` takes no keyword arguments (#140, #141): a run's `Segment`s and its `Tuning` are what the
 # gateway hands it, so they are built ONCE here rather than inside the benchmarkable. That is not
@@ -159,6 +177,8 @@ pipe = SUITE["macro"] = BenchmarkGroup()
 pipe["track, 50 frames"] =
     @benchmarkable(track($SEGS, $TUNING, nothing, nothing), samples = 1, evals = 1)
 pipe["track + diagnostic video"] =
-    @benchmarkable(track($SEGS, $TUNING, nothing, joinpath(mktempdir(), "d.mp4")),
-                   samples = 1, evals = 1)
+    @benchmarkable(
+    track($SEGS, $TUNING, nothing, joinpath(mktempdir(), "d.mp4")),
+    samples = 1, evals = 1
+)
 pipe["main, one calibration + one run"] = @benchmarkable(run_main(), samples = 1, evals = 1)
