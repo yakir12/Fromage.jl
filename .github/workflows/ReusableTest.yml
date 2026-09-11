@@ -23,6 +23,13 @@ on:
         required: false
         type: boolean
         default: false
+      run_static:
+        # Whether this leg runs the platform-independent static analysis — today that means JET.
+        # Defaults to true so a local `Pkg.test()` and any caller that does not think about it
+        # keep the full suite; Test.yml and TestOnPRs.yml set it false on everything but ubuntu.
+        required: false
+        type: boolean
+        default: true
     secrets:
       codecov_token:
         # Optional on purpose: pull requests from forks never receive secrets, and a
@@ -64,6 +71,13 @@ jobs:
         # building, run tracking) is otherwise never exercised on CI. "auto" = all runner cores.
         env:
           JULIA_NUM_THREADS: "auto"
+          # Read by test/runtests.jl. JET is a whole-package abstract interpretation, so running it
+          # once per OS was always redundant — and on Julia 1.13 it turned out to be actively
+          # harmful: `@test_opt` on `inv_lens_distortion` passes on ubuntu and fails on windows,
+          # because the `@warn` inside it reaches Base.CoreLogging -> wait() -> OncePerThread, where
+          # JET reports "failed to optimize due to recursion". Same Julia, same source, different
+          # answer per platform. See DECISIONS, "JET runs once, on ubuntu".
+          FROMAGE_RUN_STATIC: ${{ inputs.run_static }}
       - uses: julia-actions/julia-processcoverage@v1
         if: ${{ inputs.run_codecov }}
       - uses: codecov/codecov-action@v7

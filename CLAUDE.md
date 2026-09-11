@@ -340,7 +340,9 @@ branch starts from `main`, and if `main` has moved, rebase onto it rather than s
    version is stale by the next one. Also `format_code` after a large edit, and reindex every file
    you changed (§2). **JET runs on an allowlist of Julia minors — `JET_MINORS` in
    `test/runtests.jl`, currently `(13,)`, the same minor `Test.yml` pins** — so a local run on
-   1.13 includes it and a run on anything else does not. That gap used to be silent and is not
+   1.13 includes it and a run on anything else does not. In CI it additionally runs on the ubuntu
+   leg only (`FROMAGE_RUN_STATIC`); locally it defaults on, so **your run is the one that sees
+   JET on macOS or Windows** — CI no longer will (DECISIONS, "JET runs once, on ubuntu"). That gap used to be silent and is not
    any more: an off-allowlist run warns and reports a `JET (SKIPPED — …)` testset, because the
    allowlist once said `(11, 12)` while the matrix said `"1"`, and when `"1"` rolled to 1.13 the
    analysis vanished from CI with everything still green. Read the summary, not just the exit

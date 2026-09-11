@@ -66,6 +66,8 @@ jobs:
       # ubuntu. If a version axis ever comes back, this needs a `matrix.version ==` clause again or
       # every version's ubuntu leg will upload.
       run_codecov: ${{ matrix.os == 'ubuntu-latest' }}
+      # JET runs once, on the same leg, for the reason in ReusableTest.yml.
+      run_static: ${{ matrix.os == 'ubuntu-latest' }}
     secrets:
       codecov_token: ${{ secrets.CODECOV_TOKEN }}
     strategy:

@@ -1531,6 +1531,43 @@ The unconditional assignment is free. The `Union{Nothing,…}` union-splits, lea
 loop body, and costs nothing when `subtract` is off — measured against the alternative of an
 always-concrete empty region, which allocates an empty slice every frame instead.
 
+### JET runs once, on ubuntu
+
+JET is a whole-package abstract interpretation of source and IR, so running it on three platforms
+was always three answers to a question that has nothing platform-dependent in it. It now runs on
+the ubuntu leg only, gated by `FROMAGE_RUN_STATIC` (set by `ReusableTest.yml`, defaulting to *on*
+so a local `Pkg.test()` still runs it — defaulting the analysis off is how it goes missing).
+
+What settled it was that the assumption turned out to be false in the worst direction: on Julia
+1.13 the same source gives **different JET answers on different platforms**. `@test_opt` on
+`inv_lens_distortion` passes on ubuntu and fails on windows. The chain is
+
+```
+inv_lens_distortion            src/Rectifications/from_checkerboard.jl
+└ current_logger_for_env       Base.CoreLogging  (the `@warn` at :108)
+  └ env_override_minlevel      Base.CoreLogging
+    └ wait()                   Base
+      └ getindex(::OncePerThread{Task, …}, ::Int64)
+        └ "failed to optimize due to recursion"
+```
+
+— that is, our one guarded `@warn` reaching Base's logging machinery, which on 1.13 goes through
+`OncePerThread`, which JET's optimization analysis cannot see through. Nothing in this package
+dispatches dynamically; the report is about Base.
+
+So the per-OS runs were not producing platform *signal*, they were producing platform *noise*, and
+the cost of that noise is a red release gate for a reason no change here caused. `test/jet.jl`'s
+header already warned this was coming: "`report_opt` reads the compiler's inlining decisions, so an
+unpinned version of this could go red on a new Julia minor with no change to this package at all."
+It went red on a new minor on one platform instead.
+
+**What this gives up, stated plainly:** a JET finding that is genuinely specific to macOS or
+Windows will not be seen. That is accepted because no such finding has ever appeared, and because
+the one platform-specific difference that *has* appeared was an artefact. The alternative
+considered and not taken was passing `target_modules` to the `@test_opt` calls, which would have
+filtered the Base frames and kept JET on all three platforms; it was rejected as the more invasive
+change, since it also filters any real finding whose report happens to land on a dependency frame.
+
 ### One Julia version, pinned
 
 The matrix tested two minors on three platforms. It now tests one minor — an explicit `"1.13"` —
