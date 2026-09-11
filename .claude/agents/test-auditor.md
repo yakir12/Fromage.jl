@@ -14,7 +14,7 @@ analytic ground truth) and `Harness` (gateway CSV plumbing) — then each former
 inside its own wrapper module, so suite-local names cannot collide:
 
 `quality.jl` (Aqua + ExplicitImports + the single-definition-site invariant), `jet.jl` (gated
-on an allowlist of Julia minors, currently 1.11 and 1.12), `shareio.jl`, `parsing.jl`,
+on an allowlist of Julia minors, currently 1.13), `shareio.jl`, `parsing.jl`,
 `probing.jl`, `rectifications.jl`,
 `pawsometracker.jl`, `apriltag.jl`, `apriltag_pipeline.jl`, `verifyrectifications.jl`,
 `verifyruns.jl`, `fromage.jl` (end-to-end `main` over a synthetic data folder).

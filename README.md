@@ -16,7 +16,7 @@ This is the main package used to organise, calibrate, and track video files in t
 
 ## Install
 
-With Julia ≥ 1.11, in Pkg mode (type `]` at the REPL):
+With Julia ≥ 1.13, in Pkg mode (type `]` at the REPL):
 
 ```
 pkg> add https://github.com/yakir12/Fromage.jl

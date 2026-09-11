@@ -30,13 +30,15 @@ jobs:
     uses: ./.github/workflows/ReusableTest.yml
     with:
       os: ${{ matrix.os }}
-      version: "1"
+      version: "1.13"
       # Matches Test.yml: "default" resolves to the runner's native arch, so this keeps
       # working if the runner images ever change architecture under us.
       arch: default
       allow_failure: false
       # Coverage is measured once, on the same leg Test.yml uploads from.
       run_codecov: ${{ matrix.os == 'ubuntu-latest' }}
+      # And JET runs once, on that leg too — see ReusableTest.yml.
+      run_static: ${{ matrix.os == 'ubuntu-latest' }}
     secrets:
       codecov_token: ${{ secrets.CODECOV_TOKEN }}
     strategy:

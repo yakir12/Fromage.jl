@@ -19,8 +19,8 @@ Authors: Yakir Gagnon <12.yakir@gmail.com> and contributors
 CheckExplicitImports: false
 GitHubActionVersionAutoUpdate: dependabot
 JuliaCompatAutoUpdate: compathelper
-JuliaMinCIVersion: '1.11'
-JuliaMinVersion: '1.11'
+JuliaMinCIVersion: '1.13'
+JuliaMinVersion: '1.13'
 License: MIT
 LicenseCopyrightHolders: Yakir Gagnon
 PackageName: Fromage
