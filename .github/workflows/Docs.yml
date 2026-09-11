@@ -65,7 +65,16 @@ jobs:
       - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
         with:
-          version: '1'
+          # The same pinned minor Test.yml runs, not '1'. Test, TestOnPRs, PersistentTasks and
+          # ToleranceResiduals were all pinned when the matrix was; this one was left on the
+          # moving alias, which is the arrangement that already cost us the JET analysis once
+          # (DECISIONS, "One Julia version, pinned").
+          #
+          # It matters less here than in Test — nothing gates on the Julia version a docs build
+          # used — but not not at all: this build is what advances /stable/, so a Julia release
+          # that breaks it stops the published documentation from ever catching up, on a schedule
+          # nobody chose. Pinning means that can only happen when someone moves the pin.
+          version: '1.13'
       - uses: julia-actions/cache@v3
       - name: Instantiate docs environment
         run: julia --project=docs -e 'using Pkg; Pkg.instantiate()'
