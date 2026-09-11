@@ -4,7 +4,15 @@ on:
   push:
     branches:
       - main
-    tags: ["*"]
+    # No `tags:` filter. It used to say `tags: ["*"]` and never once fired: AutoRelease pushes the
+    # release tag with GITHUB_TOKEN, and a tag pushed with that token raises no workflow — which is
+    # precisely why AutoRelease has to dispatch Docs on the tag explicitly. Ten of ten Test runs in
+    # the sampled window were `push` on `main`.
+    #
+    # Its only reachable effect was a hazard: a hand-pushed tag would have spent a full matrix
+    # (~25 min) on a build AutoRelease then discards anyway, since its guard requires
+    # `head_branch == 'main'`. RELEASING.md already forbids pushing tags by hand.
+    #
     # Deliberately narrow. AutoRelease triggers on this workflow's completion, so anything
     # excluded here also stops getting released — and a release is what advances /stable/.
     # Only files that cannot affect the package or its documentation are listed. `docs/**`
