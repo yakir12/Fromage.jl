@@ -56,9 +56,45 @@ make_bad_matlab(path) = (write(path, "this is not a mat file"); path)
 make_matlab_partial(path; imagesize = (480, 640)) = (MAT.matwrite(path, Dict("ImageSize" => collect(imagesize), "RadialDistortion" => [0.0, 0.0], "K" => [1.0 0.0; 0.0 1.0])); path)
 # ImageSize buried in a sub-struct, as real MATLAB calibration files store it (exercises findfirstkey recursion)
 make_matlab_nested(path; imagesize = (480, 640)) = (MAT.matwrite(path, Dict("cameraParams" => merge(Dict("ImageSize" => collect(imagesize)), MATLAB_CALIB_FIELDS))); path)
+# A valid calibration struct saved alongside a second top-level variable — a note, a stray matrix,
+# anything the user had in the workspace. The calibration is nested exactly as in nested.mat, so the
+# sibling is the only difference, and it is what used to make the builder and the verification
+# disagree about where "K" lives (#152).
+make_matlab_two_toplevel(path; imagesize = (480, 640)) = (
+    MAT.matwrite(
+        path, Dict(
+            "cameraParams" => merge(Dict("ImageSize" => collect(imagesize)), MATLAB_CALIB_FIELDS),
+            "notes" => "saved into the same file"
+        )
+    ); path
+)
+
+# A stereo calibration, shaped the way MATLAB's `stereoParams` is: two complete camera calibrations
+# nested side by side, so every required field resolves to two values and neither is the obvious one.
+make_matlab_stereo(path; imagesize = (480, 640)) = (
+    MAT.matwrite(
+        path, Dict(
+            "stereoParams" => Dict(
+                "CameraParameters1" => merge(Dict("ImageSize" => collect(imagesize)), MATLAB_CALIB_FIELDS),
+                "CameraParameters2" => merge(Dict("ImageSize" => collect(imagesize)), MATLAB_CALIB_FIELDS)
+            )
+        )
+    ); path
+)
+
+# A structurally complete calibration with individual fields replaced. Each shape check needs exactly
+# one field bent out of shape while the rest stay valid, or the row trips an earlier check and never
+# reaches the one under test. `overrides` is positional and keyed by the matlab field name, because
+# the field under test is usually a loop variable — a keyword channel would need a NamedTuple built
+# from a Symbol at every call site.
+make_matlab_with(path, overrides) = (
+    MAT.matwrite(path, merge(Dict("ImageSize" => [480.0, 640.0]), MATLAB_CALIB_FIELDS, Dict(overrides))); path
+)
+
 # TranslationVectors (6×3, from MATLAB_CALIB_FIELDS) and RotationVectors (overridden to 5×3) disagree on
 # the number of extrinsic poses -> matlab_extrinsic_count returns an issue instead of a count.
-make_matlab_mismatch(path; imagesize = (480, 640)) = (MAT.matwrite(path, merge(MATLAB_CALIB_FIELDS, Dict("ImageSize" => collect(imagesize), "RotationVectors" => zeros(5, 3)))); path)
+make_matlab_mismatch(path) = make_matlab_with(path, Dict("RotationVectors" => zeros(5, 3)))
+
 # A geometrically consistent calibration (unlike the structural dummies above): fronto-parallel
 # pinhole poses (R = 0, t = (0, 0, Z)) with a real K — enough for the matlab Rectification to
 # build an invertible map (ratio = Z/f at pose 1). ImageSize (480, 640) matches video.mp4.
@@ -96,11 +132,14 @@ const ART = let dir = DATADIR, checkerboard_png = joinpath(@__DIR__, "fixtures",
     make_matlab_partial(joinpath(dir, "partialcalib.mat"))                         # missing 2 required fields
     make_matlab_nested(joinpath(dir, "nested.mat"); imagesize = (480, 640))        # dim (640,480), matches video.mp4
     make_matlab_mismatch(joinpath(dir, "mismatch.mat"))                            # translation/rotation pose counts differ
+    make_matlab_two_toplevel(joinpath(dir, "sibling.mat"))                         # valid calibration + a second top-level variable
+    make_matlab_stereo(joinpath(dir, "stereo.mat"))                                # two complete calibrations, neither preferred
     make_matlab_consistent(joinpath(dir, "consistent.mat"))                        # buildable: fronto-parallel pinhole, dim (640,480)
     (
         video = "video.mp4", board = "board.mp4", mixed = "mixed.mp4", corrupt = "corrupt.mp4", interlaced = "interlaced.mp4",
         good_mat = "good.mat", noimsize_mat = "noimsize.mat", bad_mat = "bad.mat",
         partial_mat = "partialcalib.mat", nested_mat = "nested.mat", mismatch_mat = "mismatch.mat",
+        sibling_mat = "sibling.mat", stereo_mat = "stereo.mat",
         consistent_mat = "consistent.mat",
     )
 end

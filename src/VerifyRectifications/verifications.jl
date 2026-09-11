@@ -48,32 +48,6 @@ function apply_video_metadata!(g, m::NamedTuple)
     return
 end
 
-# Depth-first search for `k` through a nested .mat structure, returning the VALUE or `nothing`.
-# Three methods rather than one `isa` chain: the containers a .mat can nest are exactly these, and
-# anything else is a leaf that cannot hold the key.
-#
-# `nothing` is an unambiguous "absent" here because a .mat value is never `nothing` — MAT.jl yields
-# numbers, arrays, strings and dicts. (It used to return `k => value`, and both callers immediately
-# threw the key away with `last`.)
-findfirstkey(::Any, _) = nothing
-
-function findfirstkey(d::AbstractDict, k)
-    haskey(d, k) && return d[k]                   # check current level first
-    for v in values(d)
-        r = findfirstkey(v, k)
-        isnothing(r) || return r
-    end
-    return nothing
-end
-
-function findfirstkey(d::Union{AbstractVector, Tuple}, k)
-    for v in d
-        r = findfirstkey(v, k)
-        isnothing(r) || return r
-    end
-    return nothing
-end
-
 # Pull the frame size out of an already-read .mat dict. ImageSize is an unconstrained Any, so validate
 # shape/eltype here: a malformed value yields an issue string instead of an uncaught throw
 # (InexactError/MethodError) or a silently-wrong dimension. matlab stores ImageSize as [height, width];
@@ -138,6 +112,18 @@ function matlab_missing_keys(dict)
     return "matlab file is missing required calibration field(s): " * join(absent, ", ")
 end
 
+# Every required field must resolve to exactly ONE value. More than one means the .mat carries more
+# than one camera model — a stereo calibration, or two calibration structs saved side by side — and
+# nothing in a rectifications.csv row says which camera filmed the video. Returns an issue naming the
+# ambiguous fields, otherwise `nothing`. Runs after matlab_missing_keys, so every key resolves to at
+# least one.
+function matlab_ambiguous_keys(dict)
+    ambiguous = filter(k -> countkeys(dict, k) > 1, collect(MATLAB_REQUIRED_KEYS))
+    isempty(ambiguous) && return nothing
+    return "matlab file carries more than one camera calibration (" * join(ambiguous, ", ") *
+        " each appear more than once); Fromage cannot tell which camera filmed the video"
+end
+
 # One matread per physical .mat file feeds everything: the structure check (a bad/unreadable/
 # incomplete file gets :matlab_file nulled, dropping it from later passes), the extrinsic-pose count
 # (:n_extrinsics) and the ImageSize cross-check against the source video. Grouping on the canonical
@@ -153,13 +139,20 @@ function read_matlab_metadata!(df::AbstractDataFrame; progress = true)
 end
 
 # Pure read+derive: one matread, then structure/extrinsic-count/dimension off the same dict. A bad
-# header, unreadable file or absent required key is a structure issue (the caller nulls :matlab_file);
+# header, unreadable file, absent required key or misshapen camera array is a structure issue (the
+# caller nulls :matlab_file);
 # otherwise returns the extrinsic count (or its issue) and the .mat's ImageSize dimension (or its issue).
 function matlab_metadata(file)
     dict = read_matlab(file)
     dict isa String && return dict
     keys_issue = matlab_missing_keys(dict)
     isnothing(keys_issue) || return keys_issue
+    ambiguous_issue = matlab_ambiguous_keys(dict)
+    isnothing(ambiguous_issue) || return ambiguous_issue
+    # K and RadialDistortion are as structural as the keys themselves: neither has a per-row meaning,
+    # and a malformed one makes the whole file unusable, so it nulls :matlab_file like an absent key.
+    intrinsics_issue = matlab_intrinsics_issue(dict)
+    isnothing(intrinsics_issue) || return intrinsics_issue
     return (; n_extrinsics = matlab_extrinsic_count(dict), dimension = matlab_dimension(dict))
 end
 
@@ -192,21 +185,70 @@ function apply_matlab_metadata!(g::AbstractDataFrame, m::NamedTuple)
     return apply_matlab_dimension!(g, m.dimension)
 end
 
+# What a .mat value actually is, for an issue message: an array is described by its shape, anything
+# else by its type. Every matlab value arrives as an unconstrained `Any`, so both cases are live.
+_matlab_shape(v::AbstractArray) = "a " * join(size(v), "×") * " array of $(eltype(v))"
+_matlab_shape(v) = "a $(typeof(v))"
+
+# One per-extrinsic pose stack (TranslationVectors or RotationVectors). `Rectifications.from_matlab`
+# indexes it at `[extrinsic_index, [2, 1, 3]]`, so the only shape it can read is a two-dimensional
+# N×3 matrix of numbers with at least one row. Returns that stack's N, or an issue naming the field
+# and the shape that was found. Only called after matlab_missing_keys confirmed the key is present,
+# so findfirstkey won't be nothing.
+#
+# Checking all of that here rather than catching what indexing throws is the rule DECISIONS states
+# ("Where a check can replace a catch, it does") — and #152 is what it costs when the check is
+# partial: a 2×2 stack passed a count check that only read `size(v, 1)`, and the BoundsError surfaced
+# from inside the builder, naming neither the file nor the field.
+function matlab_extrinsic_count(dict, key)
+    vecs = findfirstkey(dict, key)
+    malformed() = "matlab $key is malformed (expected an N×3 matrix of numbers, got $(_matlab_shape(vecs)))"
+    vecs isa AbstractMatrix || return malformed()
+    size(vecs, 2) == 3 || return malformed()
+    eltype(vecs) <: Real || return malformed()
+    n = size(vecs, 1)
+    n > 0 || return "matlab $key holds no extrinsic poses (it is $(_matlab_shape(vecs)))"
+    return n
+end
+
 # A matlab calibration file holds one extrinsic pose per calibration image: TranslationVectors and
 # RotationVectors are both (N×3). extrinsic_index selects one of those N poses, so it is valid iff
-# 1 ≤ extrinsic_index ≤ N. Returns N, or an issue string if the vectors are malformed. Only called
-# after matlab_missing_keys confirmed both keys are present, so findfirstkey won't be nothing.
+# 1 ≤ extrinsic_index ≤ N. Returns N, or an issue string if either stack is malformed or the two
+# disagree on N.
 function matlab_extrinsic_count(dict)
     counts = Int[]
     for k in ("TranslationVectors", "RotationVectors")
-        vecs = findfirstkey(dict, k)
-        # `size(vecs, 1)` is only meaningful for an array; a scalar, a string or a nested dict is a
-        # malformed field, and is rejected up front rather than caught.
-        vecs isa AbstractArray || return "matlab $k is malformed (expected an N×3 matrix)"
-        push!(counts, size(vecs, 1))   # N×3 -> N poses
+        n = matlab_extrinsic_count(dict, k)
+        n isa String && return n
+        push!(counts, n)
     end
     allequal(counts) || return "matlab TranslationVectors and RotationVectors disagree on the number of extrinsics"
     return first(counts)
+end
+
+# The camera's intrinsics — the focal length and principal point in `K`, and the radial distortion
+# coefficients — checked on the same terms as the pose stacks above and for the same reason (#152).
+# ("Intrinsics" in CONTEXT's sense: the lens, not the checkerboard path's intrinsic *window*, which
+# is a pair of timestamps and is verified elsewhere.) `from_matlab` reads K at [1, 1], [2, 2], [1, 3]
+# and [2, 3], so anything smaller than 3×3 is a BoundsError from inside the builder. The radial
+# coefficients are `vec`ed and padded to the model's three, which quietly absorbs both ends of the
+# wrong length instead: an empty array becomes a distortion-free camera, and a fourth coefficient is
+# dropped without a word. MATLAB's Camera Calibrator writes two or three of them, as a row; one is
+# admitted as well, because padding a single coefficient to three is exact and loses nothing, while
+# a fourth cannot be represented at all. Returns an issue naming the field, or `nothing`.
+function matlab_intrinsics_issue(dict)
+    K = findfirstkey(dict, "K")
+    malformed_K() = "matlab K is malformed (expected a 3×3 matrix of numbers, got $(_matlab_shape(K)))"
+    K isa AbstractMatrix || return malformed_K()
+    size(K) == (3, 3) || return malformed_K()
+    eltype(K) <: Real || return malformed_K()
+
+    radial = findfirstkey(dict, "RadialDistortion")
+    malformed_radial() = "matlab RadialDistortion is malformed (expected 1 to 3 numbers, got $(_matlab_shape(radial)))"
+    radial isa AbstractArray || return malformed_radial()
+    1 ≤ length(radial) ≤ 3 || return malformed_radial()
+    eltype(radial) <: Real || return malformed_radial()
+    return nothing
 end
 
 # Probe one video file with a single ffprobe call: frame width/height, container duration, sample
