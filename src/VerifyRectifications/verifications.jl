@@ -153,13 +153,18 @@ function read_matlab_metadata!(df::AbstractDataFrame; progress = true)
 end
 
 # Pure read+derive: one matread, then structure/extrinsic-count/dimension off the same dict. A bad
-# header, unreadable file or absent required key is a structure issue (the caller nulls :matlab_file);
+# header, unreadable file, absent required key or misshapen camera array is a structure issue (the
+# caller nulls :matlab_file);
 # otherwise returns the extrinsic count (or its issue) and the .mat's ImageSize dimension (or its issue).
 function matlab_metadata(file)
     dict = read_matlab(file)
     dict isa String && return dict
     keys_issue = matlab_missing_keys(dict)
     isnothing(keys_issue) || return keys_issue
+    # K and RadialDistortion are as structural as the keys themselves: neither has a per-row meaning,
+    # and a malformed one makes the whole file unusable, so it nulls :matlab_file like an absent key.
+    camera_issue = matlab_camera_issue(dict)
+    isnothing(camera_issue) || return camera_issue
     return (; n_extrinsics = matlab_extrinsic_count(dict), dimension = matlab_dimension(dict))
 end
 
@@ -192,21 +197,62 @@ function apply_matlab_metadata!(g::AbstractDataFrame, m::NamedTuple)
     return apply_matlab_dimension!(g, m.dimension)
 end
 
+# What a .mat value actually is, for an issue message: an array is described by its shape, anything
+# else by its type. Every matlab value arrives as an unconstrained `Any`, so both cases are live.
+_matlab_shape(v::AbstractArray) = "a " * join(size(v), "×") * " array of $(eltype(v))"
+_matlab_shape(v) = "a $(typeof(v))"
+
+# One per-extrinsic pose stack (TranslationVectors or RotationVectors). `Rectifications.from_matlab`
+# indexes it at `[extrinsic_index, [2, 1, 3]]`, so the only shape it can read is a two-dimensional
+# N×3 matrix of numbers with at least one row. Returns N, or an issue naming the field and the shape
+# that was found. Only called after matlab_missing_keys confirmed the key is present, so findfirstkey
+# won't be nothing.
+#
+# Checking all of that here rather than catching what indexing throws is the rule DECISIONS states
+# ("Where a check can replace a catch, it does") — and #152 is what it costs when the check is
+# partial: a 2×2 stack passed a count check that only read `size(v, 1)`, and the BoundsError surfaced
+# from inside the builder, naming neither the file nor the field.
+function matlab_pose_count(dict, key)
+    vecs = findfirstkey(dict, key)
+    malformed() = "matlab $key is malformed (expected an N×3 matrix of numbers, got $(_matlab_shape(vecs)))"
+    vecs isa AbstractMatrix || return malformed()
+    size(vecs, 2) == 3 || return malformed()
+    eltype(vecs) <: Real || return malformed()
+    n = size(vecs, 1)
+    n > 0 || return "matlab $key holds no extrinsic poses (it is $(_matlab_shape(vecs)))"
+    return n
+end
+
 # A matlab calibration file holds one extrinsic pose per calibration image: TranslationVectors and
 # RotationVectors are both (N×3). extrinsic_index selects one of those N poses, so it is valid iff
-# 1 ≤ extrinsic_index ≤ N. Returns N, or an issue string if the vectors are malformed. Only called
-# after matlab_missing_keys confirmed both keys are present, so findfirstkey won't be nothing.
+# 1 ≤ extrinsic_index ≤ N. Returns N, or an issue string if either stack is malformed or the two
+# disagree on N.
 function matlab_extrinsic_count(dict)
     counts = Int[]
     for k in ("TranslationVectors", "RotationVectors")
-        vecs = findfirstkey(dict, k)
-        # `size(vecs, 1)` is only meaningful for an array; a scalar, a string or a nested dict is a
-        # malformed field, and is rejected up front rather than caught.
-        vecs isa AbstractArray || return "matlab $k is malformed (expected an N×3 matrix)"
-        push!(counts, size(vecs, 1))   # N×3 -> N poses
+        n = matlab_pose_count(dict, k)
+        n isa String && return n
+        push!(counts, n)
     end
     allequal(counts) || return "matlab TranslationVectors and RotationVectors disagree on the number of extrinsics"
     return first(counts)
+end
+
+# The two calibration arrays that carry no per-extrinsic count, checked on the same terms as the pose
+# stacks above and for the same reason (#152). `from_matlab` reads K at [1, 1], [2, 2], [1, 3] and
+# [2, 3] — MATLAB writes it 3×3, and anything smaller is a BoundsError from inside the builder. The
+# radial coefficients are `vec`ed and padded to the model's three, which quietly absorbs both ends of
+# the wrong length: an empty array becomes a distortion-free camera, and a fourth coefficient is
+# dropped without a word. MATLAB writes two or three, as a row, so 1…3 is the whole valid range.
+# Returns an issue naming the field, or `nothing`.
+function matlab_camera_issue(dict)
+    K = findfirstkey(dict, "K")
+    K isa AbstractMatrix && size(K) == (3, 3) && eltype(K) <: Real ||
+        return "matlab K is malformed (expected a 3×3 matrix of numbers, got $(_matlab_shape(K)))"
+    radial = findfirstkey(dict, "RadialDistortion")
+    radial isa AbstractArray && 1 ≤ length(radial) ≤ 3 && eltype(radial) <: Real ||
+        return "matlab RadialDistortion is malformed (expected 1 to 3 numbers, got $(_matlab_shape(radial)))"
+    return nothing
 end
 
 # Probe one video file with a single ffprobe call: frame width/height, container duration, sample

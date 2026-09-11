@@ -12,19 +12,65 @@
     end
 
     @testset "malformed pose vectors are flagged, never thrown" begin
-        # TranslationVectors/RotationVectors present but not an array at all: `size(v, 1)` has no
-        # meaning there, so the field is reported as malformed rather than throwing a MethodError.
-        for k in ("TranslationVectors", "RotationVectors")
-            p = joinpath(DATADIR, "badpose_$k.mat")
-            MAT.matwrite(p, merge(MATLAB_CALIB_FIELDS, Dict("ImageSize" => [480.0, 640.0], k => "nope")))
-            issue = VRect.matlab_extrinsic_count(MAT.matread(p))
-            @test issue isa String
-            @test occursin(k, issue)                 # names the offending field
+        # `from_matlab` reads both stacks at `[extrinsic_index, [2, 1, 3]]`, so anything that is not
+        # an N×3 matrix of numbers cannot be indexed. Every shape here used to reach the builder: the
+        # 2×2 of #152 (and the transposed and empty ones) raised a BoundsError from inside it, a
+        # non-array raised a MethodError, and none of them named the file or the field. The count
+        # check is what they must fail instead.
+        #
+        # Both stacks are bent the same way, because that is the shape #152 arrived in — and because
+        # bending only one leaves the row counts disagreeing, which the pre-existing mismatch check
+        # already caught for the wrong reason. The "one stack" set below closes that gap deliberately.
+        badpose = (
+            text = "nope",                # not an array at all
+            scalar = 1.0,
+            short = zeros(2, 2),          # #152: two columns, so column 3 is out of bounds
+            transposed = zeros(3, 2),     # 3×N written the wrong way round
+            flat = zeros(3),              # one vector, not a stack of them
+            volume = zeros(2, 3, 1),      # three-dimensional
+            strings = fill("x", 2, 3),    # right shape, wrong element type
+            empty = zeros(0, 3),          # no poses at all
+        )
+        for (nm, v) in pairs(badpose)
+            @testset "both stacks $nm" begin
+                p = joinpath(DATADIR, "badpose_both_$nm.mat")
+                make_matlab_with(p; TranslationVectors = v, RotationVectors = v)
+                issue = VRect.matlab_extrinsic_count(MAT.matread(p))
+                @test issue isa String
+                @test occursin("TranslationVectors", issue)      # names the offending field
+            end
         end
-        # end-to-end: such a file is flagged and load_rectifications does not throw
+
+        # One stack malformed while the row counts still agree: the count check cannot fall back on
+        # the mismatch message here, so it is the shape check itself that has to flag the field.
+        for k in ("TranslationVectors", "RotationVectors")
+            @testset "$k alone" begin
+                p = joinpath(DATADIR, "badpose_$(k).mat")
+                make_matlab_with(p; NamedTuple{(Symbol(k),)}((zeros(MATLAB_N_EXTRINSICS, 2),))...)
+                issue = VRect.matlab_extrinsic_count(MAT.matread(p))
+                @test issue isa String
+                @test occursin(k, issue)
+                @test occursin("expected an N×3 matrix", issue)
+            end
+        end
+
+        # end-to-end: such a file is flagged and load_rectifications does not throw. The 2×2 case is
+        # #152 itself — it passed the count check (returning 2) and blew up in the builder.
         @test flagged(
-            check([matlabrow(matlab_file = "badpose_TranslationVectors.mat")]),
+            check([matlabrow(matlab_file = "badpose_both_text.mat")]),
             1, "expected an N×3 matrix"
+        )
+        @test flagged(
+            check([matlabrow(matlab_file = "badpose_both_short.mat")]),
+            1, "expected an N×3 matrix"
+        )
+        @test flagged(
+            check([matlabrow(matlab_file = "badpose_RotationVectors.mat")]),
+            1, "expected an N×3 matrix"
+        )
+        @test flagged(
+            check([matlabrow(matlab_file = "badpose_both_empty.mat")]),
+            1, "holds no extrinsic poses"
         )
     end
 

@@ -8,8 +8,10 @@
 function from_matlab(; matlab_file, extrinsic_index, aspect, center, north, width, height)
     dict = matread(matlab_file)
     # the Camera Calibrator wraps everything in a single top-level struct (e.g. "cameraParams");
-    # unwrap until the camera-calibration fields are at hand (VerifyRectifications already verified they
-    # exist, nested or not)
+    # unwrap until the camera-calibration fields are at hand (VerifyRectifications already verified
+    # they exist, nested or not, and that each has the shape indexed below: K is 3×3, both pose
+    # stacks are N×3 with 1 ≤ extrinsic_index ≤ N, and RadialDistortion holds one to three
+    # coefficients — see `matlab_camera_issue` and `matlab_pose_count`, #152)
     while !haskey(dict, "K") && length(keys(dict)) == 1 && first(values(dict)) isa AbstractDict
         dict = first(values(dict))
     end

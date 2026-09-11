@@ -75,6 +75,40 @@
         @test ismissing(df.matlab_file[1])
     end
 
+    @testset "matlab camera arrays are shape-checked before conversion" begin
+        # `from_matlab` reads K at [1,1], [2,2], [1,3] and [2,3], and `vec`s RadialDistortion into the
+        # model's three coefficients. Neither was checked before #152: a K too small to index raised a
+        # BoundsError from inside the builder, an empty RadialDistortion silently became a
+        # distortion-free model, and a longer one had its tail silently dropped. All are structure
+        # issues, on the same terms as an absent field, so :matlab_file is nulled too.
+        for (nm, field, val, expected) in (
+                ("k_2x2", :K, [1.0 0.0; 0.0 1.0], "K is malformed"),
+                ("k_scalar", :K, 1.0, "K is malformed"),
+                ("k_text", :K, "nope", "K is malformed"),
+                ("k_strings", :K, fill("x", 3, 3), "K is malformed"),
+                ("radial_empty", :RadialDistortion, Float64[], "RadialDistortion is malformed"),
+                ("radial_long", :RadialDistortion, zeros(4), "RadialDistortion is malformed"),
+                ("radial_scalar", :RadialDistortion, 0.0, "RadialDistortion is malformed"),
+                ("radial_text", :RadialDistortion, "nope", "RadialDistortion is malformed"),
+            )
+            @testset "$nm" begin
+                file = "badcam_$nm.mat"
+                make_matlab_with(joinpath(DATADIR, file); NamedTuple{(field,)}((val,))...)
+                @test VRect.matlab_camera_issue(MAT.matread(joinpath(DATADIR, file))) isa String
+                df = check([matlabrow(matlab_file = file)])
+                @test flagged(df, 1, expected)
+                @test ismissing(df.matlab_file[1])
+            end
+        end
+        # the shapes a real Camera Calibrator file has pass: a 3×3 K, and either two or three radial
+        # coefficients (matlab writes them as a 1×N row, which `vec` flattens).
+        @test VRect.matlab_camera_issue(MAT.matread(joinpath(DATADIR, ART.good_mat))) === nothing
+        @test VRect.matlab_camera_issue(MAT.matread(joinpath(DATADIR, ART.nested_mat))) === nothing
+        make_matlab_with(joinpath(DATADIR, "radial_row.mat"); RadialDistortion = [0.1 0.2 0.3])
+        @test VRect.matlab_camera_issue(MAT.matread(joinpath(DATADIR, "radial_row.mat"))) === nothing
+        @test clean(check([matlabrow(matlab_file = "radial_row.mat")]))
+    end
+
     @testset "matlab ImageSize must match the source video dimensions" begin
         # good.mat ImageSize is (640,480); pairing it with board.mp4 (500×376) as the source video
         # makes the cross-check fail. (matlabrow's default source video.mp4 is 640×480 and passes.)

@@ -1271,9 +1271,13 @@ everything the same way — `MAT.jl` reports essentially every corruption throug
 then as narrow as it can honestly get, and it still excludes the `MethodError`/`BoundsError` of a
 bug on our side and the `InterruptException` a bare catch would swallow.
 
-Where a check can replace a catch, it does: `matlab_dimension` and `matlab_extrinsic_count`
-validate the shape and element type of the `Any` they read instead of catching the `InexactError`
-that a malformed value would eventually cause.
+Where a check can replace a catch, it does: `matlab_dimension`, `matlab_extrinsic_count` and
+`matlab_camera_issue` validate the shape and element type of the `Any` they read instead of catching
+the `InexactError` that a malformed value would eventually cause. **A partial check is the trap
+here** (#152): the pose-count check read only `size(v, 1)`, so a 2×2 `TranslationVectors` was
+reported as two perfectly good extrinsics and the `BoundsError` surfaced from inside
+`Rectifications.from_matlab`, naming neither the file nor the field. Every value the builder indexes
+is now checked against the shape it indexes it at.
 
 **Cleanup inverts the rule (#160, #149).** A `catch` whose job is to stop cleanup from *becoming* the
 failure the caller sees catches everything and warns, rethrowing only `InterruptException` — the
