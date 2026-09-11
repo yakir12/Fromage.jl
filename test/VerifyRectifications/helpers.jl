@@ -82,9 +82,6 @@ make_matlab_stereo(path; imagesize = (480, 640)) = (
     ); path
 )
 
-# TranslationVectors (6×3, from MATLAB_CALIB_FIELDS) and RotationVectors (overridden to 5×3) disagree on
-# the number of extrinsic poses -> matlab_extrinsic_count returns an issue instead of a count.
-make_matlab_mismatch(path) = make_matlab_with(path, Dict("RotationVectors" => zeros(5, 3)))
 # A structurally complete calibration with individual fields replaced. Each shape check needs exactly
 # one field bent out of shape while the rest stay valid, or the row trips an earlier check and never
 # reaches the one under test. `overrides` is positional and keyed by the matlab field name, because
@@ -93,6 +90,10 @@ make_matlab_mismatch(path) = make_matlab_with(path, Dict("RotationVectors" => ze
 make_matlab_with(path, overrides) = (
     MAT.matwrite(path, merge(Dict("ImageSize" => [480.0, 640.0]), MATLAB_CALIB_FIELDS, Dict(overrides))); path
 )
+
+# TranslationVectors (6×3, from MATLAB_CALIB_FIELDS) and RotationVectors (overridden to 5×3) disagree on
+# the number of extrinsic poses -> matlab_extrinsic_count returns an issue instead of a count.
+make_matlab_mismatch(path) = make_matlab_with(path, Dict("RotationVectors" => zeros(5, 3)))
 
 # A geometrically consistent calibration (unlike the structural dummies above): fronto-parallel
 # pinhole poses (R = 0, t = (0, 0, Z)) with a real K — enough for the matlab Rectification to
