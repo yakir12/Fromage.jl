@@ -58,6 +58,19 @@ for the shared csv-cell machinery (`test/parsing.jl`), package-wide quality chec
 Setting `JULIA_NUM_THREADS` exercises the threaded code paths — frame reading, corner detection,
 tracking — with real parallelism.
 
+That command needs no network once the dependencies are installed. One check is different: Aqua's
+persistent-task check builds a temporary environment around the package and asks Pkg to resolve it,
+so it reaches for the registry on every run. Offline it usually still passes, with a warning, and
+hard-fails only on a depot holding no registry at all — where `Pkg.test()` would have failed first
+anyway. That conditional dependency on an outside service is why it runs on its own:
+
+```sh
+julia --project=test test/persistent_tasks.jl
+```
+
+On CI it is its own workflow, `Persistent tasks`, which deliberately does not gate a release: an
+unreachable GitHub shows up as that check going red, and nothing else.
+
 To build the documentation locally:
 
 ```sh
