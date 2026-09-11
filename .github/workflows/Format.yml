@@ -1,0 +1,58 @@
+name: Format
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "**.jl"
+      - ".github/workflows/Format.yml"
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Skip intermediate builds: always.
+  # Cancel intermediate builds: only if it is a pull request build.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+
+jobs:
+  runic:
+    name: Runic
+    # This job is deliberately NOT a required check, on the same terms as Lint: it
+    # reports drift, it does not block. Every green push to main is a release
+    # (CLAUDE.md 6), and a misplaced space must not be able to hold one up.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: julia-actions/setup-julia@v3
+        with:
+          # Runic's output does not depend on the Julia it runs under; this just
+          # matches the single minor the rest of the repo pins.
+          version: "1.13"
+
+      # Runic is installed into its own shared environment, never into the package
+      # or the test environment: test/quality.jl asserts the suite makes no network
+      # call (#159), and runtests.jl must stay free of a formatting check. Pinned to
+      # the major, per Runic's version policy — a new minor may start flagging code
+      # that was clean, which is a re-run-and-commit, not a broken build.
+      - name: Install Runic
+        run: julia --project=@runic --startup-file=no -e 'using Pkg; Pkg.add(name = "Runic", version = "1")'
+
+      # `git ls-files` scopes this to *tracked* Julia sources, which is what keeps
+      # docs/node_modules/ and every other untracked tree out of the walk. --verbose
+      # is not noise: Runic's diff headers carry the basename only, and this repo has
+      # four types.jl and two probing.jl, so the progress line is what says which file
+      # a diff belongs to.
+      - name: Check formatting
+        # Explicit `shell: bash` for `-o pipefail`; the default Linux shell is `bash -e`
+        # without it, which would leave the pipeline's status resting on xargs alone.
+        shell: bash
+        run: |
+          git ls-files -z -- '*.jl' |
+            xargs -0 --no-run-if-empty julia --project=@runic --startup-file=no \
+              -e 'using Runic; exit(Runic.main(ARGS))' -- --check --diff --verbose
