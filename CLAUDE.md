@@ -429,10 +429,18 @@ of those is "done" on its own, and none of them should be reported as done.
   writing *about* them — GitHub honours them from the body, and a push that silently ran no
   workflows has already happened once. Paraphrase instead ("the skip-CI token"); `RELEASING.md`
   has the detail.
-- Pushes touching only top-level `*.md`, `LICENSE`, `.gitignore`, `codecov.yml`, `.lychee.toml`
-  or `.copier-answers.yml` skip the test workflow and are not released. Anything under `src/` or
-  `docs/` does release — so batch a `docs/src/` correction into the PR that needs it, or it costs
-  a second version bump.
+- **What does and does not release** — `Test.yml`'s `paths-ignore` is the single source of truth,
+  because `AutoRelease` triggers on `Test` completing, so anything `Test` skips is never released.
+  It ignores top-level `*.md` (`*` does not cross `/`, so `docs/src/*.md` still counts), `LICENSE`,
+  `.gitignore`, `codecov.yml`, `.lychee.toml`, `.copier-answers.yml`, **`docs/agents/**`** and
+  **`.claude/**`**. Everything else under `src/` or `docs/` does release — so batch a `docs/src/`
+  correction into the PR that needs it, or it costs a second version bump.
+  The last two are easy to get wrong in the direction that *costs* you nothing and *tells* you
+  something false: `docs/agents/**` and `.claude/**` look like they release because they sit under
+  `docs/` and look like config, and they do not — neither is loaded by the package or built into the
+  site, so there is no `/stable/` for a tag to advance. `Docs.yml` carves `docs/agents/**` out with
+  a negated pattern for the same reason, so a PR touching only those paths legitimately gets **no
+  `Docs`, no `TestOnPRs` and no `Format`** — `Lint` alone, which matches `**/*.md`.
 - **`gh` here is 2.100.0 (released 2026-09-03), upgraded from 2.23.0 on 2026-09-11.** Every
   limitation this file used to record is gone. What follows was *retested* on the new version, not
   assumed: `gh issue view <n>` and `gh pr edit` both used to die with a Projects-classic GraphQL
