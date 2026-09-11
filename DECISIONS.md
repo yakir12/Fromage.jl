@@ -1590,10 +1590,32 @@ half a percent is noise, and the 54,948 → 55,011 above is inside it.
 Keeping benchmarks out of CI is still right for the reason above, so **this failure mode is not
 designed away, it is accepted**: the mitigation is to run the suite when touching the code it
 covers. #31 asked for BenchmarkCI to close the gap and was declined for the wall-clock reason
-below, so nothing automated is coming. The same class of rot lives in
-`test/tolerance_residuals.jl`, which `runtests.jl` also does not include: its apriltag section is
-unreachable dead code, broken in three independent places, and its `main` swallows a section's
-failure into one `SKIP` line either way (#220).
+below, so nothing automated is coming. The same class of rot had reached
+`test/tolerance_residuals.jl`, which `runtests.jl` also does not include: its apriltag section was
+unreachable dead code, broken in three independent places, and measuring a quantity its own label
+misdescribed. #220 rewrote it to report the four AprilTag bounds the suite actually asserts
+(`REG_TOL` and `TRACK_TOL` from `test/apriltag_pipeline.jl`, straightness and displacement from
+`test/fromage.jl`) and wired it into `main`.
+
+Each of those four rows is the **worst** residual over every site the bound has to hold on, not one
+flight's. That is the same argument the file's header already makes about platforms — a bound is
+only as good as its worst site — and it is not academic: the 6-dof flight alone measures 0.407
+against a suite-wide worst of 0.442, so a single-flight row would have overstated the track bound's
+headroom by 8% and the straightness bound's by 26% (the 300-frame occluded flight measures 0.115
+against the 60-frame one's 0.091). Aggregating rather than emitting one row per flight keeps the
+output contract intact — one row per quantity, so two platforms diff directly — and the measured
+0.367 / 0.442 / 0.115 now reproduce the worst cases `test/apriltag_pipeline.jl` and
+`test/fromage.jl` record in their own comments, which is what makes the copies checkable.
+
+**What kept it hidden was the reporting, not the trigger**, so that is what changed with it:
+`main` used to catch a section's throw, print one `SKIP` line and exit 0, which is indistinguishable
+from success in output the workflow's own comment concedes nobody reads. It now prints `FAIL
+<section> <error>` and exits non-zero, so a dispatched `ToleranceResiduals` job goes red. Every
+section still runs whatever the others did — one failure must not hide the remaining numbers, the
+same reason the workflow matrix sets `fail-fast: false` — and `SKIP` is kept for a genuine expected
+unavailability (the checkerboard detector returning `missing`), never for a broken call. The
+workflow stays `workflow_dispatch`: it is a measurement, not a check, and going red when dispatched
+needs no trigger change.
 
 ### What the benchmarks cannot tell you
 
