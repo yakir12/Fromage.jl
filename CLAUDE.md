@@ -32,8 +32,10 @@ follow this file. Rule 6 below exists because that has actually gone wrong.
    - `src/` and `test/` comments say what the code *does*. That is the default home for mechanism —
      if a fact has a line of code to sit beside, it belongs there, not in either file above.
 
-   Two long-form investigations sit beside them: `CIFS-SHARE-INVESTIGATION.md` and
-   `WHY-FRAMES-FAIL.md` (the share's EAGAIN failures and why the retry loop stays).
+   Three long-form investigations sit beside them: `CIFS-SHARE-INVESTIGATION.md` and
+   `WHY-FRAMES-FAIL.md` (the share's EAGAIN failures and why the retry loop stays), and
+   `WHY-THE-SUITE-IS-SLOW.md` (where `Pkg.test()`'s clock goes, and why cutting tests was
+   measured and declined — read it before proposing that the suite be trimmed).
 3. **Small, targeted changes.** No broad refactors, no API rewrites, unless asked.
 4. **State uncertainty.** "I did not verify X" beats a confident guess. Don't overstate.
 5. **Behaviour changes come with tests.** Bugs come with a reproduction *first*, then a
