@@ -401,6 +401,24 @@ testset and nothing else.
 `test/quality.jl`: their keywords include fitted and derived values that are not csv columns, so
 adding them would fail the containment immediately.
 
+### A `.mat` with four radial coefficients is rejected, not truncated (#152)
+
+`CameraModel.k` is an `NTuple{3,Float64}`, so `from_matlab` pads whatever the file gives it to three.
+That padding quietly absorbed both ends of a wrong length: an empty `RadialDistortion` became a
+distortion-free camera, and a fourth coefficient was dropped without a word — a lens model that is
+not the one the user calibrated, with nothing anywhere saying so. Unlike the shape checks beside it,
+this one replaces no exception; the old behaviour produced a rectification, and a plausible-looking
+one.
+
+Truncating with a warning was the alternative and was declined. The gateway's contract is that a
+dataset is accepted or rejected *before* anything runs, and a warning in a batch of ten
+rectifications is a line nobody reads. MATLAB's Camera Calibrator writes two or three coefficients,
+so a file with four was not written by the tool the `matlab_file` column documents.
+
+One is admitted along with two and three, even though the Calibrator never writes one: padding a
+single coefficient to three is exact, so nothing is lost or invented. Four cannot be represented at
+all, which is the whole distinction.
+
 ### `main` processes, `verify` reports — a flag no longer picks the return type
 
 `main` used to take `strict::Bool`, and so did `load_runs`/`load_rectifications` beneath it. It did
@@ -1276,8 +1294,21 @@ Where a check can replace a catch, it does: `matlab_dimension`, `matlab_extrinsi
 the `InexactError` that a malformed value would eventually cause. **A partial check is the trap
 here** (#152): the pose-count check read only `size(v, 1)`, so a 2×2 `TranslationVectors` was
 reported as two perfectly good extrinsics and the `BoundsError` surfaced from inside
-`Rectifications.from_matlab`, naming neither the file nor the field. Every value the builder indexes
-is now checked against the shape it indexes it at.
+`Rectifications.from_matlab`, naming neither the file nor the field. Every value the builder reads is
+now checked against the shape it reads it at, and the builder looks each one up with the same
+`findfirstkey` the verification used — while it unwrapped a single-key top-level struct with a loop
+of its own, a valid calibration saved beside any second variable passed every check and then raised
+`KeyError: key "K" not found`.
+
+Sharing the lookup makes a second rule necessary. `findfirstkey` searches a `Dict`'s values, whose
+order the user never chose, so a `.mat` holding **two** camera models — MATLAB's stereo `stereoParams`
+nests two complete ones — would hand the builder a camera picked essentially at random, and
+verification and construction are separate `matread` calls, so not even reliably the same one. That is
+worse than the `KeyError` it replaced, because it is silent. `matlab_ambiguous_keys` therefore refuses
+any file where a required field resolves more than once; `countkeys` mirrors `findfirstkey`'s
+precedence exactly, so it counts only the choices the search would actually have to make. Fromage has
+no stereo notion, and a `rectifications.csv` row says nothing about which camera filmed the video, so
+there is no honest way to choose.
 
 **Cleanup inverts the rule (#160, #149).** A `catch` whose job is to stop cleanup from *becoming* the
 failure the caller sees catches everything and warns, rethrowing only `InterruptException` — the

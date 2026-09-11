@@ -75,26 +75,59 @@
         @test ismissing(df.matlab_file[1])
     end
 
-    @testset "matlab camera arrays are shape-checked before conversion" begin
+    @testset "a calibration saved beside another variable still loads (#152)" begin
+        # The verification looks every field up by name wherever it sits; the builder used to unwrap
+        # only a SINGLE-key top-level struct with a loop of its own. A .mat holding the calibration
+        # plus any second variable therefore passed every check — structure, intrinsics, pose count,
+        # ImageSize — and then raised `KeyError: key "K" not found` from inside from_matlab. Both now
+        # go through `findfirstkey`, so they cannot disagree about where a field lives.
+        dict = MAT.matread(joinpath(DATADIR, ART.sibling_mat))
+        @test VRect.matlab_missing_keys(dict) === nothing
+        @test VRect.matlab_intrinsics_issue(dict) === nothing
+        @test VRect.matlab_extrinsic_count(dict) == MATLAB_N_EXTRINSICS
+        @test VRect.matlab_dimension(dict) == (640, 480)
+        # the payoff: it builds, rather than throwing out of the builder the checks just cleared.
+        @test clean(check([matlabrow(matlab_file = ART.sibling_mat)]))
+    end
+
+    @testset "a multi-camera .mat is refused, not silently resolved (#152)" begin
+        # `findfirstkey` searches a Dict's values, which have no order the user chose, so a stereo
+        # .mat would hand the builder one of its two cameras essentially at random — and verification
+        # and construction are separate reads, so not even reliably the same one. Nothing in a
+        # rectifications.csv row says which camera filmed the video, so the file is refused.
+        dict = MAT.matread(joinpath(DATADIR, ART.stereo_mat))
+        @test VRect.matlab_missing_keys(dict) === nothing        # every field IS present...
+        @test VRect.matlab_ambiguous_keys(dict) isa String       # ...twice over, which is the problem
+        # a single-camera file, nested or not, resolves each field exactly once
+        for f in (ART.good_mat, ART.nested_mat, ART.sibling_mat)
+            @test VRect.matlab_ambiguous_keys(MAT.matread(joinpath(DATADIR, f))) === nothing
+        end
+        # end-to-end: flagged as a structure issue, so :matlab_file is nulled and nothing is built
+        df = check([matlabrow(matlab_file = ART.stereo_mat)])
+        @test flagged(df, 1, "more than one camera calibration")
+        @test ismissing(df.matlab_file[1])
+    end
+
+    @testset "matlab intrinsics are shape-checked before conversion" begin
         # `from_matlab` reads K at [1,1], [2,2], [1,3] and [2,3], and `vec`s RadialDistortion into the
         # model's three coefficients. Neither was checked before #152: a K too small to index raised a
         # BoundsError from inside the builder, an empty RadialDistortion silently became a
         # distortion-free model, and a longer one had its tail silently dropped. All are structure
         # issues, on the same terms as an absent field, so :matlab_file is nulled too.
         for (nm, field, val, expected) in (
-                ("k_2x2", :K, [1.0 0.0; 0.0 1.0], "K is malformed"),
-                ("k_scalar", :K, 1.0, "K is malformed"),
-                ("k_text", :K, "nope", "K is malformed"),
-                ("k_strings", :K, fill("x", 3, 3), "K is malformed"),
-                ("radial_empty", :RadialDistortion, Float64[], "RadialDistortion is malformed"),
-                ("radial_long", :RadialDistortion, zeros(4), "RadialDistortion is malformed"),
-                ("radial_scalar", :RadialDistortion, 0.0, "RadialDistortion is malformed"),
-                ("radial_text", :RadialDistortion, "nope", "RadialDistortion is malformed"),
+                ("k_2x2", "K", [1.0 0.0; 0.0 1.0], "K is malformed"),
+                ("k_scalar", "K", 1.0, "K is malformed"),
+                ("k_text", "K", "nope", "K is malformed"),
+                ("k_strings", "K", fill("x", 3, 3), "K is malformed"),
+                ("radial_empty", "RadialDistortion", Float64[], "RadialDistortion is malformed"),
+                ("radial_long", "RadialDistortion", zeros(4), "RadialDistortion is malformed"),
+                ("radial_scalar", "RadialDistortion", 0.0, "RadialDistortion is malformed"),
+                ("radial_text", "RadialDistortion", "nope", "RadialDistortion is malformed"),
             )
             @testset "$nm" begin
                 file = "badcam_$nm.mat"
-                make_matlab_with(joinpath(DATADIR, file); NamedTuple{(field,)}((val,))...)
-                @test VRect.matlab_camera_issue(MAT.matread(joinpath(DATADIR, file))) isa String
+                make_matlab_with(joinpath(DATADIR, file), Dict(field => val))
+                @test VRect.matlab_intrinsics_issue(MAT.matread(joinpath(DATADIR, file))) isa String
                 df = check([matlabrow(matlab_file = file)])
                 @test flagged(df, 1, expected)
                 @test ismissing(df.matlab_file[1])
@@ -102,10 +135,10 @@
         end
         # the shapes a real Camera Calibrator file has pass: a 3×3 K, and either two or three radial
         # coefficients (matlab writes them as a 1×N row, which `vec` flattens).
-        @test VRect.matlab_camera_issue(MAT.matread(joinpath(DATADIR, ART.good_mat))) === nothing
-        @test VRect.matlab_camera_issue(MAT.matread(joinpath(DATADIR, ART.nested_mat))) === nothing
-        make_matlab_with(joinpath(DATADIR, "radial_row.mat"); RadialDistortion = [0.1 0.2 0.3])
-        @test VRect.matlab_camera_issue(MAT.matread(joinpath(DATADIR, "radial_row.mat"))) === nothing
+        @test VRect.matlab_intrinsics_issue(MAT.matread(joinpath(DATADIR, ART.good_mat))) === nothing
+        @test VRect.matlab_intrinsics_issue(MAT.matread(joinpath(DATADIR, ART.nested_mat))) === nothing
+        make_matlab_with(joinpath(DATADIR, "radial_row.mat"), Dict("RadialDistortion" => [0.1 0.2 0.3]))
+        @test VRect.matlab_intrinsics_issue(MAT.matread(joinpath(DATADIR, "radial_row.mat"))) === nothing
         @test clean(check([matlabrow(matlab_file = "radial_row.mat")]))
     end
 

@@ -34,7 +34,7 @@
         for (nm, v) in pairs(badpose)
             @testset "both stacks $nm" begin
                 p = joinpath(DATADIR, "badpose_both_$nm.mat")
-                make_matlab_with(p; TranslationVectors = v, RotationVectors = v)
+                make_matlab_with(p, Dict("TranslationVectors" => v, "RotationVectors" => v))
                 issue = VRect.matlab_extrinsic_count(MAT.matread(p))
                 @test issue isa String
                 @test occursin("TranslationVectors", issue)      # names the offending field
@@ -46,7 +46,7 @@
         for k in ("TranslationVectors", "RotationVectors")
             @testset "$k alone" begin
                 p = joinpath(DATADIR, "badpose_$(k).mat")
-                make_matlab_with(p; NamedTuple{(Symbol(k),)}((zeros(MATLAB_N_EXTRINSICS, 2),))...)
+                make_matlab_with(p, Dict(k => zeros(MATLAB_N_EXTRINSICS, 2)))
                 issue = VRect.matlab_extrinsic_count(MAT.matread(p))
                 @test issue isa String
                 @test occursin(k, issue)

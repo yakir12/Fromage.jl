@@ -93,7 +93,7 @@ Required: `rectification_id`, `file` (a video of the arena from the same camera 
 
 | column | description |
 | --- | --- |
-| `matlab_file` | the `.mat` file exported by MATLAB's Camera Calibrator (must contain `K`, `RotationVectors`, `TranslationVectors`, `RadialDistortion`, and `ImageSize`; a nested `cameraParams` struct is handled). |
+| `matlab_file` | the `.mat` file exported by MATLAB's Camera Calibrator. It must contain `K` (3×3), `RotationVectors` and `TranslationVectors` (both N×3, one row per calibration image), `RadialDistortion` (2 or 3 coefficients), and `ImageSize`. Each is checked for that shape before anything is built, so a file written by something other than the Camera Calibrator is reported rather than half-read. A `cameraParams` struct is handled wherever it sits, and other variables saved into the same `.mat` are ignored — but a stereo or otherwise multi-camera `.mat` is refused, because nothing in the row says which camera filmed the video. |
 | `extrinsic_index` | 1-based index of the calibration image whose pose anchors the image ↔ arena mapping — pick the one where the board lies flat on the arena floor. |
 
 Optional: `path`, `center`, `north`, `aspect` — same meaning as above. Real-world coordinates come out in whatever world units the MATLAB calibration was given (its square size).
