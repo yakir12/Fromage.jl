@@ -289,7 +289,7 @@ find the tests → check `DECISIONS.md` for prior art → short plan → impleme
 **Modify code:** understand the current implementation and *why* it is that way; identify the
 affected tests and docs; make the change; run the relevant suite; run a representative example;
 reindex the touched files; summarise validation. That is the *investigation* half — deliver the
-result through §6's workflow (branch → validate → PR → CI → merge → post-merge → cleanup), which
+result through §6's workflow (branch → PR → validate ∥ CI → merge → post-merge → cleanup), which
 is where a change is actually finished.
 
 **Refactor:** first establish that a refactor is actually needed and whether behaviour must stay
@@ -325,7 +325,12 @@ branch starts from `main`, and if `main` has moved, rebase onto it rather than s
    directly related. Build it in red-green slices at the seams the plan agreed — for a bug that
    is §1.5's order (reproduction, regression test, fix), and `/implement` drives
    `/mattpocock-skills:tdd` over it. Iterate against a single suite (§2), not the whole one.
-3. **Validate locally, then review the diff.** The threaded full suite is the gate:
+3. **Start CI, then validate locally and review the diff.** Push the branch and open the PR
+   *first*, before running anything locally. PR CI takes about 17 minutes and the local suite
+   about 6½, and they check overlapping things independently — run them in series and the local
+   time is spent twice. Nothing merges until both are green (step 8), so starting CI early risks
+   only runner minutes on a branch that may still fail locally, and runner minutes are the cheap
+   resource here; your wall clock is not. The threaded full suite is the gate:
    `JULIA_NUM_THREADS=auto julia --project -e 'using Pkg; Pkg.test()'`. Budget most of ten
    minutes. Kaimon's `run_tests` caps at 10 minutes, so a coverage run must go through Bash.
    The pass count is in the low thousands and climbs with almost every release, so it is only
@@ -348,7 +353,8 @@ branch starts from `main`, and if `main` has moved, rebase onto it rather than s
    review skill instead. Fan out to the other §4 auditors when the change earns them.
 4. **Fix what fails, without asking.** Iterate until the suite is green, or until you cannot make
    confident progress. Only the second case is worth interrupting the user for.
-5. **Open the PR** — only once step 3 is green. State the problem, the solution, and the tradeoffs
+5. **Write the PR description** — the PR itself went up at the start of step 3, so this is the
+   point where it stops being a placeholder. State the problem, the solution, and the tradeoffs
    or limitations. Report the actual line delta against the estimate honestly: extracting shared
    code costs lines here, deleting a structure saves them.
 6. **Watch the PR's CI** — by polling `gh pr checks <n>` in a loop, *not* with `--watch` (see the
