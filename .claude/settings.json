@@ -19,7 +19,8 @@
             "mcp__kaimon__check_eval",
             "mcp__kaimon__check_tests",
             "mcp__kaimon__list_jobs",
-            "mcp__kaimon__server_log"
+            "mcp__kaimon__server_log",
+            "Bash(gh pr merge:*)"
         ]
     },
     "hooks": {
