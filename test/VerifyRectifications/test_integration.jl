@@ -42,7 +42,7 @@ using StaticArrays: SVector
         @test only(cs) isa VRect.MATLAB
         rect = Rectification(only(cs))
         p = SVector(100.0, 120.0)
-        @test rect.real2image(rect.image2real(p)) ≈ p atol = 1e-6
+        @test rect.real2image(rect.image2real(p)) ≈ p atol = 1.0e-6
         @test rect.ratio ≈ 0.2
         @test (rect.width, rect.height) == (640, 480)
     end

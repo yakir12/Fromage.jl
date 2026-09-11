@@ -23,9 +23,11 @@
     # before a single video is opened (#121). ART.corrupt is the proof: probing it produces a loud,
     # specific issue, so its ABSENCE from the report is evidence that nothing was read.
     @testset "an id failure aborts before any video is opened (#121)" begin
-        rows = [uniformrow(rectification_id = "a", file = ART.corrupt),
-                uniformrow(rectification_id = "b"),
-                uniformrow(rectification_id = "b")]
+        rows = [
+            uniformrow(rectification_id = "a", file = ART.corrupt),
+            uniformrow(rectification_id = "b"),
+            uniformrow(rectification_id = "b"),
+        ]
         _, out = capturing() do
             try
                 check("tier1_abort.csv", rows; strict = true)
@@ -38,9 +40,11 @@
     end
 
     @testset "without strict the id failure is quarantined, and the rest is still validated" begin
-        rows = [uniformrow(rectification_id = "a", file = ART.corrupt),
-                uniformrow(rectification_id = "b"),
-                uniformrow(rectification_id = "b")]
+        rows = [
+            uniformrow(rectification_id = "a", file = ART.corrupt),
+            uniformrow(rectification_id = "b"),
+            uniformrow(rectification_id = "b"),
+        ]
         df = check("tier1_quarantine.csv", rows)
         @test flagged(df, 3, "rectification_id must not repeat")   # the first tier's finding
         @test flagged(df, 1, "issue reading from video file")    # the second tier ran anyway

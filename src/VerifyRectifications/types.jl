@@ -72,8 +72,10 @@ end
 source(row) = Source(row.file, row.extrinsic, row.center, row.north, row.aspect, row.width, row.height)
 
 RectificationMethod(row) = if row.type == "checkerboard"
-    Checkerboard(source(row), row.rectification_id, row.intrinsic_start, row.intrinsic_stop, row.checker_width,
-        row.n_corners, row.temporal_step, row.radial_parameters, row.blur, row.yadif)
+    Checkerboard(
+        source(row), row.rectification_id, row.intrinsic_start, row.intrinsic_stop, row.checker_width,
+        row.n_corners, row.temporal_step, row.radial_parameters, row.blur, row.yadif
+    )
 elseif row.type == "uniform"
     Uniform(source(row), row.rectification_id, row.pixel_width)
 elseif row.type == "apriltag"
@@ -105,9 +107,11 @@ end
 _source(s::Source) = (; s.center, s.north, s.width, s.height)
 
 Rectification(c::Checkerboard) =
-    from_checkerboard(; _source(c.source)..., c.source.file, c.source.extrinsic, c.source.aspect,
-        c.intrinsic_start, c.intrinsic_stop, c.temporal_step, c.yadif, c.blur, c.n_corners,
-        c.checker_width, c.radial_parameters)
+    from_checkerboard(;
+    _source(c.source)..., c.source.file, c.source.extrinsic, c.source.aspect,
+    c.intrinsic_start, c.intrinsic_stop, c.temporal_step, c.yadif, c.blur, c.n_corners,
+    c.checker_width, c.radial_parameters
+)
 
 # A Checkerboard with no INTRINSIC WINDOW (both bounds blank ⇒ Checkerboard{Missing}) is an
 # extrinsics-only rectification: the pose and focal length come from the single extrinsic frame and
@@ -120,8 +124,10 @@ Rectification(c::Checkerboard) =
 # which is also what runs.csv calls the span of a run to TRACK: one pair of names for two unrelated
 # time windows, in two files a user edits side by side.
 Rectification(c::Checkerboard{Missing}) =
-    from_extrinsic(; _source(c.source)..., c.source.file, c.source.extrinsic, c.source.aspect,
-        c.yadif, c.blur, c.n_corners, c.checker_width)
+    from_extrinsic(;
+    _source(c.source)..., c.source.file, c.source.extrinsic, c.source.aspect,
+    c.yadif, c.blur, c.n_corners, c.checker_width
+)
 
 # A MATLAB rectification reads the camera model (intrinsics, distortion, and the pose picked by
 # extrinsic_index) from the .mat file; the source video supplies only the frame size (already
@@ -136,5 +142,7 @@ Rectification(c::Uniform) =
 # An AprilTag rectification builds its shared reference from the extrinsic frame (detecting the tags
 # and fitting the metric map) and carries the centre/north gauge.
 Rectification(c::Apriltag) =
-    ApriltagRectification(; _source(c.source)..., c.source.file, c.source.extrinsic, c.source.aspect,
-        ntags = c.apriltags, c.family, c.tag_cell_width)
+    ApriltagRectification(;
+    _source(c.source)..., c.source.file, c.source.extrinsic, c.source.aspect,
+    ntags = c.apriltags, c.family, c.tag_cell_width
+)

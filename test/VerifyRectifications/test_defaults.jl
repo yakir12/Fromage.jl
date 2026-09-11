@@ -47,12 +47,16 @@
         @test df.tag_cell_width[1] == 12.0      # and its own default is untouched by it
 
         # the converse, for a csv written before the split: reported, with the rename named
-        @test flagged(check([apriltagrow(checker_width = 12)]), 1,
-                      "checker_width is not used by type apriltag (it was renamed to tag_cell_width)")
+        @test flagged(
+            check([apriltagrow(checker_width = 12)]), 1,
+            "checker_width is not used by type apriltag (it was renamed to tag_cell_width)"
+        )
 
         # a nonsensical tag_cell_width is verified like any other value
-        @test flagged(check([apriltagrow()]; defaults = (tag_cell_width = -1,)), 1,
-                      "tag_cell_width must be larger than zero")
+        @test flagged(
+            check([apriltagrow()]; defaults = (tag_cell_width = -1,)), 1,
+            "tag_cell_width must be larger than zero"
+        )
     end
 
     @testset "bad overrides fail fast; bad values are verified per row" begin
@@ -62,7 +66,9 @@
         # unconvertible value
         @test_throws ArgumentError check([checkerboardrow()]; defaults = (n_corners = "5x8",))
         # a convertible but nonsensical value flows into the normal verification
-        @test flagged(check([checkerboardrow(checker_width = missing)]; defaults = (checker_width = -1,)),
-                      1, "checker_width must be larger than zero")
+        @test flagged(
+            check([checkerboardrow(checker_width = missing)]; defaults = (checker_width = -1,)),
+            1, "checker_width must be larger than zero"
+        )
     end
 end

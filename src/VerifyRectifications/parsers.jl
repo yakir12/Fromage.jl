@@ -47,11 +47,11 @@ function parse_uniform!(dict, row)
     parseto!(dict, row, :extrinsic, MyTemporal)
     parseto!(dict, row, :pixel_width, Float64)
     parseto!(dict, row, :path, String, ".")
-    parseto!(dict, row, :center, NTuple{2,Int}, missing)
-    parseto!(dict, row, :north, NTuple{2,Int}, missing)
+    parseto!(dict, row, :center, NTuple{2, Int}, missing)
+    parseto!(dict, row, :north, NTuple{2, Int}, missing)
     # aspect is read from the source video (one ffprobe in read_video_metadata!) when left blank; a
     # CSV-supplied value wins. width/height are always taken from the video and have no CSV column.
-    parseto!(dict, row, :aspect, Float64, missing)
+    return parseto!(dict, row, :aspect, Float64, missing)
 end
 
 # AprilTag rectification. `apriltags` is the expected tag count and `tag_cell_width` the size of a
@@ -67,9 +67,9 @@ function parse_apriltag!(dict, row, defaults)
     parseto!(dict, row, :family, String, defaults.family)
     parseto!(dict, row, :tag_cell_width, Float64, defaults.tag_cell_width)
     parseto!(dict, row, :path, String, ".")
-    parseto!(dict, row, :center, NTuple{2,Int}, missing)
-    parseto!(dict, row, :north, NTuple{2,Int}, missing)
-    parseto!(dict, row, :aspect, Float64, missing)
+    parseto!(dict, row, :center, NTuple{2, Int}, missing)
+    parseto!(dict, row, :north, NTuple{2, Int}, missing)
+    return parseto!(dict, row, :aspect, Float64, missing)
 end
 
 function parse_matlab!(dict, row)
@@ -79,11 +79,11 @@ function parse_matlab!(dict, row)
     parseto!(dict, row, :extrinsic, MyTemporal)
     parseto!(dict, row, :extrinsic_index, Int)
     parseto!(dict, row, :path, String, ".")
-    parseto!(dict, row, :center, NTuple{2,Int}, missing)
-    parseto!(dict, row, :north, NTuple{2,Int}, missing)
+    parseto!(dict, row, :center, NTuple{2, Int}, missing)
+    parseto!(dict, row, :north, NTuple{2, Int}, missing)
     # aspect is read from the source video (one ffprobe in read_video_metadata!) when left blank; a
     # CSV-supplied value wins. width/height are always taken from the video and have no CSV column.
-    parseto!(dict, row, :aspect, Float64, missing)
+    return parseto!(dict, row, :aspect, Float64, missing)
 end
 
 function parse_checkerboard!(dict, row, defaults)
@@ -93,9 +93,9 @@ function parse_checkerboard!(dict, row, defaults)
     parseto!(dict, row, :intrinsic_start, MyTemporal, missing)
     parseto!(dict, row, :intrinsic_stop, MyTemporal, missing)
     parseto!(dict, row, :path, String, ".")
-    parseto!(dict, row, :center, NTuple{2,Int}, missing)
-    parseto!(dict, row, :north, NTuple{2,Int}, missing)
-    parseto!(dict, row, :n_corners, NTuple{2,Int}, defaults.n_corners)
+    parseto!(dict, row, :center, NTuple{2, Int}, missing)
+    parseto!(dict, row, :north, NTuple{2, Int}, missing)
+    parseto!(dict, row, :n_corners, NTuple{2, Int}, defaults.n_corners)
     parseto!(dict, row, :checker_width, Float64, defaults.checker_width)
     parseto!(dict, row, :temporal_step, Float64, defaults.temporal_step)
     parseto!(dict, row, :blur, Float64, defaults.blur)
@@ -105,7 +105,7 @@ function parse_checkerboard!(dict, row, defaults)
     # blank; a CSV-supplied value (or a global yadif default) wins. yadif marks interlaced footage
     # (deinterlace needed). width/height are always taken from the video (the frame size used to
     # decode it) and have no CSV column.
-    parseto!(dict, row, :yadif, Bool, defaults.yadif)
+    return parseto!(dict, row, :yadif, Bool, defaults.yadif)
 end
 
 # The two rectifications bounds are all-or-nothing. Asked of the CSV cells, not of the parsed values: a cell
@@ -115,11 +115,11 @@ end
 function verify_pair(dict, row, k1, k2)
     filled(row, k1) == filled(row, k2) && return
     dict[k1] = dict[k2] = missing
-    push!(dict[:issues], "$k1 and $k2 must be either both present or both missing")
+    return push!(dict[:issues], "$k1 and $k2 must be either both present or both missing")
 end
 
 function verify_center2north(dict)
-    if ismissing(dict[:center]) && !ismissing(dict[:north])
+    return if ismissing(dict[:center]) && !ismissing(dict[:north])
         dict[:north] = missing
         push!(dict[:issues], "north must not be supplied without center")
     end
@@ -164,10 +164,13 @@ function verify_irrelevant(dict, row)
         v = row[k]
         (ismissing(v) || (v isa AbstractString && isempty(strip(v)))) && continue
         renamed = get(RENAMED, (dict[:type], k), nothing)
-        push!(dict[:issues], isnothing(renamed) ?
-            "$k is not used by type $(dict[:type])" :
-            "$k is not used by type $(dict[:type]) (it was renamed to $renamed)")
+        push!(
+            dict[:issues], isnothing(renamed) ?
+                "$k is not used by type $(dict[:type])" :
+                "$k is not used by type $(dict[:type]) (it was renamed to $renamed)"
+        )
     end
+    return
 end
 
 function parse_row(row, defaults = DEFAULTS)
@@ -188,9 +191,11 @@ function parse_row(row, defaults = DEFAULTS)
     else
         dict[:type] = missing
         renamed = get(RENAMED_TYPES, type, nothing)
-        push!(dict[:issues], isnothing(renamed) ?
-            "wrong type" :
-            "wrong type ($type was renamed to $renamed)")
+        push!(
+            dict[:issues], isnothing(renamed) ?
+                "wrong type" :
+                "wrong type ($type was renamed to $renamed)"
+        )
     end
     verify_irrelevant(dict, row)
     backfill!(dict, COLUMNS)

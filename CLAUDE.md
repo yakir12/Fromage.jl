@@ -188,10 +188,34 @@ Never `julia` without `--project`; the global environment does not have this pac
   an API change rots the suite, fix it in the same PR. **Read the allocation counts, not the
   clock** — see DECISIONS, "Wall-clock benchmarks on this machine are noise".
 
+### Formatting
+
+**Runic is the formatter (#238), and it is not `format_code`.** Runic has no configuration and no
+line-length rule, which is why it was chosen (DECISIONS, "Runic is the formatter, and its check
+does not gate"). It lives in its own shared environment and is deliberately absent from both the
+package's and the test environment's dependencies, so install it once:
+
+```sh
+julia --project=@runic --startup-file=no -e 'using Pkg; Pkg.add(name = "Runic", version = "1")'
+```
+
+Then, from the repo root — format in place, or check without writing:
+
+```sh
+git ls-files -z -- '*.jl' | xargs -0 --no-run-if-empty \
+  julia --project=@runic --startup-file=no -e 'using Runic; exit(Runic.main(ARGS))' -- --inplace
+```
+
+Swap `--inplace` for `--check --diff --verbose` to see the drift instead of fixing it; that is
+exactly what `.github/workflows/Format.yml` runs, and it exits non-zero when anything differs.
+`--verbose` earns its place: Runic's diff headers carry the basename alone, and this repo has four
+`types.jl` and two `probing.jl`. The `Format` workflow is **not gating**, on the same terms as
+`Lint` — read it, don't wait on it.
+
 ### Other Kaimon tools
 
-`format_code` before finishing a large edit. `pkg_add`/`pkg_rm` operate on the bound session's
-environment — for this package, edit `Project.toml` + `[compat]` deliberately instead.
+`pkg_add`/`pkg_rm` operate on the bound session's environment — for this package, edit
+`Project.toml` + `[compat]` deliberately instead.
 
 ---
 
@@ -337,9 +361,10 @@ branch starts from `main`, and if `main` has moved, rebase onto it rather than s
    ever meaningful **as a before/after pair within one session**: note what `main` reports before
    you start, and compare after. A count that went *down* means a test stopped running — the
    number itself is not a target and is not worth recording here, because a figure pinned to a
-   version is stale by the next one. Also `format_code` after a large edit, and reindex every file
-   you changed (§2). **JET runs on an allowlist of Julia minors — `JET_MINORS` in
-   `test/runtests.jl`, currently `(13,)`, the same minor `Test.yml` pins** — so a local run on
+   version is stale by the next one. Also run Runic over the tracked sources (§2, "Formatting")
+   after a large edit, and reindex every file you changed (§2). **JET runs on an allowlist of
+   Julia minors — `JET_MINORS` in `test/runtests.jl`, currently `(13,)`, the same minor
+   `Test.yml` pins** — so a local run on
    1.13 includes it and a run on anything else does not. In CI it additionally runs on the ubuntu
    leg only (`FROMAGE_RUN_STATIC`); locally it defaults on, so **your run is the one that sees
    JET on macOS or Windows** — CI no longer will (DECISIONS, "JET runs once, on ubuntu"). That gap used to be silent and is not
@@ -363,8 +388,10 @@ branch starts from `main`, and if `main` has moved, rebase onto it rather than s
    code costs lines here, deleting a structure saves them.
 6. **Watch the PR's CI** — by polling `gh pr checks <n>` in a loop, *not* with `--watch` (see the
    note below; `--watch` is silent from a non-interactive session). **`TestOnPRs` triggers only on
-   `src/**`, `test/**`, `*.toml` and `.github/workflows/**`** — a docs-only or top-level-`*.md` PR
-   legitimately has *no* PR checks. Absent checks there is expected, not something to wait on.
+   `src/**`, `test/**`, `*.toml` and `.github/workflows/**`**, and **`Format` only on `**.jl`** —
+   so a docs-only or top-level-`*.md` PR legitimately has no *`TestOnPRs`* run, while a PR touching
+   only `docs/make.jl` gets `Format`, `Lint` and `Docs` (all three match `docs/**`) but still no
+   `TestOnPRs`. Absent checks there is expected, not something to wait on.
    Watch what the *merge* triggers separately, and on the right ref: an `AutoRelease` tag build
    (`Docs` on `v0.x.y`) does not appear in `gh run list --branch main`, so a watcher scoped to
    `main` reports the chain complete while the tag's docs build is still running.
@@ -378,8 +405,8 @@ branch starts from `main`, and if `main` has moved, rebase onto it rather than s
    and the caveats, and these drift). **It is not queue time** — median wait from job created to
    job started was 3–5 seconds on every platform — and macOS is not reliably the long pole; the
    three legs now land within ~80 s of each other. A run that takes *far* longer is usually a cold
-   depot cache, which doubles the matrix. `Lint` is deliberately *not*
-   gating, so a dead link does not block a release.
+   depot cache, which doubles the matrix. `Lint` and `Format` are deliberately *not*
+   gating, so neither a dead link nor a misplaced space can block a release.
 10. **A red post-merge workflow is an approval gate**, on the same terms as step 7.
 11. **Clean up.** `git checkout main && git pull` — the bot's bump commit leaves local `main` one
     behind after every release, and the pull brings the new tag too — then delete the **local** fix

@@ -82,7 +82,7 @@ const SR = Fromage.ShareIO.ShareReadError
         # cleaning itself is ShareIO's and is tested there.)
         err(msg, code) = SR("ffprobe could not read it", code, 0, msg)
         broken = P.probe_failure(err("moov atom not found", 183))
-        share  = P.probe_failure(err("Error opening input: Resource temporarily unavailable", 245))
+        share = P.probe_failure(err("Error opening input: Resource temporarily unavailable", 245))
         @test occursin("moov atom not found", broken)
         @test occursin("Resource temporarily unavailable", share)
         @test broken != share
@@ -104,14 +104,14 @@ const SR = Fromage.ShareIO.ShareReadError
     @testset "parse_framerate: tryparse semantics, never a throw" begin
         # ffprobe reports r_frame_rate as "num/den", or occasionally a bare number.
         @test P.parse_framerate("30000/1001") ≈ 29.97 atol = 0.01
-        @test P.parse_framerate("25")   == 25.0
+        @test P.parse_framerate("25") == 25.0
         @test P.parse_framerate("25/1") == 25.0
         @test P.parse_framerate("25/0") == 25.0        # undefined rate: fall back to the numerator
         # Anything unparseable is `nothing`, so probe_video reports malformed output rather than
         # letting a `parse` throw into its catch. "N/A" is the interesting case: it contains
         # a '/', so it took the fraction branch and split into ("N", "A").
         @test P.parse_framerate("N/A") === nothing
-        @test P.parse_framerate("")    === nothing
+        @test P.parse_framerate("") === nothing
         @test P.parse_framerate("abc") === nothing
         @test P.parse_framerate("1/2/3") === nothing
     end
@@ -128,17 +128,29 @@ const SR = Fromage.ShareIO.ShareReadError
             end
         end
         # NTSC 60i, where neither rate is a whole number
-        @test P.native_framerate(Dict("r_frame_rate" => "60000/1001",
-                                      "avg_frame_rate" => "30000/1001",
-                                      "field_order" => "bb")) ≈ 29.97 atol = 0.01
+        @test P.native_framerate(
+            Dict(
+                "r_frame_rate" => "60000/1001",
+                "avg_frame_rate" => "30000/1001",
+                "field_order" => "bb"
+            )
+        ) ≈ 29.97 atol = 0.01
 
         # Everything else keeps r_frame_rate. Each of these is a file the looser rules break:
         # progressive 50p reports 50 and means it,
-        @test P.native_framerate(Dict("r_frame_rate" => "50/1", "avg_frame_rate" => "50/1",
-                                      "field_order" => "progressive")) == 50.0
+        @test P.native_framerate(
+            Dict(
+                "r_frame_rate" => "50/1", "avg_frame_rate" => "50/1",
+                "field_order" => "progressive"
+            )
+        ) == 50.0
         # interlaced but FRAME-coded (MBAFF) already reports the frame rate,
-        @test P.native_framerate(Dict("r_frame_rate" => "25/1", "avg_frame_rate" => "25/1",
-                                      "field_order" => "tt")) == 25.0
+        @test P.native_framerate(
+            Dict(
+                "r_frame_rate" => "25/1", "avg_frame_rate" => "25/1",
+                "field_order" => "tt"
+            )
+        ) == 25.0
         # and an absent field_order is progressive, exactly as is_interlaced reads it.
         @test P.native_framerate(Dict("r_frame_rate" => "50/1", "avg_frame_rate" => "25/1")) == 50.0
 
@@ -146,8 +158,12 @@ const SR = Fromage.ShareIO.ShareReadError
         # reports 60000/1 for it), undefined or absent, r_frame_rate stands.
         for avg in ("60000/1", "N/A", "0/0", "")
             @testset "avg_frame_rate = $(repr(avg))" begin
-                @test P.native_framerate(Dict("r_frame_rate" => "25/1", "avg_frame_rate" => avg,
-                                              "field_order" => "tt")) == 25.0
+                @test P.native_framerate(
+                    Dict(
+                        "r_frame_rate" => "25/1", "avg_frame_rate" => avg,
+                        "field_order" => "tt"
+                    )
+                ) == 25.0
             end
         end
         # An unparseable r_frame_rate stays `nothing`, so probe_video reports malformed output.

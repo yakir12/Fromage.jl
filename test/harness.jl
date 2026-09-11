@@ -13,7 +13,7 @@ export csvcell, write_csv, buildrow, flagged, capturing
 csvcell(::Missing) = ""
 function csvcell(x)
     s = x isa AbstractString ? String(x) : string(x)
-    (occursin(',', s) || occursin('"', s)) ? string('"', replace(s, '"' => "\"\""), '"') : s
+    return (occursin(',', s) || occursin('"', s)) ? string('"', replace(s, '"' => "\"\""), '"') : s
 end
 
 function write_csv(path, rows, header)
@@ -23,7 +23,7 @@ function write_csv(path, rows, header)
             println(io, join(csvcell.(r), ","))
         end
     end
-    path
+    return path
 end
 
 # A kwarg not in `header` would be dropped silently, quietly testing nothing.
@@ -41,7 +41,7 @@ flagged(x, r, sub) = x isa AbstractDataFrame && any(m -> occursin(sub, m), x.iss
 "Run `f`, returning (its result, what it printed to stdout). Routed through a temp file because
 redirect_stdout needs a real file descriptor, not an IOBuffer."
 function capturing(f)
-    mktemp() do path, io
+    return mktemp() do path, io
         result = redirect_stdout(f, io)
         flush(io)
         result, read(path, String)

@@ -67,7 +67,7 @@ function parse_run!(dict, row, defaults)
     parseto!(dict, row, :sample_fps, Float64, defaults.sample_fps)   # imputed from :native_fps when missing
     parseto!(dict, row, :initial_search_factor, Float64, defaults.initial_search_factor)
     parseto!(dict, row, :downscale, Float64, defaults.downscale)
-    parseto!(dict, row, :background_length, Int, defaults.background_length)
+    return parseto!(dict, row, :background_length, Int, defaults.background_length)
 end
 
 function parse_row(row, defaults = DEFAULTS)

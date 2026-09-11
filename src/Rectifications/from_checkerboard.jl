@@ -6,7 +6,7 @@ with its `col`, which in the conventional naming makes them `y` and `x`. `_recti
 board points that way, and `image2real` is `∘(pop, …)` — it drops `z` and returns these two
 components as they stand — which is why real-world coordinates come out `(y, x)`.
 """
-const XYZ = SVector{3, <: Real}
+const XYZ = SVector{3, <:Real}
 
 # The ffmpeg `-vf` filter string, or `missing` when no filtering is needed. `yadif` marks interlaced
 # footage: `true` ⇒ deinterlace, `false`/`missing` ⇒ progressive, leave as is. `blur` is a gblur
@@ -35,7 +35,7 @@ end
 
 function get_corners(file, t, vf, w, h, n_corners)
     img = _frame_at(file, t, vf, w, h)
-    _detect_corners(reshape(img, 1, h, w), n_corners)
+    return _detect_corners(reshape(img, 1, h, w), n_corners)
 end
 
 # The frame at `t` as a `Gray` image — the same deinterlaced/blurred frame corner detection sees.
@@ -45,13 +45,13 @@ extrinsic_gray_frame(file, t, vf, w, h) = colorview(Gray, normedview(_frame_at(f
 function extract_intrinsics(file, start, stop, temporal_step, vf, w, h, n_corners)
     ts = start:temporal_step:stop
     corners = tmap(t -> get_corners(file, t, vf, w, h, n_corners), ts)
-    collect(skipmissing(corners))
+    return collect(skipmissing(corners))
 end
 
 function obj2img(cam::CameraModel, checker_width)
     intrinsic = AffineMap(SDiagonal(cam.frow, cam.fcol), SVector(cam.crow, cam.ccol))
     extrinsic = AffineMap(RotationVec(cam.R...), cam.t)
-    scale = LinearMap(SDiagonal{3}(I/checker_width))
+    scale = LinearMap(SDiagonal{3}(I / checker_width))
     return intrinsic, extrinsic, scale
 end
 
@@ -86,8 +86,8 @@ lens_distortion(v, k) = v * lens_distortion_factor(norm(v), k)
 function _first_critical(k)
     h = Polynomial([1.0; [(2i + 1) * ki for (i, ki) in enumerate(k)]])   # in s = r²
     ss = roots(h)
-    pos = [real(s) for s in ss if abs(imag(s)) < 1e-9 && real(s) > 1e-12]
-    isempty(pos) ? Inf : sqrt(minimum(pos))
+    pos = [real(s) for s in ss if abs(imag(s)) < 1.0e-9 && real(s) > 1.0e-12]
+    return isempty(pos) ? Inf : sqrt(minimum(pos))
 end
 
 """
@@ -111,23 +111,23 @@ function inv_lens_distortion(v2, k, rstar)
         a, b = 0.0, rstar
     else
         a, b = 0.0, rd
-        while g(b) < rd && b < 1e8
+        while g(b) < rd && b < 1.0e8
             b *= 2
         end
     end
     for _ in 1:200
         m = (a + b) / 2
         g(m) < rd ? (a = m) : (b = m)
-        b - a < 1e-14 && break
+        b - a < 1.0e-14 && break
     end
     r = (a + b) / 2
     return SVector{2, Float64}(v2 * (r / rd))
 end
 
 # this is the inverse perspective map
-depth(rc1, t, l) = -t/(l⋅rc1)
+depth(rc1, t, l) = -t / (l ⋅ rc1)
 function get_inv_perspective_map(inv_extrinsic)
-    function (rc)
+    return function (rc)
         rc1 = push(rc, 1)
         t = inv_extrinsic.translation[3]
         l = inv_extrinsic.linear[end, :]
@@ -160,8 +160,10 @@ end
 # however, are read off a GUI (Gimp, Photoshop) by hand, so they are:
 # 1. pixel coordinates with width first and height second, (w, h)
 # 2. at an aspect ratio of 1, whatever `aspect` says
-function from_checkerboard(; file, extrinsic, intrinsic_start, intrinsic_stop, temporal_step, yadif, blur,
-        width, height, n_corners, checker_width, aspect, radial_parameters, center, north)
+function from_checkerboard(;
+        file, extrinsic, intrinsic_start, intrinsic_stop, temporal_step, yadif, blur,
+        width, height, n_corners, checker_width, aspect, radial_parameters, center, north
+    )
     vf = _vf(yadif, blur)
     intrinsic_task = Threads.@spawn extract_intrinsics(file, intrinsic_start, intrinsic_stop, temporal_step, vf, width, height, n_corners)
     extrinsic_corners = get_corners(file, extrinsic, vf, width, height, n_corners)
@@ -174,8 +176,10 @@ function from_checkerboard(; file, extrinsic, intrinsic_start, intrinsic_stop, t
     imgpointss = fetch(intrinsic_task)
     ismissing(extrinsic_corners) && error("no corners detected at extrinsic time stamp")
     push!(imgpointss, extrinsic_corners)
-    return _rectification(; imgpointss, width, height, n_corners, checker_width, aspect,
-                          radial_parameters, center, north)
+    return _rectification(;
+        imgpointss, width, height, n_corners, checker_width, aspect,
+        radial_parameters, center, north
+    )
 end
 
 """
@@ -191,19 +195,25 @@ than flagged; everything else (`yadif`, `blur`, `n_corners`, `checker_width`, `a
 `north`) is honoured as usual. Filling only one of the two bounds is rejected upstream. See
 DECISIONS.md for why this asymmetry is deliberate.
 """
-function from_extrinsic(; file, extrinsic, yadif, blur, width, height, n_corners, checker_width,
-        aspect, center, north)
+function from_extrinsic(;
+        file, extrinsic, yadif, blur, width, height, n_corners, checker_width,
+        aspect, center, north
+    )
     vf = _vf(yadif, blur)
     extrinsic_corners = get_corners(file, extrinsic, vf, width, height, n_corners)
     ismissing(extrinsic_corners) && error("no corners detected at extrinsic time stamp")
-    return _rectification(; imgpointss = [extrinsic_corners], width, height, n_corners, checker_width,
-                          aspect, radial_parameters = 0, center, north)
+    return _rectification(;
+        imgpointss = [extrinsic_corners], width, height, n_corners, checker_width,
+        aspect, radial_parameters = 0, center, north
+    )
 end
 
 # Shared tail of both constructors above: fit the camera model to the collected views (the
 # extrinsic frame is always the LAST view) and compose the transform pipeline off its pose.
-function _rectification(; imgpointss, width, height, n_corners, checker_width, aspect,
-                        radial_parameters, center, north)
+function _rectification(;
+        imgpointss, width, height, n_corners, checker_width, aspect,
+        radial_parameters, center, north
+    )
     objpoints = XYZ.(Tuple.(CartesianIndices((0:(n_corners[1] - 1), 0:(n_corners[2] - 1), 0:0))))
     # (height, width), not (width, height): every point handed to OpenCV lives in the TRANSPOSED
     # view (see `get_corners` — the frame goes in as `reshape(img, 1, h, w)` and OpenCV.jl's `Mat`
@@ -214,10 +224,12 @@ function _rectification(; imgpointss, width, height, n_corners, checker_width, a
     extrinsic_corners = imgpointss[extrinsic_index]
     # `fit_model` fits ONE set of intrinsics across every view and a pose per view; the model this
     # rectification is built on is those intrinsics with the extrinsic frame's pose.
-    cam = CameraModel(; R = m.Rs[extrinsic_index], t = m.ts[extrinsic_index],
-                      m.frow, m.fcol, m.crow, m.ccol, m.k)
+    cam = CameraModel(;
+        R = m.Rs[extrinsic_index], t = m.ts[extrinsic_index],
+        m.frow, m.fcol, m.crow, m.ccol, m.k
+    )
     image2real, real2image = _maps(cam; checker_width, width, height, aspect, center, north)
-    ratio = checker_width/checker_width_pixel(extrinsic_corners, n_corners)
+    ratio = checker_width / checker_width_pixel(extrinsic_corners, n_corners)
     return StaticRectification(image2real, real2image, ratio, width, height)
 end
 

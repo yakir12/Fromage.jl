@@ -15,10 +15,10 @@ Base.convert(::Type{Int}, ::Boom) = error("boom")
 
 @testset "Parsing (shared cell machinery)" begin
     @testset "MyTemporal: seconds vs HH:MM:SS precedence" begin
-        @test P.mytryparse(P.MyTemporal, "1.5")      == 1.5    # float path taken before Time
-        @test P.mytryparse(P.MyTemporal, "90")       == 90.0
+        @test P.mytryparse(P.MyTemporal, "1.5") == 1.5    # float path taken before Time
+        @test P.mytryparse(P.MyTemporal, "90") == 90.0
         @test P.mytryparse(P.MyTemporal, "00:01:30") == 90.0   # clock converted to seconds
-        @test P.mytryparse(P.MyTemporal, "garbage")  === nothing
+        @test P.mytryparse(P.MyTemporal, "garbage") === nothing
     end
 
     # A stray space around a hand-edited cell must not decide whether it parses. Base's Float64
@@ -27,20 +27,20 @@ Base.convert(::Type{Int}, ::Boom) = error("boom")
     @testset "MyTemporal: surrounding whitespace is trimmed" begin
         @test P.mytryparse(P.MyTemporal, " 00:01:30 ") == 90.0   # the regression
         @test P.mytryparse(P.MyTemporal, "\t00:01:30\n") == 90.0
-        @test P.mytryparse(P.MyTemporal, " 12.5 ")     == 12.5
-        @test P.mytryparse(P.MyTemporal, " 9 ")        == 9.0
-        @test P.mytryparse(P.MyTemporal, "  ")         === nothing   # blank stays absent, not 0
+        @test P.mytryparse(P.MyTemporal, " 12.5 ") == 12.5
+        @test P.mytryparse(P.MyTemporal, " 9 ") == 9.0
+        @test P.mytryparse(P.MyTemporal, "  ") === nothing   # blank stays absent, not 0
         @test P.mytryparse(P.MyTemporal, " 00:0x:30 ") === nothing   # trimming does not rescue junk
     end
 
     @testset "NTuple{2,Int}: accepted forms and rejects" begin
-        @test P.mytryparse(NTuple{2, Int}, "(7,10)")      == (7, 10)
-        @test P.mytryparse(NTuple{2, Int}, "[250, 1]")    == (250, 1)   # bracket form
-        @test P.mytryparse(NTuple{2, Int}, "250,1")       == (250, 1)   # bare form
+        @test P.mytryparse(NTuple{2, Int}, "(7,10)") == (7, 10)
+        @test P.mytryparse(NTuple{2, Int}, "[250, 1]") == (250, 1)   # bracket form
+        @test P.mytryparse(NTuple{2, Int}, "250,1") == (250, 1)   # bare form
         @test P.mytryparse(NTuple{2, Int}, "  250 , 1  ") == (250, 1)   # surrounding whitespace
-        @test P.mytryparse(NTuple{2, Int}, "(-5, 5)")     == (-5, 5)    # negatives parse; the range checks flag them
-        @test P.mytryparse(NTuple{2, Int}, "1,2,3")       === nothing   # not a 2-tuple
-        @test P.mytryparse(NTuple{2, Int}, "abc")         === nothing
+        @test P.mytryparse(NTuple{2, Int}, "(-5, 5)") == (-5, 5)    # negatives parse; the range checks flag them
+        @test P.mytryparse(NTuple{2, Int}, "1,2,3") === nothing   # not a 2-tuple
+        @test P.mytryparse(NTuple{2, Int}, "abc") === nothing
         @test P.mytryparse(NTuple{2, Int}, "(10000000000000000000,1)") === nothing  # >Int64 overflows -> nothing, not a throw
     end
 
@@ -93,7 +93,7 @@ Base.convert(::Type{Int}, ::Boom) = error("boom")
     @testset "resolve_defaults: rejected values vs. genuine errors" begin
         # A miniature whitelist standing in for a gateway's DEFAULTS/DEFAULT_TYPES pair.
         defaults = (; a = 1.0, n = 2, flag = true)
-        types    = (; a = Float64, n = Int, flag = Bool)
+        types = (; a = Float64, n = Int, flag = Bool)
         resolve(o) = P.resolve_defaults(o, defaults, types, "test")
 
         @test resolve((;)) == defaults                          # no overrides: untouched

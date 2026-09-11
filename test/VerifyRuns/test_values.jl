@@ -17,7 +17,7 @@
     end
 
     @testset "start_location bounds" begin
-        @test flagged(check([runrow(start_location = "(0, 100)")]),   1, "start_location must be at least 1")
+        @test flagged(check([runrow(start_location = "(0, 100)")]), 1, "start_location must be at least 1")
         @test flagged(check([runrow(start_location = "(700, 100)")]), 1, "start_location must not be larger than the dimensions of the frame")
         # only one coordinate out of bounds still trips it
         @test flagged(check([runrow(start_location = "(100, 700)")]), 1, "start_location must not be larger than the dimensions of the frame")
@@ -26,18 +26,18 @@
     end
 
     @testset "scalar field ranges" begin
-        @test flagged(check([runrow(target_width = "-3")]),           1, "target_width must be larger than zero")
-        @test flagged(check([runrow(target_width = "0")]),            1, "target_width must be larger than zero")
-        @test flagged(check([runrow(window_size = "0")]),             1, "window_size must be larger than zero")
-        @test flagged(check([runrow(window_size = "(0, 5)")]),        1, "window_size must be larger than zero")
-        @test flagged(check([runrow(initial_search_factor = "0")]),   1, "initial_search_factor must be larger than zero")
+        @test flagged(check([runrow(target_width = "-3")]), 1, "target_width must be larger than zero")
+        @test flagged(check([runrow(target_width = "0")]), 1, "target_width must be larger than zero")
+        @test flagged(check([runrow(window_size = "0")]), 1, "window_size must be larger than zero")
+        @test flagged(check([runrow(window_size = "(0, 5)")]), 1, "window_size must be larger than zero")
+        @test flagged(check([runrow(initial_search_factor = "0")]), 1, "initial_search_factor must be larger than zero")
     end
 
     @testset "downscale must be in (0, 1]" begin
-        @test flagged(check([runrow(downscale = "0")]),    1, "downscale must be larger than zero")
+        @test flagged(check([runrow(downscale = "0")]), 1, "downscale must be larger than zero")
         @test flagged(check([runrow(downscale = "-0.5")]), 1, "downscale must be larger than zero")
         # > 1 would artificially enlarge the frames
-        @test flagged(check([runrow(downscale = "1.5")]),  1, "downscale must not be larger than one")
+        @test flagged(check([runrow(downscale = "1.5")]), 1, "downscale must not be larger than one")
         @test clean(check([runrow(downscale = "1")]))      # exactly one (no scaling) is allowed
         @test clean(check([runrow(downscale = "0.5")]))
     end
@@ -46,7 +46,7 @@
         # each factor is individually valid; the product is degenerate
         @test flagged(check([runrow(target_width = "2", downscale = "0.1")]), 1, "must be at least one pixel")
         # downscale omitted (defaults to 1): a sub-pixel target_width alone also trips it
-        @test flagged(check([runrow(target_width = "0.5")]),              1, "must be at least one pixel")
+        @test flagged(check([runrow(target_width = "0.5")]), 1, "must be at least one pixel")
         # exactly one pixel is allowed
         @test clean(check([runrow(target_width = "2", downscale = "0.5")]))
     end
@@ -61,7 +61,7 @@
         @test clean(check([runrow(background_length = "25")]))    # the boundary is allowed
         # 1–24 and negatives are rejected by the same check
         msg = "background_length must be 0 (disables background subtraction) or at least 25"
-        @test flagged(check([runrow(background_length = "1")]),  1, msg)
+        @test flagged(check([runrow(background_length = "1")]), 1, msg)
         @test flagged(check([runrow(background_length = "24")]), 1, msg)
         @test flagged(check([runrow(background_length = "-5")]), 1, msg)
         # a non-integer cell fails at parse time, before the range check
@@ -76,8 +76,8 @@
     end
 
     @testset "both rates must be larger than zero" begin
-        @test flagged(check([runrow(sample_fps = "0")]),  1, "sample_fps must be larger than zero")
-        @test flagged(check([runrow(native_fps = "0")]),  1, "native_fps must be larger than zero")
+        @test flagged(check([runrow(sample_fps = "0")]), 1, "sample_fps must be larger than zero")
+        @test flagged(check([runrow(native_fps = "0")]), 1, "native_fps must be larger than zero")
         @test flagged(check([runrow(native_fps = "-5")]), 1, "native_fps must be larger than zero")
     end
 
@@ -107,10 +107,10 @@
     end
 
     @testset "temporal window" begin
-        @test flagged(check([runrow(start = "-1")]),                1, "start must be larger than or equal to zero")
-        @test flagged(check([runrow(start = "4", stop = "2")]),     1, "start must come before stop")
-        @test flagged(check([runrow(stop = "99")]),                 1, "stop must not come after the video duration")
+        @test flagged(check([runrow(start = "-1")]), 1, "start must be larger than or equal to zero")
+        @test flagged(check([runrow(start = "4", stop = "2")]), 1, "start must come before stop")
+        @test flagged(check([runrow(stop = "99")]), 1, "stop must not come after the video duration")
         # an inverted window must not also emit a "stop after duration" cascade for an in-range stop
-        @test !flagged(check([runrow(start = "4", stop = "2")]),  1, "stop must not come after")
+        @test !flagged(check([runrow(start = "4", stop = "2")]), 1, "stop must not come after")
     end
 end

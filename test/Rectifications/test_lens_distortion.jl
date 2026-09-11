@@ -10,7 +10,7 @@
         @test R.lens_distortion_factor(2.0, (0.5,)) ≈ 1 + 0.5 * 4                       # 3.0
         @test R.lens_distortion_factor(2.0, (0.5, 0.25)) ≈ 1 + 0.5 * 4 + 0.25 * 16      # 7.0
         @test R.lens_distortion_factor(2.0, (0.1, -0.05, 0.01)) ≈
-              1 + 0.1 * 4 - 0.05 * 16 + 0.01 * 64                                       # 1.24
+            1 + 0.1 * 4 - 0.05 * 16 + 0.01 * 64                                       # 1.24
     end
 
     @testset "lens_distortion" begin
@@ -20,7 +20,7 @@
         v = SVector(0.3, 0.2)
         vd = R.lens_distortion(v, k)
         # distortion is purely radial ⇒ output is collinear with input (2D cross product ≈ 0)
-        @test v[1] * vd[2] - v[2] * vd[1] ≈ 0 atol = 1e-12
+        @test v[1] * vd[2] - v[2] * vd[1] ≈ 0 atol = 1.0e-12
         @test vd ≈ v .* R.lens_distortion_factor(norm(v), k)
     end
 
@@ -32,7 +32,7 @@
         # at the fold the radial map's derivative g'(r)=1+3k₁r²+5k₂r⁴+7k₃r⁶ vanishes
         let k = (-0.5,), rstar = R._first_critical((-0.5,))
             gprime = 1 + 3k[1] * rstar^2
-            @test gprime ≈ 0 atol = 1e-12
+            @test gprime ≈ 0 atol = 1.0e-12
         end
         # multiple positive critical radii: derivative (in s=r²) chosen as 1 - 5s + 4s²,
         # roots s = 0.25, 1.0 ⇒ smallest fold radius is √0.25 = 0.5. Coeffs: 3k₁=-5, 5k₂=4.
@@ -45,13 +45,13 @@
         for k in ((), (0.1,), (-0.05,), (0.1, -0.02), (0.1, -0.02, 0.005), (0.2,))
             for x in -0.4:0.2:0.4, y in -0.4:0.2:0.4
                 v = SVector(x, y)
-                @test R.inv_lens_distortion(R.lens_distortion(v, k), k) ≈ v atol = 1e-9
+                @test R.inv_lens_distortion(R.lens_distortion(v, k), k) ≈ v atol = 1.0e-9
             end
         end
         @test R.inv_lens_distortion(SVector(0.0, 0.0), (0.1, -0.02)) == SVector(0.0, 0.0)
         # monotone (rstar = Inf) branch must also invert correctly
         @test R.inv_lens_distortion(R.lens_distortion(SVector(0.3, 0.0), (0.2,)), (0.2,)) ≈
-              SVector(0.3, 0.0) atol = 1e-9
+            SVector(0.3, 0.0) atol = 1.0e-9
     end
 
     @testset "inverse accuracy in pixels, 100×100 to 2000×2000 frames" begin
@@ -80,7 +80,7 @@
             end
             # none of these regimes folds inside the frame, so the sweep cannot silently shrink
             @test n == 144
-            @test worst < 1e-9
+            @test worst < 1.0e-9
         end
     end
 

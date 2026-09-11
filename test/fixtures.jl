@@ -23,13 +23,13 @@ export make_video, make_checkerboard_video, make_corrupt_video, make_target_vide
 function make_video(path; duration = 5, size = (640, 480), rate = 30)
     w, h = size
     FFMPEG.ffmpeg_exe(`-y -loglevel error -f lavfi -i testsrc=duration=$duration:size=$(w)x$(h):rate=$rate -pix_fmt yuv420p $path`)
-    path
+    return path
 end
 
 function make_checkerboard_video(path, png; duration = 5)
     pad = "pad=ceil(iw/2)*2:ceil(ih/2)*2"   # libx264/yuv420p needs even dimensions
     FFMPEG.ffmpeg_exe(`-y -loglevel error -framerate 10 -loop 1 -i $png -t $duration -vf $pad -pix_fmt yuv420p $path`)
-    path
+    return path
 end
 
 # A file ffprobe reliably refuses: the leading bytes of a real mp4, with the moov atom and all the
@@ -54,8 +54,10 @@ end
 # `dir`; returns the basename(s) and the ground-truth closure `expected(i; skip, offset)`: the
 # stored-frame 1-based (row, col) of the disc center at sample i, where sample i reads global frame
 # `offset + (i − 1)·skip` (skip = video fps ÷ requested fps).
-function make_target_video(dir, name; width = 100, height = 100, sar = 1//1, fps = 25, duration = 2,
-        target_width = 10, darker_target = true, row = 50, col = 55, nsegments = 1, pause = nothing)
+function make_target_video(
+        dir, name; width = 100, height = 100, sar = 1 // 1, fps = 25, duration = 2,
+        target_width = 10, darker_target = true, row = 50, col = 55, nsegments = 1, pause = nothing
+    )
     A = width / 2.5
     target_c, bkgd_c = darker_target ? (0, 255) : (255, 0)
     w2 = round(Int, width / sar)
@@ -64,7 +66,7 @@ function make_target_video(dir, name; width = 100, height = 100, sar = 1//1, fps
     p1, p2 = isnothing(pause) ? (0, 0) : round.(Int, pause .* fps)
     Nexpr = isnothing(pause) ? "N" : "if(lt(N,$p1),N,if(lt(N,$p2),$p1,N-($p2-$p1)))"
     freeze(N) = isnothing(pause) ? N : (N < p1 ? N : (N < p2 ? p1 : N - (p2 - p1)))
-    vf = "geq=lum='if(lt(sqrt((X-$col+$A*sin(0.5*PI*($Nexpr)/$fps))^2+(Y-$row)^2),$(target_width/2)),$target_c,$bkgd_c)':cb=128:cr=128,scale=$w2:$height,setsar=$sarg"
+    vf = "geq=lum='if(lt(sqrt((X-$col+$A*sin(0.5*PI*($Nexpr)/$fps))^2+(Y-$row)^2),$(target_width / 2)),$target_c,$bkgd_c)':cb=128:cr=128,scale=$w2:$height,setsar=$sarg"
     # -qp 0: lossless — the analytic ground truth stays exact, with no encoder noise around the disc
     src = `-y -loglevel error -f lavfi -i color=white:s=$(width)x$(height):d=$duration:r=$fps -vf $vf -pix_fmt yuv420p -qp 0`
     files = if nsegments == 1
@@ -85,7 +87,7 @@ end
 
 "RMSE (in stored-frame pixels) between tracked coordinates and the ground-truth closure."
 function tracking_rmse(ij, expected; skip = 1, offset = 0)
-    sqrt(mean([sum(abs2, Tuple(rc) .- expected(i; skip, offset)) for (i, rc) in enumerate(ij)]))
+    return sqrt(mean([sum(abs2, Tuple(rc) .- expected(i; skip, offset)) for (i, rc) in enumerate(ij)]))
 end
 
 # ---------------------------------------------------------------------------
@@ -119,7 +121,7 @@ function apriltag_ground(GH = 600, GW = 600)
     tagu8(id) = UInt8.(255 .* (Float64.(getAprilTagImage(id, tag36h11)) .> 0.5))
     ground = fill(0xff, GH, GW)
     for ((r, c), id) in zip(TAG_BLOCKS, 0:3)
-        ground[r+1:r+10TAG_CELL, c+1:c+10TAG_CELL] .= upscale(tagu8(id))
+        ground[(r + 1):(r + 10TAG_CELL), (c + 1):(c + 10TAG_CELL)] .= upscale(tagu8(id))
     end
     return ground
 end
@@ -143,8 +145,10 @@ end
 # pitch/roll enter through the projective row `[px py 1]`. For a nadir camera at height `alt` px,
 # a tilt of `phi` induces `tan(phi) / alt`, so a test can ask for "12 degrees of pitch" and get a
 # displacement of the right physical size instead of a bare 3e-4.
-function drone_pose(; dx = 0.0, dy = 0.0, zoom = 1.0, yaw = 0.0, pitch = 0.0, roll = 0.0,
-                      shear = 0.0, alt = 1000.0, cx = 0.0, cy = 0.0)
+function drone_pose(;
+        dx = 0.0, dy = 0.0, zoom = 1.0, yaw = 0.0, pitch = 0.0, roll = 0.0,
+        shear = 0.0, alt = 1000.0, cx = 0.0, cy = 0.0
+    )
     # NB StaticArrays' constructor is COLUMN-major; each line below is one column.
     T(x, y) = SMatrix{3, 3, Float64}(1, 0, 0, 0, 1, 0, x, y, 1)
     R = SMatrix{3, 3, Float64}(cos(yaw), sin(yaw), 0, -sin(yaw), cos(yaw), 0, 0, 0, 1)
@@ -176,8 +180,10 @@ function render_pose(ground, H, height, width)
         end
         fx = x - x0
         fy = y - y0
-        out[i, j] = round(UInt8, (1 - fy) * ((1 - fx) * ground[y0, x0] + fx * ground[y0, x0+1]) +
-                                      fy  * ((1 - fx) * ground[y0+1, x0] + fx * ground[y0+1, x0+1]))
+        out[i, j] = round(
+            UInt8, (1 - fy) * ((1 - fx) * ground[y0, x0] + fx * ground[y0, x0 + 1]) +
+                fy * ((1 - fx) * ground[y0 + 1, x0] + fx * ground[y0 + 1, x0 + 1])
+        )
     end
     return out
 end
@@ -218,17 +224,23 @@ older `(file, groundpath, start_location, nframes)` form.
   * `poses[k]`       frame `k`'s full ground -> image homography
   * `image_xy(k)`    the disc's true `(x, y)` in frame `k` itself
 """
-function make_apriltag_video(dir, name; H = 480, W = 480, GH = 600, GW = 600,
-                             nframes = 60, fps = 25, tw = 12, amp = 40, pose = nothing,
-                             occlude = Int[])
+function make_apriltag_video(
+        dir, name; H = 480, W = 480, GH = 600, GW = 600,
+        nframes = 60, fps = 25, tw = 12, amp = 40, pose = nothing,
+        occlude = Int[]
+    )
     ox0, oy0 = (GW - W) ÷ 2, (GH - H) ÷ 2                   # the fixed crop: ground -> frame
     turn(k) = 2π * (k - 1) / nframes
     # The default flight is the legacy circular pan, expressed as a pose. Its offsets are rounded
     # exactly as the crop used to round them (`round(Int, ox0 + amp*cos)`, not `ox0 + round(...)`
     # — those differ on a tie), so the render stays an exact pixel copy of that crop.
     poses = if isnothing(pose)
-        [drone_pose(dx = -round(Int, ox0 + amp * cos(turn(k))),
-                    dy = -round(Int, oy0 + amp * sin(turn(k)))) for k in 1:nframes]
+        [
+            drone_pose(
+                dx = -round(Int, ox0 + amp * cos(turn(k))),
+                dy = -round(Int, oy0 + amp * sin(turn(k)))
+            ) for k in 1:nframes
+        ]
     else
         base = drone_pose(dx = -ox0, dy = -oy0)
         [pose(k) * base for k in 1:nframes]                 # `pose` moves the drone about the frame
@@ -241,7 +253,7 @@ function make_apriltag_video(dir, name; H = 480, W = 480, GH = 600, GW = 600,
     ground = apriltag_ground(GH, GW)
     occluded = copy(ground)
     r, c = TAG_BLOCKS[1]
-    occluded[r+1:r+10TAG_CELL, c+1:c+10TAG_CELL] .= 0xff    # the first tag painted out
+    occluded[(r + 1):(r + 10TAG_CELL), (c + 1):(c + 10TAG_CELL)] .= 0xff    # the first tag painted out
     raw = joinpath(dir, "$name.raw")
     open(raw, "w") do io
         for k in 1:nframes
@@ -254,10 +266,12 @@ function make_apriltag_video(dir, name; H = 480, W = 480, GH = 600, GW = 600,
 
     expected_ref = k -> pose_apply(poses[1], ground_xy(k))
     image_xy = k -> pose_apply(poses[k], ground_xy(k))
-    return (; file = "$name.mp4",
-              groundpath = [(gr(k), gc(k)) for k in 1:nframes],
-              start_location = Tuple(round.(Int, expected_ref(1))),
-              nframes, expected_ref, poses, image_xy, ground_xy)
+    return (;
+        file = "$name.mp4",
+        groundpath = [(gr(k), gc(k)) for k in 1:nframes],
+        start_location = Tuple(round.(Int, expected_ref(1))),
+        nframes, expected_ref, poses, image_xy, ground_xy,
+    )
 end
 
 # ---------------------------------------------------------------------------
@@ -274,9 +288,11 @@ function probe_stream(file)
         fields[k] = v
     end
     num, den = parse.(Int, split(fields["avg_frame_rate"], '/'))
-    return (; width = parse(Int, fields["width"]), height = parse(Int, fields["height"]),
+    return (;
+        width = parse(Int, fields["width"]), height = parse(Int, fields["height"]),
         nframes = parse(Int, fields["nb_read_frames"]), fps = num / den,
-        duration = something(tryparse(Float64, get(fields, "duration", "")), NaN))
+        duration = something(tryparse(Float64, get(fields, "duration", "")), NaN),
+    )
 end
 
 "Per-frame sizes (a Set of (w, h)) plus the packet PTS and DTS sequences in file (= decode)
@@ -317,20 +333,28 @@ end
 # function the gateway calls (`get_window`), so there is still one rule per value.
 
 "A `Tuning` for `file`, with the gateway's own imputations for anything not named."
-function tuning(file; target_width = 25.0, window_size = missing, darker_target = true,
-                native_fps = missing, sample_fps = missing, initial_search_factor = 4.0, downscale = 1.0,
-                background_length = PawsomeTracker.DEFAULT_BACKGROUND_LENGTH,
-                duration = missing)
+function tuning(
+        file; target_width = 25.0, window_size = missing, darker_target = true,
+        native_fps = missing, sample_fps = missing, initial_search_factor = 4.0, downscale = 1.0,
+        background_length = PawsomeTracker.DEFAULT_BACKGROUND_LENGTH,
+        duration = missing
+    )
     m = probe_stream(file)
     # the gateway's own cascade: the probe fills a blank `native_fps`, and `native_fps` — declared
     # or probed — fills a blank `sample_fps`
     nfps = coalesce(native_fps, m.fps)
     sfps = coalesce(sample_fps, nfps)
-    ws = coalesce(window_size,
-                  get_window(target_width, sfps, min(m.width, m.height),
-                             coalesce(duration, m.nframes / m.fps)))
-    return Tuning(target_width, ws, darker_target, sfps, nfps, initial_search_factor, downscale,
-                  background_length)
+    ws = coalesce(
+        window_size,
+        get_window(
+            target_width, sfps, min(m.width, m.height),
+            coalesce(duration, m.nframes / m.fps)
+        )
+    )
+    return Tuning(
+        target_width, ws, darker_target, sfps, nfps, initial_search_factor, downscale,
+        background_length
+    )
 end
 
 """
@@ -343,10 +367,14 @@ segment or a vector with one entry per file; `stop` defaults to each video's own
 function segments(files; start = 0.0, stop = missing, start_location = missing)
     fs = files isa AbstractString ? [files] : collect(files)
     per(x, i) = x isa AbstractVector ? x[i] : x
-    return Segment[Segment(f, per(start, i),
-                           coalesce(per(stop, i), probe_stream(f).duration),
-                           per(start_location, i))
-                   for (i, f) in enumerate(fs)]
+    return Segment[
+        Segment(
+            f, per(start, i),
+            coalesce(per(stop, i), probe_stream(f).duration),
+            per(start_location, i)
+        )
+            for (i, f) in enumerate(fs)
+    ]
 end
 
 """
@@ -356,11 +384,15 @@ Track `files` as one run, building the `Segment`s and `Tuning` from keywords —
 `track` itself used to have, kept for the tests that exercise the tracker directly. The `Tuning` is
 built from the first file, as the gateway builds it from a run's first segment.
 """
-function track1(files; rectification = nothing, diagnostic_file = nothing,
-                start = 0.0, stop = missing, start_location = missing, kw...)
+function track1(
+        files; rectification = nothing, diagnostic_file = nothing,
+        start = 0.0, stop = missing, start_location = missing, kw...
+    )
     segs = segments(files; start, stop, start_location)
-    return track(segs, tuning(first(segs).file; duration = sum(s -> s.stop - s.start, segs), kw...),
-                 rectification, diagnostic_file)
+    return track(
+        segs, tuning(first(segs).file; duration = sum(s -> s.stop - s.start, segs), kw...),
+        rectification, diagnostic_file
+    )
 end
 
 end

@@ -1717,6 +1717,58 @@ pin `ref_sz` and did not — see "What the tracker's argument lists still do not
 **4. Gate on the suite, JET and allocations — not the clock.** See the benchmarks section below for
 why wall-clock time on this machine cannot carry a claim.
 
+### Runic is the formatter, and its check does not gate (#238)
+
+Before #238 there was no formatter at all — no config file, nothing in any `Project.toml`, no job in
+any workflow. Formatting was a habit ("run `format_code` before finishing a large edit") that nothing
+verified, and #175 had already done one pass by hand.
+
+**Runic, not JuliaFormatter, and the reason is the line-length rule — that Runic does not have one.**
+#175 deliberately left five lines over 200 characters — four in `src/` and one in `test/fixtures.jl`
+— long `using` lines and predicate chains that read better unwrapped. JuliaFormatter's default
+92-character margin would reflow roughly 405 code lines and silently undo that decision, and its
+configurability would then invite a standing argument about the margin. Runic has no configuration
+at all, reflows no comment, and left all five long lines byte-identical — measured, before and
+after, on the adopting commit. That is the whole case; "it is the one with fewer knobs" is the
+feature.
+
+**The check reports, it does not block** — `Format` is not a required check, on the same terms as
+`Lint`. Every green push to `main` is a release (§6 of CLAUDE.md), so a gating formatter would mean a
+misplaced space could hold up a release. That trade is never worth taking for whitespace. The job
+still exits non-zero on drift, so it goes red and is visible; it simply is not in the required set.
+
+**`Format` runs on PRs only, where `Lint` also runs weekly on a schedule**, and the asymmetry is
+deliberate. `Lint` needs the sweep because link rot happens on someone else's clock: a URL that was
+alive at merge time can die a month later with nothing in this repo changing. Formatting cannot rot
+that way — Runic drift can only arrive in a commit, and every commit reaches `main` through a PR. A
+new Runic *minor* is the one thing that can make already-merged code non-clean, and it announces
+itself on the next PR anyway. A scheduled run would buy a few days' notice at the cost of a weekly
+job that is almost always green.
+
+**Runic is in no environment this repo ships or tests.** Not in `[deps]`, not in `[compat]`, not in
+the test environment, and `runtests.jl` grew no formatting check — `test/quality.jl` asserts the
+suite makes no network call (#159), and a formatter in the loop is exactly the kind of thing that
+erodes that. CI installs it into a `@runic` shared environment, pinned to the major per Runic's own
+version policy. A new Runic minor may therefore start flagging code that was clean; the answer is to
+re-run it and commit the result, not to pin harder and let the check rot.
+
+The adopting pass touched 67 of 85 tracked `.jl` files, +1706/−1003. It is behaviour-preserving, and
+that was verified rather than assumed: every file was parsed before and after with `Meta.parseall`
+and the ASTs compared with line-number nodes stripped. They are identical **modulo Runic's
+explicit-return rule**, which is the only AST-visible change it makes here — a trailing expression
+becomes `return <expr>`, and five functions gained a bare `return`. Four of those five end in a
+`for` loop, which already evaluated to `nothing`; the fifth, `find_tag_roi`, ends in a
+non-terminating `while true` whose only exits are explicit `return`s, so its appended `return` is
+unreachable (checked: inference is unchanged either way). Worth knowing if the pass is ever repeated
+on a new Runic: a plain AST comparison will *not* come back clean, and that is not a bug.
+
+What was considered and not taken: `fredrikekre/runic-action`, the upstream GitHub Action. It works,
+but it is a third action to track and it hides the file selection, and the selection is the part that
+matters here — `git ls-files -- '*.jl'` is what keeps `docs/node_modules/` and every other untracked
+tree out of the walk. Also not taken: a `.git-blame-ignore-revs` file. It needs the hash of the
+formatting commit, which only exists after the squash-merge, so adding it would cost a second release
+for a file `git blame` only consults when a reader opts in locally.
+
 ## Benchmarks
 
 ### Two tiers, because one sampling strategy cannot serve both (#68)

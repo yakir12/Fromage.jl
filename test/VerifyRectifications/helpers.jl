@@ -22,7 +22,7 @@ function make_mixed_video(path, png; board_t = 2, total = VIDEO_DURATION)
                        -f lavfi -i testsrc=duration=$rest:size=500x376:rate=10
                        -filter_complex "[0:v]pad=ceil(iw/2)*2:ceil(ih/2)*2,setsar=1,format=yuv420p[a];[1:v]setsar=1,format=yuv420p[b];[a][b]concat=n=2:v=1"
                        -pix_fmt yuv420p $path`)
-    path
+    return path
 end
 
 # Interlaced footage: the `interlace` filter plus the interlaced-coding flags make ffprobe report a
@@ -31,7 +31,7 @@ end
 function make_interlaced_video(path; duration = 2, size = (720, 576))
     w, h = size
     FFMPEG.ffmpeg_exe(`-y -loglevel error -f lavfi -i testsrc=duration=$duration:size=$(w)x$(h):rate=25 -vf interlace -flags +ildct+ilme -pix_fmt yuv420p $path`)
-    path
+    return path
 end
 
 # Dummy stand-ins for the fields CameraCalibrations.jl needs; verify_matlab_structure! only checks
@@ -39,10 +39,12 @@ end
 # one row per extrinsic pose, mirroring a real cameraParams.mat (which is 6×3) — the row count N is what
 # the extrinsic_index bounds check reads, so it must be a realistic multi-pose shape, not 1×3.
 const MATLAB_N_EXTRINSICS = 6
-const MATLAB_CALIB_FIELDS = Dict("TranslationVectors" => zeros(MATLAB_N_EXTRINSICS, 3),
-                                 "RotationVectors"    => zeros(MATLAB_N_EXTRINSICS, 3),
-                                 "RadialDistortion"   => [0.0, 0.0],
-                                 "K"                  => [1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0])
+const MATLAB_CALIB_FIELDS = Dict(
+    "TranslationVectors" => zeros(MATLAB_N_EXTRINSICS, 3),
+    "RotationVectors" => zeros(MATLAB_N_EXTRINSICS, 3),
+    "RadialDistortion" => [0.0, 0.0],
+    "K" => [1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0]
+)
 
 # matlab stores ImageSize as [height, width]; the reader reverses it -> (width, height). The default
 # (480, 640) -> (640, 480) matches video.mp4 (640×480), the matlab rows' source video, so the
@@ -60,12 +62,19 @@ make_matlab_mismatch(path; imagesize = (480, 640)) = (MAT.matwrite(path, merge(M
 # A geometrically consistent calibration (unlike the structural dummies above): fronto-parallel
 # pinhole poses (R = 0, t = (0, 0, Z)) with a real K — enough for the matlab Rectification to
 # build an invertible map (ratio = Z/f at pose 1). ImageSize (480, 640) matches video.mp4.
-make_matlab_consistent(path; f = 500.0, Z = 100.0) = (MAT.matwrite(path, Dict("cameraParams" => Dict(
-    "ImageSize" => [480.0, 640.0],
-    "K" => [f 0.0 320.0; 0.0 f 240.0; 0.0 0.0 1.0],
-    "RotationVectors" => zeros(2, 3),
-    "TranslationVectors" => [0.0 0.0 Z; 0.0 0.0 2Z],
-    "RadialDistortion" => [0.0, 0.0]))); path)
+make_matlab_consistent(path; f = 500.0, Z = 100.0) = (
+    MAT.matwrite(
+        path, Dict(
+            "cameraParams" => Dict(
+                "ImageSize" => [480.0, 640.0],
+                "K" => [f 0.0 320.0; 0.0 f 240.0; 0.0 0.0 1.0],
+                "RotationVectors" => zeros(2, 3),
+                "TranslationVectors" => [0.0 0.0 Z; 0.0 0.0 2Z],
+                "RadialDistortion" => [0.0, 0.0]
+            )
+        )
+    ); path
+)
 
 # Kept as short as the tests allow: ffmpeg encoding dominates artifact setup, so shorter videos
 # load faster. Two floors now apply: (1) the largest `extrinsic` time stamp any *clean* row uses,
@@ -88,10 +97,12 @@ const ART = let dir = DATADIR, checkerboard_png = joinpath(@__DIR__, "fixtures",
     make_matlab_nested(joinpath(dir, "nested.mat"); imagesize = (480, 640))        # dim (640,480), matches video.mp4
     make_matlab_mismatch(joinpath(dir, "mismatch.mat"))                            # translation/rotation pose counts differ
     make_matlab_consistent(joinpath(dir, "consistent.mat"))                        # buildable: fronto-parallel pinhole, dim (640,480)
-    (video = "video.mp4", board = "board.mp4", mixed = "mixed.mp4", corrupt = "corrupt.mp4", interlaced = "interlaced.mp4",
-     good_mat = "good.mat", noimsize_mat = "noimsize.mat", bad_mat = "bad.mat",
-     partial_mat = "partialcalib.mat", nested_mat = "nested.mat", mismatch_mat = "mismatch.mat",
-     consistent_mat = "consistent.mat")
+    (
+        video = "video.mp4", board = "board.mp4", mixed = "mixed.mp4", corrupt = "corrupt.mp4", interlaced = "interlaced.mp4",
+        good_mat = "good.mat", noimsize_mat = "noimsize.mat", bad_mat = "bad.mat",
+        partial_mat = "partialcalib.mat", nested_mat = "nested.mat", mismatch_mat = "mismatch.mat",
+        consistent_mat = "consistent.mat",
+    )
 end
 
 # ---------------------------------------------------------------------------
@@ -99,10 +110,12 @@ end
 # Only names from VerifyRectifications.COLUMNS are allowed (others => "unrecognized column").
 # ---------------------------------------------------------------------------
 
-const HEADER = ["rectification_id", "path", "file", "matlab_file", "type", "extrinsic", "extrinsic_index",
-                "intrinsic_start", "intrinsic_stop", "center", "north", "n_corners",
-                "checker_width", "pixel_width", "temporal_step", "radial_parameters", "blur",
-                "yadif", "aspect", "apriltags", "family", "tag_cell_width", "comment"]
+const HEADER = [
+    "rectification_id", "path", "file", "matlab_file", "type", "extrinsic", "extrinsic_index",
+    "intrinsic_start", "intrinsic_stop", "center", "north", "n_corners",
+    "checker_width", "pixel_width", "temporal_step", "radial_parameters", "blur",
+    "yadif", "aspect", "apriltags", "family", "tag_cell_width", "comment",
+]
 
 row(; kw...) = buildrow(HEADER; kw...)
 # Module-local, and deliberately not a method on `Harness.write_csv`: both suites would add
@@ -112,29 +125,49 @@ _merge(base; kw...) = row(; merge(base, values(kw))...)
 
 # Clean baseline rows per rectification type; override any field via keyword to isolate one issue.
 # (Each scenario is loaded as its own single-row CSV, so there is no cross-row coupling.)
-checkerboardrow(; kw...) = _merge((rectification_id = "v", path = ".", file = ART.board, type = "checkerboard",
-                            extrinsic = "00:00:01", intrinsic_start = "00:00:00", intrinsic_stop = "00:00:04",
-                            center = (250, 180), north = (250, 1), n_corners = (5, 8),
-                            checker_width = 4, temporal_step = 2, radial_parameters = 1, blur = 0); kw...)
-matlabrow(; kw...) = _merge((rectification_id = "m", path = ".", file = ART.video, matlab_file = ART.good_mat,
-                             type = "matlab", extrinsic = "00:00:01", extrinsic_index = 1,
-                             center = (160, 120), north = (160, 1)); kw...)
-uniformrow(; kw...) = _merge((rectification_id = "s", path = ".", file = ART.video, type = "uniform",
-                            extrinsic = "00:00:01", pixel_width = 9.5, center = (320, 240), north = (320, 1)); kw...)
+checkerboardrow(; kw...) = _merge(
+    (
+        rectification_id = "v", path = ".", file = ART.board, type = "checkerboard",
+        extrinsic = "00:00:01", intrinsic_start = "00:00:00", intrinsic_stop = "00:00:04",
+        center = (250, 180), north = (250, 1), n_corners = (5, 8),
+        checker_width = 4, temporal_step = 2, radial_parameters = 1, blur = 0,
+    ); kw...
+)
+matlabrow(; kw...) = _merge(
+    (
+        rectification_id = "m", path = ".", file = ART.video, matlab_file = ART.good_mat,
+        type = "matlab", extrinsic = "00:00:01", extrinsic_index = 1,
+        center = (160, 120), north = (160, 1),
+    ); kw...
+)
+uniformrow(; kw...) = _merge(
+    (
+        rectification_id = "s", path = ".", file = ART.video, type = "uniform",
+        extrinsic = "00:00:01", pixel_width = 9.5, center = (320, 240), north = (320, 1),
+    ); kw...
+)
 # An apriltag row. ART.video holds no tags, so verify_apriltag_extrinsics! always flags such a row
 # and `check` therefore returns the annotated DataFrame rather than a Vector. That suits the tests
 # that use it: they assert on PARSED values, and defaults resolution happens at parse time — long
 # before any frame is read — so the columns are filled either way. (An apriltag row that has to
 # build a real reference space is exercised end to end in test/fromage.jl, against a tag fixture.)
-apriltagrow(; kw...) = _merge((rectification_id = "a", path = ".", file = ART.video, type = "apriltag",
-                               extrinsic = "00:00:01"); kw...)
+apriltagrow(; kw...) = _merge(
+    (
+        rectification_id = "a", path = ".", file = ART.video, type = "apriltag",
+        extrinsic = "00:00:01",
+    ); kw...
+)
 
 # mixed.mp4: checkerboard for 0–2 s, testsrc after; extrinsic sits on the board, the intrinsic window
 # is chosen per test (inside/outside the board portion) to exercise the intrinsic-window check.
-mixedrow(; kw...) = _merge((rectification_id = "x", path = ".", file = ART.mixed, type = "checkerboard",
-                            extrinsic = "00:00:01", intrinsic_start = "0", intrinsic_stop = "1.8",
-                            center = (250, 180), north = (250, 1), n_corners = (5, 8),
-                            checker_width = 4, temporal_step = 0.9, radial_parameters = 1, blur = 0); kw...)
+mixedrow(; kw...) = _merge(
+    (
+        rectification_id = "x", path = ".", file = ART.mixed, type = "checkerboard",
+        extrinsic = "00:00:01", intrinsic_start = "0", intrinsic_stop = "1.8",
+        center = (250, 180), north = (250, 1), n_corners = (5, 8),
+        checker_width = 4, temporal_step = 0.9, radial_parameters = 1, blur = 0,
+    ); kw...
+)
 
 # ---------------------------------------------------------------------------
 # Run + assert.

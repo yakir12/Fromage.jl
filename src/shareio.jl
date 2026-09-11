@@ -123,8 +123,8 @@ function capture_once(cmd, what)
     # provoke). Name it, so that failure is never mistaken for the share's.
     said = first_line(fetch(errtext))
     why = proc.termsignal == 0 ? said :
-          isempty(said) ? "killed by signal $(proc.termsignal)" :
-                          "killed by signal $(proc.termsignal): $said"
+        isempty(said) ? "killed by signal $(proc.termsignal)" :
+        "killed by signal $(proc.termsignal): $said"
     throw(ShareReadError(what, Int(proc.exitcode), Int(proc.termsignal), why))
 end
 

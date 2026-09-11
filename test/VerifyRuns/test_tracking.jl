@@ -6,12 +6,12 @@
 # sub-window, downscaling, segmented runs — and anamorphic videos (sar ≠ 1), where inputs
 # (start_location, center, frame center) are display-space and outputs are stored-space.
 @testset "tracking through the gateway" begin
-    base,  base_exp  = make_target_video("t_base")
+    base, base_exp = make_target_video("t_base")
     light, light_exp = make_target_video("t_light"; darker_target = false)
-    sar05, sar05_exp = make_target_video("t_sar05"; sar = 1//2)
-    sar2,  sar2_exp  = make_target_video("t_sar2";  sar = 2//1)
-    seg,   seg_exp   = make_target_video("t_seg";  nsegments = 3)
-    seg2,  seg2_exp  = make_target_video("t_seg2"; sar = 2//1, nsegments = 3)
+    sar05, sar05_exp = make_target_video("t_sar05"; sar = 1 // 2)
+    sar2, sar2_exp = make_target_video("t_sar2"; sar = 2 // 1)
+    seg, seg_exp = make_target_video("t_seg"; nsegments = 3)
+    seg2, seg2_exp = make_target_video("t_seg2"; sar = 2 // 1, nsegments = 3)
 
     @testset "defaults: imputed stop/fps/window, frame-center start" begin
         ij = tracked([runrow(file = only(base))])
@@ -70,8 +70,10 @@
     end
 
     @testset "anamorphic (sar ≠ 1)" begin
-        for (label, files, exp) in (("sar 1/2 (stored 200×100)", sar05, sar05_exp),
-                                    ("sar 2 (stored 50×100)",    sar2,  sar2_exp))
+        for (label, files, exp) in (
+                ("sar 1/2 (stored 200×100)", sar05, sar05_exp),
+                ("sar 2 (stored 50×100)", sar2, sar2_exp),
+            )
             @testset "$label" begin
                 # explicit display-space start_location; for sar 2 its x (55) exceeds the *stored*
                 # width (50) — valid, because bounds are display-space (width × sar)
@@ -85,7 +87,7 @@
         # display-space bounds, both directions: the sar-1/2 video stores 200×100 but displays
         # 100×100, so x = 150 is out; the sar-2 video stores 50×100 but displays 100×100, so x = 80 is in
         @test flagged(check([runrow(file = only(sar05), start_location = "(150, 50)")]), 1, "start_location must not be larger than the dimensions of the frame")
-        @test clean(check([runrow(file = only(sar2),  start_location = "(80, 50)")]))
+        @test clean(check([runrow(file = only(sar2), start_location = "(80, 50)")]))
         # anamorphic and downscaled at once
         ij = tracked([runrow(file = only(sar2), start_location = "(55, 50)", downscale = "0.5")])
         @test tracking_rmse(ij, sar2_exp) < 1
@@ -94,8 +96,10 @@
     @testset "segmented runs" begin
         # rows share a run_id; only the first segment gets a start_location, the rest continue
         # from where the previous segment ended (keyframe-aligned 17 + 17 + 16 frames)
-        rows = [runrow(run_id = "s", file = f, start_location = i == 1 ? "(55, 50)" : missing)
-                for (i, f) in enumerate(seg)]
+        rows = [
+            runrow(run_id = "s", file = f, start_location = i == 1 ? "(55, 50)" : missing)
+                for (i, f) in enumerate(seg)
+        ]
         r = loaded(rows)
         @test length(r.segments) == 3
         _, ij = VR.track(r, missing, nothing, nothing)

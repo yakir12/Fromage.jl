@@ -3,7 +3,7 @@
     # the only thing under test (other checks pass).
 
     @testset "missing required fields" begin
-        @test flagged(check([runrow(file = missing)]),   1, "file is missing")
+        @test flagged(check([runrow(file = missing)]), 1, "file is missing")
     end
 
     @testset "rectification_id is required" begin
@@ -11,13 +11,14 @@
         # run without one has nothing to rectify against and is flagged rather than left missing.
         @test only(check([runrow(rectification_id = "cal_42")])).rectification_id == "cal_42"
         @test flagged(check([runrow(rectification_id = missing)]), 1, "rectification_id is missing")
-        @test flagged(check([runrow(rectification_id = "   ")]),   1, "rectification_id is missing")
+        @test flagged(check([runrow(rectification_id = "   ")]), 1, "rectification_id is missing")
     end
 
     @testset "run_id is all-or-nothing" begin
         # all rows blank (missing or whitespace-only) ⇒ clean, each row its own run, id = row number
         runs = check(
-                     [runrow(run_id = missing), runrow(run_id = "   "), runrow(run_id = missing)])
+            [runrow(run_id = missing), runrow(run_id = "   "), runrow(run_id = missing)]
+        )
         @test clean(runs)
         @test all(r -> length(r.segments) == 1, runs)
         @test [r.run_id for r in runs] == ["1", "2", "3"]
@@ -29,21 +30,26 @@
 
         # mixed ⇒ every blank row is flagged, the named row is not
         df = check(
-                   [runrow(run_id = missing), runrow(run_id = "   "), runrow(run_id = "given")])
+            [runrow(run_id = missing), runrow(run_id = "   "), runrow(run_id = "given")]
+        )
         @test flagged(df, 1, "either every row has a run_id or none does")
         @test flagged(df, 2, "either every row has a run_id or none does")
         @test !flagged(df, 3, "either every row has a run_id or none does")
 
         # the collision this rule forecloses: an explicit "3" plus a blank row must not merge
         # into a bogus multi-segment run — the mixed file is rejected outright
-        df2 = check([runrow(run_id = "3", file = ART.a),
-                     runrow(run_id = missing, file = ART.b)])
+        df2 = check(
+            [
+                runrow(run_id = "3", file = ART.a),
+                runrow(run_id = missing, file = ART.b),
+            ]
+        )
         @test flagged(df2, 2, "either every row has a run_id or none does")
         @test !flagged(df2, 1, "either every row has a run_id or none does")
     end
 
     @testset "blank (whitespace-only) cell is treated as missing" begin
-        @test flagged(check([runrow(file = "   ")]),   1, "file is missing")
+        @test flagged(check([runrow(file = "   ")]), 1, "file is missing")
         # an optional field falls back to its default ("." for path) and still resolves
         @test clean(check([runrow(path = "  ")]))
     end
@@ -58,19 +64,19 @@
     end
 
     @testset "wrong formats" begin
-        @test flagged(check([runrow(start = "not_a_time")]),          1, "wrong start format")
-        @test flagged(check([runrow(stop = "nope")]),                 1, "wrong stop format")
-        @test flagged(check([runrow(target_width = "big")]),          1, "wrong target_width format")
-        @test flagged(check([runrow(start_location = "abc")]),        1, "wrong start_location format")
-        @test flagged(check([runrow(start_location = "1;2")]),        1, "wrong start_location format")
+        @test flagged(check([runrow(start = "not_a_time")]), 1, "wrong start format")
+        @test flagged(check([runrow(stop = "nope")]), 1, "wrong stop format")
+        @test flagged(check([runrow(target_width = "big")]), 1, "wrong target_width format")
+        @test flagged(check([runrow(start_location = "abc")]), 1, "wrong start_location format")
+        @test flagged(check([runrow(start_location = "1;2")]), 1, "wrong start_location format")
         # a coordinate that overflows Int64 is a graceful "wrong format", not an uncaught OverflowError
         @test flagged(check([runrow(start_location = "(10000000000000000000,1)")]), 1, "wrong start_location format")
-        @test flagged(check([runrow(window_size = "wide")]),          1, "wrong window_size format")
-        @test flagged(check([runrow(native_fps = "fast")]),            1, "wrong native_fps format")
-        @test flagged(check([runrow(sample_fps = "fast")]),            1, "wrong sample_fps format")
-        @test flagged(check([runrow(initial_search_factor = "x")]),   1, "wrong initial_search_factor format")
-        @test flagged(check([runrow(downscale = "big")]),                 1, "wrong downscale format")
-        @test flagged(check([runrow(darker_target = "maybe")]),       1, "wrong darker_target format")
+        @test flagged(check([runrow(window_size = "wide")]), 1, "wrong window_size format")
+        @test flagged(check([runrow(native_fps = "fast")]), 1, "wrong native_fps format")
+        @test flagged(check([runrow(sample_fps = "fast")]), 1, "wrong sample_fps format")
+        @test flagged(check([runrow(initial_search_factor = "x")]), 1, "wrong initial_search_factor format")
+        @test flagged(check([runrow(downscale = "big")]), 1, "wrong downscale format")
+        @test flagged(check([runrow(darker_target = "maybe")]), 1, "wrong darker_target format")
     end
 
     @testset "defaults applied (with correct values) when optional fields omitted" begin
@@ -78,21 +84,23 @@
         @test clean(runs)
         r = only(runs)
         @test length(r.segments) == 1                    # one csv row ⇒ one segment
-        @test r.rectification_id        == "c"   # the baseline's id (required, never defaulted)
-        @test only(r.segments).start                 == 0.0
-        @test r.tuning.target_width          == 25.0
-        @test only(r.segments).start_location        === missing
+        @test r.rectification_id == "c"   # the baseline's id (required, never defaulted)
+        @test only(r.segments).start == 0.0
+        @test r.tuning.target_width == 25.0
+        @test only(r.segments).start_location === missing
         # window_size is NOT left blank for `track` to fill any more — the gateway imputes it here,
         # so a Run always carries a concrete one and `track` has no fallback of its own to disagree
         # with. Checked against the same function, fed from the run's own tuning and frame, so this
         # asserts the imputation ran with the right inputs rather than restating its result.
         @test r.tuning.window_size isa Int
-        @test r.tuning.window_size == PT.get_window(r.tuning.target_width, r.tuning.sample_fps,
-                                                    min(r.frame_format.height, r.frame_format.width),
-                                                    VR.run_duration(r.segments))
-        @test r.tuning.darker_target         == true
+        @test r.tuning.window_size == PT.get_window(
+            r.tuning.target_width, r.tuning.sample_fps,
+            min(r.frame_format.height, r.frame_format.width),
+            VR.run_duration(r.segments)
+        )
+        @test r.tuning.darker_target == true
         @test r.tuning.initial_search_factor == 4.0
-        @test r.tuning.downscale                 == 1.0
+        @test r.tuning.downscale == 1.0
     end
 
     @testset "start/stop accept seconds and HH:MM:SS" begin
@@ -106,9 +114,9 @@
     end
 
     @testset "MyWindow: Int or (w,h) (this gateway's own cell type)" begin
-        @test VR.mytryparse(VR.MyWindow, "31")      == 31           # scalar side length
+        @test VR.mytryparse(VR.MyWindow, "31") == 31           # scalar side length
         @test VR.mytryparse(VR.MyWindow, "(31,41)") == (31, 41)     # (w, h) tuple
-        @test VR.mytryparse(VR.MyWindow, "31, 41")  == (31, 41)
-        @test VR.mytryparse(VR.MyWindow, "wide")    === nothing
+        @test VR.mytryparse(VR.MyWindow, "31, 41") == (31, 41)
+        @test VR.mytryparse(VR.MyWindow, "wide") === nothing
     end
 end

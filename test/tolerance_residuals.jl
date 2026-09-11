@@ -43,14 +43,18 @@ include(joinpath(@__DIR__, "fixtures.jl"))
 using .Fixtures
 
 row(site, measured, bound) =
-    @printf("RESIDUAL\t%-46s\t%.10g\t%.10g\t%.4gx\n", site, measured, bound,
-            measured == 0 ? Inf : bound / measured)
+    @printf(
+    "RESIDUAL\t%-46s\t%.10g\t%.10g\t%.4gx\n", site, measured, bound,
+    measured == 0 ? Inf : bound / measured
+)
 
-header() = println("""
+header() = println(
+    """
     platform  : $(Sys.MACHINE)
     julia     : $(VERSION)
     threads   : $(Threads.nthreads())
-    -- RESIDUAL <site> <measured> <bound> <headroom> ------------------------------------------""")
+    -- RESIDUAL <site> <measured> <bound> <headroom> ------------------------------------------"""
+)
 
 # ---------------------------------------------------------------------------------------------
 # 1. Tracking accuracy. Depends on ffmpeg's render of the synthetic disc and on the DoG detector.
@@ -96,7 +100,7 @@ function tracking_residuals(dir)
     # determinism, which is the one property asserted without a tolerance
     _, a = track1(f; start_location = (55, 50), target_width = 10)
     _, b = track1(f; start_location = (55, 50), target_width = 10)
-    println("DETERMINISM\ttracking a == b\t", a == b)
+    return println("DETERMINISM\ttracking a == b\t", a == b)
 end
 
 # ---------------------------------------------------------------------------------------------
@@ -109,14 +113,14 @@ function duration_residuals(dir)
 
     make_video(joinpath(dir, "dur_b.mp4"); duration = 5, size = (640, 480), rate = 30)
     m = probe_stream(joinpath(dir, "dur_b.mp4"))
-    row("test_reading: duration 5 s @ 30 fps", abs(m.duration - 5.0), 0.5)
+    return row("test_reading: duration 5 s @ 30 fps", abs(m.duration - 5.0), 0.5)
 end
 
 # ---------------------------------------------------------------------------------------------
 # 3. Camera calibration. Depends on OpenCV's corner detector and calibrateCamera.
 #    Fixture copied from test/Rectifications/test_calibration.jl — keep in step.
 # ---------------------------------------------------------------------------------------------
-function checkerboard(inner::Tuple{Int,Int}; sq = 30, m = 40)
+function checkerboard(inner::Tuple{Int, Int}; sq = 30, m = 40)
     nx, ny = inner
     bw, bh = (nx + 1) * sq, (ny + 1) * sq
     w, h = bw + 2m, bh + 2m
@@ -125,15 +129,15 @@ function checkerboard(inner::Tuple{Int,Int}; sq = 30, m = 40)
         (m < c ≤ m + bw && m < r ≤ m + bh) || continue
         isodd(((c - m - 1) ÷ sq) + ((r - m - 1) ÷ sq)) && (img[1, r, c] = 0x00)
     end
-    img
+    return img
 end
 
 function project(Xo, Rmat, t, fx, fy, cx, cy, k)
-    Xc = Rmat * SVector{3,Float64}(Xo) + t
+    Xc = Rmat * SVector{3, Float64}(Xo) + t
     x, y = Xc[1] / Xc[3], Xc[2] / Xc[3]
     r2 = x^2 + y^2
     rad = 1 + k[1] * r2 + k[2] * r2^2 + k[3] * r2^3
-    SVector{2,Float32}(fx * x * rad + cx, fy * y * rad + cy)
+    return SVector{2, Float32}(fx * x * rad + cx, fy * y * rad + cy)
 end
 
 function calibration_residuals()
@@ -145,12 +149,16 @@ function calibration_residuals()
     # different pose spread gives a completely different fit (an invented one measured 26.4 px here
     # against the testset's 0.31, which is how this copy was caught being wrong)
     ktrue = (0.05, 0.0, 0.0)
-    rvecs = [SVector(0.0, 0.0, 0.0), SVector(0.2, -0.1, 0.0), SVector(-0.15, 0.2, 0.05),
-             SVector(0.1, 0.25, -0.1), SVector(-0.25, -0.1, 0.0), SVector(0.05, -0.2, 0.15),
-             SVector(0.3, 0.0, 0.1), SVector(-0.1, -0.25, -0.05), SVector(0.18, 0.18, 0.0)]
-    tvecs = [SVector(-3.0, -2.5, 16.0), SVector(-3.2, -2.0, 15.0), SVector(-2.5, -2.8, 17.0),
-             SVector(-3.5, -2.5, 16.5), SVector(-2.8, -2.2, 15.5), SVector(-3.0, -3.0, 18.0),
-             SVector(-3.3, -2.4, 16.0), SVector(-2.6, -2.6, 15.0), SVector(-3.1, -2.3, 17.5)]
+    rvecs = [
+        SVector(0.0, 0.0, 0.0), SVector(0.2, -0.1, 0.0), SVector(-0.15, 0.2, 0.05),
+        SVector(0.1, 0.25, -0.1), SVector(-0.25, -0.1, 0.0), SVector(0.05, -0.2, 0.15),
+        SVector(0.3, 0.0, 0.1), SVector(-0.1, -0.25, -0.05), SVector(0.18, 0.18, 0.0),
+    ]
+    tvecs = [
+        SVector(-3.0, -2.5, 16.0), SVector(-3.2, -2.0, 15.0), SVector(-2.5, -2.8, 17.0),
+        SVector(-3.5, -2.5, 16.5), SVector(-2.8, -2.2, 15.5), SVector(-3.0, -3.0, 18.0),
+        SVector(-3.3, -2.4, 16.0), SVector(-2.6, -2.6, 15.0), SVector(-3.1, -2.3, 17.5),
+    ]
 
     # the detector, on a noiseless integer-pitch board
     detected = R._detect_corners(checkerboard(n_corners), n_corners)
@@ -161,14 +169,14 @@ function calibration_residuals()
     row("test_calibration: checker_width_pixel", abs(R.checker_width_pixel(detected, n_corners) - 30), 0.5)
 
     views = map(zip(rvecs, tvecs)) do (rv, t)
-        Rmat = SMatrix{3,3,Float64}(RotationVec(rv...))
+        Rmat = SMatrix{3, 3, Float64}(RotationVec(rv...))
         [project(Xo, Rmat, t, fx, fx, cx, cy, ktrue) for Xo in objpoints]
     end
     res = R.fit_model((W, H), objpoints, views, n_corners, 1, 1.0)
     row("test_calibration: |frow - fx|", abs(res.frow - fx), 1.0)
     row("test_calibration: |fcol - fy|", abs(res.fcol - fx), 1.0)
     row("test_calibration: |crow - cx|", abs(res.crow - cx), 1.0)
-    row("test_calibration: |ccol - cy|", abs(res.ccol - cy), 1.0)
+    return row("test_calibration: |ccol - cy|", abs(res.ccol - cy), 1.0)
 end
 
 # ---------------------------------------------------------------------------------------------
@@ -204,20 +212,24 @@ const AT_DISP_RTOL = 0.05    # test/fromage.jl: total displacement against the k
 # testsets — one drone degree of freedom at a time, then all six at once. Both its bounds hold
 # over all of them, so all of them are measured.
 const AT_FLIGHTS = [
-    "stationary"  => k -> drone_pose(),
-    "translation" => k -> drone_pose(dx = 55sin(2π*(k-1)/12), dy = 45cos(2π*(k-1)/12)),
-    "scale"       => k -> drone_pose(zoom = 1 + 0.25sin(2π*(k-1)/15), cx = AT_CENTRE, cy = AT_CENTRE),
-    "yaw"         => k -> drone_pose(yaw = deg2rad(25sin(2π*(k-1)/15)), cx = AT_CENTRE, cy = AT_CENTRE),
-    "pitchroll"   => k -> drone_pose(pitch = deg2rad(14sin(2π*(k-1)/15)),
-                                     roll = deg2rad(11cos(2π*(k-1)/15)),
-                                     alt = 1000, cx = AT_CENTRE, cy = AT_CENTRE),
-    "shear"       => k -> drone_pose(shear = 0.18sin(2π*(k-1)/15), cx = AT_CENTRE, cy = AT_CENTRE),
-    "all6dof"     => k -> drone_pose(dx = 35sin(2π*(k-1)/13), dy = 28cos(2π*(k-1)/11),
-                                     zoom = 1 + 0.18sin(2π*(k-1)/17),
-                                     yaw = deg2rad(18sin(2π*(k-1)/19)),
-                                     pitch = deg2rad(10sin(2π*(k-1)/23)),
-                                     roll = deg2rad(8cos(2π*(k-1)/29)),
-                                     alt = 1000, cx = AT_CENTRE, cy = AT_CENTRE),
+    "stationary" => k -> drone_pose(),
+    "translation" => k -> drone_pose(dx = 55sin(2π * (k - 1) / 12), dy = 45cos(2π * (k - 1) / 12)),
+    "scale" => k -> drone_pose(zoom = 1 + 0.25sin(2π * (k - 1) / 15), cx = AT_CENTRE, cy = AT_CENTRE),
+    "yaw" => k -> drone_pose(yaw = deg2rad(25sin(2π * (k - 1) / 15)), cx = AT_CENTRE, cy = AT_CENTRE),
+    "pitchroll" => k -> drone_pose(
+        pitch = deg2rad(14sin(2π * (k - 1) / 15)),
+        roll = deg2rad(11cos(2π * (k - 1) / 15)),
+        alt = 1000, cx = AT_CENTRE, cy = AT_CENTRE
+    ),
+    "shear" => k -> drone_pose(shear = 0.18sin(2π * (k - 1) / 15), cx = AT_CENTRE, cy = AT_CENTRE),
+    "all6dof" => k -> drone_pose(
+        dx = 35sin(2π * (k - 1) / 13), dy = 28cos(2π * (k - 1) / 11),
+        zoom = 1 + 0.18sin(2π * (k - 1) / 17),
+        yaw = deg2rad(18sin(2π * (k - 1) / 19)),
+        pitch = deg2rad(10sin(2π * (k - 1) / 23)),
+        roll = deg2rad(8cos(2π * (k - 1) / 29)),
+        alt = 1000, cx = AT_CENTRE, cy = AT_CENTRE
+    ),
 ]
 
 # Copied from `rectify` and `registration_trace` in test/apriltag_pipeline.jl, which defines both
@@ -225,9 +237,11 @@ const AT_FLIGHTS = [
 # (`extrinsic` and the frame size are keywords here only because two sites below need other
 # values; every caller that does not name them gets the original's.)
 at_rectify(file; extrinsic = 0, width = AT_FRAME, height = AT_FRAME) =
-    PT.ApriltagRectification(; aspect = 1.0, file, extrinsic, ntags = 4, family = "tag36h11",
-                             tag_cell_width = Fixtures.TAG_CELL, center = missing, north = missing,
-                             width, height)
+    PT.ApriltagRectification(;
+    aspect = 1.0, file, extrinsic, ntags = 4, family = "tag36h11",
+    tag_cell_width = Fixtures.TAG_CELL, center = missing, north = missing,
+    width, height
+)
 
 # Detect and register every frame directly, with no tracker involved, and report where each frame
 # says the disc is in REFERENCE coordinates. Frames are re-rendered in memory rather than decoded,
@@ -236,10 +250,12 @@ function registration_trace(v, ref)
     ground = apriltag_ground()
     det = PT.set_detector!(AprilTagDetector(tag36h11))
     ids = [0, 1, 2, 3]
-    try
+    return try
         map(1:AT_NFRAMES) do k
-            img = render_pose(Fixtures.draw_disc(ground, v.groundpath[k]..., AT_TARGET_WIDTH),
-                              v.poses[k], AT_FRAME, AT_FRAME)
+            img = render_pose(
+                Fixtures.draw_disc(ground, v.groundpath[k]..., AT_TARGET_WIDTH),
+                v.poses[k], AT_FRAME, AT_FRAME
+            )
             tc = PT.detect_tags(det, img, ids)
             isnothing(tc) && return nothing
             PT.apply_h(PT.register(ref, reduce(vcat, tc)), v.image_xy(k))
@@ -258,8 +274,10 @@ independent of the thing it measures.
 function track_residual(name, file, rect, v; start_location = v.start_location)
     _, xy = track1(file; rectification = rect, start_location, target_width = AT_TARGET_WIDTH)
     any(ismissing, xy) && error("apriltag flight '$name': the track has gaps, so it has no residual")
-    return maximum(norm(xy[k] - rect.image2real(PT.apply_h(rect.reference.M, v.expected_ref(k))))
-                   for k in 1:AT_NFRAMES)
+    return maximum(
+        norm(xy[k] - rect.image2real(PT.apply_h(rect.reference.M, v.expected_ref(k))))
+            for k in 1:AT_NFRAMES
+    )
 end
 
 "One flight's registration and track residuals — the two maxima `check_flight` asserts."
@@ -270,8 +288,10 @@ function flight_residuals(dir, name, pose)
     refpos = registration_trace(v, rect.reference)
     any(isnothing, refpos) &&
         error("apriltag flight '$name': a frame lost one of the four tags, so registration has no residual")
-    return (registration = maximum(norm(refpos[k] - v.expected_ref(k)) for k in 1:AT_NFRAMES),
-            track = track_residual(name, file, rect, v))
+    return (
+        registration = maximum(norm(refpos[k] - v.expected_ref(k)) for k in 1:AT_NFRAMES),
+        track = track_residual(name, file, rect, v),
+    )
 end
 
 """
@@ -291,8 +311,10 @@ function e2e_residuals(groundpath, xy)
     # `≈ ground_disp rtol = AT_DISP_RTOL` is `|disp - ground| <= rtol * max(|disp|, |ground|)`
     # (`isapprox`'s atol defaults to 0 when only rtol is given), so the residual the bound applies
     # to is the relative difference against that same max
-    return (displacement = abs(disp - ground_disp) / max(disp, ground_disp),
-            straightness = maximum(abs((p - a)[1] * d[2] - (p - a)[2] * d[1]) for p in present))
+    return (
+        displacement = abs(disp - ground_disp) / max(disp, ground_disp),
+        straightness = maximum(abs((p - a)[1] * d[2] - (p - a)[2] * d[1]) for p in present),
+    )
 end
 
 function apriltag_residuals(dir)
@@ -302,48 +324,72 @@ function apriltag_residuals(dir)
     # the non-square reference (400x480, so the viewport axis order is discriminating) and the
     # unseeded centre search: test/apriltag_pipeline.jl's last two testsets, which assert
     # TRACK_TOL but not REG_TOL
-    wide = make_apriltag_video(dir, "tol_wideref"; H = 400, W = 480, nframes = AT_NFRAMES,
-                               tw = AT_TARGET_WIDTH)
+    wide = make_apriltag_video(
+        dir, "tol_wideref"; H = 400, W = 480, nframes = AT_NFRAMES,
+        tw = AT_TARGET_WIDTH
+    )
     wide_file = joinpath(dir, wide.file)
-    wide_track = track_residual("wideref", wide_file,
-                                at_rectify(wide_file; width = 480, height = 400), wide)
+    wide_track = track_residual(
+        "wideref", wide_file,
+        at_rectify(wide_file; width = 480, height = 400), wide
+    )
 
-    seedless = make_apriltag_video(dir, "tol_noseed"; nframes = AT_NFRAMES, tw = AT_TARGET_WIDTH,
-                                   pose = k -> drone_pose(dx = 30sin(2π*(k-1)/12),
-                                                          dy = 24cos(2π*(k-1)/12)))
+    seedless = make_apriltag_video(
+        dir, "tol_noseed"; nframes = AT_NFRAMES, tw = AT_TARGET_WIDTH,
+        pose = k -> drone_pose(
+            dx = 30sin(2π * (k - 1) / 12),
+            dy = 24cos(2π * (k - 1) / 12)
+        )
+    )
     seedless_file = joinpath(dir, seedless.file)
     # `start_location = missing` is the point: the tracker has to find the disc unaided
-    seedless_track = track_residual("noseed", seedless_file, at_rectify(seedless_file), seedless;
-                                    start_location = missing)
+    seedless_track = track_residual(
+        "noseed", seedless_file, at_rectify(seedless_file), seedless;
+        start_location = missing
+    )
 
-    row("apriltag_pipeline: registration (worst site)",
-        maximum(f.registration for f in fs), AT_REG_TOL)
-    row("apriltag_pipeline: track (worst site)",
-        max(maximum(f.track for f in fs), wide_track, seedless_track), AT_TRACK_TOL)
+    row(
+        "apriltag_pipeline: registration (worst site)",
+        maximum(f.registration for f in fs), AT_REG_TOL
+    )
+    row(
+        "apriltag_pipeline: track (worst site)",
+        max(maximum(f.track for f in fs), wide_track, seedless_track), AT_TRACK_TOL
+    )
 
     # (b) the two end-to-end bounds, over both flights that assert them: the 60-frame default
     # circular pan, and the 300-frame large pan whose first tag is occluded in eight frames
     plain = make_apriltag_video(dir, "tol_e2e")
     plain_file = joinpath(dir, plain.file)
-    _, plain_xy = track1(plain_file; rectification = at_rectify(plain_file),
-                         start_location = plain.start_location, target_width = AT_TARGET_WIDTH)
+    _, plain_xy = track1(
+        plain_file; rectification = at_rectify(plain_file),
+        start_location = plain.start_location, target_width = AT_TARGET_WIDTH
+    )
     e_plain = e2e_residuals(plain.groundpath, plain_xy)
 
     # extrinsic at t = 0.2 s (frame 6), as that testset uses: the frames around t = 0 have the
     # occluded tag, so frame 1 cannot build the reference
-    occluded = make_apriltag_video(dir, "tol_bigpan"; nframes = 300, amp = 55,
-                                   occlude = vcat(1:3, 260:264))
+    occluded = make_apriltag_video(
+        dir, "tol_bigpan"; nframes = 300, amp = 55,
+        occlude = vcat(1:3, 260:264)
+    )
     occluded_file = joinpath(dir, occluded.file)
-    _, occluded_xy = track1(occluded_file;
-                            rectification = at_rectify(occluded_file; extrinsic = 0.2),
-                            start_location = occluded.start_location,
-                            target_width = AT_TARGET_WIDTH)
+    _, occluded_xy = track1(
+        occluded_file;
+        rectification = at_rectify(occluded_file; extrinsic = 0.2),
+        start_location = occluded.start_location,
+        target_width = AT_TARGET_WIDTH
+    )
     e_occluded = e2e_residuals(occluded.groundpath, occluded_xy)
 
-    row("fromage: e2e displacement vs ground (rel.)",
-        max(e_plain.displacement, e_occluded.displacement), AT_DISP_RTOL)
-    row("fromage: e2e straightness (dev. from chord)",
-        max(e_plain.straightness, e_occluded.straightness), AT_STRAIGHT_TOL)
+    row(
+        "fromage: e2e displacement vs ground (rel.)",
+        max(e_plain.displacement, e_occluded.displacement), AT_DISP_RTOL
+    )
+    return row(
+        "fromage: e2e straightness (dev. from chord)",
+        max(e_plain.straightness, e_occluded.straightness), AT_STRAIGHT_TOL
+    )
 end
 
 # ---------------------------------------------------------------------------------------------
@@ -376,15 +422,17 @@ function main()
     ok = mktempdir() do dir
         # a named vector, not `all(...)` over a generator: every section must run before anything
         # is reduced, and `all` over a lazy generator would stop at the first failure
-        ran = [section(() -> tracking_residuals(dir), "tracking"),
-               section(() -> duration_residuals(dir), "duration"),
-               section(calibration_residuals, "calibration"),
-               section(() -> apriltag_residuals(dir), "apriltag")]
+        ran = [
+            section(() -> tracking_residuals(dir), "tracking"),
+            section(() -> duration_residuals(dir), "duration"),
+            section(calibration_residuals, "calibration"),
+            section(() -> apriltag_residuals(dir), "apriltag"),
+        ]
         all(ran)
     end
     println("-- end ------------------------------------------------------------------------------")
     # non-zero, so a dispatched ToleranceResiduals job goes red rather than green-with-a-buried-line
-    ok || exit(1)
+    return ok || exit(1)
 end
 
 main()

@@ -1,13 +1,13 @@
 function i2r_centering(image2real, c)
     cxy = image2real(c)
-    Translation(-cxy)
+    return Translation(-cxy)
 end
 
 i2r_northing(_, _, ::Missing) = IdentityTransformation()
 function i2r_northing(image2real, centering, n)
     fc = centering ∘ image2real
     p = fc(n)
-    LinearMap(Angle2d(π - atan(p[2], p[1])))
+    return LinearMap(Angle2d(π - atan(p[2], p[1])))
 end
 
 function i2r_centering_northing(image2real, c, n)
@@ -34,7 +34,7 @@ end
 # keeps the exact Float64 half. The shared function returns the value they disagree about; the
 # rounding stays here, where you can see it.
 default_center(center, _, _, _) = center
-default_center(::Missing, width, height, aspect) = SVector{2,Float64}(display_center_x(width, aspect), height / 2)
+default_center(::Missing, width, height, aspect) = SVector{2, Float64}(display_center_x(width, aspect), height / 2)
 
 
 function add_center_north(image2real, real2image, center, north, aspect)

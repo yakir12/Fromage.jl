@@ -59,8 +59,8 @@ probe_failure(e) = sprint(showerror, e)
 # `no_video_stream` shares the "issue reading from video file" prefix of an outright failed read.
 # Each gateway names its own required fields in the message, since it asks for its own entries.
 function frame_geometry(fields)
-    width    = tryparse(Int, get(fields, "width", ""))
-    height   = tryparse(Int, get(fields, "height", ""))
+    width = tryparse(Int, get(fields, "width", ""))
+    height = tryparse(Int, get(fields, "height", ""))
     duration = tryparse(Float64, get(fields, "duration", ""))
     (isnothing(width) || isnothing(height) || isnothing(duration)) && return nothing
     return (; width, height, duration)
@@ -88,10 +88,10 @@ end
 # width × sar); VerifyRectifications wants the Float64 that mirrors VideoIO.aspect_ratio.
 function parse_sar(s)
     parts = split(s, ':')
-    length(parts) == 2 || return 1//1
+    length(parts) == 2 || return 1 // 1
     num = tryparse(Int, parts[1])
     den = tryparse(Int, parts[2])
-    (isnothing(num) || isnothing(den) || num ≤ 0 || den ≤ 0) && return 1//1
+    (isnothing(num) || isnothing(den) || num ≤ 0 || den ≤ 0) && return 1 // 1
     return num // den
 end
 

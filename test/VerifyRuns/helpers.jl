@@ -34,9 +34,11 @@ make_target_video(name; kw...) = make_target_video(DATADIR, name; kw...)
 # Only names from VerifyRuns.COLUMNS are allowed (others => "unrecognized column").
 # ---------------------------------------------------------------------------
 
-const HEADER = ["run_id", "rectification_id", "path", "file", "start", "stop", "target_width",
-                "start_location", "window_size", "darker_target", "native_fps", "sample_fps",
-                "initial_search_factor", "downscale", "background_length"]
+const HEADER = [
+    "run_id", "rectification_id", "path", "file", "start", "stop", "target_width",
+    "start_location", "window_size", "darker_target", "native_fps", "sample_fps",
+    "initial_search_factor", "downscale", "background_length",
+]
 
 row(; kw...) = buildrow(HEADER; kw...)
 # Module-local, and deliberately not a method on `Harness.write_csv`: both suites would add

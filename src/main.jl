@@ -22,9 +22,12 @@
 # root the segments sit under — checked in `main`, where that root is chosen.
 function check_concat_representable(f)
     i = findfirst(c -> c == '\n' || c == '\r', f)
-    isnothing(i) || throw(ArgumentError(
-        "cannot write $(repr(f)) into ffmpeg's concat list: it contains $(repr(f[i])), and the \
-         list holds one line per file — ffmpeg ends the line there whether or not it is quoted"))
+    isnothing(i) || throw(
+        ArgumentError(
+            "cannot write $(repr(f)) into ffmpeg's concat list: it contains $(repr(f[i])), and the \
+         list holds one line per file — ffmpeg ends the line there whether or not it is quoted"
+        )
+    )
     return nothing
 end
 
@@ -37,7 +40,7 @@ function concatenate(path, files)
         foreach(f -> println(io, "file '", concat_escape(f), "'"), files)
     end
     out = joinpath(RESULTS_DIR, "diagnostic.mp4")
-    ffmpeg_exe(` -y -loglevel error -f concat -safe 0 -i $list -c copy $out`)
+    return ffmpeg_exe(` -y -loglevel error -f concat -safe 0 -i $list -c copy $out`)
 end
 
 # Save one run's track to results_dir/<run_id>.csv: one row per coordinate, with the `time` stamp
@@ -52,7 +55,7 @@ end
 # A `missing` coordinate (AprilTag tracking, where a frame's target couldn't be localized) keeps its
 # `time` with empty `x`/`y`, so the time axis stays intact and the gaps are explicit.
 function save2csv(run_id, (ts, coords))
-    open(joinpath(RESULTS_DIR, string(run_id, ".csv")), "w") do io
+    return open(joinpath(RESULTS_DIR, string(run_id, ".csv")), "w") do io
         println(io, "time,x,y")
         for (t, c) in zip(ts, coords)
             if ismissing(c)
@@ -136,9 +139,11 @@ end
 # needs both files parsed to run at all.
 function _validate_dataset(data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults)
     rects, rects_ids_ok = VerifyRectifications.parse_rectifications(
-        data_path, joinpath(data_path, rectifications_file); defaults = rectification_defaults)
+        data_path, joinpath(data_path, rectifications_file); defaults = rectification_defaults
+    )
     runs, runs_ids_ok = VerifyRuns.parse_runs(
-        data_path, joinpath(data_path, runs_file); defaults = tracking_defaults)
+        data_path, joinpath(data_path, runs_file); defaults = tracking_defaults
+    )
 
     # Coherence is a property of the two files AS WRITTEN, so it is checked on all of their rows —
     # before `run_ids` narrows anything. Narrowing decides what gets built, never what gets
@@ -164,8 +169,10 @@ end
 
 # Build both, or throw. Always returns the two vectors.
 function load_dataset(data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults)
-    rects, runs, bad = _validate_dataset(data_path, rectifications_file, runs_file,
-                                          rectification_defaults, tracking_defaults)
+    rects, runs, bad = _validate_dataset(
+        data_path, rectifications_file, runs_file,
+        rectification_defaults, tracking_defaults
+    )
     bad && error("there were issues with the data (see above)")
     return VerifyRectifications.build_methods(rects), VerifyRuns.build_runs(runs)
 end
@@ -174,8 +181,10 @@ end
 # offending one: a dataset is accepted or rejected as a whole, and runs whose rectification was
 # rejected are not buildable anyway.
 function check_dataset(data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults)
-    rects, runs, _ = _validate_dataset(data_path, rectifications_file, runs_file,
-                                        rectification_defaults, tracking_defaults)
+    rects, runs, _ = _validate_dataset(
+        data_path, rectifications_file, runs_file,
+        rectification_defaults, tracking_defaults
+    )
     return rects, runs
 end
 
@@ -223,9 +232,11 @@ anything.
 
 See also `only_track` and `only_rectify`, the two narrowing entry points.
 """
-function main(data_path::String; rectifications_file = "rectifications.csv", runs_file = "runs.csv",
+function main(
+        data_path::String; rectifications_file = "rectifications.csv", runs_file = "runs.csv",
         rectification_defaults = (;), tracking_defaults = (;), run_ids = nothing,
-        rectification_diagnostics::Bool = false)
+        rectification_diagnostics::Bool = false
+    )
     mkpath(RESULTS_DIR)
     cs, rs = load_dataset(data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults)
 
@@ -251,7 +262,8 @@ function main(data_path::String; rectifications_file = "rectifications.csv", run
         build_run(r, c, rectification, diagnostic_file) =
             track(r, c.source.center, rectification, diagnostic_file)
         runs.track .= @showprogress desc = "Building runs" tmap(
-            build_run, runs.r, runs.c, runs.rectification, runs.diagnostic_file)
+            build_run, runs.r, runs.c, runs.rectification, runs.diagnostic_file
+        )
         concatenate(path, runs.diagnostic_file)
         select!(runs, Not(:diagnostic_file))
     end
@@ -284,11 +296,15 @@ decides what gets built, never what gets checked. There is correspondingly no `r
 See also `only_track` and `only_rectify`, which serve the same debugging purpose by narrowing
 instead.
 """
-function verify(data_path::String; rectifications_file = "rectifications.csv", runs_file = "runs.csv",
-        rectification_defaults = (;), tracking_defaults = (;))
+function verify(
+        data_path::String; rectifications_file = "rectifications.csv", runs_file = "runs.csv",
+        rectification_defaults = (;), tracking_defaults = (;)
+    )
     mkpath(RESULTS_DIR)
-    rects, runs = check_dataset(data_path, rectifications_file, runs_file,
-                                rectification_defaults, tracking_defaults)
+    rects, runs = check_dataset(
+        data_path, rectifications_file, runs_file,
+        rectification_defaults, tracking_defaults
+    )
     return (; rectifications = rects, runs)
 end
 
@@ -308,7 +324,8 @@ function only_track(data_path::String; runs_file = "runs.csv", tracking_defaults
     # No rectification here, so no scene centre to fall back on and nothing to rectify through: a
     # first segment with no start_location of its own falls through to the frame centre.
     return @showprogress desc = "Building runs" tmap(
-        r -> track(r, missing, nothing, joinpath(RESULTS_DIR, string(r.run_id, ".mp4"))), rs)
+        r -> track(r, missing, nothing, joinpath(RESULTS_DIR, string(r.run_id, ".mp4"))), rs
+    )
 end
 
 """
@@ -321,8 +338,10 @@ so a rectification can be checked before committing to a full run.
 
 `rectification_ids` narrows which are built; `rectification_diagnostics` is as in `main`.
 """
-function only_rectify(data_path::String; rectifications_file = "rectifications.csv", rectification_defaults = (;),
-        rectification_ids = nothing, rectification_diagnostics::Bool = false)
+function only_rectify(
+        data_path::String; rectifications_file = "rectifications.csv", rectification_defaults = (;),
+        rectification_ids = nothing, rectification_diagnostics::Bool = false
+    )
     cs = gather_rectifications(data_path, rectifications_file, rectification_defaults, rectification_ids)
     return build_rectifications(cs, rectification_diagnostics)
 end

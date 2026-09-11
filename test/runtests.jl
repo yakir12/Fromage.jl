@@ -41,7 +41,7 @@ const RUN_STATIC = get(ENV, "FROMAGE_RUN_STATIC", "true") != "false"
         include("jet.jl")
     else
         @warn """JET did not run: this Julia is not on the allowlist, so the suite says nothing \
-                 about type stability or inference errors. Read a pass here accordingly.""" VERSION JET_MINORS
+        about type stability or inference errors. Read a pass here accordingly.""" VERSION JET_MINORS
         @testset "JET (SKIPPED — needs Julia 1.$(join(JET_MINORS, " or 1.")), this is $(VERSION))" begin
             @test_skip false
         end

@@ -40,7 +40,7 @@ Verify an agent's claim before acting on it, especially a line number (§4).
 ## 3. Ship it through CLAUDE.md §6
 
 **Do not commit to the current branch.** Follow §6's sequence as written — branch off `main`,
-the threaded full suite as the local gate, `format_code`, reindex every touched file, PR, the
+the threaded full suite as the local gate, Runic, reindex every touched file, PR, the
 two approval gates on red CI, merge, watch the post-merge release chain, clean up.
 
 §6 is the single definition site for that sequence; it is not restated here, on the same

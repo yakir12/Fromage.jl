@@ -74,7 +74,7 @@ because that is what an image viewer reports. This is the door between that and 
 to_stored(::Missing, ::Real) = missing
 function to_stored(xy, sar::Real)
     x, y = xy
-    (y, stored_x(x, sar))
+    return (y, stored_x(x, sar))
 end
 
 """

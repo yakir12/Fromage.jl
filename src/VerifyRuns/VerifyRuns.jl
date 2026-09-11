@@ -44,11 +44,11 @@ include("parsers.jl")
 include("verifications.jl")
 
 function load_runs(file; defaults = (;), progress = true)
-    load_runs(dirname(file), file; defaults, progress)
+    return load_runs(dirname(file), file; defaults, progress)
 end
 
 function check_runs(file; defaults = (;), progress = true)
-    check_runs(dirname(file), file; defaults, progress)
+    return check_runs(dirname(file), file; defaults, progress)
 end
 
 # Read the csv and settle its identities: parse every cell, then the first tier of verification
@@ -78,8 +78,10 @@ end
 
 # a run_id that is missing (mixed numbering) or equal to the row number (auto-assigned) adds
 # nothing over "row $i", so it is only mentioned when the csv named the run itself
-runs_report(df) = issue_report(df, :run_id, "runs.csv";
-    mention = (i, rid) -> !ismissing(rid) && rid != string(i))
+runs_report(df) = issue_report(
+    df, :run_id, "runs.csv";
+    mention = (i, rid) -> !ismissing(rid) && rid != string(i)
+)
 report_runs(df, strict) = report_issues(runs_report(df), "runs", strict)
 
 # Clean: group the rows by :run_id, each group materialized into one `Run`. `Run` is concrete, so

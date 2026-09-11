@@ -5,7 +5,7 @@
     @testset "matlab_extrinsic_count reads the pose count" begin
         # Counts come off an already-read .mat dict (one matread per file in the pipeline).
         # good.mat / nested.mat both use MATLAB_CALIB_FIELDS -> N poses (nested exercises findfirstkey recursion)
-        @test VRect.matlab_extrinsic_count(MAT.matread(joinpath(DATADIR, ART.good_mat)))   == MATLAB_N_EXTRINSICS
+        @test VRect.matlab_extrinsic_count(MAT.matread(joinpath(DATADIR, ART.good_mat))) == MATLAB_N_EXTRINSICS
         @test VRect.matlab_extrinsic_count(MAT.matread(joinpath(DATADIR, ART.nested_mat))) == MATLAB_N_EXTRINSICS
         # translation/rotation pose counts disagree -> an issue string, not a count
         @test VRect.matlab_extrinsic_count(MAT.matread(joinpath(DATADIR, ART.mismatch_mat))) isa String
@@ -22,8 +22,10 @@
             @test occursin(k, issue)                 # names the offending field
         end
         # end-to-end: such a file is flagged and load_rectifications does not throw
-        @test flagged(check([matlabrow(matlab_file = "badpose_TranslationVectors.mat")]),
-                      1, "expected an N×3 matrix")
+        @test flagged(
+            check([matlabrow(matlab_file = "badpose_TranslationVectors.mat")]),
+            1, "expected an N×3 matrix"
+        )
     end
 
     @testset "in-range index loads clean (both boundaries)" begin
@@ -32,7 +34,7 @@
     end
 
     @testset "index must be larger than zero" begin
-        @test flagged(check([matlabrow(extrinsic_index = 0)]),  1, "extrinsic_index must be larger than zero")
+        @test flagged(check([matlabrow(extrinsic_index = 0)]), 1, "extrinsic_index must be larger than zero")
         @test flagged(check([matlabrow(extrinsic_index = -1)]), 1, "extrinsic_index must be larger than zero")
     end
 

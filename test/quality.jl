@@ -159,9 +159,11 @@ end
         end
 
         @testset "every rectification parameter is a rectifications.csv column" begin
-            builders = [Fromage.Rectifications.from_checkerboard, Fromage.Rectifications.from_extrinsic,
-                        Fromage.Rectifications.from_matlab, Fromage.Rectifications.from_uniform,
-                        PT.ApriltagRectification]
+            builders = [
+                Fromage.Rectifications.from_checkerboard, Fromage.Rectifications.from_extrinsic,
+                Fromage.Rectifications.from_matlab, Fromage.Rectifications.from_uniform,
+                PT.ApriltagRectification,
+            ]
             # width/height are probed from the video; `ntags` is the `apriltags` column under the
             # name the builder gives it. Nothing else is carved out: since #209 the one exception
             # this set used to carry — `rectification_diagnostics`, a caller instruction rather than
