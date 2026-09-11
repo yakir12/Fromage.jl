@@ -373,8 +373,12 @@ branch starts from `main`, and if `main` has moved, rebase onto it rather than s
 8. **Merge only after every required check has passed.**
 9. **Watch what the merge triggers.** The task is not done at merge. The chain is
    `push to main → Test (full matrix) → AutoRelease (bump, tag, GitHub release) → Docs on the new
-   tag → /stable/ advances`. Expect **15–35 minutes**; the Intel macOS runner is the usual long
-   pole, and "nothing has happened yet" is almost always queue time. `Lint` is deliberately *not*
+   tag → /stable/ advances`. Expect **about 12 minutes** — ~9 for the matrix, seconds for
+   AutoRelease, ~3 for the tag's docs build (measured 2026-09-11; RELEASING.md carries the table
+   and the caveats, and these drift). **It is not queue time** — median wait from job created to
+   job started was 3–5 seconds on every platform — and macOS is not reliably the long pole; the
+   three legs now land within ~80 s of each other. A run that takes *far* longer is usually a cold
+   depot cache, which doubles the matrix. `Lint` is deliberately *not*
    gating, so a dead link does not block a release.
 10. **A red post-merge workflow is an approval gate**, on the same terms as step 7.
 11. **Clean up.** `git checkout main && git pull` — the bot's bump commit leaves local `main` one
