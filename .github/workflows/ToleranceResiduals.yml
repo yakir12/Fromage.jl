@@ -1,7 +1,9 @@
 name: Tolerance residuals
 
 # Print the residual behind every empirical tolerance in the test suite, on each platform the
-# package is tested on. Asserts nothing and gates nothing.
+# package is tested on. Asserts no tolerance and gates no other workflow — but the script exits
+# non-zero if any of its sections throws, so a broken probe turns THIS job red instead of burying
+# the breakage in output nobody reads (#220).
 #
 # Why it exists: every tolerance comment in `test/` states a value measured on one developer
 # machine — one FFMPEG_jll, one OpenCV_jll, one AprilTags_jll. Those values were verified
