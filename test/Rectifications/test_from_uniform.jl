@@ -19,8 +19,7 @@
             drow = image2real(p0 + SVector(1.0, 0.0)) - image2real(p0)
             dcol = image2real(p0 + SVector(0.0, 1.0)) - image2real(p0)
             @test hypot(drow...) ≈ pixel_width            # one stored row ⇒ `pixel_width`
-            @test hypot(dcol...) ≈ pixel_width * aspect   # one stored column ⇒ `pixel_width·aspect`,
-            # the squeeze being horizontal
+            @test hypot(dcol...) ≈ pixel_width * aspect   # one stored column ⇒ `pixel_width·aspect` (the squeeze is horizontal)
             # the builder returns a StaticRectification, so these five are its fields
             @test rect.real2image(rect.image2real(p0)) ≈ p0    # the two maps are inverses
             @test rect.ratio == pixel_width

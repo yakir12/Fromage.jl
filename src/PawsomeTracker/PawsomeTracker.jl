@@ -62,8 +62,7 @@ const OPENVIDEO_LOCK = ReentrantLock()
 #
 # The lock is taken INSIDE the retried closure, so the backoff sleeps without holding it — retrying
 # under the lock would stall every other open in the process for the duration.
-open_gray_video(file) =
-    ShareIO.withretry(; transient = ShareIO.videoio_transient) do
+open_gray_video(file) = ShareIO.withretry(; transient = ShareIO.videoio_transient) do
     lock(() -> openvideo(file; target_format = AV_PIX_FMT_GRAY8), OPENVIDEO_LOCK)
 end
 

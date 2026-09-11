@@ -75,8 +75,7 @@ end
 
 # worst deviation (real units) of any tag edge from the true side length `side`, under an
 # image→ground homography `M`
-_worst_side(M, tag_corners, side = TAG_SIZE_CM) =
-    maximum(
+_worst_side(M, tag_corners, side = TAG_SIZE_CM) = maximum(
     abs(norm(apply_h(M, tc[i]) - apply_h(M, tc[mod1(i + 1, 4)])) - side)
         for tc in tag_corners for i in 1:4
 )
