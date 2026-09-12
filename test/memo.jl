@@ -204,33 +204,44 @@ const MEMOIZED = (
             (
                 name = "probe_fields", cache = M.VIDEO_PROBES, key = (corrupt, entries),
                 f = () -> Fromage.Probing.probe_fields(corrupt, entries),
+                says = "issue reading from video file: ",
             ),
             (
                 name = "matlab_metadata", cache = M.MATLAB_METADATA, key = (truncated,),
                 f = () -> VRect.matlab_metadata(truncated),
+                says = VRect.MATLAB_OPEN_FAILURE,
             ),
             (
                 name = "extrinsic_issue", cache = M.EXTRINSIC_DETECTIONS,
                 key = (corrupt, 0.0, false, 0.0, 64, 64, (5, 8)),
                 f = () -> VRect.extrinsic_issue(corrupt, 0.0, false, 0.0, 64, 64, (5, 8)),
+                says = "issue with corner detection at the extrinsic time stamp: ",
             ),
             (
                 name = "intrinsic_issue", cache = M.INTRINSIC_DETECTIONS,
                 key = (corrupt, 0.0, 1.0, 0.5, false, 0.0, 64, 64, (5, 8)),
                 f = () -> VRect.intrinsic_issue(corrupt, 0.0, 1.0, 0.5, false, 0.0, 64, 64, (5, 8)),
+                says = "issue with corner detection in the intrinsic window: ",
             ),
             (
                 name = "apriltag_extrinsic_issue", cache = M.APRILTAG_DETECTIONS,
                 key = (corrupt, 0.0, 4, "tag36h11", 12),
                 f = () -> PT.apriltag_extrinsic_issue(corrupt, 0.0, 4, "tag36h11", 12),
+                says = PT.EXTRINSIC_READ_FAILURE,
             ),
         )
 
+        # `says` is the message PREFIX, and the assertion below is deliberately not equality: each
+        # of these carries ffmpeg's or MAT.jl's own words, and on Windows ffmpeg prints a POINTER in
+        # them ("[mov,mp4,m4a,3gp,3g2,mj2 @ 000002966bbae940] moov atom not found"), which differs
+        # between two reads of the same file. Two invocations must report the same FAILURE, which is
+        # what the prefix pins; that the second call read at all is what `haskey` pins.
         @testset "$(u.name)" for u in unreadable
             issue = u.f()
             @test issue isa String                  # reported, not thrown
+            @test startswith(issue, u.says)
             @test !haskey(u.cache, u.key)           # ...and nothing was kept
-            @test u.f() == issue                    # the next invocation reads again, and says the same
+            @test startswith(u.f(), u.says)         # the next invocation reads again, and says the same
             @test !haskey(u.cache, u.key)
         end
     end
