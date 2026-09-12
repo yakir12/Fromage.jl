@@ -224,6 +224,13 @@ function read_frame_at(file, t)
     end
 end
 
+# The message that means "the frame could not be READ", as against anything the frame itself says.
+# A const because the memo on `apriltag_extrinsic_issue` has to recognize it, and a recognizer that
+# had drifted from the message would remember a share hiccup for the life of the session.
+const EXTRINSIC_READ_FAILURE = "could not read the extrinsic frame: "
+
+unreadable_extrinsic(issue) = issue isa String && startswith(issue, EXTRINSIC_READ_FAILURE)
+
 # Establish the shared reference space from the rectification's extrinsic frame: detect ≥ `ntags` tags
 # of `family`, take the `ntags` lowest ids, and fit the metric map from their known cell geometry.
 #
@@ -245,7 +252,7 @@ function reference_space(file, extrinsic, ntags, family, tag_cell_width)
             read_frame_at(file, extrinsic)
         catch e
             e isa ErrorException || e isa SystemError || e isa Base.IOError || rethrow()
-            return "could not read the extrinsic frame: $e"
+            return string(EXTRINSIC_READ_FAILURE, e)
         end
         det = set_detector!(AprilTagDetector(april_family(family)))
         try
@@ -332,7 +339,24 @@ valid_apriltag_family(family) = haskey(APRIL_FAMILIES, family)
 # string (unreadable frame, too few tags, non-coplanar / mis-detected tags), so it composes with the
 # gateway's other checks. A plain type test, since `reference_space` already reports those as
 # strings — a genuine error propagates rather than being reformatted as a rectification issue.
+#
+# Memoized on its whole argument list (see `Memo`), which is every input the detection reads — the
+# frame (file, extrinsic) and what is being looked for in it (ntags, family, tag_cell_width). The
+# `ReferenceSpace` itself is deliberately NOT cached: it is rebuilt by `ApriltagRectification`, and
+# handing the same mutable one to two rectifications is not what this memo is for. The frame DUMP a
+# failure triggers stays outside the memo too, in `flag_extrinsic!` (#86, #210).
+# `unless` is how this one keeps `Memo`'s "a failed read is never remembered" rule: `reference_space`
+# reports rather than throws — every way a rectification can fail to yield a reference is a fact
+# about the user's file, and `ApriltagRectification` relies on that — so there is no exception for
+# `get!` to decline to store, and the read failure is recognized and forgotten instead.
 function apriltag_extrinsic_issue(file, extrinsic, ntags, family, tag_cell_width)
+    key = (file, extrinsic, ntags, family, tag_cell_width)
+    return remember(APRILTAG_DETECTIONS, key; unless = unreadable_extrinsic) do
+        _apriltag_extrinsic_issue(file, extrinsic, ntags, family, tag_cell_width)
+    end
+end
+
+function _apriltag_extrinsic_issue(file, extrinsic, ntags, family, tag_cell_width)
     ref = reference_space(file, extrinsic, ntags, family, tag_cell_width)
     return ref isa String ? ref : nothing
 end

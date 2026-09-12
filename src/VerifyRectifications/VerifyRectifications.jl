@@ -10,8 +10,9 @@ using DataFrames: AbstractDataFrame, ByRow, DataFrame, Not, allowmissing!, compl
     groupby, nonunique, nrow, passmissing, subset
 using ..Gateway: backfill!, blank!, detect_per_group!, issue_report, read_per_file!, read_rows,
     report_issues, resolve_paths!, verify!, verify_id_filename!
+using ..Memo: EXTRINSIC_DETECTIONS, INTRINSIC_DETECTIONS, MATLAB_METADATA, remember
 using ..Parsing: Parsing, MyTemporal, filled, parseto!
-using ..Paths: DEFAULT_ISSUES_DIR, session_issues_dir
+using ..Paths: DEFAULT_ISSUES_DIR, invocation_issues_dir
 using ..Probing: frame_geometry, is_interlaced, no_video_stream, parse_sample_aspect, probe_fields
 using MAT: MAT, matread
 using OhMyThreads: OhMyThreads, tmap

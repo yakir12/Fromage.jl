@@ -5,7 +5,11 @@
 # DataFrames machinery (column-typed `subset`/`groupby`/`verify!`
 # specializations) a single `load_rectifications` run
 # compiles. The workload CSV points at nonexistent files, one row per type, so the run exercises the
-# full pipeline for every type but bails before any ffprobe/matread/corner detection.
+# full pipeline for every type but bails before any ffprobe/matread/corner detection.#
+# That "bails before any read" is also a CONSTRAINT, not just a description: the memo caches are
+# `const` (see `Memo`), so anything this workload managed to read would be serialized into the `.ji`
+# with the build machine's paths, and shipped as a cached answer about files that are not there.
+# Keep the workload pointed at files that do not exist.
 @setup_workload begin
     dir = mktempdir()
     csv = joinpath(dir, "precompile.csv")

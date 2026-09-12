@@ -39,7 +39,7 @@ describing it, and as the **track** it yields.
 - A run therefore has **one timeline, one set of run-level parameters, and one track file** —
   however many segments and files it spans.
 
-"Run" never means an execution of Fromage (that is a **session**) and never means the track.
+"Run" never means an execution of Fromage (that is an **invocation**) and never means the track.
 
 ### Segment
 
@@ -68,10 +68,24 @@ ignore it by design (see DECISIONS).
 What a run yields: timestamps paired with the target's position, in real-world coordinates. Written
 to `results_dir/<run_id>.csv`, and returned by `main` in a column called `track`.
 
+### Invocation
+
+**One execution of Fromage**: one call to `main` — or to `verify`, `only_rectify` or `only_track`.
+Named because the issues folder is per execution: each invocation gets its own time-stamped folder
+(`Paths.invocation_issues_dir`), and nothing is ever deleted from it.
+
 ### Session
 
-**One execution of Fromage.** Named because the issues folder is per execution — each session gets
-its own time-stamped folder, and nothing is ever deleted from it.
+**The Julia process**, in the ordinary Julia sense of the word. One session holds as many
+invocations as the user cares to run, which is the whole point of the distinction: the memoized
+reads and detections live for the life of the SESSION (`Fromage.Memo`), while each INVOCATION gets
+its own issues folder. So re-running `main` after fixing one csv row re-reads nothing it had already
+read, and still reports afresh into a folder of its own.
+
+"Session" has a third, unrelated sense in `CIFS-SHARE-INVESTIGATION.md` and `WHY-FRAMES-FAIL.md`: an
+SMB session, the authenticated connection between the client and the lab share, which those
+documents count reconnects of. Nothing was renamed there — same treatment as "real" below, where a
+second sense is noted rather than legislated away.
 
 ### Target
 

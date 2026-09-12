@@ -67,7 +67,7 @@ If a rectification fails detection — the checkerboard or the AprilTags can't b
 row 2 (rectification_id: morning): only 4 of 6 AprilTags detected at the extrinsic frame — saved the extrinsic frame to results_dir/issues/2026-08-20T14-22-05/board_t1.0s.png for inspection
 ```
 
-Each time you run Fromage it gets its own time-stamped folder under `results_dir/issues`, named for the moment it started, so the folder holds exactly the frames of that session and older ones stay where they are. Nothing here is ever deleted: the folder is yours to clean out whenever you like.
+Each time you run Fromage it gets its own time-stamped folder under `results_dir/issues`, named for the moment it started, so the folder holds exactly the frames of that run of Fromage and older ones stay where they are. That is true of a re-run too: Fromage remembers what it detected (see [re-running in the same Julia session](help.md#Re-running-in-the-same-Julia-session)), but it still saves the frame again, into the new folder. Nothing here is ever deleted: the folder is yours to clean out whenever you like.
 
 Open the frame and look at it — a blurry, over-exposed, or half-out-of-shot board is usually the whole story, and the fix is a different `extrinsic` timestamp or a better rectification video.
 

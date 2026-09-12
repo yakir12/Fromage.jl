@@ -963,6 +963,84 @@ return a negative `Float64` for a negative numerator, where `VerifyRuns.parse_sa
 square-pixel fallback. Both now take the fallback. No caller could use a negative aspect ratio, and
 every case either suite pins was already agreed on by both.
 
+### `LRUCache`, not a memoization package (#233)
+
+Verification memoizes four computations — the ffprobe of a video, the `matread` of a calibration
+file, the checkerboard/AprilTag detection at a rectification's extrinsic timestamp, and the scan of
+its intrinsic window — so a second `main` over a dataset the user edited one row of re-reads nothing
+it had already read. The cache is `LRUCache.jl`, and that is not an arbitrary pick among the
+memoization packages:
+
+- the reads run under `OhMyThreads.tmap`, so every cache here is written **concurrently**;
+- `LRU` locks, and **releases the lock while computing the missing value** — a lock held across an
+  ffprobe or a detection would serialize exactly the parallelism the gateways exist to get.
+
+What was rejected, and why each is wrong *here* rather than in general:
+
+| candidate | why not |
+| --- | --- |
+| `Memoization.jl` | no locking anywhere in its source, and its default `IdDict` is identity-keyed, so a `String` path key misses on every call |
+| `Memoize.jl` | no locking |
+| `@lock L get!(() -> f(x), D, x)` | holds the lock across the computation — correct, and serial |
+
+Concurrent misses on one key can still compute twice, which costs a duplicate read and never a wrong
+answer; that is the trade `LRU` makes for not holding the lock, and it is the right one here.
+
+Sized at 1000 entries each, which is a bound against a pathological loop rather than a working set:
+the reference dataset is 372 runs over a handful of rectifications.
+
+### The memo is keyed on the path, and never revalidated (#233)
+
+A cached read is invalidated by nothing. The key is the resolved, canonical absolute path — file
+identity, not file content — and the entry lives for the life of the Julia process.
+
+`mtime` + size was considered and declined. It is not proof that contents are unchanged (both
+survive an in-place rewrite of the same length within the same second, and a restored backup
+changes both while changing nothing), and the only check that *would* be proof — hashing the file —
+costs more than the read it is trying to avoid, on a share where reading is the expensive part. A
+half-proof that costs a `stat` per read on every call buys a guarantee nobody can state.
+
+So the contract is documented instead, in `help.md` and in `Memo`'s header: replacing a file's
+contents in place while the REPL is alive requires `Fromage.empty_caches!()` or a fresh Julia
+session. The same function is the answer for a `Revise.jl` user who has redefined a memoized
+function mid-process, which is the other way a cached value can go stale without its key changing.
+
+**A failed read is never remembered**, and that is what keeps "invalidation by path identity alone"
+honest. What is cached is a VERDICT — what ffprobe reported, what the detector found. "The file could
+not be read" is not one: `WHY-FRAMES-FAIL.md` is this repo's own evidence that such a failure is
+usually a fact about the share at that moment, and that it is reported in the same words as a file
+that really is broken ("Resource temporarily unavailable" versus "moov atom not found"). Remembering
+it would make a network hiccup permanent for the session, and re-running — the one thing the user
+does next, and the whole point of this feature — would not help.
+
+It is reached two ways, and the difference is not arbitrary:
+
+- **The catch sits outside `get!`** for `probe_fields`, `extrinsic_issue` and `intrinsic_issue`.
+  `LRUCache`'s `get!` stores nothing when its closure throws, so this costs no machinery at all.
+- **The failure is recognized and forgotten** (`Memo.remember`) for `matlab_metadata` and
+  `apriltag_extrinsic_issue`, whose catch belongs to a function that reports rather than throws
+  (`read_matlab`, `reference_space`) and has other callers relying on that — so there is no exception
+  for `get!` to decline to store. Each recognizer matches the very prefix its message is built from,
+  one const apiece, because a recognizer drifted from its message would remember the failure forever.
+
+The cost either way is one re-read per invocation of a file that really is broken, which is the cheap
+half of the trade: a broken file is being iterated on anyway.
+
+Two things deliberately stay outside the memo, and both would be bugs inside it:
+
+- **`verifications!` and the `read_*_metadata!` functions.** Their effect is the mutation of the
+  DataFrame passed in, not their return value, and a DataFrame hashes by object identity — a memo
+  there would either never hit or serve a stale frame.
+- **The issue-frame dump.** Only the detector is memoized; the tail that saves the failing frame
+  runs on every invocation, so each one dumps into its own folder and names its own path in the
+  message. That keeps #86's "the issues folder is only ever added to" true, and is what a user
+  re-running to look at a failure depends on.
+
+What is NOT cached is as deliberate: row-level or csv-text-keyed caching would gate column-wise
+predicates over a DataFrame — microseconds of pure CPU — behind machinery guarding something already
+free. Rectification building, tracking and the diagnostic segments are the other half of #233's
+original request and are tracked as #249.
+
 ### The frame dump stays out of `detect_per_group!` (#210)
 
 The three `VerifyRectifications` detector passes — `verify_extrinsics!`, `verify_intrinsics!`,
@@ -1177,6 +1255,10 @@ reporting "temporal_step must yield at least 3 images", and a bad `path` from al
 so `./x`, `a/../x` and symlinks all collapse to one key) before any reading. Grouping on that key
 means one ffprobe per video and one `matread` per `.mat`, no matter how many rows or spellings
 reference them. The same canonical path is the identity used for duplicate detection.
+
+Once per INVOCATION, that is. Across invocations in one Julia session the read happens once in
+total — that is the memo above ("`LRUCache`, not a memoization package"), and it keys on the same
+canonical path this grouping does.
 
 ### Duplicate detection compares only clean rows
 
