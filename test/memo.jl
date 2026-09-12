@@ -18,6 +18,7 @@ module MemoTests
 
 using Test
 using Fromage: Fromage
+using LRUCache: LRU, haskey
 using MAT: MAT
 using ..Fixtures
 
@@ -169,19 +170,69 @@ const MEMOIZED = (
         # can be mistaken for this one's.
         Fromage.empty_caches!()
         m.f(m.base...)                                  # prime, so the baseline is certainly cached
-        misses = M.misses(m.cache)
         for i in eachindex(m.base)
             args = ntuple(j -> j == i ? m.alts[j] : m.base[j], length(m.base))
+            hits = M.hits(m.cache)
             m.f(args...)
-            # `misses + 1` and not merely "more than before": one changed argument must compute
-            # exactly once, and the baseline must not have been evicted or recomputed alongside it.
-            @test M.misses(m.cache) == misses + 1
-            misses = M.misses(m.cache)
+            # The claim is exactly "this was not answered out of the cache", so it is asserted on
+            # the HIT counter. Misses would be the obvious choice and are the wrong one: some of
+            # these alternatives cannot be read at all (a frame size that does not match the file),
+            # and a failed read is deliberately not stored — so it is not counted as a miss either,
+            # while still being unmistakably a recomputation.
+            @test M.hits(m.cache) == hits
         end
         # the baseline is still there, and still served
         hits = M.hits(m.cache)
         m.f(m.base...)
         @test M.hits(m.cache) == hits + 1
+    end
+
+    # A failed READ is a fact about the share at that moment, not about the file, so it must not be
+    # remembered — the next invocation has to be free to try again rather than re-report a hiccup for
+    # the life of the session. Three of the five get that from `get!` storing nothing when its closure
+    # throws; the other two recognize their own read-failure message and forget it (`Memo.remember`).
+    # Both mechanisms are asserted the same way here: the failure is reported, and nothing is kept.
+    @testset "a failed read is never remembered" begin
+        corrupt = make_corrupt_video(joinpath(DIR, "memo_corrupt.mp4"))
+        # valid MATLAB magic bytes, garbage after them: the header check passes and `matread` fails,
+        # which is the .mat spelling of an unreadable file
+        truncated = joinpath(DIR, "memo_truncated.mat")
+        write(truncated, "MATLAB 5.0 MAT-file, then nothing that parses as one")
+
+        entries = "stream=width,height"
+        unreadable = (
+            (
+                name = "probe_fields", cache = M.VIDEO_PROBES, key = (corrupt, entries),
+                f = () -> Fromage.Probing.probe_fields(corrupt, entries),
+            ),
+            (
+                name = "matlab_metadata", cache = M.MATLAB_METADATA, key = (truncated,),
+                f = () -> VRect.matlab_metadata(truncated),
+            ),
+            (
+                name = "extrinsic_issue", cache = M.EXTRINSIC_DETECTIONS,
+                key = (corrupt, 0.0, false, 0.0, 64, 64, (5, 8)),
+                f = () -> VRect.extrinsic_issue(corrupt, 0.0, false, 0.0, 64, 64, (5, 8)),
+            ),
+            (
+                name = "intrinsic_issue", cache = M.INTRINSIC_DETECTIONS,
+                key = (corrupt, 0.0, 1.0, 0.5, false, 0.0, 64, 64, (5, 8)),
+                f = () -> VRect.intrinsic_issue(corrupt, 0.0, 1.0, 0.5, false, 0.0, 64, 64, (5, 8)),
+            ),
+            (
+                name = "apriltag_extrinsic_issue", cache = M.APRILTAG_DETECTIONS,
+                key = (corrupt, 0.0, 4, "tag36h11", 12),
+                f = () -> PT.apriltag_extrinsic_issue(corrupt, 0.0, 4, "tag36h11", 12),
+            ),
+        )
+
+        @testset "$(u.name)" for u in unreadable
+            issue = u.f()
+            @test issue isa String                  # reported, not thrown
+            @test !haskey(u.cache, u.key)           # ...and nothing was kept
+            @test u.f() == issue                    # the next invocation reads again, and says the same
+            @test !haskey(u.cache, u.key)
+        end
     end
 
     @testset "empty_caches! clears every cache in the package" begin
@@ -196,7 +247,6 @@ const MEMOIZED = (
         # The list `empty_caches!` walks must not fall behind the caches that exist: a sixth cache
         # added anywhere in the package and not registered would be cleared by nothing, which is the
         # kind of omission that only surfaces as a stale read months later.
-        LRU = M.LRU
         function every_cache(m::Module, seen = Set{Module}(), found = Any[])
             m in seen && return found
             push!(seen, m)

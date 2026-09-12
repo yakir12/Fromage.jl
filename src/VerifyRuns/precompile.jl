@@ -6,6 +6,11 @@
 # `load_runs` run compiles. The workload CSV points at a nonexistent file, so the run exercises the
 # full parse + verification path but bails before any ffprobe — no bundled media, fast and
 # deterministic.
+#
+# That "bails before any ffprobe" is also a CONSTRAINT, not just a description: the memo caches are
+# `const` (see `Memo`), so anything this workload managed to read would be serialized into the `.ji`
+# with the build machine's paths, and shipped as a cached answer about files that are not there.
+# Keep the workload pointed at a file that does not exist.
 @setup_workload begin
     dir = mktempdir()
     csv = joinpath(dir, "precompile.csv")

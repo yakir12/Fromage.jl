@@ -97,9 +97,13 @@ There is one assumption in it, and it is worth knowing:
     or simply quit Julia and start again. Renaming the new file instead of overwriting the old one
     also works, since the name is what is remembered.
 
-Nothing else is affected: the report you get is exactly the report you would have got from a cold
-start, and the [issues folder](results.md#The-issues-folder) still gets a fresh, time-stamped folder
-on every run.
+What is remembered is what Fromage *found* — the video's size and duration, whether the board was
+detectable. A file it could **not read at all** is never remembered, so a network hiccup on the share
+does not become permanent: run it again and that file is read again.
+
+Nothing else is affected either: the report you get is exactly the report you would have got from a
+cold start, and the [issues folder](results.md#The-issues-folder) still gets a fresh, time-stamped
+folder on every run.
 
 ## Changing a default for all rows at once
 

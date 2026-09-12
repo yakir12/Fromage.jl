@@ -71,6 +71,17 @@ end
 # The fields CameraCalibrations.jl needs to build a calibration object from a matlab result file.
 const MATLAB_REQUIRED_KEYS = ("TranslationVectors", "RotationVectors", "RadialDistortion", "K")
 
+# The two messages that mean "this file could not be READ", as against "this file is not a usable
+# calibration". They are consts because the memo has to recognize them (`matlab_metadata` below), and
+# a recognizer that had drifted from the message would remember the failure for the life of the
+# session. `MATLAB_OPEN_FAILURE` covers genuine corruption as well as a failed read, because MAT.jl
+# reports both as the same `ErrorException` — the same conflation ffprobe forces on `Probing`, and
+# resolved the same way: re-read the file rather than assume the worse of it.
+const MATLAB_READ_FAILURE = "error reading matlab file: "
+const MATLAB_OPEN_FAILURE = "error opening matlab file: "
+
+unreadable_matlab(m) = m isa String && (startswith(m, MATLAB_READ_FAILURE) || startswith(m, MATLAB_OPEN_FAILURE))
+
 # A genuine MAT-file (v5/v7) begins with the ASCII text "MATLAB" in its header. Reading just the
 # first 6 bytes is a cheap, specific guard: a non-mat file gets this clear issue instead of matread's
 # opaque error. `read(file, 6)` returns up to 6 bytes, so a too-short file simply fails the
@@ -82,7 +93,7 @@ function matlab_magic_issue(file)
         read(file, 6)
     catch e
         e isa SystemError || e isa Base.IOError || rethrow()
-        return "error reading matlab file: $e"
+        return string(MATLAB_READ_FAILURE, e)
     end
     return magic == codeunits("MATLAB") ? nothing : "file is not a matlab file (missing \"MATLAB\" magic bytes)"
 end
@@ -100,7 +111,7 @@ function read_matlab(file)
         # a directory as EOFError. ErrorException is therefore as narrow as this can honestly get,
         # and it still excludes the MethodError/BoundsError of a bug on our side.
         e isa ErrorException || e isa EOFError || e isa SystemError || e isa Base.IOError || rethrow()
-        return "error opening matlab file: $e"
+        return string(MATLAB_OPEN_FAILURE, e)
     end
 end
 
@@ -147,7 +158,11 @@ end
 # session, so re-verifying a dataset re-reads no calibration file. What is remembered is this
 # derived metadata, not the parsed dict — the dict is the large object, and nothing outside this
 # function reads it.
-matlab_metadata(file) = get!(() -> _matlab_metadata(file), MATLAB_METADATA, (file,))
+#
+# `unless` is how this one keeps `Memo`'s "a failed read is never remembered" rule: `read_matlab`
+# reports rather than throws (the builder path relies on that), so there is no exception for `get!`
+# to decline to store, and the failure is recognized and forgotten instead.
+matlab_metadata(file) = remember(() -> _matlab_metadata(file), MATLAB_METADATA, (file,); unless = unreadable_matlab)
 
 function _matlab_metadata(file)
     dict = read_matlab(file)
@@ -307,26 +322,30 @@ _failure_message(e) = sprint(showerror, e)
 # frame is decided by (file, extrinsic, yadif, blur, width, height) and the pattern by n_corners. The
 # frame DUMP a failure triggers stays outside the memo, in `flag_extrinsic!` — every invocation
 # dumps its own frame into its own issues folder, with its own path in the message (#86, #210).
+#
+# The catch is outside the memo for the reason `Probing.probe_fields` states: `get!` stores nothing
+# when its closure throws, so a verdict is remembered and a failed READ is not — the latter is a
+# fact about the share at that moment, and the next invocation must be free to retry it.
 function extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
-    return get!(EXTRINSIC_DETECTIONS, (file, extrinsic, yadif, blur, width, height, n_corners)) do
-        _extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
+    return try
+        get!(EXTRINSIC_DETECTIONS, (file, extrinsic, yadif, blur, width, height, n_corners)) do
+            _extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
+        end
+    catch e
+        err = _unwrap_task(e)
+        _detection_failure(err) || rethrow()
+        "issue with corner detection at the extrinsic time stamp: $(_failure_message(err))"
     end
 end
 
 function _extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
-    try
-        vf = _vf(yadif, blur)
-        res = get_corners(file, extrinsic, vf, width, height, n_corners)
-        return ismissing(res) ? "no corners detected at the extrinsic time stamp" : nothing
-    catch e
-        err = _unwrap_task(e)
-        _detection_failure(err) || rethrow()
-        return "issue with corner detection at the extrinsic time stamp: $(_failure_message(err))"
-    end
+    vf = _vf(yadif, blur)
+    res = get_corners(file, extrinsic, vf, width, height, n_corners)
+    return ismissing(res) ? "no corners detected at the extrinsic time stamp" : nothing
 end
 
-# Save the frame that failed detection into this invocation's issues folder (created on demand) for the
-# user to inspect, named by the video and extrinsic timestamp — e.g. `board_t1.0s.png`. `get_frame`
+# Save the frame that failed detection into this invocation's issues folder (created on demand) for
+# the user to inspect, named by the video and extrinsic timestamp — e.g. `board_t1.0s.png`. `get_frame`
 # reads the frame lazily; best effort throughout, returning `nothing` if anything goes wrong.
 function save_issue_frame(invocation_dir, file, extrinsic, get_frame)
     try
@@ -361,8 +380,8 @@ end
 # parent's columns, so :extrinsic read back through `k` after the blank is `missing`.
 #
 # `(g, k, issue)` is positional because `detect_per_group!` calls `flag!` that way; the two captures
-# are keywords because `issue` and `invocation_dir` are both strings and adjacent, and transposing them
-# would compile, run, and write the frame into a folder named by the issue message.
+# are keywords because `issue` and `invocation_dir` are both strings and adjacent, and transposing
+# them would compile, run, and write the frame into a folder named by the issue message.
 function flag_extrinsic!(g::AbstractDataFrame, k, issue; invocation_dir, get_frame)
     saved = save_issue_frame(invocation_dir, k.file, k.extrinsic, get_frame)
     note = note_saved_frame(issue, saved)
@@ -422,30 +441,31 @@ end
 # Memoized on its whole argument list (see `Memo`): the window (start, stop, temporal_step), the
 # frame (file, yadif, blur, width, height) and the pattern (n_corners) are all of what the scan
 # reads, so a second verification of an unedited window scans nothing.
+# As in `extrinsic_issue`, the catch is outside the memo so that a failed read is not remembered.
 function intrinsic_issue(file, intrinsic_start, intrinsic_stop, temporal_step, yadif, blur, width, height, n_corners)
     key = (file, intrinsic_start, intrinsic_stop, temporal_step, yadif, blur, width, height, n_corners)
-    return get!(INTRINSIC_DETECTIONS, key) do
-        _intrinsic_issue(file, intrinsic_start, intrinsic_stop, temporal_step, yadif, blur, width, height, n_corners)
+    return try
+        get!(INTRINSIC_DETECTIONS, key) do
+            _intrinsic_issue(file, intrinsic_start, intrinsic_stop, temporal_step, yadif, blur, width, height, n_corners)
+        end
+    catch e
+        # the reads run under `tmap`, so unwrap before classifying (see _unwrap_task) — and report
+        # the original rather than a nested TaskFailedException dump
+        err = _unwrap_task(e)
+        _detection_failure(err) || rethrow()
+        "issue with corner detection in the intrinsic window: $(_failure_message(err))"
     end
 end
 
 function _intrinsic_issue(file, intrinsic_start, intrinsic_stop, temporal_step, yadif, blur, width, height, n_corners)
     vf = _vf(yadif, blur)
     found = 0
-    try
-        for batch in Iterators.partition(intrinsic_start:temporal_step:intrinsic_stop, 4)
-            corners = tmap(t -> get_corners(file, t, vf, width, height, n_corners), collect(batch))
-            found += count(!ismissing, corners)
-            found ≥ 3 && return nothing
-        end
-        return "fewer than 3 frames with detectable corners between intrinsic_start and intrinsic_stop"
-    catch e
-        # the reads run under `tmap`, so unwrap before classifying (see _unwrap_task) — and report
-        # the original rather than a nested TaskFailedException dump
-        err = _unwrap_task(e)
-        _detection_failure(err) || rethrow()
-        return "issue with corner detection in the intrinsic window: $(_failure_message(err))"
+    for batch in Iterators.partition(intrinsic_start:temporal_step:intrinsic_stop, 4)
+        corners = tmap(t -> get_corners(file, t, vf, width, height, n_corners), collect(batch))
+        found += count(!ismissing, corners)
+        found ≥ 3 && return nothing
     end
+    return "fewer than 3 frames with detectable corners between intrinsic_start and intrinsic_stop"
 end
 
 function verify_intrinsics!(df::AbstractDataFrame; progress = true)

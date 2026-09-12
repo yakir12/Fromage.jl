@@ -5,8 +5,8 @@ module Fromage
 # nothing and almost everything depends on it (the coordinate-space conversions and the `RowCol`
 # alias), Paths next because both `main` and VerifyRectifications derive their output folders from
 # it, Memo because the memoized reads and detections live in three modules below it and all of them
-# name its caches, ShareIO because all three share-reading paths depend on it, Rectifications is used by
-# VerifyRectifications and (for the centre/north helpers) by PawsomeTracker, PawsomeTracker by
+# name its caches, ShareIO because all three share-reading paths depend on it, Rectifications is used
+# by VerifyRectifications and (for the centre/north helpers) by PawsomeTracker, PawsomeTracker by
 # VerifyRuns, and the three shared modules by both gateways -- Parsing (CSV-cell machinery),
 # Probing (ffprobe plumbing) and Gateway (the csv -> verified DataFrame pipeline the two gateways
 # run in common).

@@ -17,7 +17,7 @@ using StaticArrays: SVector, SDiagonal
 using OpenCV: OpenCV
 using CoordinateTransformations: LinearMap, Transformation
 using LinearAlgebra: I
-using ..Memo: APRILTAG_DETECTIONS
+using ..Memo: APRILTAG_DETECTIONS, remember
 using ..Spaces: GroundXY, RowCol, stored_x, to_stored
 
 # Confidence gate for `detect`: when the window's peak DoG response falls below GATE_FRACTION of

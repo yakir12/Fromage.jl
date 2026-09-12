@@ -1005,6 +1005,27 @@ contents in place while the REPL is alive requires `Fromage.empty_caches!()` or 
 session. The same function is the answer for a `Revise.jl` user who has redefined a memoized
 function mid-process, which is the other way a cached value can go stale without its key changing.
 
+**A failed read is never remembered**, and that is what keeps "invalidation by path identity alone"
+honest. What is cached is a VERDICT — what ffprobe reported, what the detector found. "The file could
+not be read" is not one: `WHY-FRAMES-FAIL.md` is this repo's own evidence that such a failure is
+usually a fact about the share at that moment, and that it is reported in the same words as a file
+that really is broken ("Resource temporarily unavailable" versus "moov atom not found"). Remembering
+it would make a network hiccup permanent for the session, and re-running — the one thing the user
+does next, and the whole point of this feature — would not help.
+
+It is reached two ways, and the difference is not arbitrary:
+
+- **The catch sits outside `get!`** for `probe_fields`, `extrinsic_issue` and `intrinsic_issue`.
+  `LRUCache`'s `get!` stores nothing when its closure throws, so this costs no machinery at all.
+- **The failure is recognized and forgotten** (`Memo.remember`) for `matlab_metadata` and
+  `apriltag_extrinsic_issue`, whose catch belongs to a function that reports rather than throws
+  (`read_matlab`, `reference_space`) and has other callers relying on that — so there is no exception
+  for `get!` to decline to store. Each recognizer matches the very prefix its message is built from,
+  one const apiece, because a recognizer drifted from its message would remember the failure forever.
+
+The cost either way is one re-read per invocation of a file that really is broken, which is the cheap
+half of the trade: a broken file is being iterated on anyway.
+
 Two things deliberately stay outside the memo, and both would be bugs inside it:
 
 - **`verifications!` and the `read_*_metadata!` functions.** Their effect is the mutation of the
