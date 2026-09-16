@@ -89,6 +89,19 @@ row changes neither — the second `main` builds nothing at all and goes straigh
 one rectification row, or a `rectification_defaults` value that row was leaning on, and only the
 rectifications that actually changed are rebuilt.
 
+So are the **tracks**, and tracking is by far the most expensive part of `main`. A run is remembered
+by everything it is tracked with: its `runs.csv` rows, the [global defaults](#Changing-a-default-for-all-rows-at-once)
+their blank cells fall back on, and the rectification it names. Watch the diagnostic video, fix one
+run's row, run `main` again, and only that run is tracked again. Every other run's track, and its
+piece of the diagnostic video, is reused — and every run still gets its `<run_id>.csv` and its place
+in `diagnostic.mp4`, exactly as on the first pass. When anything was reused, `main` says how much:
+
+```
+[ Info: Reused 371 of 372 tracks from earlier in this session; Fromage.empty_caches!() forces a re-track
+```
+
+Renaming a run (its `run_id`) tracks it again, since the name is drawn on its part of the video.
+
 This matters most where it hurts most: on a network share, reading a video is the slow part of
 checking a dataset, and a second run over a 300-run folder used to cost the same as the first.
 
@@ -98,14 +111,14 @@ There is one assumption in it, and it is worth knowing:
     Fromage never re-checks a file it has already read. If you **replace a video or a `.mat` file in
     place** — re-copying a corrupt recording, re-exporting a calibration — while Julia is still
     running, Fromage will keep reporting what the old file said, and will keep handing you the
-    rectification it built from the old one: a rectification is remembered by the specification it
-    was built from, and that specification still names the same file. So will `Revise.jl` users who
+    rectification it built, and the track it tracked, from the old one: both are remembered by the
+    specification they came from, and that specification still names the same file. So will `Revise.jl` users who
     change Fromage itself mid-session.
 
     Two ways out, either is fine:
 
     ```julia
-    Fromage.empty_caches!()   # forget everything read and built so far; the next run redoes it all
+    Fromage.empty_caches!()   # forget everything read, built and tracked so far; the next run redoes it all
     ```
 
     or simply quit Julia and start again. Renaming the new file instead of overwriting the old one
@@ -113,7 +126,7 @@ There is one assumption in it, and it is worth knowing:
 
 What is remembered is what Fromage *found* — the video's size and duration, whether the board was
 detectable — and what it *built*. A file it could **not read at all** is never remembered, and
-neither is a rectification that failed to build, so a network hiccup on the share does not become
+neither is a rectification that failed to build or a run that failed to track, so a network hiccup on the share does not become
 permanent: run it again and that file is read again.
 
 Nothing else is affected either: the report you get is exactly the report you would have got from a

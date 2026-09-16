@@ -1,10 +1,11 @@
-# The process-global memo behind the iterate-on-your-csv workflow (#233, #251).
+# The process-global memo behind the iterate-on-your-csv workflow (#233, #251, #249).
 #
 # A user fixing a dataset runs `main`, reads the report, edits one row, and runs `main` again. Every
 # call used to re-do all of verification from cold — one ffprobe per physical video, one `matread`
 # per `.mat`, corner detection at each rectification's extrinsic timestamp, and a scan of each
 # intrinsic window — including for the rows they did not touch; and then to BUILD every rectification
-# from cold on top of that, reading and detecting in those same videos all over again. On the lab
+# from cold on top of that, reading and detecting in those same videos all over again, and then to
+# TRACK every run, which costs more than all of that together. On the lab
 # share every one of those reads is slow and occasionally fails (see WHY-FRAMES-FAIL.md), so the
 # second call cost as much as the first for no new information. These caches make it cost nothing.
 #
@@ -29,7 +30,7 @@
 #
 # LIFETIME AND INVALIDATION. A cache lives as long as the Julia process — the SESSION, in this
 # package's vocabulary (CONTEXT.md). A cached read is never revalidated against the file, and neither
-# is a cached BUILD against the files it was built from: file identity is the resolved, canonical
+# is a cached BUILD or TRACK against the files it came from: file identity is the resolved, canonical
 # absolute path and nothing else. `mtime` + size was considered
 # and declined (DECISIONS, "The memo is keyed on the path, and never revalidated"), so replacing a
 # file's contents in place while the REPL is alive — re-copying a corrupt video, re-exporting a
@@ -95,7 +96,7 @@ const INTRINSIC_DETECTIONS = newcache(Tuple, Union{Nothing, String})
 # hashes and compares by CONTENT; that is a property of what they are made of (`String`s, numbers,
 # `NTuple`s) rather than a decision, and test/memo.jl asserts it field by field, structurally over
 # `fieldnames`. A `Run` is the counter-example: its `segments::Vector` hashes by identity, which is
-# why tracking is the hard half (#249) and this is not.
+# why tracking's key has to be spelled as a tuple of its fields (`TRACKED_RUNS`) and this one does not.
 #
 # `Any` for both parameters, where every cache above names its own. Neither type CAN be spelled here:
 # `Memo` is included before `Rectifications`, `PawsomeTracker` and `VerifyRectifications`, so
@@ -111,6 +112,38 @@ const INTRINSIC_DETECTIONS = newcache(Tuple, Union{Nothing, String})
 # `Dict`: the bound is a guard against a pathological loop, not a working set, and a session that had
 # genuinely built a thousand distinct rectifications would have read a thousand videos to do it.
 const BUILT_RECTIFICATIONS = newcache(Any, Any)
+
+# `Fromage.track_run(r, c)` — one run tracked through the rectification `c` describes (#249), and by
+# far the most expensive thing a `main` does: ~89% of an invocation over the reference dataset
+# (CIFS-SHARE-INVESTIGATION.md). A user who fixed one `runs.csv` row changed one run, and used to
+# re-track all of them.
+#
+# The key is the builder-style rule again, with one step of construction: `Fromage.tracking_key`, the
+# run's fields as a tuple plus `c`. `Run` cannot be the key itself — it holds its segments in a
+# `Vector`, so its default `isequal` compares that field by identity and two identically specified
+# runs are two entries — but a TUPLE of the same fields hashes by content, because a `Vector` does.
+#
+# THE ONE ENTRY THAT WRITES A FILE, and why it still fits this module's "pure function of its
+# arguments plus file contents" rule. Tracking renders the run diagnostic clip in the same pass over
+# the video as the track, so the clip is part of the cached VALUE — `(track, clip path)` — and
+# redrawing it from a cached track would re-read every frame, which is most of what tracking costs
+# (DECISIONS). The clip lives in a folder of its own inside `CLIP_FOLDER`, which only this cache
+# writes to and removes from: the folder is created on a miss, the finalizer below deletes it when
+# its entry leaves (evicted, or `empty!`ed by `empty_caches!`), and nothing outside the cache ever
+# holds the path longer than the invocation that asked for it. So a cached path cannot dangle, and
+# cannot point at a file another specification has since overwritten — which `results_dir/<run_id>.mp4`
+# would, when a user tracks X, then Y, then reverts to X.
+#
+# The track's type differs between the ordinary and the AprilTag path (its coordinates may be
+# `missing` on the second), so `Tuple` is as concrete as the value can be spelled, as for the build.
+#
+# The shared `CACHE_SIZE` stands: clips already sat on disk for the whole of tracking before this
+# cache existed, so peak disk use is unchanged and only the lifetime grows. One caveat it carries: an
+# invocation of more runs than `CACHE_SIZE` would evict, and so delete, clips of its own that it has
+# yet to stitch. The reference dataset is 372 runs.
+const CLIP_FOLDER = OncePerProcess{String}(mktempdir)
+forget_clip(_, (_, clip)) = rm(dirname(clip); recursive = true, force = true)
+const TRACKED_RUNS = LRU{Tuple, Tuple{Tuple, String}}(maxsize = CACHE_SIZE, finalizer = forget_clip)
 
 # A failed READ is never remembered. It is a fact about the share at that moment and not about the
 # file (WHY-FRAMES-FAIL.md), so the next invocation must be free to retry it rather than re-report a
@@ -143,7 +176,7 @@ end
 # their names: it is what `empty!` is mapped over.
 const CACHES = (
     VIDEO_PROBES, MATLAB_METADATA, EXTRINSIC_DETECTIONS, APRILTAG_DETECTIONS, INTRINSIC_DETECTIONS,
-    BUILT_RECTIFICATIONS,
+    BUILT_RECTIFICATIONS, TRACKED_RUNS,
 )
 
 # What a cache has served and what it had to compute — the only honest way to assert that a second

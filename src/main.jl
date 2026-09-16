@@ -1,11 +1,12 @@
-# Every segment shares one resolution, codec and quality (see diagnose.jl), so a single ffmpeg
+# Every run diagnostic clip shares one resolution, codec and quality (see diagnose.jl), so a single ffmpeg
 # concat-demuxer call stream-copies them into the final video, rewriting timestamps monotonically.
 #
-# Deliberately NOT routed through `ShareIO`: every path here is under `results_dir`, on local disk.
+# Deliberately NOT routed through `ShareIO`: every path here is on local disk — the clips in the
+# session's clip folder, the list beside them in a temp folder, the video under `results_dir`.
 # The retries exist for the CIFS share and belong only on reads that cross it.
 # ffmpeg takes each path in the list single-quoted, and a literal quote inside one is written
 # `'\''` — close the string, escape the quote, reopen. An apostrophe is a legal file-name character
-# and a plausible `run_id` ("beetle's run"); unescaped it closed the line early and took the segment
+# and a plausible `run_id` ("beetle's run"); unescaped it closed the line early and took the clip
 # with it. Everything else a file name may legally hold survives that quoting unchanged: backslashes
 # and double quotes are literal inside it, spaces and control characters are preserved by it, and
 # non-ASCII never mattered. That is asserted against real ffmpeg in the concat tests rather than
@@ -19,7 +20,7 @@
 # is the reason the gateway checks `run_id` rather than leaving it to fail at write time: the
 # alternative is finding out after every run has already been tracked. The `run_id` half of each
 # path is barred from every control character there (`id_filename_issue`), which leaves the temp
-# root the segments sit under — checked in `main`, where that root is chosen.
+# folder the clips sit under — `Memo.CLIP_FOLDER`, checked in `main` before anything is tracked.
 function check_concat_representable(f)
     i = findfirst(c -> c == '\n' || c == '\r', f)
     isnothing(i) || throw(
@@ -116,6 +117,46 @@ end
 # twice, instead of raising a `MethodError` at the call site that passed the wrong thing.
 build_rectification(c::VerifyRectifications.RectificationMethod) =
     get!(() -> Rectification(c), BUILT_RECTIFICATIONS, c)
+
+# The key `TRACKED_RUNS` files a track under: every field of the run, as a tuple, plus the
+# rectification method. Spelled from `fieldcount` rather than field by field, so a field added to
+# `Run` joins the key without this line being touched — and test/memo.jl varies each one on its own
+# to say so. Why not `r` itself is in `Memo`, beside the cache.
+tracking_key(r::VerifyRuns.Run, c::VerifyRectifications.RectificationMethod) =
+    (ntuple(i -> getfield(r, i), fieldcount(VerifyRuns.Run))..., c)
+
+# Track one run through the rectification `c` describes, memoized for the session (#249). Returns the
+# track, the path of its run diagnostic clip, and whether both were served from the cache.
+#
+# The key is the whole argument list, `r` and `c` (see `tracking_key`), which is why this takes the
+# method rather than the built rectification: the rectification and the fallback centre are both
+# functions of `c`, and `build_rectification` hands the rectification back from its own cache — `main`
+# has always built it by then. Fetched only on a miss, so a cached track touches no other cache.
+#
+# The clip is written into a folder of the cache's own, named `<run_id>.mp4` because a clip's label is
+# its file name (#22). A track that throws is stored by nothing (`get!`), its clip is already deleted
+# (#160), and the folder goes too, so a failed run leaves no trace to be mistaken for a finished one.
+function track_run(r::VerifyRuns.Run, c::VerifyRectifications.RectificationMethod)
+    missed = Ref(false)
+    track_, clip = get!(TRACKED_RUNS, tracking_key(r, c)) do
+        missed[] = true
+        folder = mktempdir(CLIP_FOLDER(); cleanup = false)
+        file = joinpath(folder, string(r.run_id, ".mp4"))
+        tracked = false
+        try
+            value = (track(r, c.source.center, build_rectification(c), file), file)
+            tracked = true
+            return value
+        finally
+            tracked || rm(folder; recursive = true, force = true)
+        end
+    end
+    return track_, clip, !missed[]
+end
+
+# Every run, in parallel. Run ids are unique within a dataset, so no two of these share a key and no
+# two tasks ever compute the same entry.
+track_runs(rs, cs) = @showprogress desc = "Building runs" tmap(track_run, rs, cs)
 
 # Both csv files, validated as one dataset. The identities of BOTH are settled first — each file's
 # own, then the cross-file check that they describe the same thing — before either file's videos are
@@ -242,33 +283,32 @@ function main(
     used_rectification_ids = [r.rectification_id for r in rs]
     filter!(c -> c.rectification_id ∈ used_rectification_ids, cs)
 
-    rect_ids = [c.rectification_id for c in cs]
-    rects = DataFrame(rectification_id = rect_ids, c = cs)
-
     # Every rectification is built, and its `rectification_diagnostics` image written, BEFORE any run
     # is tracked — `build_rectifications` returns only once all of them are done, and the tracking
     # below starts after it. docs/src/help.md relies on that order: it tells a user to watch
     # `results_dir/rectifications/` fill and interrupt `main` if an image is wrong, which is only
-    # cheap while nothing has been tracked yet (#256).
-    rects.rectification .= build_rectifications(rects.c, rectification_diagnostics)
+    # cheap while nothing has been tracked yet (#256). What it returns is not kept: `track_run` takes
+    # each back out of the build cache.
+    build_rectifications(cs, rectification_diagnostics)
 
-    runs = DataFrame(rectification_id = [r.rectification_id for r in rs], run_id = [r.run_id for r in rs], r = rs)
-    leftjoin!(runs, rects, on = :rectification_id)
+    # Before anything is tracked: a clip path the concat list cannot hold would otherwise surface only
+    # after every run had been tracked, which is the cost `concatenate` cannot undo. `run_id`, the
+    # other half of every clip path, the gateway has already checked.
+    check_concat_representable(CLIP_FOLDER())
 
-    mktempdir() do path
-        transform!(runs, :run_id => (x -> joinpath.(path, string.(x, ".mp4"))) => :diagnostic_file)
-        # Before anything is tracked: a segment path the concat list cannot hold would otherwise
-        # surface only after every run had been built, which is the cost `concatenate` cannot undo.
-        foreach(check_concat_representable, runs.diagnostic_file)
-        build_run(r, c, rectification, diagnostic_file) =
-            track(r, c.source.center, rectification, diagnostic_file)
-        runs.track .= @showprogress desc = "Building runs" tmap(
-            build_run, runs.r, runs.c, runs.rectification, runs.diagnostic_file
-        )
-        concatenate(path, runs.diagnostic_file)
-    end
+    method = Dict(c.rectification_id => c for c in cs)
+    tracked = track_runs(rs, [method[r.rectification_id] for r in rs])
 
-    tforeach(save2csv, runs.run_id, runs.track)
+    # Said only when something was reused, because a cached track inherits the memo's caveat: a video
+    # replaced in place serves the track of the file it replaced.
+    reused = count(t -> t[3], tracked)
+    reused > 0 && @info "Reused $reused of $(length(tracked)) tracks from earlier in this session; \
+        Fromage.empty_caches!() forces a re-track"
+
+    # Every invocation writes everything, hit or miss: the csvs, and the diagnostic video stitched
+    # from every run's clip in run order. Only the tracking was skipped.
+    mktempdir(path -> concatenate(path, [clip for (_, clip, _) in tracked]))
+    tforeach((r, (track_, _, _)) -> save2csv(r.run_id, track_), rs, tracked)
 
     return nothing
 end
@@ -305,13 +345,16 @@ end
 """
     Fromage.empty_caches!()
 
-Forget every memoized read, detection and built rectification, so the next call to [`main`](@ref) or
-[`verify`](@ref) re-probes, re-reads, re-detects and rebuilds everything from disk.
+Forget every memoized read, detection, built rectification and track, so the next call to
+[`main`](@ref) or [`verify`](@ref) re-probes, re-reads, re-detects, rebuilds and re-tracks everything
+from disk. The run diagnostic clips kept with the tracks are deleted from disk with them.
 
 A Julia session remembers what it read — one ffprobe per video, one `matread` per calibration file,
-one detection per rectification — and what it BUILT: one built rectification per `rectifications.csv`
-row (#233, #251). So re-running `main` after fixing a csv row re-does only what that row changed.
-Those memos are keyed on file PATHS, and a built rectification on the specification naming one, and
+one detection per rectification — what it BUILT: one built rectification per `rectifications.csv`
+row (#233, #251) — and what it TRACKED: one track per run, with its run diagnostic clip (#249). So
+re-running `main` after fixing a csv row re-does only what that row changed, and `main` logs how many
+tracks it reused. Those memos are keyed on file PATHS, and a built rectification or a track on the
+specification naming one, and
 neither is ever revalidated against the files themselves — so this is what to call after changing the
 contents of a video or `.mat` file **in place**, without changing its name — and after redefining
 one of Fromage's own functions under `Revise.jl`. Starting a fresh Julia session does the same

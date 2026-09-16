@@ -107,7 +107,7 @@ function verify_ids!(df::AbstractDataFrame)
     # the grouping below, the issue report, and (in `main`) the cross-file check all need the final
     # value.
     resolve_run_ids!(df)
-    # run_id names the track file and the diagnostic segments, so it must be a usable file name.
+    # run_id names the track file and the run diagnostic clip, so it must be a usable file name.
     verify_id_filename!(df, :run_id)
     verify_run_rectification!(df)
     return df

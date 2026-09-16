@@ -2,7 +2,7 @@
     # baseline a.mp4 is 640×480, 5 s, 30 fps; each row overrides one field.
 
     @testset "run_id must be usable as a file name" begin
-        # It becomes results_dir/<run_id>.csv and the diagnostic segments. Caught in the gateway,
+        # It becomes results_dir/<run_id>.csv and the run diagnostic clip. Caught in the gateway,
         # where a bad value is one reported row, rather than as a SystemError out of save2csv after
         # every run has already been tracked.
         for bad in ("a/b", "a\\b", "a:b", "..", "a?b")
