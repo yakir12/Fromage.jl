@@ -126,7 +126,7 @@ Base.convert(::Type{Int}, ::Boom) = error("boom")
         # not (#151): the csv path refuses it, so a default must not be a way around that.
         @test_throws "test default a must be finite, got NaN" resolve((; a = NaN))
         @test_throws "test default a must be finite, got Inf" resolve((; a = Inf))
-        @test_throws "test default a must be finite, got -Inf" resolve((; a = -Inf32))
+        @test_throws "test default a must be finite, got -Inf32" resolve((; a = -Inf32))   # the value as given, like the message above
 
         # ...and an error that is NOT a rejected value must propagate unchanged rather than be
         # reported to the user as "must be convertible to". Boom is our own type, so extending

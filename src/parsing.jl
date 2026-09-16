@@ -99,7 +99,7 @@ function resolve_defaults(overrides, defaults, types, what)
                 e isa MethodError || e isa InexactError || rethrow()
                 throw(ArgumentError("$what default $k must be convertible to $(types[k]), got $(repr(overrides[k]))"))
             end
-            nonfinite(v) && throw(ArgumentError("$what default $k must be finite, got $v"))
+            nonfinite(v) && throw(ArgumentError("$what default $k must be finite, got $(repr(overrides[k]))"))
             v
         end
     )

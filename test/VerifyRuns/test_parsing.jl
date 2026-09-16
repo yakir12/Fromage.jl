@@ -82,7 +82,7 @@
     # "NaN"/"Inf" parse as floats, so they used to pass here and surface as an `InexactError` when
     # tracking converted target_width × initial_search_factor into a window size (#151).
     # target_width and initial_search_factor are the integer-converted fields; the rest are used as
-    # floats. Every numeric column is covered, so a new one cannot quietly slip past.
+    # floats. Every float-valued column is listed; a new one belongs here too.
     @testset "non-finite numbers are rejected, naming the column and the value" begin
         for (col, cell, shown) in (
                 (:target_width, "NaN", "NaN"), (:initial_search_factor, "Inf", "Inf"),
