@@ -125,8 +125,10 @@ build_rectification(c::VerifyRectifications.RectificationMethod) =
 tracking_key(r::VerifyRuns.Run, c::VerifyRectifications.RectificationMethod) =
     (ntuple(i -> getfield(r, i), fieldcount(VerifyRuns.Run))..., c)
 
-# Track one run through the rectification `c` describes, memoized for the session (#249). Returns the
-# track, the path of its run diagnostic clip, and whether both were served from the cache.
+# Track one run through the rectification `c` describes, memoized for the session (#249). Returns
+# `(; track, clip, reused)`: the track, the path of its run diagnostic clip, and whether both were
+# served from the cache. `reused` is set from inside the closure because only `get!` knows whether it
+# ran it; asking `haskey` first would race another task filling the same cache.
 #
 # The key is the whole argument list, `r` and `c` (see `tracking_key`), which is why this takes the
 # method rather than the built rectification: the rectification and the fallback centre are both
@@ -138,24 +140,26 @@ tracking_key(r::VerifyRuns.Run, c::VerifyRectifications.RectificationMethod) =
 # (#160), and the folder goes too, so a failed run leaves no trace to be mistaken for a finished one.
 function track_run(r::VerifyRuns.Run, c::VerifyRectifications.RectificationMethod)
     missed = Ref(false)
-    track_, clip = get!(TRACKED_RUNS, tracking_key(r, c)) do
+    run_track, clip = get!(TRACKED_RUNS, tracking_key(r, c)) do
         missed[] = true
         folder = mktempdir(CLIP_FOLDER(); cleanup = false)
         file = joinpath(folder, string(r.run_id, ".mp4"))
-        tracked = false
+        finished = false
         try
             value = (track(r, c.source.center, build_rectification(c), file), file)
-            tracked = true
+            finished = true
             return value
         finally
-            tracked || rm(folder; recursive = true, force = true)
+            finished || rm(folder; recursive = true, force = true)
         end
     end
-    return track_, clip, !missed[]
+    return (track = run_track, clip, reused = !missed[])
 end
 
 # Every run, in parallel. Run ids are unique within a dataset, so no two of these share a key and no
-# two tasks ever compute the same entry.
+# two tasks ever compute the same entry — which matters beyond wasted work: when two do, `LRU` keeps
+# one value and drops the other WITHOUT finalizing it, so the dropped clip's folder would stay on disk
+# until Julia exits.
 track_runs(rs, cs) = @showprogress desc = "Building runs" tmap(track_run, rs, cs)
 
 # Both csv files, validated as one dataset. The identities of BOTH are settled first — each file's
@@ -296,19 +300,22 @@ function main(
     # other half of every clip path, the gateway has already checked.
     check_concat_representable(CLIP_FOLDER())
 
-    method = Dict(c.rectification_id => c for c in cs)
-    tracked = track_runs(rs, [method[r.rectification_id] for r in rs])
+    # Before tracking, so the cache cannot evict — and so delete — a clip of this invocation's own
+    # before `concatenate` has stitched it.
+    make_room!(TRACKED_RUNS, length(rs))
+    method_by_id = Dict(c.rectification_id => c for c in cs)
+    runs = track_runs(rs, [method_by_id[r.rectification_id] for r in rs])
 
     # Said only when something was reused, because a cached track inherits the memo's caveat: a video
     # replaced in place serves the track of the file it replaced.
-    reused = count(t -> t[3], tracked)
-    reused > 0 && @info "Reused $reused of $(length(tracked)) tracks from earlier in this session; \
+    reused = count(t -> t.reused, runs)
+    reused > 0 && @info "Reused $reused of $(length(runs)) tracks from earlier in this session; \
         Fromage.empty_caches!() forces a re-track"
 
     # Every invocation writes everything, hit or miss: the csvs, and the diagnostic video stitched
     # from every run's clip in run order. Only the tracking was skipped.
-    mktempdir(path -> concatenate(path, [clip for (_, clip, _) in tracked]))
-    tforeach((r, (track_, _, _)) -> save2csv(r.run_id, track_), rs, tracked)
+    mktempdir(path -> concatenate(path, [t.clip for t in runs]))
+    tforeach((r, t) -> save2csv(r.run_id, t.track), rs, runs)
 
     return nothing
 end

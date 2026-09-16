@@ -34,7 +34,7 @@ const PT = Fromage.PawsomeTracker
 # because the two `check_*` functions build and track nothing, so they would never move with the
 # others; derived from `M.CACHES` by exclusion rather than listed, so a verification cache added later
 # is counted here without this line being touched.
-const VERIFICATION_CACHES = filter(c -> c !== M.BUILT_RECTIFICATIONS && c !== M.TRACKED_RUNS, M.CACHES)
+const VERIFICATION_CACHES = filter(c -> !any(x -> x === c, (M.BUILT_RECTIFICATIONS, M.TRACKED_RUNS)), M.CACHES)
 
 # What every verification cache has computed so far, by identity. The counters are process-global
 # and other suites share them, so every assertion below is on a DELTA taken around one call.
@@ -625,7 +625,7 @@ const MEMOIZED = (
         c = METHODS[1]
         broken = replace_field(RUN, 5, [PT.Segment(UNTRACKABLE, 0.0, 1.0, (55, 50))])
         Fromage.empty_caches!()
-        @test_throws Exception Fromage.track_runs([RUN, broken], [c, c])
+        @test_throws TaskFailedException Fromage.track_runs([RUN, broken], [c, c])
         @test haskey(M.TRACKED_RUNS, Fromage.tracking_key(RUN, c))
         @test !haskey(M.TRACKED_RUNS, Fromage.tracking_key(broken, c))
         @test length(readdir(M.CLIP_FOLDER())) == 1                 # the finished run's, and only that
@@ -638,14 +638,14 @@ const MEMOIZED = (
     # neither `empty_caches!` nor a full cache leaves a file behind.
     @testset "a track's clip is deleted with its entry" begin
         Fromage.empty_caches!()
-        _, clip, _ = Fromage.track_run(RUN, METHODS[1])
+        clip = Fromage.track_run(RUN, METHODS[1]).clip
         @test isfile(clip)
         @test basename(clip) == "memo_run.mp4"                      # the label (#22)
         @test dirname(dirname(clip)) == M.CLIP_FOLDER()
         Fromage.empty_caches!()
         @test !ispath(dirname(clip))
 
-        _, clip, _ = Fromage.track_run(RUN, METHODS[1])
+        clip = Fromage.track_run(RUN, METHODS[1]).clip
         resize!(M.TRACKED_RUNS; maxsize = 0)                        # evicts the one entry
         resize!(M.TRACKED_RUNS; maxsize = M.CACHE_SIZE)
         @test isempty(M.TRACKED_RUNS)
@@ -653,10 +653,38 @@ const MEMOIZED = (
         @test isempty(readdir(M.CLIP_FOLDER()))
     end
 
+    # The bound is a guard, not a working set, and must never cost an invocation its own clips: with
+    # more runs than the cache holds, the first ones tracked would be evicted — their clips deleted —
+    # before `concatenate` reached them. `main` raises the bound to its run count first.
+    @testset "an invocation of more runs than the cache holds keeps every clip it stitches" begin
+        rects_csv = joinpath(DIR, "memo_room.csv")
+        write(rects_csv, "rectification_id,path,file,type,extrinsic,pixel_width\nu1,.,memo_plain.mp4,uniform,00:00:01,2\n")
+        runs_csv = joinpath(DIR, "memo_room_runs.csv")
+        write(
+            runs_csv, "run_id,rectification_id,path,file,start_location\n" *
+                "a,u1,.,$(basename(TARGET1)),\"(55, 50)\"\nb,u1,.,$(basename(TARGET2)),\"(55, 50)\"\n"
+        )
+        outdir = mktempdir()
+        Fromage.empty_caches!()
+        resize!(M.TRACKED_RUNS; maxsize = 1)
+        try
+            cd(
+                () -> Fromage.main(
+                    DIR; rectifications_file = basename(rects_csv), runs_file = basename(runs_csv),
+                    tracking_defaults = (target_width = 10,)
+                ), outdir
+            )
+            @test length(M.TRACKED_RUNS) == 2                   # nothing evicted
+            @test probe_stream(joinpath(outdir, "results_dir", "diagnostic.mp4")).nframes == 2 * 25
+        finally
+            resize!(M.TRACKED_RUNS; maxsize = M.CACHE_SIZE)
+        end
+    end
+
     @testset "empty_caches! clears every cache in the package" begin
-        # Prime all five, whatever the tests above left behind, through the memoized functions
+        # Prime every cache, whatever the tests above left behind, through the memoized functions
         # themselves — a cache holds what its own computation returns, so there is no sentinel value
-        # that fits all five.
+        # that fits them all.
         foreach(m -> m.f(m.base...), MEMOIZED)
         @test all(!isempty, M.CACHES)
         Fromage.empty_caches!()

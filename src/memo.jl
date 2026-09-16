@@ -50,7 +50,8 @@ const CACHE_SIZE = 1000
 # RELEASES the lock while computing a missing value. A lock held across an ffprobe or a detection
 # would serialize exactly the parallelism the gateways exist to get. DECISIONS, "LRUCache, not a
 # memoization package", records what the alternatives do instead.
-newcache(::Type{K}, ::Type{V}) where {K, V} = LRU{K, V}(maxsize = CACHE_SIZE)
+newcache(::Type{K}, ::Type{V}; finalizer = nothing) where {K, V} =
+    LRU{K, V}(maxsize = CACHE_SIZE, finalizer = finalizer)
 
 # `Probing.probe_fields(file, entries)` — one ffprobe spawn per (physical file, `-show_entries`
 # spec). Memoized at the shared spawn rather than in each gateway's `probe_video`, so the runs
@@ -137,13 +138,23 @@ const BUILT_RECTIFICATIONS = newcache(Any, Any)
 # The track's type differs between the ordinary and the AprilTag path (its coordinates may be
 # `missing` on the second), so `Tuple` is as concrete as the value can be spelled, as for the build.
 #
-# The shared `CACHE_SIZE` stands: clips already sat on disk for the whole of tracking before this
-# cache existed, so peak disk use is unchanged and only the lifetime grows. One caveat it carries: an
-# invocation of more runs than `CACHE_SIZE` would evict, and so delete, clips of its own that it has
-# yet to stitch. The reference dataset is 372 runs.
+# The shared `CACHE_SIZE` stands, with two consequences worth knowing. Disk: within one invocation
+# peak use is what it always was — every run's clip sat on disk for the whole of tracking before this
+# cache existed — but across a session the clips of superseded specifications stay until evicted, so
+# up to `CACHE_SIZE` of them can sit in the temp folder at once. And an invocation of more runs than
+# the bound would evict, and so delete, clips of its own before stitching them; `make_room!` below is
+# what `main` calls first so that it cannot.
 const CLIP_FOLDER = OncePerProcess{String}(mktempdir)
 forget_clip(_, (_, clip)) = rm(dirname(clip); recursive = true, force = true)
-const TRACKED_RUNS = LRU{Tuple, Tuple{Tuple, String}}(maxsize = CACHE_SIZE, finalizer = forget_clip)
+const TRACKED_RUNS = newcache(Tuple, Tuple{Tuple, String}; finalizer = forget_clip)
+
+# Raise `cache`'s bound to at least `n` entries; never lowers it. An LRU evicts the least recently
+# used entry, and every entry an invocation has used is more recent than any it has not — so a bound
+# of at least the invocation's size evicts nothing that invocation still needs.
+function make_room!(cache, n)
+    cache_info(cache).maxsize < n && resize!(cache; maxsize = n)
+    return cache
+end
 
 # A failed READ is never remembered. It is a fact about the share at that moment and not about the
 # file (WHY-FRAMES-FAIL.md), so the next invocation must be free to retry it rather than re-report a

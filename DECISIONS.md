@@ -1084,9 +1084,12 @@ bookkeeping. It adds nothing to `results_dir`, so #86 is not involved. A track t
 nothing and removes its subfolder, so the rerun after a crash or a Ctrl-C tracks only what did not
 finish.
 
-Clips sat on disk for the whole of tracking before this, so peak disk use is unchanged and only the
-lifetime grows; the shared `CACHE_SIZE` stands. The one limit it sets: an invocation of more runs than
-`CACHE_SIZE` would evict clips of its own before stitching them. `main` says when it reused tracks, in
+The shared `CACHE_SIZE` stands. Within one invocation peak disk use is what it was — clips sat on disk
+for the whole of tracking before this — but across a session the clips of superseded specifications
+stay until evicted, so up to `CACHE_SIZE` of them can sit in the temp folder at once. An invocation of
+more runs than the bound would evict clips of its own before stitching them, after every run had been
+tracked; `main` raises the bound to its run count first (`Memo.make_room!`), which an LRU makes
+sufficient, since every entry an invocation used is more recent than any it did not. `main` says when it reused tracks, in
 one `@info` line, because a cached track inherits the path caveat below.
 
 The path caveat reaches builds transitively — a rectification is keyed on a specification whose
