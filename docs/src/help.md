@@ -35,7 +35,7 @@ You saw it in the [diagnostic video](results.md#The-diagnostic-video) — good, 
 3. **Wrong contrast direction.** If your target is *lighter* than the background, set `darker_target` to `false`.
 4. **The animal moves fast between frames.** Increase `window_size`, or track at the video's full frame rate (don't lower `sample_fps`).
 
-## Iterating faster: run only part of the pipeline
+## Iterating faster
 
 While you're getting the csv files right, you don't have to run everything every time.
 
@@ -53,20 +53,23 @@ was wrong — a dataset is accepted or rejected as a whole — so `all(isempty, 
 the question to ask. Nothing is rectified or tracked. (`main` is the one that does the work; it
 aborts on any issue.)
 
-Two more helpers run only one half of the pipeline (both still run the full validation of their csv file):
+`main` accepts `run_ids` to process only a subset of the runs (only the rectifications those runs reference are built):
 
 ```julia
-# only build rectifications (all of them, or a subset of rectification_ids):
-Fromage.only_rectify("path/to/data"; rectifications_file = "rectifications.csv", rectification_ids = ["morning"])
-
-# only track (no rectification involved), optionally a subset of run_ids;
-# writes one raw-view diagnostic per run: results_dir/1.mp4, 2.mp4, ...
-Fromage.only_track("path/to/data"; runs_file = "runs.csv", run_ids = ["run1", "long"])
+main("path/to/data"; run_ids = ["run1", "long"])
 ```
 
-`main` itself also accepts `run_ids` to process only a subset of the runs (only the rectifications those runs reference are built). Every id you list must exist: if even one does not, the run stops with an error naming it and listing the ids that do exist, rather than quietly processing the ones that matched.
+Every id you list must exist: if even one does not, the run stops with an error naming it and listing the ids that do exist, rather than quietly processing the ones that matched.
 
-`main` and `only_rectify` also accept `rectification_diagnostics = true`, which saves each rectification's warped extrinsic frame to `results_dir/rectifications/` so you can check a rectification before tracking against it — see [the rectification images](results.md#The-rectification-images).
+### Checking the rectifications before anything is tracked
+
+`main` builds every rectification before it tracks a single run. Ask it to save what each rectification looks like, and you can check them while it is still early:
+
+```julia
+main("path/to/data"; rectification_diagnostics = true)
+```
+
+Watch `results_dir/rectifications/`. One image per rectification appears there as soon as the rectifications are built — see [the rectification images](results.md#The-rectification-images) for what a good one looks like. If one is wrong, interrupt Julia (`Ctrl-C`), fix that row of `rectifications.csv`, and run `main` again. In the same Julia session the second run only rebuilds the rectification you changed (see [re-running in the same Julia session](#Re-running-in-the-same-Julia-session)), so checking this way costs little more than the rectification you fixed.
 
 ## Re-running in the same Julia session
 
@@ -131,7 +134,7 @@ main("path/to/data";
 - `rectification_defaults` may set: `checker_width`, `n_corners`, `temporal_step`, `radial_parameters`, `blur`, `yadif`, and — for `type = apriltag` rows — `apriltags`, `family`, `tag_cell_width`.
 - `tracking_defaults` may set: `target_width`, `window_size`, `darker_target`, `native_fps`, `sample_fps`, `initial_search_factor`, `downscale`, `background_length`.
 
-Anything else (identities, file names, timestamps, `start_location`/`center`/`north`) is per-row only, and an unrecognized or unconvertible entry is rejected with an error before anything runs. Global values pass through the same validation as csv cells — e.g. a global `sample_fps` must still not exceed each run's `native_fps`. `only_rectify` and `only_track` accept their respective keyword (`rectification_defaults` / `tracking_defaults`).
+Anything else (identities, file names, timestamps, `start_location`/`center`/`north`) is per-row only, and an unrecognized or unconvertible entry is rejected with an error before anything runs. Global values pass through the same validation as csv cells — e.g. a global `sample_fps` must still not exceed each run's `native_fps`.
 
 ## Macs
 

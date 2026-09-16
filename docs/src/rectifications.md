@@ -60,7 +60,7 @@ Optional:
 
     The reason is that only two of the four `type`s involve a camera calibration at all: `checkerboard` fits a lens model and `matlab` imports one, while `uniform` just declares a scale and `apriltag` fits a homography. What every row describes is a **rectification** — how pixels in one camera view become real-world coordinates — so that is what the file and the id are now called. Where a camera calibration genuinely happens the word stays: the [intrinsic window](#Columns-for-type-checkerboard), `checker_width`, `n_corners`, `radial_parameters`, and everything about the MATLAB Camera Calibrator.
 
-    An old column name is rejected up front: `unrecognized column/s in rectification file: [:calibration_id] (calibration_id was renamed to rectification_id (and calibs.csv is now rectifications.csv))`. If you keep your csv files under other names, the keyword is now `rectifications_file` (was `calibs_file`), and `only_rectify`'s filter is `rectification_ids` (was `calibration_ids`).
+    An old column name is rejected up front: `unrecognized column/s in rectification file: [:calibration_id] (calibration_id was renamed to rectification_id (and calibs.csv is now rectifications.csv))`. If you keep your csv files under other names, the keyword is now `rectifications_file` (was `calibs_file`).
 
 !!! warning "Renamed in v0.2.23"
     Four names in this file changed, all so that each one says what it means. Every replacement is a plain find-and-replace in your spreadsheet; nothing about any calibration changes.

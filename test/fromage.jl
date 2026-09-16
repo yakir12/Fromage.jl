@@ -7,11 +7,43 @@ module FromageTests
 using Test
 using Random: Xoshiro
 using Fromage
-using DataFrames: DataFrame, nrow
+using DataFrames: DataFrame
 using StaticArrays: SVector
 using MAT: matwrite
 using ..Fixtures
 using ..Harness: capturing
+
+# `main` returns nothing (#256): everything a test asserts about a run is read from what `main` wrote.
+# This reads one run's `results_dir/<run_id>.csv` back into `track`'s values and order — timestamps,
+# and coordinates in `track`'s own `(y, x)` order, which `save2csv` writes out as `x,y` columns and
+# this swaps back — as plain `Vector`s, the coordinates admitting `missing`: a row with empty `x`/`y`
+# is a frame `track` could not localize. `save2csv` prints each `Float64` in full, so the values
+# round-trip exactly and no tolerance below had to move to absorb it. The header is checked because
+# the swap depends on the column order it names.
+function read_track(file)
+    header, lines... = readlines(file)
+    header == "time,x,y" || error("$file: expected the header time,x,y, got $(repr(header))")
+    rows = split.(lines, ',')
+    ts = [parse(Float64, t) for (t, _, _) in rows]
+    coords = Union{Missing, SVector{2, Float64}}[
+        isempty(x) ? missing : SVector(parse(Float64, y), parse(Float64, x)) for (_, x, y) in rows
+    ]
+    return ts, coords
+end
+
+# The rectification `main` built for the row `rectification_id` names, rebuilt here for a ground
+# truth to go through. The row is parsed into the same `RectificationMethod` `main` built from, and
+# goes through the same memoized builder, so within one session this is the very object `main`
+# tracked through — which the callers assert on the memo's hit counter rather than take on trust.
+function rebuilt_rectification(csv, rectification_id; defaults = (;))
+    cs = Fromage.VerifyRectifications.load_rectifications(csv; defaults)
+    return Fromage.build_rectification(only(filter(c -> c.rectification_id == rectification_id, cs)))
+end
+
+@testset "the narrowing entry points are gone, and nothing replaced them (#256)" begin
+    @test !isdefined(Fromage, :only_track)
+    @test !isdefined(Fromage, :only_rectify)
+end
 
 
 @testset "Fromage end-to-end (main)" begin
@@ -37,7 +69,7 @@ using ..Harness: capturing
 
     # main writes results_dir/diagnostic.mp4 relative to the current directory
     outdir = mktempdir()
-    runs = cd(
+    returned = cd(
         () -> main(
             dir; rectification_defaults = (n_corners = (5, 8),),
             tracking_defaults = (target_width = 10,),
@@ -45,14 +77,21 @@ using ..Harness: capturing
         ), outdir
     )
 
-    @test runs isa DataFrame
-    @test nrow(runs) == 1
-    t, xy = only(runs.track)                          # track returns (timestamps, REAL-WORLD coords)
+    @test returned === nothing                      # everything main produces is on disk (#256)
+    @test readdir(joinpath(outdir, "results_dir"); sort = true) ==
+        ["1.csv", "diagnostic.mp4", "rectifications"]   # one run, so one track csv (run_id imputed to "1")
+    hits = Fromage.Memo.hits(Fromage.Memo.BUILT_RECTIFICATIONS)
+    rectification = cd(
+        () -> rebuilt_rectification(joinpath(dir, "rectifications.csv"), "c1"; defaults = (n_corners = (5, 8),)),
+        outdir
+    )
+    @test Fromage.Memo.hits(Fromage.Memo.BUILT_RECTIFICATIONS) == hits + 1   # main's own object, served
+    t, xy = read_track(joinpath(outdir, "results_dir", "1.csv"))   # the REAL-WORLD coords track returned
     @test length(xy) == 50                          # the full 2 s at 25 fps
     # ground truth is the analytic pixel path pushed through the same rectification
-    real_expected(i; kw...) = Tuple(only(runs.rectification).image2real(SVector(expected(i; kw...)...)))
+    real_expected(i; kw...) = Tuple(rectification.image2real(SVector(expected(i; kw...)...)))
     @test tracking_rmse(xy, real_expected) < 0.3    # tracked vs ground truth, in real-world units
-    @test only(runs.rectification).ratio > 0        # the joined rectification is a real one
+    @test rectification.ratio > 0                   # a real rectification, not a degenerate one
     diag = joinpath(outdir, "results_dir", "diagnostic.mp4")
     @test isfile(diag)
     @test filesize(diag) > 0
@@ -77,73 +116,9 @@ using ..Harness: capturing
     @test t0 == 0.0
     # the analytic ground-truth pixel, pushed through the same rectification (which returns
     # (y-direction, x-direction), mirroring its (row, col) input)
-    gy, gx = only(runs.rectification).image2real(SVector(expected(1)...))
+    gy, gx = rectification.image2real(SVector(expected(1)...))
     @test x0 ≈ gx atol = 0.2
     @test y0 ≈ gy atol = 0.2
-end
-
-@testset "only_rectify / only_track (partial pipeline)" begin
-    # The two iterate-on-your-csv helpers, each over the cheapest possible inputs: a uniform
-    # calibration (no checkerboard detection) and the shared known-trajectory disc video.
-    dir = mktempdir()
-    make_video(joinpath(dir, "cal.mp4"); size = (320, 240), duration = 2)
-    target, expected = make_target_video(dir, "solo")
-    open(joinpath(dir, "rectifications.csv"), "w") do io
-        println(io, "rectification_id,type,file,extrinsic,pixel_width")
-        println(io, "c1,uniform,cal.mp4,1,2")
-    end
-    open(joinpath(dir, "runs.csv"), "w") do io
-        # background_length = 0 rides along to prove the column flows csv → gateway → track
-        println(io, "rectification_id,file,start_location,background_length")
-        println(io, "c1,$(only(target)),\"(55, 50)\",0")
-    end
-    outdir = mktempdir()
-
-    rects = cd(() -> Fromage.only_rectify(dir), outdir)
-    @test length(rects) == 1
-    rect = only(rects)
-    @test rect.ratio == 2                           # the csv's pixel_width
-    @test (rect.width, rect.height) == (320, 240)
-    p = SVector(7.0, 11.0)
-    @test rect.real2image(rect.image2real(p)) ≈ p   # the two maps are inverses
-    # off by default, and off means no trace at all — not even the folder
-    @test !ispath(joinpath(outdir, "results_dir", "rectifications"))
-
-    # on request, one image per calibration here too — this time through the uniform builder
-    diagdir = mktempdir()
-    cd(() -> Fromage.only_rectify(dir; rectification_diagnostics = true), diagdir)
-    scalejpg = joinpath(diagdir, "results_dir", "rectifications", "c1.jpg")
-    @test isfile(scalejpg)
-    @test filesize(scalejpg) > 0
-
-    # no rectification involved: raw pixel coordinates, one raw-view diagnostic per run, named by
-    # run_id — which this csv does not set, so it is the imputed row number
-    runs = cd(() -> Fromage.only_track(dir; tracking_defaults = (target_width = 10,)), outdir)
-    @test length(runs) == 1
-    _, ij = only(runs)
-    @test length(ij) == 50                          # the full 2 s at 25 fps
-    @test tracking_rmse(ij, expected) < 1
-    diag = joinpath(outdir, "results_dir", "1.mp4")
-    @test isfile(diag)
-    @test filesize(diag) > 0
-
-    # When the csv does name its runs, the diagnostic carries that name — and keeps it when a
-    # filter drops an earlier run. Numbering by position instead would name this file "1.mp4",
-    # which matches no row in the csv the user is looking at.
-    open(joinpath(dir, "named.csv"), "w") do io
-        println(io, "run_id,rectification_id,file,start_location,background_length")
-        println(io, "solo_a,c1,$(only(target)),\"(55, 50)\",0")
-        println(io, "solo_b,c1,$(only(target)),\"(55, 50)\",0")
-    end
-    named_out = mktempdir()
-    cd(
-        () -> Fromage.only_track(
-            dir; runs_file = "named.csv", run_ids = ["solo_b"],
-            tracking_defaults = (target_width = 10,)
-        ), named_out
-    )
-    @test isfile(joinpath(named_out, "results_dir", "solo_b.mp4"))
-    @test !isfile(joinpath(named_out, "results_dir", "1.mp4"))
 end
 
 @testset "an id filter that matches nothing is reported, not obeyed silently (#21)" begin
@@ -170,11 +145,9 @@ end
     @test_throws "r_typo" cd(() -> main(dir; run_ids = ["r1", "r_typo"]), outdir)
     # the message says which ids exist, so the typo is obvious
     @test_throws "r1" cd(() -> main(dir; run_ids = ["r_typo"]), outdir)
-    # both partial-pipeline helpers, which returned an empty vector with no error at all
-    @test_throws "r_typo" cd(() -> Fromage.only_track(dir; run_ids = ["r_typo"]), outdir)
-    @test_throws "c_typo" cd(() -> Fromage.only_rectify(dir; rectification_ids = ["c_typo"]), outdir)
     # and a filter that does match still works
-    @test nrow(cd(() -> main(dir; run_ids = ["r1"], tracking_defaults = (target_width = 10,)), outdir)) == 1
+    cd(() -> main(dir; run_ids = ["r1"], tracking_defaults = (target_width = 10,)), outdir)
+    @test isfile(joinpath(outdir, "results_dir", "r1.csv"))
 end
 
 @testset "Fromage end-to-end: AprilTag drone tracking" begin
@@ -200,14 +173,16 @@ end
     # for the image here must be a quiet no-op (the `save_diagnostic` arm in PawsomeTracker/apriltag.jl),
     # not a MethodError, and it must leave no trace. This is the only apriltag row in the suite that
     # asks.
-    runs = cd(() -> main(dir; rectification_diagnostics = true), outdir)
+    cd(() -> main(dir; rectification_diagnostics = true), outdir)
 
-    @test nrow(runs) == 1
     @test !ispath(joinpath(outdir, "results_dir", "rectifications"))   # asked for, and rightly absent
-    rect = only(runs.rectification)
-    @test rect isa Fromage.PawsomeTracker.ApriltagRectification   # the joined rectification is the apriltag kind
+    @test count(endswith(".csv"), readdir(joinpath(outdir, "results_dir"))) == 1   # the one run
+    hits = Fromage.Memo.hits(Fromage.Memo.BUILT_RECTIFICATIONS)
+    rect = cd(() -> rebuilt_rectification(joinpath(dir, "rectifications.csv"), "drone"), outdir)
+    @test Fromage.Memo.hits(Fromage.Memo.BUILT_RECTIFICATIONS) == hits + 1    # main's own object, served
+    @test rect isa Fromage.PawsomeTracker.ApriltagRectification   # the row built the apriltag kind
     @test rect.ratio > 0
-    ts, xy = only(runs.track)
+    ts, xy = read_track(joinpath(outdir, "results_dir", "beetle.csv"))
     @test length(xy) == nframes
     @test !any(ismissing, xy)                          # every frame held all four tags (no gaps)
     # tag_cell_width = 8 ⇒ one metric unit = one ground pixel, so the tracked path is directly
@@ -481,8 +456,11 @@ end
         end
     end
     outdir = mktempdir()
-    runs = cd(() -> main(dir; tracking_defaults = (target_width = 10,)), outdir)
-    @test nrow(runs) == 4
+    cd(() -> main(dir; tracking_defaults = (target_width = 10,)), outdir)
+    # four runs, four track csvs — and no rectification images, which are off unless asked for, and
+    # off means no trace at all: not even the folder
+    @test count(endswith(".csv"), readdir(joinpath(outdir, "results_dir"))) == 4
+    @test !ispath(joinpath(outdir, "results_dir", "rectifications"))
     diag = joinpath(outdir, "results_dir", "diagnostic.mp4")
     sizes, pts, dts = probe_frames(diag)
     @test sizes == Set([(540, 540)])                # one resolution across every frame
@@ -658,17 +636,28 @@ end
         joinpath(dir, "rectifications.csv"),
         "rectification_id,type,file,extrinsic,pixel_width\nc1,uniform,cal1.mp4,1,2\nc2,uniform,cal2.mp4,1,2\n"
     )
+    # background_length = 0 on the tracked run rides along so `main` drives the no-subtraction path end
+    # to end, csv → gateway → track; r2's blank cell takes the default
     write(
         joinpath(dir, "runs.csv"),
-        "run_id,rectification_id,file,start_location\n" *
-            "r1,c1,$(only(t1)),\"(55, 50)\"\nr2,c2,$(only(t2)),\"(55, 50)\"\n"
+        "run_id,rectification_id,file,start_location,background_length\n" *
+            "r1,c1,$(only(t1)),\"(55, 50)\",0\nr2,c2,$(only(t2)),\"(55, 50)\",\n"
     )
     outdir = mktempdir()
 
-    runs = cd(() -> main(dir; run_ids = ["r1"], tracking_defaults = (target_width = 10,)), outdir)
-    @test nrow(runs) == 1                       # only the run asked for
-    @test only(runs.run_id) == "r1"
-    @test only(runs.rectification_id) == "c1"     # and only the calibration it needs
+    cd(
+        () -> main(
+            dir; run_ids = ["r1"], tracking_defaults = (target_width = 10,),
+            rectification_diagnostics = true
+        ), outdir
+    )
+    results = joinpath(outdir, "results_dir")
+    @test isfile(joinpath(results, "r1.csv"))           # the run asked for
+    @test !isfile(joinpath(results, "r2.csv"))          # and not the other
+    # only the calibration r1 needs was built: each built rectification saves its image, here through
+    # the uniform builder, named by its rectification_id
+    @test readdir(joinpath(results, "rectifications")) == ["c1.jpg"]
+    @test filesize(joinpath(results, "rectifications", "c1.jpg")) > 0
 end
 
 end

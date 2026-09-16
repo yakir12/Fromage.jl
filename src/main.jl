@@ -69,8 +69,8 @@ function save2csv(run_id, (ts, coords))
 end
 
 # Keep only the entries whose `id` field was asked for, and reject any requested id that matched
-# nothing. Filtering by id is a convenience for iterating on one run or rectification, so an id that
-# matches nothing is a typo rather than a request for less: every requested id must match (#21).
+# nothing. Filtering by id is a convenience for iterating on one run, so an id that matches nothing
+# is a typo rather than a request for less: every requested id must match (#21).
 function filter_ids!(xs, requested, id, what)
     isnothing(requested) && return xs
     available = [getfield(x, id) for x in xs]
@@ -79,25 +79,6 @@ function filter_ids!(xs, requested, id, what)
         error("unknown $id(s) in `$(what)`: $(sort(unmatched)). Available $(id)s: $(sort(available))")
     end
     return filter!(x -> getfield(x, id) ∈ requested, xs)
-end
-
-# The building entry points open the same way: make the results directory, load the csv the caller
-# named, and drop everything the caller did not ask for. `load_*` builds or throws, so there is one
-# return type and nothing to assert — the `isa AbstractDataFrame` test and the
-# `::Vector{RectificationMethod}` assertion that used to sit here existed only because a `strict`
-# keyword chose the return type at runtime (JET flags e.g. `length(::DataFrame)` otherwise).
-function gather_rectifications(data_path, rectifications_file, defaults, rectification_ids = nothing)
-    mkpath(RESULTS_DIR)
-    # `issues_dir` is left at its default, which Paths derives from `results_dir` — the frames a
-    # failing rectification dumps land under the same output folder as everything else.
-    cs = load_rectifications(joinpath(data_path, rectifications_file); defaults)
-    return filter_ids!(cs, rectification_ids, :rectification_id, "rectification_ids")
-end
-
-function gather_runs(data_path, runs_file, defaults, run_ids = nothing)
-    mkpath(RESULTS_DIR)
-    rs = load_runs(joinpath(data_path, runs_file); defaults)
-    return filter_ids!(rs, run_ids, :run_id, "run_ids")
 end
 
 # `rectification_diagnostics` stops here (#209). It is a caller instruction, and this is the caller:
@@ -213,10 +194,7 @@ end
 
 Run the whole pipeline over the data folder `data_path`: validate `rectifications.csv` and `runs.csv` as one
 dataset, build the map each rectification row describes, track every run through the one it names, and
-write the results.
-
-Returns a `DataFrame` with one row per run, carrying `run_id`, `rectification_id`, the built
-`rectification`, and `track` — the track itself, as `(timestamps, coordinates)`.
+write the results. Returns `nothing`.
 
 Everything produced lands under `results_dir/`, created in the folder Julia was started in: one
 `<run_id>.csv` per run (a row per coordinate, with `time` in seconds on the run's clock — starting
@@ -240,15 +218,15 @@ at its first segment's `start` — and `x`/`y` in the rectification's real-world
 - `rectification_diagnostics`: also save each rectification's extrinsic frame, warped through the
   rectification fitted to it, to `results_dir/rectifications/<rectification_id>.jpg`. The same "are
   the straight edges straight" check the diagnostic video offers, but available as soon as the
-  rectifications are built rather than after every run has been tracked. An `apriltag` rectification
+  rectifications are built rather than after every run has been tracked: every rectification is built,
+  and its image saved, before the first run is tracked, so a wrong one can be spotted and `main`
+  interrupted without waiting for the tracking. An `apriltag` rectification
   has no fixed image→real map to warp through and quietly produces no image; its top-down
   diagnostic is the per-run video instead.
 
 Issues in either csv abort the run. To inspect a dataset instead of processing it, call [`verify`](@ref),
 which reports everything wrong with both files and returns them for inspection without building
 anything.
-
-See also `only_track` and `only_rectify`, the two narrowing entry points.
 """
 function main(
         data_path::String; rectifications_file = "rectifications.csv", runs_file = "runs.csv",
@@ -267,6 +245,11 @@ function main(
     rect_ids = [c.rectification_id for c in cs]
     rects = DataFrame(rectification_id = rect_ids, c = cs)
 
+    # Every rectification is built, and its `rectification_diagnostics` image written, BEFORE any run
+    # is tracked — `build_rectifications` returns only once all of them are done, and the tracking
+    # below starts after it. docs/src/help.md relies on that order: it tells a user to watch
+    # `results_dir/rectifications/` fill and interrupt `main` if an image is wrong, which is only
+    # cheap while nothing has been tracked yet (#256).
     rects.rectification .= build_rectifications(rects.c, rectification_diagnostics)
 
     runs = DataFrame(rectification_id = [r.rectification_id for r in rs], run_id = [r.run_id for r in rs], r = rs)
@@ -283,17 +266,13 @@ function main(
             build_run, runs.r, runs.c, runs.rectification, runs.diagnostic_file
         )
         concatenate(path, runs.diagnostic_file)
-        select!(runs, Not(:diagnostic_file))
     end
 
     tforeach(save2csv, runs.run_id, runs.track)
 
-    return runs
+    return nothing
 end
 
-# Each diagnostic is named by its run's `run_id`, as in `main` — which is the row number when the
-# csv names no runs, and the run's own name when it does. Numbering by position instead would
-# rename every file as soon as `run_ids` filtered one out.
 """
     verify(data_path; rectifications_file = "rectifications.csv", runs_file = "runs.csv",
            rectification_defaults = (;), tracking_defaults = (;))
@@ -310,9 +289,6 @@ is the question to ask.
 
 Every row is validated, including rows `main`'s `run_ids` would have narrowed away: narrowing
 decides what gets built, never what gets checked. There is correspondingly no `run_ids` here.
-
-See also `only_track` and `only_rectify`, which serve the same debugging purpose by narrowing
-instead.
 """
 function verify(
         data_path::String; rectifications_file = "rectifications.csv", runs_file = "runs.csv",
@@ -344,47 +320,3 @@ thing.
 The caches are in `Fromage.Memo`, whose header states what each one holds and how it is keyed.
 """
 empty_caches!() = (foreach(empty!, Memo.CACHES); nothing)
-
-"""
-    only_track(data_path; runs_file = "runs.csv", tracking_defaults = (;), run_ids = nothing)
-
-Track the runs in `runs.csv` without any rectification, and return the tracks. A debugging entry
-point: coordinates stay in image pixels because there is no rectification to carry them into
-real-world units, and with no rectification there is no scene centre either — a first segment with no
-`start_location` of its own falls back to the frame centre.
-
-Each run's diagnostic video is written to `results_dir/<run_id>.mp4`, named by `run_id` exactly as
-`main` names it (#68).
-"""
-function only_track(data_path::String; runs_file = "runs.csv", tracking_defaults = (;), run_ids = nothing)
-    rs = gather_runs(data_path, runs_file, tracking_defaults, run_ids)
-    # No rectification here, so no scene centre to fall back on and nothing to rectify through: a
-    # first segment with no start_location of its own falls through to the frame centre.
-    return @showprogress desc = "Building runs" tmap(
-        r -> track(r, missing, nothing, joinpath(RESULTS_DIR, string(r.run_id, ".mp4"))), rs
-    )
-end
-
-"""
-    only_rectify(data_path; rectifications_file = "rectifications.csv", rectification_defaults = (;),
-                 rectification_ids = nothing, rectification_diagnostics = false)
-
-Build the rectifications described by `rectifications.csv` and return them, without tracking anything. A
-debugging entry point: it exercises the whole rectification path — reads, corner detection, the fit —
-so a rectification can be checked before committing to a full run.
-
-A second call in the same Julia session exercises none of that for a rectification whose
-specification has not changed: it is served from the memo (#251), which is the point of the memo but
-not what this entry point is usually reached for. Call [`empty_caches!`](@ref) first to force the
-reads and the detection to happen again — after replacing a video or a `.mat` file **in place**, for
-instance, which changes nothing the memo is keyed on.
-
-`rectification_ids` narrows which are built; `rectification_diagnostics` is as in `main`.
-"""
-function only_rectify(
-        data_path::String; rectifications_file = "rectifications.csv", rectification_defaults = (;),
-        rectification_ids = nothing, rectification_diagnostics::Bool = false
-    )
-    cs = gather_rectifications(data_path, rectifications_file, rectification_defaults, rectification_ids)
-    return build_rectifications(cs, rectification_diagnostics)
-end

@@ -46,7 +46,7 @@ You don't need to be a programmer to use it. If you can organise your videos in 
 
 ```julia
 using Fromage
-runs = main("the/path/to/your/data/folder")
+main("the/path/to/your/data/folder")
 ```
 
 Ready? [Get started →](get-started.md)

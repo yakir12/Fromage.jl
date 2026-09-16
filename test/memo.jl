@@ -1,7 +1,6 @@
 # The memo behind the iterate-on-your-csv workflow (#233, #251): a Julia process remembers every
-# read, every detection and every rectification it has BUILT, so a second `main`/`verify`/
-# `only_rectify` over an unchanged dataset spawns no ffprobe, reads no `.mat`, detects nothing and
-# builds nothing.
+# read, every detection and every rectification it has BUILT, so a second `main`/`verify` over an
+# unchanged dataset spawns no ffprobe, reads no `.mat`, detects nothing and builds nothing.
 #
 # Two things are asserted here, and the second is the one that matters. That the caches HIT is a
 # performance claim, and it is asserted on the hit/miss counters rather than on wall-clock time,
@@ -132,7 +131,9 @@ const BOARD_W, BOARD_H = let f = Fromage.Probing.probe_fields(BOARD, "stream=wid
     parse(Int, f["width"]), parse(Int, f["height"])
 end
 
-# Both build testsets drive `only_rectify`, which mkpaths `results_dir` relative to `pwd` — so each
+# Both build testsets drive the real build: the rectifications gateway's loader, then
+# `build_rectifications`, the function `main` builds through — without a run to track. Both mkpath
+# under `results_dir` relative to `pwd` (a failing detection's frame, a diagnostic image), so each
 # runs in a scratch directory of its own rather than in whatever the suite was started from. Returns
 # that directory (the diagnostic testset needs it to find the image) and a closure performing one
 # invocation. The csv itself stays at the call sites: what the two write differs, and this is the
@@ -140,9 +141,8 @@ end
 function rectifier(csv; rectification_diagnostics = false)
     outdir = mktempdir()
     rectify() = cd(
-        () -> Fromage.only_rectify(
-            DIR; rectifications_file = basename(csv), rectification_diagnostics
-        ), outdir
+        () -> Fromage.build_rectifications(VRect.load_rectifications(csv), rectification_diagnostics),
+        outdir
     )
     return outdir, rectify
 end
@@ -279,9 +279,9 @@ const MEMOIZED = (
         @test M.hits(m.cache) == hits + 1
     end
 
-    # The build memo (#251). `only_rectify` is the cheapest entry point that runs the real
-    # `build_rectifications`, and that function is the single definition site `main` builds through
-    # too — so what is asserted here holds for `main` without tracking a run to find out.
+    # The build memo (#251). `rectifier` is the cheapest way to run the real `build_rectifications`,
+    # and that function is the single definition site `main` builds through too — so what is asserted
+    # here holds for `main` without tracking a run to find out.
     #
     # `uniform` rows because that is the one kind whose builder reads nothing: what is under test is
     # the cache, and a checkerboard would spend the suite's time on corner detection to say the same
@@ -309,8 +309,7 @@ const MEMOIZED = (
         @test M.misses(M.BUILT_RECTIFICATIONS) == 2            # neither rebuilt
         @test M.hits(M.BUILT_RECTIFICATIONS) == 2              # both served
         # The SAME rectification, not an equal one — a hit hands the previous invocation's object
-        # back. Nothing in `src/` is a mutable struct, which is what makes that sharing safe, and is
-        # why `main`'s return contract does not change.
+        # back. Nothing in `src/` is a mutable struct, which is what makes that sharing safe.
         @test all(map(===, first_built, second_built))
 
         # One row edited: that rectification is rebuilt, and the row the user did not touch is not.
@@ -323,7 +322,7 @@ const MEMOIZED = (
         @test third_built[2] !== first_built[2]
     end
 
-    # `main` says it too, and the spec asked for it by name (#251). `only_rectify` above shares
+    # `main` says it too, and the spec asked for it by name (#251). `rectifier` above shares
     # `build_rectifications` with `main`, so this could be argued rather than run — but the claim a
     # user actually reads is about `main`, and the whole feature is worth one end-to-end pass.
     @testset "a second `main` over an unchanged dataset builds nothing" begin
@@ -344,17 +343,16 @@ const MEMOIZED = (
             ), outdir
         )
 
+        # That a hit serves the SAME object is asserted on `rectifier` above; `main` returns nothing
+        # (#256), so there is no object here to compare, and the counters are the whole claim.
         Fromage.empty_caches!()
-        first_runs = go()
+        go()
         @test M.misses(M.BUILT_RECTIFICATIONS) == 1
         @test M.hits(M.BUILT_RECTIFICATIONS) == 0
 
-        second_runs = go()
+        go()
         @test M.misses(M.BUILT_RECTIFICATIONS) == 1                # nothing rebuilt
         @test M.hits(M.BUILT_RECTIFICATIONS) == 1                  # served instead
-        # The `rectification` column still carries the built object — on a hit, the SAME one. That
-        # `main`'s return contract does not change is what #251 put out of scope, so it is asserted.
-        @test only(second_runs.rectification) === only(first_runs.rectification)
     end
 
     # The blank-window `Checkerboard{Missing}` is a different TYPE from the filled `{Float64}`, so it

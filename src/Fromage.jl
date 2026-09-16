@@ -27,10 +27,8 @@ using .Gateway: verify_cross_references!
 using .Memo: BUILT_RECTIFICATIONS
 using .Rectifications: Rectification, save_diagnostic
 using .PawsomeTracker: track
-using .VerifyRectifications: load_rectifications
-using .VerifyRuns: load_runs
 
-using DataFrames: DataFrame, Not, leftjoin!, select!, transform!
+using DataFrames: DataFrame, leftjoin!, transform!
 using FFMPEG: ffmpeg_exe
 using OhMyThreads: tforeach, tmap
 using ProgressMeter: @showprogress
