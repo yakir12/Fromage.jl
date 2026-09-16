@@ -49,7 +49,7 @@ julia --threads=auto
 
 ```julia
 using Fromage
-runs = main("the/path/to/your/data/folder")
+main("the/path/to/your/data/folder")
 ```
 
 `main` then works through four stages:

@@ -1,6 +1,6 @@
 # Your results
 
-When `main` finishes, you have two kinds of output: **files on disk** (in a `results_dir` folder, created in the folder Julia was started in) and, if you're working in Julia, a **DataFrame** returned by `main`. Most people only need the files.
+When `main` finishes, everything it produced is on disk, in a `results_dir` folder created in the folder Julia was started in: a track file per run, one diagnostic video, and — if you asked for them — an image per rectification.
 
 ## The track files
 
@@ -52,7 +52,7 @@ Off by default. Ask for them and `main` saves, for every rectification, that rec
 main("path/to/data"; rectification_diagnostics = true)
 ```
 
-One JPEG per rectification lands in `results_dir/rectifications/`, named by its `rectification_id` — so `c1.jpg` is the rectification the csv calls `c1`. `only_rectify` takes the same keyword.
+One JPEG per rectification lands in `results_dir/rectifications/`, named by its `rectification_id` — so `c1.jpg` is the rectification the csv calls `c1`.
 
 That is true of a re-run too: Fromage remembers the rectifications it has already built (see [re-running in the same Julia session](help.md#Re-running-in-the-same-Julia-session)), but it still saves every image again, from the rectification it remembered.
 
@@ -74,21 +74,3 @@ The frame is named for its video and extrinsic, followed by a short tag that tel
 Each time you run Fromage it gets its own time-stamped folder under `results_dir/issues`, named for the moment it started, so the folder holds exactly the frames of that run of Fromage and older ones stay where they are. That is true of a re-run too: Fromage remembers what it detected (see [re-running in the same Julia session](help.md#Re-running-in-the-same-Julia-session)), but it still saves the frame again, into the new folder. Nothing here is ever deleted: the folder is yours to clean out whenever you like.
 
 Open the frame and look at it — a blurry, over-exposed, or half-out-of-shot board is usually the whole story, and the fix is a different `extrinsic` timestamp or a better rectification video.
-
-## Working with the results in Julia
-
-`main` returns a `DataFrame` with one row per run:
-
-| column | content |
-| --- | --- |
-| `run_id`, `rectification_id` | the identifiers from the csv files. |
-| `track` | a tuple `(ts, coords)` of timestamps (seconds on the run's clock, as in the track file) and the target's **real-world** coordinates — the same data as the track file. |
-| `rectification` | the rectification: a `StaticRectification`, whose `image2real` function converts pixel coordinates to real-world coordinates and whose `real2image` is its inverse. Drone runs instead carry an `ApriltagRectification`, which registers each frame against a shared reference and so has no single `real2image`. |
-| `r`, `c` | the parsed run and rectification entries (all the resolved parameter values). |
-
-For example:
-
-```julia
-runs = main("path/to/data")
-ts, xy = runs.track[1]  # first run's track: timestamps + real-world coordinates (e.g. cm)
-```

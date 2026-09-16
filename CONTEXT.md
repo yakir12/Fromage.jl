@@ -66,11 +66,12 @@ ignore it by design (see DECISIONS).
 ### Track
 
 What a run yields: timestamps paired with the target's position, in real-world coordinates. Written
-to `results_dir/<run_id>.csv`, and returned by `main` in a column called `track`.
+to `results_dir/<run_id>.csv`; `main` returns nothing, so that file is the only place a track lives
+once `main` has finished.
 
 ### Invocation
 
-**One execution of Fromage**: one call to `main` — or to `verify`, `only_rectify` or `only_track`.
+**One execution of Fromage**: one call to `main` or to `verify`.
 Named because the issues folder is per execution: each invocation gets its own time-stamped folder
 (`Paths.invocation_issues_dir`), and nothing is ever deleted from it.
 

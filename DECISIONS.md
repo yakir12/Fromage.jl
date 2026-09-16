@@ -22,6 +22,37 @@ Entries cite the issue number where one exists (`#nn` → `github.com/yakir12/Fr
 
 ## Pipeline
 
+### Two entry points, and `main` returns nothing (#256)
+
+There used to be four: `main` and `verify`, plus the unexported `only_track` (track with no
+rectification, coordinates in pixels) and `only_rectify` (build without tracking), documented as
+debugging tools. Both were removed, and **`main` returns `nothing`** where it used to return a
+`DataFrame` of one row per run. Before re-adding either, know why they went.
+
+The two narrowing entry points were used far less than they cost. They opened the data folder their
+own way — `gather_rectifications`/`gather_runs`, a second path `main` did not take — which is
+exactly the duplication the #68 entry below describes drifting, and #230 was a bug that existed only
+in them (closed as moot by this). Their one real use, checking a rectification before committing to
+a full run, `main` already does: it builds every rectification, and writes each
+`rectification_diagnostics` image, before it tracks anything, and with #251's build memo the rerun
+after fixing one row rebuilds only that row. So the help page now says to run
+`main(...; rectification_diagnostics = true)`, watch `results_dir/rectifications/`, and interrupt.
+That instruction depends on the build finishing before tracking starts; the comment beside the
+`build_rectifications` call in `main` says so, and whoever reorders that code has to revisit the
+help page.
+
+`main`'s return value was audited column by column before it went. `track` is already written to
+`results_dir/<run_id>.csv` (in full precision, so reading it back is exact); `run_id`,
+`rectification_id` and the parsed `r`/`c` are recoverable from `verify`. The one column that existed
+nowhere else was the built `rectification` — its `image2real`/`real2image` — and no user needed it.
+Removing the return value is also what lets track caching (#249) be designed without a return value
+to preserve. The tests that read it now read the csv, and rebuild the rectification a ground truth
+needs through `build_rectification`, which on the same row is a memo hit on the very object `main`
+tracked through; no tolerance moved.
+
+**Considered and not done:** a replacement entry point for the pixel-conversion use of the
+`rectification` object. Nobody asked for one.
+
 ### The diagnostic video is concatenated with ffmpeg's concat demuxer
 
 `main` writes one diagnostic segment per run and stream-copies them into a single
@@ -34,6 +65,8 @@ run at `-loglevel 8` so that every warning it produced was hidden. The demuxer r
 monotonically by design, so the heuristics went away with it.
 
 ### An unmatched `run_ids` / `rectification_ids` filter is an error (#21)
+
+(`rectification_ids` was a keyword of `only_rectify`, removed in #256; `run_ids` on `main` remains.)
 
 Filtering by id is a convenience for iterating on one run, so an id that matches nothing is a
 typo, not a request for less work. Unchecked, it failed twice over: a *total* miss emptied the
@@ -55,6 +88,10 @@ written, so a 50 fps track played back at 0.48× speed. Hence `DIAGNOSTIC_SPEEDU
 and the frame decimation.
 
 ### `only_track` names its diagnostics by `run_id` (#68)
+
+*History: `only_track`, `only_rectify` and the `gather_*` functions below were removed in #256 (see
+"Two entry points, and `main` returns nothing"). The lesson — two entry points that open the data
+folder separately drift apart — is part of why.*
 
 It used to name them by loop index — `1.mp4`, `2.mp4` — while `main` named the same files by
 `run_id`. The two agree only when the csv names no runs, because `resolve_run_ids!` then imputes
@@ -345,8 +382,9 @@ all, and `from_matlab` reads only its `.mat`. The cost had been landing on the t
 fabricated `file = "unused.mp4"`, `extrinsic = 0.0` and `rectification_diagnostics = false` at nine
 call sites that wanted none of them.
 
-`rectification_diagnostics` remains on `main` and `only_rectify` unchanged: it is user-facing and
-documented in `docs/src/help.md`. Only the builder surface lost it.
+`rectification_diagnostics` remains on `main` unchanged: it is user-facing and documented in
+`docs/src/help.md`. Only the builder surface lost it. (It was on `only_rectify` too, until that entry
+point was removed in #256.)
 
 **Considered and not done.** Rendering inside the five `Rectification(c)` dispatchers, one frame
 lower, keeps them the single place that knows about each rectification kind — but it repeats the
