@@ -65,6 +65,13 @@
         @test_throws ArgumentError check([uniformrow()]; defaults = (pixel_width = 9.5,))
         # unconvertible value
         @test_throws ArgumentError check([checkerboardrow()]; defaults = (n_corners = "5x8",))
+        # a non-finite value converts, and is rejected all the same — through either entry point (#151)
+        @test_throws "rectification default blur must be finite, got Inf" check(
+            [checkerboardrow()]; defaults = (blur = Inf,)
+        )
+        @test_throws "rectification default checker_width must be finite, got NaN" check(
+            [checkerboardrow()]; defaults = (checker_width = NaN,), strict = true
+        )
         # a convertible but nonsensical value flows into the normal verification
         @test flagged(
             check([checkerboardrow(checker_width = missing)]; defaults = (checker_width = -1,)),

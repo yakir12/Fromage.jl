@@ -44,7 +44,16 @@ end
 # and not just `strip`, whose SubString the `::String` fields won't accept.
 mytryparse(::Type{String}, x) = String(strip(string(x)))
 
+# Base's float parser accepts "NaN", "Inf" and "-Inf" (in any case) as well-formed, and nothing
+# downstream is prepared for them: a NaN target_width surfaced as `InexactError: Int64(NaN)` inside
+# tracking (#151). Every parsed cell passes through `set!`, so this is where a non-finite one is
+# refused — as a report naming the column and the value, not a throw. Only a float can be
+# non-finite; the integer, tuple and Bool parsers reject "NaN" as a wrong format on their own.
+nonfinite(x::AbstractFloat) = !isfinite(x)
+nonfinite(_) = false
+
 function set!(dict, y, k, _)
+    nonfinite(y) && return set!(dict, nothing, k, "$k must be finite, got $y")
     return dict[k] = y
 end
 
@@ -72,8 +81,9 @@ end
 # Validate and normalize caller-supplied global defaults against a gateway's whitelist: only keys
 # of `defaults` may be set, each value must convert to its column's type (`types`), and `what`
 # names the kwarg in the error message ("rectification"/"tracking"). Fails fast, before any
-# parsing. Values are not otherwise pre-checked: an out-of-range default flows into the normal
-# verifications and is flagged on every row that used it.
+# parsing. A non-finite float converts cleanly, so it is refused separately, on the same terms as a
+# csv cell (see `nonfinite`). Values are not otherwise pre-checked: an out-of-range default flows
+# into the normal verifications and is flagged on every row that used it.
 function resolve_defaults(overrides, defaults, types, what)
     unknown = setdiff(keys(overrides), keys(defaults))
     isempty(unknown) || throw(ArgumentError("unknown $what default(s): $(join(unknown, ", ")) (settable: $(join(keys(defaults), ", ")))"))
@@ -83,12 +93,14 @@ function resolve_defaults(overrides, defaults, types, what)
     # "yes" -> Bool) or `InexactError` (a lossy one: 1.5 -> Int). Anything else propagates.
     converted = NamedTuple{keys(overrides)}(
         map(keys(overrides)) do k
-            try
+            v = try
                 convert(types[k], overrides[k])
             catch e
                 e isa MethodError || e isa InexactError || rethrow()
                 throw(ArgumentError("$what default $k must be convertible to $(types[k]), got $(repr(overrides[k]))"))
             end
+            nonfinite(v) && throw(ArgumentError("$what default $k must be finite, got $(repr(overrides[k]))"))
+            v
         end
     )
     return merge(defaults, converted)

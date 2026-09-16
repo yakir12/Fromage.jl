@@ -77,6 +77,20 @@ Base.convert(::Type{Int}, ::Boom) = error("boom")
         d = fresh(); P.parseto!(d, (; s = "   "), :s, String, "fallback")
         @test d[:s] == "fallback"
         @test isempty(d[:issues])
+
+        # Base's float parser accepts "NaN", "Inf" and "-Inf" (any case) as well-formed, so a
+        # non-finite number used to pass as a clean cell and fail far downstream — an
+        # `InexactError: Int64(NaN)` inside tracking (#151). It is nulled and reported here instead,
+        # for plain numbers and for the seconds spelling of a temporal cell alike.
+        for (T, cell, shown) in (
+                (Float64, "NaN", "NaN"), (Float64, "Inf", "Inf"), (Float64, "-Inf", "-Inf"),
+                (Float64, "nan", "NaN"), (Float64, " infinity ", "Inf"),
+                (P.MyTemporal, "Inf", "Inf"), (P.MyTemporal, "NaN", "NaN"),
+            )
+            d = fresh(); P.parseto!(d, (; x = cell), :x, T)
+            @test d[:x] === missing
+            @test d[:issues] == ["x must be finite, got $shown"]
+        end
     end
 
     @testset "set!: a value passes through, `nothing` nulls and reports" begin
@@ -107,6 +121,12 @@ Base.convert(::Type{Int}, ::Boom) = error("boom")
         @test_throws ArgumentError resolve((; flag = "yes"))    # MethodError: no such conversion
         @test_throws ArgumentError resolve((; n = 1.5))         # InexactError: would lose information
         @test_throws ArgumentError resolve((; flag = 2))        # InexactError: 2 is not a Bool
+
+        # A non-finite float converts cleanly, and is rejected on the same terms as one that does
+        # not (#151): the csv path refuses it, so a default must not be a way around that.
+        @test_throws "test default a must be finite, got NaN" resolve((; a = NaN))
+        @test_throws "test default a must be finite, got Inf" resolve((; a = Inf))
+        @test_throws "test default a must be finite, got -Inf32" resolve((; a = -Inf32))   # the value as given, like the message above
 
         # ...and an error that is NOT a rejected value must propagate unchanged rather than be
         # reported to the user as "must be convertible to". Boom is our own type, so extending

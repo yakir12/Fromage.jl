@@ -40,6 +40,13 @@
         @test_throws ArgumentError check([runrow()]; defaults = (start = 0,))
         # unconvertible value
         @test_throws ArgumentError check([runrow()]; defaults = (darker_target = "yes",))
+        # a non-finite value converts, and is rejected all the same — through either entry point (#151)
+        @test_throws "tracking default target_width must be finite, got NaN" check(
+            [runrow()]; defaults = (target_width = NaN,)
+        )
+        @test_throws "tracking default initial_search_factor must be finite, got Inf" check(
+            [runrow()]; defaults = (initial_search_factor = Inf,), strict = true
+        )
         # a convertible but nonsensical value flows into the normal verification
         @test flagged(
             check([runrow()]; defaults = (target_width = -5,)),
