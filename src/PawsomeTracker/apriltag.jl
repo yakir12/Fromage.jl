@@ -343,8 +343,11 @@ valid_apriltag_family(family) = haskey(APRIL_FAMILIES, family)
 # Memoized on its whole argument list (see `Memo`), which is every input the detection reads — the
 # frame (file, extrinsic) and what is being looked for in it (ntags, family, tag_cell_width). The
 # `ReferenceSpace` itself is deliberately NOT cached: it is rebuilt by `ApriltagRectification`, and
-# handing the same mutable one to two rectifications is not what this memo is for. The frame DUMP a
-# failure triggers stays outside the memo too, in `flag_extrinsic!` (#86, #210).
+# handing the same one to two DIFFERENT rectifications is not what this memo is for. Since #251 the
+# built `ApriltagRectification` is cached, so a single specification's reference is shared for the
+# session — by the rectification that owns it, which is the same sharing one `main` already did across
+# every run pointing at that row, and safe for the same reason: every use of it is a read.
+# The frame DUMP a failure triggers stays outside the memo too, in `flag_extrinsic!` (#86, #210).
 # `unless` is how this one keeps `Memo`'s "a failed read is never remembered" rule: `reference_space`
 # reports rather than throws — every way a rectification can fail to yield a reference is a fact
 # about the user's file, and `ApriltagRectification` relies on that — so there is no exception for

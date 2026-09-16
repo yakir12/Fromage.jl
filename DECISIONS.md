@@ -963,13 +963,13 @@ return a negative `Float64` for a negative numerator, where `VerifyRuns.parse_sa
 square-pixel fallback. Both now take the fallback. No caller could use a negative aspect ratio, and
 every case either suite pins was already agreed on by both.
 
-### `LRUCache`, not a memoization package (#233)
+### `LRUCache`, not a memoization package (#233, #251)
 
-Verification memoizes four computations — the ffprobe of a video, the `matread` of a calibration
-file, the checkerboard/AprilTag detection at a rectification's extrinsic timestamp, and the scan of
-its intrinsic window — so a second `main` over a dataset the user edited one row of re-reads nothing
-it had already read. The cache is `LRUCache.jl`, and that is not an arbitrary pick among the
-memoization packages:
+A session memoizes five computations — the ffprobe of a video, the `matread` of a calibration file,
+the checkerboard/AprilTag detection at a rectification's extrinsic timestamp, the scan of its
+intrinsic window, and (since #251) the BUILD of the rectification itself — so a second `main` over a
+dataset the user edited one row of re-reads and rebuilds nothing it had already done. The cache is
+`LRUCache.jl`, and that is not an arbitrary pick among the memoization packages:
 
 - the reads run under `OhMyThreads.tmap`, so every cache here is written **concurrently**;
 - `LRU` locks, and **releases the lock while computing the missing value** — a lock held across an
@@ -987,12 +987,40 @@ Concurrent misses on one key can still compute twice, which costs a duplicate re
 answer; that is the trade `LRU` makes for not holding the lock, and it is the right one here.
 
 Sized at 1000 entries each, which is a bound against a pathological loop rather than a working set:
-the reference dataset is 372 runs over a handful of rectifications.
+the reference dataset is 372 runs over a handful of rectifications. The build cache keeps that shared
+bound even though a built rectification is a far larger object than a probe `Dict` — a session that
+had genuinely built a thousand distinct rectifications would have read a thousand videos to do it,
+and the maps are the small half of that.
 
-### The memo is keyed on the path, and never revalidated (#233)
+### The memo is keyed on the path, and never revalidated (#233, #251)
 
 A cached read is invalidated by nothing. The key is the resolved, canonical absolute path — file
 identity, not file content — and the entry lives for the life of the Julia process.
+
+#251 extends that from reads to BUILDS without extending the machinery. A built rectification is
+keyed on the `RectificationMethod` object, which is `Rectification`'s complete argument list, so
+there is no key to construct and no second place for a parameter to be stated. Every subtype hashes
+and compares by content — `String`s, numbers and `NTuple`s all the way down — so two independently
+parsed, identically specified rows are one entry. That is a property of what those structs are made
+of rather than a decision, so `test/memo.jl` asserts it structurally, over `fieldnames`, including
+the nested `Source`: an under-specified key is the one way this returns a WRONG rectification rather
+than merely a slow one. `Run` is the counter-example and the reason tracking is not memoized with it
+(#249): its `segments::Vector` field hashes by identity, so two identically specified runs are two
+entries and would never hit.
+
+The path caveat reaches builds transitively — a rectification is keyed on a specification whose
+`file` is a path — so replacing a video in place serves the rectification built from the old one.
+Same remedy, and `help.md` says so. The specification is not only the csv row: `rectification_defaults`
+fills the row's blank cells before the object is built (`parse_checkerboard!`, `parse_apriltag!`), and
+ffprobe fills `aspect`/`width`/`height`/`yadif`, so all of those are in the key too. That is the right
+behaviour — changing a global default rebuilds what leaned on it — and `help.md` says that as well.
+
+The memo wrapper is `Fromage.build_rectification`, not `Rectification` itself. Memoizing the
+constructor in `Rectifications` was the shorter change and was declined: `Rectification(c)` is the
+public builder, so a cache under it would make "build this rectification now, from cold" unsayable by
+any caller. The wrapper keeps the constructor an honest builder and keeps the decision to REUSE a
+rectification in `main`, next to `save_diagnostic` — the other thing #209 decided belongs to the
+caller rather than to the builder.
 
 `mtime` + size was considered and declined. It is not proof that contents are unchanged (both
 survive an in-place rewrite of the same length within the same second, and a restored backup
@@ -1015,7 +1043,9 @@ does next, and the whole point of this feature — would not help.
 
 It is reached two ways, and the difference is not arbitrary:
 
-- **The catch sits outside `get!`** for `probe_fields`, `extrinsic_issue` and `intrinsic_issue`.
+- **The catch sits outside `get!`** for `probe_fields`, `extrinsic_issue` and `intrinsic_issue`, and
+  for the build there is no catch at all — a builder THROWS rather than reporting, which is the
+  contract `ApriltagRectification` relies on (`ref isa String && error(ref)`).
   `LRUCache`'s `get!` stores nothing when its closure throws, so this costs no machinery at all.
 - **The failure is recognized and forgotten** (`Memo.remember`) for `matlab_metadata` and
   `apriltag_extrinsic_issue`, whose catch belongs to a function that reports rather than throws
@@ -1026,7 +1056,7 @@ It is reached two ways, and the difference is not arbitrary:
 The cost either way is one re-read per invocation of a file that really is broken, which is the cheap
 half of the trade: a broken file is being iterated on anyway.
 
-Two things deliberately stay outside the memo, and both would be bugs inside it:
+Three things deliberately stay outside the memo, and all three would be bugs inside it:
 
 - **`verifications!` and the `read_*_metadata!` functions.** Their effect is the mutation of the
   DataFrame passed in, not their return value, and a DataFrame hashes by object identity — a memo
@@ -1035,11 +1065,14 @@ Two things deliberately stay outside the memo, and both would be bugs inside it:
   runs on every invocation, so each one dumps into its own folder and names its own path in the
   message. That keeps #86's "the issues folder is only ever added to" true, and is what a user
   re-running to look at a failure depends on.
+- **The `rectification_diagnostics` image**, for the same reason one tier up. #209 had already moved
+  it out of the builders and into `build_rectifications`, so memoizing the builder left it outside by
+  construction: a cache hit still renders its image, from the cached rectification.
 
 What is NOT cached is as deliberate: row-level or csv-text-keyed caching would gate column-wise
 predicates over a DataFrame — microseconds of pure CPU — behind machinery guarding something already
-free. Rectification building, tracking and the diagnostic segments are the other half of #233's
-original request and are tracked as #249.
+free. Rectification building was the other half of #233's original request and landed in #251, on
+the terms above; tracking and the diagnostic segments are still open as #249.
 
 ### The frame dump stays out of `detect_per_group!` (#210)
 

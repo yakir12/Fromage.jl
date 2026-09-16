@@ -1,13 +1,16 @@
-# The memo behind the iterate-on-your-csv workflow (#233): verification remembers every read and
-# every detection for the life of the Julia process, so a second `main`/`verify` over an unchanged
-# dataset spawns no ffprobe, reads no `.mat` and detects nothing.
+# The memo behind the iterate-on-your-csv workflow (#233, #251): a Julia process remembers every
+# read, every detection and every rectification it has BUILT, so a second `main`/`verify`/
+# `only_rectify` over an unchanged dataset spawns no ffprobe, reads no `.mat`, detects nothing and
+# builds nothing.
 #
 # Two things are asserted here, and the second is the one that matters. That the caches HIT is a
 # performance claim, and it is asserted on the hit/miss counters rather than on wall-clock time,
 # which on this machine is noise (DECISIONS). That every parameter a memoized computation reads is
 # part of its key is a CORRECTNESS claim: an under-specified key is the one way this change can
 # return a wrong answer rather than merely a slow one, so each parameter is varied on its own and
-# the recomputation asserted, rather than reasoned about from the source.
+# the recomputation asserted, rather than reasoned about from the source. The build's key is a whole
+# OBJECT rather than a tuple, so for that one the same claim is made structurally over `fieldnames`
+# — see `variants` below.
 #
 # Path-keyed caching is safe across the suite only because every fixture path is written exactly
 # once, with one content, for the life of the test process: the shared artifact blocks in both
@@ -27,9 +30,15 @@ const VRect = Fromage.VerifyRectifications
 const VRuns = Fromage.VerifyRuns
 const PT = Fromage.PawsomeTracker
 
-# What every cache in the package has computed so far, by identity. The counters are process-global
+# Every cache the VERIFICATION half fills. The build cache (#251) is left out because the two
+# `check_*` functions build nothing, so it would never move with the others; derived from `M.CACHES`
+# by exclusion rather than listed, so a verification cache added later is counted here without this
+# line being touched.
+const VERIFICATION_CACHES = filter(c -> c !== M.BUILT_RECTIFICATIONS, M.CACHES)
+
+# What every verification cache has computed so far, by identity. The counters are process-global
 # and other suites share them, so every assertion below is on a DELTA taken around one call.
-snapshot(caches = M.CACHES) = map(M.misses, caches), map(M.hits, caches)
+snapshot(caches = VERIFICATION_CACHES) = map(M.misses, caches), map(M.hits, caches)
 
 # A failing extrinsic detection appends the path it dumped the frame to, and that path names the
 # INVOCATION's own folder — so two verifications of one failing dataset must agree on the verdict
@@ -67,12 +76,85 @@ const OTHER = make_video(joinpath(DIR, "memo_other.mp4"); duration = 2, size = (
 const MAT1 = make_mat(joinpath(DIR, "memo_one.mat"), (320, 240))
 const MAT2 = make_mat(joinpath(DIR, "memo_two.mat"), (320, 240))
 
+# A verified rectifications row of each of the four kinds, constructed directly rather than parsed:
+# what this suite is about is the KEY, and the parser has its own tests. `center`/`north` are filled
+# rather than left blank so that varying them below is a change of value and not of type.
+src(file = PLAIN) = VRect.Source(file, 1.0, (10, 20), (30, 40), 1.0, 320, 240)
+
+# A different value of the same shape for every field type these four structs are built from, so a
+# one-field variant can be derived from `fieldnames` rather than from a hand-written list per kind —
+# a field added to one of them later is then covered without this file being edited.
+vary(x::Bool) = !x
+vary(x::Int) = x + 1
+vary(x::Float64) = x + 1.0
+vary(x::String) = string(x, "-other")
+vary(x::NTuple{2, Int}) = (x[1] + 1, x[2])
+
+# Rebuild `x` with field `i` replaced. Reaching the constructor by NAME drops the type parameter, so
+# a `Checkerboard{Float64}` is rebuilt by its own constructor rather than pinned by this function;
+# for the three non-parametric kinds it is the type itself. `typeof(x).name.wrapper` does the same
+# thing in one expression and is what this was first written as — but `TypeName.wrapper` is a Base
+# internal, and there is nothing internal about asking a module for a type it exports.
+function replace_field(x, i, v)
+    T = typeof(x)
+    constructor = getfield(parentmodule(T), nameof(T))
+    return constructor(ntuple(j -> j == i ? v : getfield(x, j), fieldcount(T))...)
+end
+
+# Every one-field variant of `c`, the fields of its nested `Source` included — those are fields of
+# the key just as much as the method's own, and are where an under-specified key would hurt most:
+# `center` and `north` change the map without changing anything else about the row.
+function variants(c)
+    # Every variant is still the same concrete type as `c` — varying one field never leaves its
+    # declared type, `Checkerboard{Float64}`'s two `::S` bounds included — so the eltype says so.
+    vs = Pair{String, typeof(c)}[]
+    T = typeof(c)
+    for i in 1:fieldcount(T)
+        f = getfield(c, i)
+        name = string(nameof(T), ".", fieldname(T, i))
+        if f isa VRect.Source
+            for j in 1:fieldcount(VRect.Source)
+                v = replace_field(c, i, replace_field(f, j, vary(getfield(f, j))))
+                push!(vs, string(name, ".", fieldname(VRect.Source, j)) => v)
+            end
+        else
+            push!(vs, name => replace_field(c, i, vary(f)))
+        end
+    end
+    return vs
+end
+
 # The board video's own frame size — the checkerboard png padded to even dimensions. Read off the
 # file rather than hard-coded, since the detectors are keyed on it and a wrong value would silently
 # turn every detection into a reshape failure instead of a detection.
 const BOARD_W, BOARD_H = let f = Fromage.Probing.probe_fields(BOARD, "stream=width,height")
     parse(Int, f["width"]), parse(Int, f["height"])
 end
+
+# Both build testsets drive `only_rectify`, which mkpaths `results_dir` relative to `pwd` — so each
+# runs in a scratch directory of its own rather than in whatever the suite was started from. Returns
+# that directory (the diagnostic testset needs it to find the image) and a closure performing one
+# invocation. The csv itself stays at the call sites: what the two write differs, and this is the
+# only part of the shape that was the same.
+function rectifier(csv; rectification_diagnostics = false)
+    outdir = mktempdir()
+    rectify() = cd(
+        () -> Fromage.only_rectify(
+            DIR; rectifications_file = basename(csv), rectification_diagnostics
+        ), outdir
+    )
+    return outdir, rectify
+end
+
+# One of each kind of rectifications row, for the structural key testset. `Checkerboard` is the
+# parametric one, and this is its `{Float64}` instance — the blank-window `{Missing}` form differs in
+# the type of two fields, so it is a different key by construction and needs no row of its own.
+const METHODS = (
+    VRect.Uniform(src(), "u", 2.0),
+    VRect.Checkerboard(src(BOARD), "c", 0.0, 1.0, 4.0, (5, 8), 0.5, 1, 0.0, false),
+    VRect.Apriltag(src(), "a", 4, "tag36h11", 12.0),
+    VRect.MATLAB(src(), "m", MAT1, 1),
+)
 
 # Each memoized computation, its cache, and an alternative value for EVERY one of its arguments.
 # Varying one at a time must recompute: if any parameter is absent from the key, its row here fails.
@@ -107,9 +189,18 @@ const MEMOIZED = (
         base = (PLAIN, 1.0, 4, "tag36h11", 12),
         alts = (OTHER, 1.5, 3, "tag25h9", 13),
     ),
+    # The build (#251). Its argument list is ONE object, so the varied-parameter testset says only
+    # that the object is the key; that every FIELD of it is part of that key is the structural
+    # testset below. A `uniform` row because it is the one kind that reads nothing at all to build,
+    # which also makes it the cheap way this row primes the cache for `empty_caches!`.
+    (
+        name = "build_rectification", cache = M.BUILT_RECTIFICATIONS,
+        f = Fromage.build_rectification,
+        base = (METHODS[1],), alts = (VRect.Uniform(src(), "u-alt", 3.0),),
+    ),
 )
 
-@testset "Memo (verification remembers what it read)" begin
+@testset "Memo (a session remembers what it read and what it built)" begin
 
     @testset "a second verification of the same dataset reads and detects nothing" begin
         csv = joinpath(DIR, "rectifications.csv")
@@ -160,7 +251,7 @@ const MEMOIZED = (
         # After `empty_caches!` the same dataset is read from scratch again, with the same verdict.
         Fromage.empty_caches!()
         third_rects, third_runs = check_rects(), check_runs()
-        @test all(map(M.misses, M.CACHES) .> 0)                # counters reset by empty!, so this is the fresh count
+        @test all(map(M.misses, VERIFICATION_CACHES) .> 0)     # counters reset by empty!, so this is the fresh count
         @test verdicts(third_rects) == verdicts(first_rects)
         @test verdicts(third_runs) == verdicts(first_runs)
     end
@@ -185,6 +276,154 @@ const MEMOIZED = (
         hits = M.hits(m.cache)
         m.f(m.base...)
         @test M.hits(m.cache) == hits + 1
+    end
+
+    # The build memo (#251). `only_rectify` is the cheapest entry point that runs the real
+    # `build_rectifications`, and that function is the single definition site `main` builds through
+    # too — so what is asserted here holds for `main` without tracking a run to find out.
+    #
+    # `uniform` rows because that is the one kind whose builder reads nothing: what is under test is
+    # the cache, and a checkerboard would spend the suite's time on corner detection to say the same
+    # thing. Verification still probes both videos, which is what makes these rows realistic rather
+    # than synthetic.
+    @testset "a second build of the same rectifications builds nothing" begin
+        csv = joinpath(DIR, "memo_uniform.csv")
+        # The csv is rewritten between passes, which the header's write-once rule does not cover and
+        # does not need to: csv TEXT is never memoized, only the videos it names — and those two are
+        # written once, like every other fixture here.
+        write_rows(second_pixel_width) = open(csv, "w") do io
+            println(io, "rectification_id,path,file,type,extrinsic,pixel_width")
+            println(io, "u1,.,memo_plain.mp4,uniform,00:00:01,2")
+            println(io, "u2,.,memo_other.mp4,uniform,00:00:01,$second_pixel_width")
+        end
+        _, rectify = rectifier(csv)
+
+        write_rows(3)
+        Fromage.empty_caches!()
+        first_built = rectify()
+        @test M.misses(M.BUILT_RECTIFICATIONS) == 2            # both built, from cold
+        @test M.hits(M.BUILT_RECTIFICATIONS) == 0
+
+        second_built = rectify()
+        @test M.misses(M.BUILT_RECTIFICATIONS) == 2            # neither rebuilt
+        @test M.hits(M.BUILT_RECTIFICATIONS) == 2              # both served
+        # The SAME rectification, not an equal one — a hit hands the previous invocation's object
+        # back. Nothing in `src/` is a mutable struct, which is what makes that sharing safe, and is
+        # why `main`'s return contract does not change.
+        @test all(map(===, first_built, second_built))
+
+        # One row edited: that rectification is rebuilt, and the row the user did not touch is not.
+        # This is the whole point of the feature — the user's edit was to one row, not to the folder.
+        write_rows(4)
+        third_built = rectify()
+        @test M.misses(M.BUILT_RECTIFICATIONS) == 3            # exactly one rebuild
+        @test M.hits(M.BUILT_RECTIFICATIONS) == 3              # ...and the untouched row served again
+        @test third_built[1] === first_built[1]
+        @test third_built[2] !== first_built[2]
+    end
+
+    # `main` says it too, and the spec asked for it by name (#251). `only_rectify` above shares
+    # `build_rectifications` with `main`, so this could be argued rather than run — but the claim a
+    # user actually reads is about `main`, and the whole feature is worth one end-to-end pass.
+    @testset "a second `main` over an unchanged dataset builds nothing" begin
+        csv = joinpath(DIR, "memo_main.csv")
+        open(csv, "w") do io
+            println(io, "rectification_id,path,file,type,extrinsic,pixel_width")
+            println(io, "m1,.,memo_plain.mp4,uniform,00:00:01,2")
+        end
+        runs_csv = joinpath(DIR, "memo_main_runs.csv")
+        open(runs_csv, "w") do io
+            println(io, "run_id,rectification_id,path,file,start,stop")
+            println(io, "mr1,m1,.,memo_plain.mp4,00:00:00,00:00:01")
+        end
+        outdir = mktempdir()
+        go() = cd(
+            () -> Fromage.main(
+                DIR; rectifications_file = basename(csv), runs_file = basename(runs_csv)
+            ), outdir
+        )
+
+        Fromage.empty_caches!()
+        first_runs = go()
+        @test M.misses(M.BUILT_RECTIFICATIONS) == 1
+        @test M.hits(M.BUILT_RECTIFICATIONS) == 0
+
+        second_runs = go()
+        @test M.misses(M.BUILT_RECTIFICATIONS) == 1                # nothing rebuilt
+        @test M.hits(M.BUILT_RECTIFICATIONS) == 1                  # served instead
+        # The `rectification` column still carries the built object — on a hit, the SAME one. That
+        # `main`'s return contract does not change is what #251 put out of scope, so it is asserted.
+        @test only(second_runs.rectification) === only(first_runs.rectification)
+    end
+
+    # The blank-window `Checkerboard{Missing}` is a different TYPE from the filled `{Float64}`, so it
+    # is a different key with no field varying at all. It is not in `METHODS` because `variants`
+    # cannot produce it: `intrinsic_start`/`intrinsic_stop` are both `::S`, so varying one alone is
+    # not constructible — which is the same fact from the other side, and is why this is asserted
+    # here rather than folded into the structural testset.
+    @testset "a blank intrinsic window is a different key from a filled one" begin
+        blank = VRect.Checkerboard(src(BOARD), "c", missing, missing, 4.0, (5, 8), 0.5, 1, 0.0, false)
+        Fromage.empty_caches!()
+        get!(() -> nothing, M.BUILT_RECTIFICATIONS, METHODS[2])
+        @test haskey(M.BUILT_RECTIFICATIONS, METHODS[2])
+        @test !haskey(M.BUILT_RECTIFICATIONS, blank)
+    end
+
+    # The correctness half, and the reason this is more than a speed-up: the key IS the object, so a
+    # field that did not participate in hashing would serve one row's rectification for another's.
+    # (`Memo` names the counter-example that makes this worth asserting rather than assuming.)
+    #
+    # Asserted on the cache rather than through a build, because what is claimed is that the key
+    # discriminates, and three of the four kinds cannot be built at all from this suite's fixtures
+    # (no tags in the video, no detectable board at these dimensions). That `build_rectification`
+    # keys on `c` itself is asserted by its `MEMOIZED` row above and by the testset before this one.
+    #
+    # `rectification_id` is one of the varied fields, so "two rows differing only in their id are two
+    # entries" needs no testset of its own.
+    @testset "every field of $(nameof(typeof(c))) is part of the build's key" for c in METHODS
+        Fromage.empty_caches!()
+        get!(() -> nothing, M.BUILT_RECTIFICATIONS, c)
+        @test haskey(M.BUILT_RECTIFICATIONS, c)
+        @testset "$name" for (name, variant) in variants(c)
+            @test !haskey(M.BUILT_RECTIFICATIONS, variant)
+        end
+    end
+
+    # The build half of "a failed read is never remembered", and it needs no machinery: `get!` stores
+    # nothing when its closure throws. The AprilTag builder is the one that throws — it turns
+    # `reference_space`'s report into an `error`, and this fixture has no tags in it — so a build
+    # that failed on a bad row, or on a share hiccup (WHY-FRAMES-FAIL.md), is retried next time.
+    @testset "a failed build is never remembered" begin
+        c = VRect.Apriltag(VRect.Source(PLAIN, 1.0, missing, missing, 1.0, 320, 240), "no_tags", 4, "tag36h11", 12.0)
+        Fromage.empty_caches!()
+        @test_throws ErrorException Fromage.build_rectification(c)
+        @test !haskey(M.BUILT_RECTIFICATIONS, c)
+        @test_throws ErrorException Fromage.build_rectification(c)    # read again, failed again
+        @test !haskey(M.BUILT_RECTIFICATIONS, c)
+    end
+
+    # The mirror of the issue-frame dump above: `rectification_diagnostics` is the CALLER's, not the
+    # builder's (#209), so a cache hit still renders its image — from the cached object. A user
+    # re-running to look at a rectification depends on that as much as on the report.
+    @testset "the diagnostic image is written on every invocation, hit or miss" begin
+        csv = joinpath(DIR, "memo_diagnostic.csv")
+        open(csv, "w") do io
+            println(io, "rectification_id,path,file,type,extrinsic,pixel_width")
+            println(io, "d1,.,memo_plain.mp4,uniform,00:00:01,2")
+        end
+        outdir, rectify = rectifier(csv; rectification_diagnostics = true)
+        jpg = joinpath(outdir, Fromage.Paths.RECTIFICATIONS_DIR, "d1.jpg")
+
+        Fromage.empty_caches!()
+        rectify()
+        @test isfile(jpg)
+
+        # Removed, so the second pass has to write it again rather than leave the first one standing.
+        rm(jpg)
+        hits = M.hits(M.BUILT_RECTIFICATIONS)
+        rectify()
+        @test M.hits(M.BUILT_RECTIFICATIONS) == hits + 1       # served, not rebuilt
+        @test isfile(jpg)                                      # ...and rendered anyway
     end
 
     # A failed READ is a fact about the share at that moment, not about the file, so it must not be

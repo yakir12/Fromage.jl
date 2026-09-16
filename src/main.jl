@@ -110,13 +110,31 @@ end
 # instead.
 function build_rectifications(cs, rectification_diagnostics::Bool)
     function build(c)
-        rectification = Rectification(c)
+        rectification = build_rectification(c)
         rectification_diagnostics &&
             save_diagnostic(rectification, c.source.file, c.source.extrinsic, c.rectification_id)
         return rectification
     end
     return @showprogress desc = "Building rectifications" tmap(build, cs)
 end
+
+# Memoized on its whole argument list, which is `c` and nothing else — the rule every memo in this
+# package follows (see `Memo`, which also owns the "a cached build is never revalidated against the
+# file it was built from" contract this inherits). A user who edited a `runs.csv` row changed no
+# rectification, and a second `main` in the same session rebuilds none of them (#251).
+#
+# `save_diagnostic` is deliberately OUTSIDE this, in `build_rectifications` above: the image is the
+# caller's (#209), so every invocation renders its own even when the rectification it renders was
+# served from the cache — the same split the issue-frame dump keeps on the verification side (#86,
+# #210). A build that throws stores nothing, so a share hiccup is retried rather than remembered.
+#
+# `c` is annotated, which the caches below `Memo` cannot do (they are declared above the modules that
+# own their key types) and this can: `main.jl` is included last, so the type exists here. It is worth
+# the line because the cache is an `LRU{Any, Any}` — without it a `DataFrameRow`, which `Memo`'s
+# header warns hashes by OBJECT IDENTITY, would be accepted and memoized on a key that never hits
+# twice, instead of raising a `MethodError` at the call site that passed the wrong thing.
+build_rectification(c::VerifyRectifications.RectificationMethod) =
+    get!(() -> Rectification(c), BUILT_RECTIFICATIONS, c)
 
 # Both csv files, validated as one dataset. The identities of BOTH are settled first — each file's
 # own, then the cross-file check that they describe the same thing — before either file's videos are
@@ -311,13 +329,14 @@ end
 """
     Fromage.empty_caches!()
 
-Forget every memoized read and detection, so the next call to [`main`](@ref) or [`verify`](@ref)
-re-probes, re-reads and re-detects everything from disk.
+Forget every memoized read, detection and built rectification, so the next call to [`main`](@ref) or
+[`verify`](@ref) re-probes, re-reads, re-detects and rebuilds everything from disk.
 
-Verification remembers what it read — one ffprobe per video, one `matread` per calibration file,
-one detection per rectification — for the life of the Julia session, so re-running `main` after
-fixing a csv row re-does only what that row changed (#233). Those memos are keyed on file PATHS and
-are never revalidated against the files themselves, so this is what to call after changing the
+A Julia session remembers what it read — one ffprobe per video, one `matread` per calibration file,
+one detection per rectification — and what it BUILT: one built rectification per `rectifications.csv`
+row (#233, #251). So re-running `main` after fixing a csv row re-does only what that row changed.
+Those memos are keyed on file PATHS, and a built rectification on the specification naming one, and
+neither is ever revalidated against the files themselves — so this is what to call after changing the
 contents of a video or `.mat` file **in place**, without changing its name — and after redefining
 one of Fromage's own functions under `Revise.jl`. Starting a fresh Julia session does the same
 thing.
@@ -353,6 +372,12 @@ end
 Build the rectifications described by `rectifications.csv` and return them, without tracking anything. A
 debugging entry point: it exercises the whole rectification path — reads, corner detection, the fit —
 so a rectification can be checked before committing to a full run.
+
+A second call in the same Julia session exercises none of that for a rectification whose
+specification has not changed: it is served from the memo (#251), which is the point of the memo but
+not what this entry point is usually reached for. Call [`empty_caches!`](@ref) first to force the
+reads and the detection to happen again — after replacing a video or a `.mat` file **in place**, for
+instance, which changes nothing the memo is keyed on.
 
 `rectification_ids` narrows which are built; `rectification_diagnostics` is as in `main`.
 """

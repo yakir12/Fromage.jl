@@ -54,6 +54,8 @@ main("path/to/data"; rectification_diagnostics = true)
 
 One JPEG per rectification lands in `results_dir/rectifications/`, named by its `rectification_id` — so `c1.jpg` is the rectification the csv calls `c1`. `only_rectify` takes the same keyword.
 
+That is true of a re-run too: Fromage remembers the rectifications it has already built (see [re-running in the same Julia session](help.md#Re-running-in-the-same-Julia-session)), but it still saves every image again, from the rectification it remembered.
+
 This is the same "is the arena square?" check the diagnostic video gives you, except you get it as soon as the rectifications are built, before a single run has been tracked. Straight arena edges should come out straight and circles circular. A bowed, sheared or wildly stretched image means the rectification is wrong, and there is no point tracking anything against it — fix the rectification first.
 
 !!! note "AprilTag rectifications produce no image here"
