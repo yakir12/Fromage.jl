@@ -43,11 +43,12 @@ snapshot(caches = VERIFICATION_CACHES) = map(M.misses, caches), map(M.hits, cach
 # A failing extrinsic detection appends the path it dumped the frame to, and that path names the
 # INVOCATION's own folder — so two verifications of one failing dataset must agree on the verdict
 # and differ on the path. These two split a report into those halves.
-const SAVED_TAIL = " — saved the extrinsic frame to "
-const SAVED_SUFFIX = " for inspection"
+# The note names the video and extrinsic before the path (#155), so the path is what follows " s to ".
+const SAVED_TAIL = " — saved the extrinsic frame of "
+const SAVED_PATH = r" s to (.+) for inspection$"
 verdicts(df) = [[first(split(m, SAVED_TAIL)) for m in msgs] for msgs in skipmissing(df.issues)]
 saved_frames(df) = [
-    chopsuffix(String(last(split(m, SAVED_TAIL))), SAVED_SUFFIX)
+    String(only(match(SAVED_PATH, m).captures))
         for msgs in skipmissing(df.issues) for m in msgs if occursin(SAVED_TAIL, m)
 ]
 

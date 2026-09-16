@@ -344,14 +344,33 @@ function _extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners
     return ismissing(res) ? "no corners detected at the extrinsic time stamp" : nothing
 end
 
+# Eight hex digits naming one detection: a CRC-32C of every column in its group key, names included.
+# The key holds the resolved :file, so two videos sharing a basename in different folders differ here,
+# and it holds every parameter that decides the frame the detector saw (blur, yadif, …) and which
+# detector saw it, so two detections of one video at one extrinsic differ too (#155). CRC32c rather
+# than `Base.hash`, which makes no promise to be stable across Julia versions or processes: the same
+# input must name the same frame on every run. Collision-resistant, not collision-proof — which is
+# enough for the handful of frames one invocation dumps.
+function identity_tag(key)
+    identity = join((string(name, '=', repr(value)) for (name, value) in pairs(NamedTuple(key))), '\n')
+    return string(crc32c(identity); base = 16, pad = 8)
+end
+
+# The frame's file name: still readable — the video's name and the extrinsic lead, e.g.
+# `board_t1.0s_3f9a02c1.png` — with `identity_tag` keeping every detection's frame on a path of its own.
+function issue_frame_name(key)
+    return string(first(splitext(basename(key.file))), "_t", key.extrinsic, "s_", identity_tag(key), ".png")
+end
+
 # Save the frame that failed detection into this invocation's issues folder (created on demand) for
-# the user to inspect, named by the video and extrinsic timestamp — e.g. `board_t1.0s.png`. `get_frame`
-# reads the frame lazily; best effort throughout, returning `nothing` if anything goes wrong.
-function save_issue_frame(invocation_dir, file, extrinsic, get_frame)
+# the user to inspect, named by `issue_frame_name`. `key` is the failing group's key, which names the
+# video and extrinsic. `get_frame` reads the frame lazily; best effort throughout, returning `nothing`
+# if anything goes wrong.
+function save_issue_frame(invocation_dir, key, get_frame)
     try
         image = get_frame()
         mkpath(invocation_dir)
-        path = joinpath(invocation_dir, string(first(splitext(basename(file))), "_t", extrinsic, "s.png"))
+        path = joinpath(invocation_dir, issue_frame_name(key))
         FileIO.save(path, image)
         return path
     catch e
@@ -363,10 +382,11 @@ function save_issue_frame(invocation_dir, file, extrinsic, get_frame)
     end
 end
 
-# Append a "saved the frame to ..." note to an issue message, after dumping the failing frame.
-function note_saved_frame(issue, saved)
+# Append a "saved the frame to ..." note to an issue message, after dumping the failing frame. The
+# note names the video and extrinsic the frame came from, so the path is never the only link back.
+function note_saved_frame(issue, key, saved)
     isnothing(saved) && return issue
-    return string(issue, " — saved the extrinsic frame to ", saved, " for inspection")
+    return string(issue, " — saved the extrinsic frame of ", key.file, " at ", key.extrinsic, " s to ", saved, " for inspection")
 end
 
 # The tail the two extrinsic passes share, and the third does not: dump the frame the detector
@@ -383,8 +403,8 @@ end
 # are keywords because `issue` and `invocation_dir` are both strings and adjacent, and transposing
 # them would compile, run, and write the frame into a folder named by the issue message.
 function flag_extrinsic!(g::AbstractDataFrame, k, issue; invocation_dir, get_frame)
-    saved = save_issue_frame(invocation_dir, k.file, k.extrinsic, get_frame)
-    note = note_saved_frame(issue, saved)
+    saved = save_issue_frame(invocation_dir, k, get_frame)
+    note = note_saved_frame(issue, k, saved)
     blank!(g, :extrinsic)
     push!.(g.issues, note)
     return nothing

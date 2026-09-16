@@ -68,4 +68,55 @@
         @test length(pngs) == 1                                    # exactly the one failing frame
         @test filesize(only(pngs)) > 0                             # a real, non-empty image
     end
+
+    # What a report's issues say about the frames they dumped: (message, saved path) per note.
+    saved_notes(df) = [(m, only(match(r" to (\S+\.png) for inspection$", m).captures)) for msgs in df.issues for m in msgs if occursin("saved the extrinsic frame", m)]
+    invocation_pngs(idir) = sort(basename.(filter(endswith(".png"), readdir(only(readdir(idir; join = true)); join = true))))
+
+    @testset "videos sharing a basename in different folders keep their own frames (#155)" begin
+        # Two cameras, each writing `session.mp4` into a folder of its own, both failing at one
+        # extrinsic: the frames used to land on one path, the second overwriting the first, and
+        # both issues then pointed at whichever frame happened to be written last.
+        for cam in ("camera_a", "camera_b")
+            mkpath(joinpath(DATADIR, cam))
+            cp(joinpath(DATADIR, ART.video), joinpath(DATADIR, cam, "session.mp4"); force = true)
+        end
+        rows = [checkerboardrow(rectification_id = cam, path = cam, file = "session.mp4") for cam in ("camera_a", "camera_b")]
+        idir = mktempdir()
+        df = check(rows; issues_dir = idir)
+        notes = saved_notes(df)
+        @test length(notes) == 2
+        @test allunique(last.(notes))
+        @test all(isfile ∘ last, notes)                             # both frames survived
+        @test length(invocation_pngs(idir)) == 2
+        # each note names the video and extrinsic its frame came from
+        for (i, cam) in enumerate(("camera_a", "camera_b"))
+            video = joinpath(cam, "session.mp4")
+            message, frame = only(n for n in notes if occursin(video, first(n)))
+            @test occursin("$video at 1.0 s", message)
+            @test startswith(basename(frame), "session_t1.0s_")
+            @test flagged(df, i, video)                             # and it is this row's note
+        end
+        # Re-verifying the same input names the same frames, into the new invocation's folder.
+        idir2 = mktempdir()
+        check(rows; issues_dir = idir2)
+        @test invocation_pngs(idir2) == invocation_pngs(idir)
+    end
+
+    @testset "detections that saw different frames of one video keep their own frames (#155)" begin
+        # One video, one extrinsic, three failing detections: two checkerboard rows that differ in
+        # blur (a different frame each) and an AprilTag row (the raw frame). One path per detection.
+        rows = [
+            checkerboardrow(rectification_id = "sharp", file = ART.video, blur = 0),
+            checkerboardrow(rectification_id = "soft", file = ART.video, blur = 2, center = (251, 180)),   # center only keeps it from being a duplicate
+            apriltagrow(rectification_id = "tags", file = ART.video, apriltags = 4, family = "tag36h11", tag_cell_width = 12),
+        ]
+        idir = mktempdir()
+        df = check(rows; issues_dir = idir)
+        notes = saved_notes(df)
+        @test length(notes) == 3
+        @test allunique(last.(notes))
+        @test all(isfile ∘ last, notes)
+        @test length(invocation_pngs(idir)) == 3
+    end
 end
