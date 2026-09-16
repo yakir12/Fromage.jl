@@ -136,7 +136,9 @@ end
 # holds every tuning value, so the only things left to say are which scene centre to fall back on,
 # what to rectify through, and where the diagnostic goes.
 #
-# The returned coordinates are (row, col) in *stored* pixels of the original (unscaled) video;
-# for an anamorphic video the display-space x is col × sar.
+# With a rectification the returned coordinates are real-world (see `PawsomeTracker.track`) — the only
+# way `main` calls this. With `nothing`, which since #256 only tests and benchmarks pass, they are
+# (row, col) in *stored* pixels of the original (unscaled) video; for an anamorphic video the
+# display-space x is col × sar.
 track(r::Run, center, rectification, diagnostic_file) =
     track(resolved_segments(r, center, rectification), r.tuning, rectification, diagnostic_file)

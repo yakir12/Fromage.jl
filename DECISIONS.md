@@ -98,10 +98,10 @@ It used to name them by loop index — `1.mp4`, `2.mp4` — while `main` named t
 the row number as the id. As soon as a csv names its runs, or `run_ids` filters one out, the index
 no longer matches any row the user is looking at: asking for run `r5` alone wrote `1.mp4`.
 
-The duplication is what let the two drift. `main`, `only_track` and `only_rectify` now open through
-the same two functions — `gather_rectifications` and `gather_runs`, each making the results
-directory, loading the csv the caller named, and applying the id filter — so there is one place for
-that opening to be right.
+The duplication is what let the two drift. `main`, `only_track` and `only_rectify` were then made to
+open through the same two functions — `gather_rectifications` and `gather_runs`, each making the
+results directory, loading the csv the caller named, and applying the id filter — so there was one
+place for that opening to be right. (`main` later stopped using them, and #256 removed all four.)
 
 ### Diagnostics are `.mp4`, not `.ts`
 

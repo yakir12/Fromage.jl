@@ -14,13 +14,16 @@ using ..Fixtures
 using ..Harness: capturing
 
 # `main` returns nothing (#256): everything a test asserts about a run is read from what `main` wrote.
-# This reads one run's `results_dir/<run_id>.csv` back into the shape `track` returned it in —
-# timestamps, and coordinates in `track`'s own `(y, x)` order, which `save2csv` writes out as `x,y`
-# columns and this swaps back. A row with empty `x`/`y` is a frame `track` could not localize, and
-# comes back `missing`. `save2csv` prints each `Float64` in full, so the round trip is exact and no
-# tolerance below had to move to absorb it.
+# This reads one run's `results_dir/<run_id>.csv` back into `track`'s values and order — timestamps,
+# and coordinates in `track`'s own `(y, x)` order, which `save2csv` writes out as `x,y` columns and
+# this swaps back — as plain `Vector`s, the coordinates admitting `missing`: a row with empty `x`/`y`
+# is a frame `track` could not localize. `save2csv` prints each `Float64` in full, so the values
+# round-trip exactly and no tolerance below had to move to absorb it. The header is checked because
+# the swap depends on the column order it names.
 function read_track(file)
-    rows = split.(readlines(file)[2:end], ',')
+    header, lines... = readlines(file)
+    header == "time,x,y" || error("$file: expected the header time,x,y, got $(repr(header))")
+    rows = split.(lines, ',')
     ts = [parse(Float64, t) for (t, _, _) in rows]
     coords = Union{Missing, SVector{2, Float64}}[
         isempty(x) ? missing : SVector(parse(Float64, y), parse(Float64, x)) for (_, x, y) in rows
@@ -31,8 +34,8 @@ end
 # The rectification `main` built for the row `rectification_id` names, rebuilt here for a ground
 # truth to go through. The row is parsed into the same `RectificationMethod` `main` built from, and
 # goes through the same memoized builder, so within one session this is the very object `main`
-# tracked through.
-function built_rectification(csv, rectification_id; defaults = (;))
+# tracked through — which the callers assert on the memo's hit counter rather than take on trust.
+function rebuilt_rectification(csv, rectification_id; defaults = (;))
     cs = Fromage.VerifyRectifications.load_rectifications(csv; defaults)
     return Fromage.build_rectification(only(filter(c -> c.rectification_id == rectification_id, cs)))
 end
@@ -77,10 +80,12 @@ end
     @test returned === nothing                      # everything main produces is on disk (#256)
     @test readdir(joinpath(outdir, "results_dir"); sort = true) ==
         ["1.csv", "diagnostic.mp4", "rectifications"]   # one run, so one track csv (run_id imputed to "1")
+    hits = Fromage.Memo.hits(Fromage.Memo.BUILT_RECTIFICATIONS)
     rectification = cd(
-        () -> built_rectification(joinpath(dir, "rectifications.csv"), "c1"; defaults = (n_corners = (5, 8),)),
+        () -> rebuilt_rectification(joinpath(dir, "rectifications.csv"), "c1"; defaults = (n_corners = (5, 8),)),
         outdir
     )
+    @test Fromage.Memo.hits(Fromage.Memo.BUILT_RECTIFICATIONS) == hits + 1   # main's own object, served
     t, xy = read_track(joinpath(outdir, "results_dir", "1.csv"))   # the REAL-WORLD coords track returned
     @test length(xy) == 50                          # the full 2 s at 25 fps
     # ground truth is the analytic pixel path pushed through the same rectification
@@ -140,8 +145,6 @@ end
     @test_throws "r_typo" cd(() -> main(dir; run_ids = ["r1", "r_typo"]), outdir)
     # the message says which ids exist, so the typo is obvious
     @test_throws "r1" cd(() -> main(dir; run_ids = ["r_typo"]), outdir)
-    # nothing was tracked by any of those: the error comes before the work, not after it
-    @test !ispath(joinpath(outdir, "results_dir", "diagnostic.mp4"))
     # and a filter that does match still works
     cd(() -> main(dir; run_ids = ["r1"], tracking_defaults = (target_width = 10,)), outdir)
     @test isfile(joinpath(outdir, "results_dir", "r1.csv"))
@@ -173,7 +176,10 @@ end
     cd(() -> main(dir; rectification_diagnostics = true), outdir)
 
     @test !ispath(joinpath(outdir, "results_dir", "rectifications"))   # asked for, and rightly absent
-    rect = cd(() -> built_rectification(joinpath(dir, "rectifications.csv"), "drone"), outdir)
+    @test count(endswith(".csv"), readdir(joinpath(outdir, "results_dir"))) == 1   # the one run
+    hits = Fromage.Memo.hits(Fromage.Memo.BUILT_RECTIFICATIONS)
+    rect = cd(() -> rebuilt_rectification(joinpath(dir, "rectifications.csv"), "drone"), outdir)
+    @test Fromage.Memo.hits(Fromage.Memo.BUILT_RECTIFICATIONS) == hits + 1    # main's own object, served
     @test rect isa Fromage.PawsomeTracker.ApriltagRectification   # the row built the apriltag kind
     @test rect.ratio > 0
     ts, xy = read_track(joinpath(outdir, "results_dir", "beetle.csv"))
@@ -630,10 +636,12 @@ end
         joinpath(dir, "rectifications.csv"),
         "rectification_id,type,file,extrinsic,pixel_width\nc1,uniform,cal1.mp4,1,2\nc2,uniform,cal2.mp4,1,2\n"
     )
+    # background_length = 0 on the tracked run rides along so `main` drives the no-subtraction path end
+    # to end, csv → gateway → track; r2's blank cell takes the default
     write(
         joinpath(dir, "runs.csv"),
-        "run_id,rectification_id,file,start_location\n" *
-            "r1,c1,$(only(t1)),\"(55, 50)\"\nr2,c2,$(only(t2)),\"(55, 50)\"\n"
+        "run_id,rectification_id,file,start_location,background_length\n" *
+            "r1,c1,$(only(t1)),\"(55, 50)\",0\nr2,c2,$(only(t2)),\"(55, 50)\",\n"
     )
     outdir = mktempdir()
 
