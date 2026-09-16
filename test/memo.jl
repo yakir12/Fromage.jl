@@ -45,7 +45,7 @@ snapshot(caches = VERIFICATION_CACHES) = map(M.misses, caches), map(M.hits, cach
 # and differ on the path. These two split a report into those halves.
 # The note names the video and extrinsic before the path (#155), so the path is what follows " s to ".
 const SAVED_TAIL = " — saved the extrinsic frame of "
-const SAVED_PATH = r" s to (.+) for inspection$"
+const SAVED_PATH = r" s to (.+\.png) for inspection$"
 verdicts(df) = [[first(split(m, SAVED_TAIL)) for m in msgs] for msgs in skipmissing(df.issues)]
 saved_frames(df) = [
     String(only(match(SAVED_PATH, m).captures))

@@ -183,6 +183,9 @@
         @test !isdir(dir)                       # nothing created when the frame never arrived
         # ...while a Ctrl-C during the read propagates instead of being absorbed as a failed save.
         @test_throws InterruptException VRect.save_issue_frame(dir, key, () -> throw(InterruptException()))
+        # ...and so does a key the name cannot be built from: that is a bug, not a failed save.
+        @test_throws FieldError VRect.save_issue_frame(dir, (extrinsic = 1.0,), () -> zeros(UInt8, 2, 2))
+        @test !isdir(dir)
     end
 
     @testset "issue frame names are distinct per detection, and stable across runs (#155)" begin
@@ -198,7 +201,7 @@
         @test all(n -> startswith(n, "session_t1.0s_") && endswith(n, ".png"), names)
         # deterministic — a literal, so the name is pinned across processes and Julia versions,
         # which `Base.hash` makes no promise to be
-        @test VRect.issue_frame_name(a) == "session_t1.0s_2931c6ea.png"
+        @test VRect.issue_frame_name(a) == "session_t1.0s_d4b018d1.png"
         # the same values under a different detector's columns are a different detection
         @test VRect.issue_frame_name((file = a.file, extrinsic = 1.0, apriltags = 4)) !=
             VRect.issue_frame_name((file = a.file, extrinsic = 1.0, n_corners = 4))

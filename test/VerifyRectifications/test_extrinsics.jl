@@ -70,7 +70,7 @@
     end
 
     # What a report's issues say about the frames they dumped: (message, saved path) per note.
-    saved_notes(df) = [(m, only(match(r" to (\S+\.png) for inspection$", m).captures)) for msgs in df.issues for m in msgs if occursin("saved the extrinsic frame", m)]
+    saved_notes(df) = [(m, String(only(match(r" s to (.+\.png) for inspection$", m).captures))) for msgs in df.issues for m in msgs if occursin("saved the extrinsic frame", m)]
     invocation_pngs(idir) = sort(basename.(filter(endswith(".png"), readdir(only(readdir(idir; join = true)); join = true))))
 
     @testset "videos sharing a basename in different folders keep their own frames (#155)" begin
@@ -118,5 +118,7 @@
         @test allunique(last.(notes))
         @test all(isfile ∘ last, notes)
         @test length(invocation_pngs(idir)) == 3
+        # one note per row, each on its own row: no detection's frame is reported against another's
+        @test all(msgs -> count(contains("saved the extrinsic frame"), msgs) == 1, df.issues)
     end
 end
