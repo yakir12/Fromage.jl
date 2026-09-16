@@ -79,10 +79,12 @@ cost nothing the second time. Edit a row and only what that row changed is re-re
 
 The **built rectifications** are remembered too. Building one is the expensive half of a run: it
 reads the source video again and detects the board or the tags in it, and a `checkerboard` with an
-intrinsic window scans that whole window. A rectification is remembered by the `rectifications.csv`
-row that describes it, so as long as you did not change that row — and editing a `runs.csv` row
-changes none of them — the second `main` builds nothing at all and goes straight to tracking.
-Change one rectification row and only that one rectification is rebuilt.
+intrinsic window scans that whole window. A rectification is remembered by the *specification* it
+was built from — the `rectifications.csv` row, together with the [global defaults](#Changing-a-default-for-all-rows-at-once)
+its blank cells fall back on. So as long as you changed neither of those — and editing a `runs.csv`
+row changes neither — the second `main` builds nothing at all and goes straight to tracking. Change
+one rectification row, or a `rectification_defaults` value that row was leaning on, and only the
+rectifications that actually changed are rebuilt.
 
 This matters most where it hurts most: on a network share, reading a video is the slow part of
 checking a dataset, and a second run over a 300-run folder used to cost the same as the first.
@@ -93,13 +95,14 @@ There is one assumption in it, and it is worth knowing:
     Fromage never re-checks a file it has already read. If you **replace a video or a `.mat` file in
     place** — re-copying a corrupt recording, re-exporting a calibration — while Julia is still
     running, Fromage will keep reporting what the old file said, and will keep handing you the
-    rectification it built from the old one: a rectification is remembered by its csv row, and that
-    row still names the same file. So will `Revise.jl` users who change Fromage itself mid-session.
+    rectification it built from the old one: a rectification is remembered by the specification it
+    was built from, and that specification still names the same file. So will `Revise.jl` users who
+    change Fromage itself mid-session.
 
     Two ways out, either is fine:
 
     ```julia
-    Fromage.empty_caches!()   # forget everything read so far; the next run reads it all again
+    Fromage.empty_caches!()   # forget everything read and built so far; the next run redoes it all
     ```
 
     or simply quit Julia and start again. Renaming the new file instead of overwriting the old one

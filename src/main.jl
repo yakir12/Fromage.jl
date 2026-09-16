@@ -127,7 +127,14 @@ end
 # caller's (#209), so every invocation renders its own even when the rectification it renders was
 # served from the cache — the same split the issue-frame dump keeps on the verification side (#86,
 # #210). A build that throws stores nothing, so a share hiccup is retried rather than remembered.
-build_rectification(c) = get!(() -> Rectification(c), BUILT_RECTIFICATIONS, c)
+#
+# `c` is annotated, which the caches below `Memo` cannot do (they are declared above the modules that
+# own their key types) and this can: `main.jl` is included last, so the type exists here. It is worth
+# the line because the cache is an `LRU{Any, Any}` — without it a `DataFrameRow`, which `Memo`'s
+# header warns hashes by OBJECT IDENTITY, would be accepted and memoized on a key that never hits
+# twice, instead of raising a `MethodError` at the call site that passed the wrong thing.
+build_rectification(c::VerifyRectifications.RectificationMethod) =
+    get!(() -> Rectification(c), BUILT_RECTIFICATIONS, c)
 
 # Both csv files, validated as one dataset. The identities of BOTH are settled first — each file's
 # own, then the cross-file check that they describe the same thing — before either file's videos are
@@ -322,8 +329,8 @@ end
 """
     Fromage.empty_caches!()
 
-Forget every memoized read and detection, so the next call to [`main`](@ref) or [`verify`](@ref)
-re-probes, re-reads and re-detects everything from disk.
+Forget every memoized read, detection and built rectification, so the next call to [`main`](@ref) or
+[`verify`](@ref) re-probes, re-reads, re-detects and rebuilds everything from disk.
 
 A Julia session remembers what it read — one ffprobe per video, one `matread` per calibration file,
 one detection per rectification — and what it BUILT: one built rectification per `rectifications.csv`
@@ -365,6 +372,12 @@ end
 Build the rectifications described by `rectifications.csv` and return them, without tracking anything. A
 debugging entry point: it exercises the whole rectification path — reads, corner detection, the fit —
 so a rectification can be checked before committing to a full run.
+
+A second call in the same Julia session exercises none of that for a rectification whose
+specification has not changed: it is served from the memo (#251), which is the point of the memo but
+not what this entry point is usually reached for. Call [`empty_caches!`](@ref) first to force the
+reads and the detection to happen again — after replacing a video or a `.mat` file **in place**, for
+instance, which changes nothing the memo is keyed on.
 
 `rectification_ids` narrows which are built; `rectification_diagnostics` is as in `main`.
 """

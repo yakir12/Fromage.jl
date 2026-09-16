@@ -19,7 +19,8 @@
 # slow one — impossible to write: there is no argument the cached function can read that the key
 # does not carry. Read the `get!` at each call site against the function's signature and the two
 # must be the same list. Arguments are hashed by VALUE (paths are strings, timestamps and counts are
-# numbers), never by object identity, so the same specification always finds the same entry.
+# numbers — and a rectification specification is an immutable struct of exactly those, all the way
+# down), never by object identity, so the same specification always finds the same entry.
 #
 # A failed READ is never remembered, and that is the other half of the contract: see `remember`
 # below for why, and for the two shapes it takes. What is remembered is a VERDICT — what ffprobe
@@ -27,8 +28,9 @@
 # share at that moment and not about the file at all.
 #
 # LIFETIME AND INVALIDATION. A cache lives as long as the Julia process — the SESSION, in this
-# package's vocabulary (CONTEXT.md). A cached read is never revalidated against the file: file
-# identity is the resolved, canonical absolute path and nothing else. `mtime` + size was considered
+# package's vocabulary (CONTEXT.md). A cached read is never revalidated against the file, and neither
+# is a cached BUILD against the files it was built from: file identity is the resolved, canonical
+# absolute path and nothing else. `mtime` + size was considered
 # and declined (DECISIONS, "The memo is keyed on the path, and never revalidated"), so replacing a
 # file's contents in place while the REPL is alive — re-copying a corrupt video, re-exporting a
 # `.mat` — requires `Fromage.empty_caches!()` or a fresh Julia process. Same for a `Revise.jl` user
@@ -82,7 +84,7 @@ const APRILTAG_DETECTIONS = newcache(Tuple, Union{Nothing, String})
 # to the end.
 const INTRINSIC_DETECTIONS = newcache(Tuple, Union{Nothing, String})
 
-# `Fromage.build_rectification(c)` — the image <-> real map one verified rectifications row
+# `Fromage.build_rectification(c)` — the image ↔ real map one verified rectifications row
 # describes (#251). The most expensive thing here: three of the four kinds read the source video and
 # detect in it, and a checkerboard with an intrinsic window scans that whole window again. A user who
 # edited a `runs.csv` row changed none of it, and used to pay for all of it.
@@ -97,7 +99,7 @@ const INTRINSIC_DETECTIONS = newcache(Tuple, Union{Nothing, String})
 #
 # `Any` for both parameters, where every cache above names its own. Neither type CAN be spelled here:
 # `Memo` is included before `Rectifications`, `PawsomeTracker` and `VerifyRectifications`, so
-# `RectificationMethod`, `StaticRectification` and `ApriltagRectification` do not exist yet -- the
+# `RectificationMethod`, `StaticRectification` and `ApriltagRectification` do not exist yet — the
 # include order in `Fromage.jl` is load-bearing. Nor would a concrete VALUE type exist if they did:
 # `Rectification` returns `StaticRectification{I, R}` for three kinds and `ApriltagRectification{I}`
 # for the fourth, with parameters that vary per build. That costs no inference the package was not
@@ -118,9 +120,10 @@ const BUILT_RECTIFICATIONS = newcache(Any, Any)
 # reporting (`ApriltagRectification` turns `reference_space`'s report into an `error`; the other three
 # let their reads' exceptions propagate), and `get!` stores nothing when its closure throws.
 #
-# Three of the five READS get that for free the same way, by catching OUTSIDE `get!`. This is for the other two, whose catch belongs to a function that reports
-# rather than throws (`read_matlab`, `reference_space`) and has callers relying on that: remember
-# what `f` returned, `unless` it is one of those reports, which is then forgotten.
+# Three of the five READS get that for free the same way, by catching OUTSIDE `get!`. This is for
+# the other two, whose catch belongs to a function that reports rather than throws (`read_matlab`,
+# `reference_space`) and has callers relying on that: remember what `f` returned, `unless` it is one
+# of those reports, which is then forgotten.
 #
 # `unless` recognizes the failure by the very prefix the message is built from — one definition site
 # each (`MATLAB_READ_FAILURE`, `EXTRINSIC_READ_FAILURE`), because a recognizer that had drifted from

@@ -1010,7 +1010,17 @@ entries and would never hit.
 
 The path caveat reaches builds transitively — a rectification is keyed on a specification whose
 `file` is a path — so replacing a video in place serves the rectification built from the old one.
-Same remedy, and `help.md` says so.
+Same remedy, and `help.md` says so. The specification is not only the csv row: `rectification_defaults`
+fills the row's blank cells before the object is built (`parse_checkerboard!`, `parse_apriltag!`), and
+ffprobe fills `aspect`/`width`/`height`/`yadif`, so all of those are in the key too. That is the right
+behaviour — changing a global default rebuilds what leaned on it — and `help.md` says that as well.
+
+The memo wrapper is `Fromage.build_rectification`, not `Rectification` itself. Memoizing the
+constructor in `Rectifications` was the shorter change and was declined: `Rectification(c)` is the
+public builder, so a cache under it would make "build this rectification now, from cold" unsayable by
+any caller. The wrapper keeps the constructor an honest builder and keeps the decision to REUSE a
+rectification in `main`, next to `save_diagnostic` — the other thing #209 decided belongs to the
+caller rather than to the builder.
 
 `mtime` + size was considered and declined. It is not proof that contents are unchanged (both
 survive an in-place rewrite of the same length within the same second, and a restored backup
@@ -1046,7 +1056,7 @@ It is reached two ways, and the difference is not arbitrary:
 The cost either way is one re-read per invocation of a file that really is broken, which is the cheap
 half of the trade: a broken file is being iterated on anyway.
 
-Two things deliberately stay outside the memo, and both would be bugs inside it:
+Three things deliberately stay outside the memo, and all three would be bugs inside it:
 
 - **`verifications!` and the `read_*_metadata!` functions.** Their effect is the mutation of the
   DataFrame passed in, not their return value, and a DataFrame hashes by object identity — a memo
@@ -1062,8 +1072,7 @@ Two things deliberately stay outside the memo, and both would be bugs inside it:
 What is NOT cached is as deliberate: row-level or csv-text-keyed caching would gate column-wise
 predicates over a DataFrame — microseconds of pure CPU — behind machinery guarding something already
 free. Rectification building was the other half of #233's original request and landed in #251, on
-the terms above; tracking and the diagnostic segments are still open as #249, and are the hard half
-precisely because a `Run` cannot be a content key as it stands.
+the terms above; tracking and the diagnostic segments are still open as #249.
 
 ### The frame dump stays out of `detect_per_group!` (#210)
 

@@ -90,16 +90,24 @@ vary(x::Float64) = x + 1.0
 vary(x::String) = string(x, "-other")
 vary(x::NTuple{2, Int}) = (x[1] + 1, x[2])
 
-# Rebuild `x` with field `i` replaced. `.name.wrapper` drops the type parameter so a
-# `Checkerboard{Float64}` is rebuilt by its own constructor rather than pinned by this function; for
-# the three non-parametric kinds it is the type itself.
-replace_field(x, i, v) = typeof(x).name.wrapper(ntuple(j -> j == i ? v : getfield(x, j), fieldcount(typeof(x)))...)
+# Rebuild `x` with field `i` replaced. Reaching the constructor by NAME drops the type parameter, so
+# a `Checkerboard{Float64}` is rebuilt by its own constructor rather than pinned by this function;
+# for the three non-parametric kinds it is the type itself. `typeof(x).name.wrapper` does the same
+# thing in one expression and is what this was first written as — but `TypeName.wrapper` is a Base
+# internal, and there is nothing internal about asking a module for a type it exports.
+function replace_field(x, i, v)
+    T = typeof(x)
+    constructor = getfield(parentmodule(T), nameof(T))
+    return constructor(ntuple(j -> j == i ? v : getfield(x, j), fieldcount(T))...)
+end
 
 # Every one-field variant of `c`, the fields of its nested `Source` included — those are fields of
 # the key just as much as the method's own, and are where an under-specified key would hurt most:
 # `center` and `north` change the map without changing anything else about the row.
 function variants(c)
-    vs = Pair{String, Any}[]
+    # Every variant is still the same concrete type as `c` — varying one field never leaves its
+    # declared type, `Checkerboard{Float64}`'s two `::S` bounds included — so the eltype says so.
+    vs = Pair{String, typeof(c)}[]
     T = typeof(c)
     for i in 1:fieldcount(T)
         f = getfield(c, i)
@@ -121,6 +129,21 @@ end
 # turn every detection into a reshape failure instead of a detection.
 const BOARD_W, BOARD_H = let f = Fromage.Probing.probe_fields(BOARD, "stream=width,height")
     parse(Int, f["width"]), parse(Int, f["height"])
+end
+
+# Both build testsets drive `only_rectify`, which mkpaths `results_dir` relative to `pwd` — so each
+# runs in a scratch directory of its own rather than in whatever the suite was started from. Returns
+# that directory (the diagnostic testset needs it to find the image) and a closure performing one
+# invocation. The csv itself stays at the call sites: what the two write differs, and this is the
+# only part of the shape that was the same.
+function rectifier(csv; rectification_diagnostics = false)
+    outdir = mktempdir()
+    rectify() = cd(
+        () -> Fromage.only_rectify(
+            DIR; rectifications_file = basename(csv), rectification_diagnostics
+        ), outdir
+    )
+    return outdir, rectify
 end
 
 # One of each kind of rectifications row, for the structural key testset. `Checkerboard` is the
@@ -273,10 +296,7 @@ const MEMOIZED = (
             println(io, "u1,.,memo_plain.mp4,uniform,00:00:01,2")
             println(io, "u2,.,memo_other.mp4,uniform,00:00:01,$second_pixel_width")
         end
-        # `only_rectify` mkpaths `results_dir` in the working directory, so both passes run in one
-        # scratch folder of this suite's own rather than in whatever the suite was started from.
-        outdir = mktempdir()
-        rectify() = cd(() -> Fromage.only_rectify(DIR; rectifications_file = basename(csv)), outdir)
+        _, rectify = rectifier(csv)
 
         write_rows(3)
         Fromage.empty_caches!()
@@ -302,10 +322,56 @@ const MEMOIZED = (
         @test third_built[2] !== first_built[2]
     end
 
+    # `main` says it too, and the spec asked for it by name (#251). `only_rectify` above shares
+    # `build_rectifications` with `main`, so this could be argued rather than run — but the claim a
+    # user actually reads is about `main`, and the whole feature is worth one end-to-end pass.
+    @testset "a second `main` over an unchanged dataset builds nothing" begin
+        csv = joinpath(DIR, "memo_main.csv")
+        open(csv, "w") do io
+            println(io, "rectification_id,path,file,type,extrinsic,pixel_width")
+            println(io, "m1,.,memo_plain.mp4,uniform,00:00:01,2")
+        end
+        runs_csv = joinpath(DIR, "memo_main_runs.csv")
+        open(runs_csv, "w") do io
+            println(io, "run_id,rectification_id,path,file,start,stop")
+            println(io, "mr1,m1,.,memo_plain.mp4,00:00:00,00:00:01")
+        end
+        outdir = mktempdir()
+        go() = cd(
+            () -> Fromage.main(
+                DIR; rectifications_file = basename(csv), runs_file = basename(runs_csv)
+            ), outdir
+        )
+
+        Fromage.empty_caches!()
+        first_runs = go()
+        @test M.misses(M.BUILT_RECTIFICATIONS) == 1
+        @test M.hits(M.BUILT_RECTIFICATIONS) == 0
+
+        second_runs = go()
+        @test M.misses(M.BUILT_RECTIFICATIONS) == 1                # nothing rebuilt
+        @test M.hits(M.BUILT_RECTIFICATIONS) == 1                  # served instead
+        # The `rectification` column still carries the built object — on a hit, the SAME one. That
+        # `main`'s return contract does not change is what #251 put out of scope, so it is asserted.
+        @test only(second_runs.rectification) === only(first_runs.rectification)
+    end
+
+    # The blank-window `Checkerboard{Missing}` is a different TYPE from the filled `{Float64}`, so it
+    # is a different key with no field varying at all. It is not in `METHODS` because `variants`
+    # cannot produce it: `intrinsic_start`/`intrinsic_stop` are both `::S`, so varying one alone is
+    # not constructible — which is the same fact from the other side, and is why this is asserted
+    # here rather than folded into the structural testset.
+    @testset "a blank intrinsic window is a different key from a filled one" begin
+        blank = VRect.Checkerboard(src(BOARD), "c", missing, missing, 4.0, (5, 8), 0.5, 1, 0.0, false)
+        Fromage.empty_caches!()
+        get!(() -> nothing, M.BUILT_RECTIFICATIONS, METHODS[2])
+        @test haskey(M.BUILT_RECTIFICATIONS, METHODS[2])
+        @test !haskey(M.BUILT_RECTIFICATIONS, blank)
+    end
+
     # The correctness half, and the reason this is more than a speed-up: the key IS the object, so a
     # field that did not participate in hashing would serve one row's rectification for another's.
-    # A `Run` would do exactly that today — its `segments::Vector` hashes by identity — which is why
-    # #249 is the hard half of #233 and this is not.
+    # (`Memo` names the counter-example that makes this worth asserting rather than assuming.)
     #
     # Asserted on the cache rather than through a build, because what is claimed is that the key
     # discriminates, and three of the four kinds cannot be built at all from this suite's fixtures
@@ -345,13 +411,8 @@ const MEMOIZED = (
             println(io, "rectification_id,path,file,type,extrinsic,pixel_width")
             println(io, "d1,.,memo_plain.mp4,uniform,00:00:01,2")
         end
-        outdir = mktempdir()
+        outdir, rectify = rectifier(csv; rectification_diagnostics = true)
         jpg = joinpath(outdir, Fromage.Paths.RECTIFICATIONS_DIR, "d1.jpg")
-        rectify() = cd(
-            () -> Fromage.only_rectify(
-                DIR; rectifications_file = basename(csv), rectification_diagnostics = true
-            ), outdir
-        )
 
         Fromage.empty_caches!()
         rectify()

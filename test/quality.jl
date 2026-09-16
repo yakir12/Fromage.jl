@@ -199,10 +199,17 @@ end
             # #68 replaced the splat with one required keyword, `rectification_diagnostics`; #209
             # took that away too, by moving the diagnostic image to the caller. A dispatcher now
             # takes the row and nothing else, so any keyword at all is a MethodError.
-            @test !isempty(methods(Fromage.Rectifications.Rectification))
-            for m in methods(Fromage.Rectifications.Rectification)
-                @testset "$(basename(string(m.file))):$(m.line)" begin
-                    @test isempty(Base.kwarg_decl(m))
+            #
+            # `build_rectification` is held to the same rule (#251). It is the memo wrapper, and so
+            # now sits on the path between the verified row and the builder — which is exactly the
+            # shape #140/#141 came from, and the only place a "just for convenience" keyword could
+            # be slipped back in without a dispatcher noticing.
+            for f in (Fromage.Rectifications.Rectification, Fromage.build_rectification)
+                @test !isempty(methods(f))
+                for m in methods(f)
+                    @testset "$(nameof(f)) @ $(basename(string(m.file))):$(m.line)" begin
+                        @test isempty(Base.kwarg_decl(m))
+                    end
                 end
             end
         end
