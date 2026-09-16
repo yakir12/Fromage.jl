@@ -37,7 +37,11 @@ on:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
 
+# julia-actions/cache runs with delete-old-caches: true, which needs `actions: write`
+# to prune superseded caches. The repository default is read-only, so without this grant the
+# cache post-step fails with HTTP 403 on every PR run and that PR's caches pile up (#138).
 permissions:
+  actions: write
   contents: read
 
 concurrency:
