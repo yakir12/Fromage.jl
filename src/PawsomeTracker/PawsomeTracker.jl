@@ -67,8 +67,21 @@ open_gray_video(file) = ShareIO.withretry(; transient = ShareIO.videoio_transien
     lock(() -> openvideo(file; target_format = AV_PIX_FMT_GRAY8), OPENVIDEO_LOCK)
 end
 
-# WORKAROUND for JuliaIO/VideoIO.jl#427 — remove once that is fixed upstream, and go back to a plain
-# `seek(vid, t)` at the two call sites (`Video`, `read_frame_at`).
+# WORKAROUND for JuliaIO/VideoIO.jl#427 and JuliaIO/VideoIO.jl#468. Remove it once a REGISTERED
+# VideoIO release contains both fixes: PR #467 (#427, MPEG-TS seeks landing up to a GOP late; merged
+# 2026-09-16) and PR #469 (#468, field-coded interlaced seeks landing one frame late when the target
+# falls between two frames). #467 alone is not enough: on interlaced `.MTS` with a fractional `start`
+# (runs.csv allows `1.5`), plain `seek` still lands a frame late. To remove it:
+#   1. Find the first version holding both merges in General's `V/VideoIO/Versions.toml`, and set
+#      `VideoIO` to it in `[compat]` here and in test/Project.toml (the test floor must not be lower).
+#   2. At both call sites (`Video`, `read_frame_at` in apriltag.jl), replace `seek_exactly!(…)` with a
+#      plain `seek(vid, t)`. `read_frame_at` then no longer needs the extra `read!` that measures the
+#      frame period, and the `Video` constructor's comments that name `seek_exactly!` go back to `seek`.
+#   3. Delete this function, and the DECISIONS.md entry "A window starts at the frame its `start`
+#      names, not where VideoIO's `seek` lands".
+#   4. Check that plain `seek` lands on the frame whose `[pts, pts + period)` holds the target, on and
+#      off the frame grid and against a sequential decode, for an interlaced `.MTS`, a progressive
+#      `.MTS` and an MP4. Then run the threaded suite and a real `main` on `.MTS` footage.
 #
 # In a container with no seek index — MPEG-TS, i.e. camcorder `.MTS` — VideoIO's `seek` can decode
 # its first frame after the target (the decoder waits for the next keyframe), and VideoIO then only
