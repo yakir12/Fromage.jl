@@ -215,7 +215,11 @@ function read_frame_at(file, t)
     try
         img = read(vid)           # prime a frame so gettime returns the stream's base time
         t₀ = gettime(vid)
-        seek_exactly!(vid, img, t + t₀, t₀)   # not `seek`: JuliaIO/VideoIO.jl#427
+        # not `seek`: JuliaIO/VideoIO.jl#427. Nothing declares a rate for a rectification's frame, and
+        # `framerate` is the field rate on field-coded interlaced footage (#145), so the period is
+        # measured: the gap from the first frame to the second.
+        read!(vid, img)
+        seek_exactly!(vid, img, t + t₀, t₀, gettime(vid) - t₀)
         return read!(vid, img)
     finally
         # Guarded as every close of a reader in this module is (#149): this one sits on the share

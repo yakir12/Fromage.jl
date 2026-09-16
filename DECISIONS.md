@@ -611,12 +611,9 @@ user's to get right.
 
 ### A window starts at the frame its `start` names, not where VideoIO's `seek` lands (VideoIO.jl#427)
 
-Until this was fixed, every window cut from an `.MTS` (MPEG-TS) file began up to a GOP late:
-`seek` landed 1–13 frames (up to 0.52 s) after `start` on the lab's 25 fps AVCHD footage, while the
-track's clock still said `start`. So **tracks from `.MTS` files made before this change are shifted
-by up to half a second**, and a window running to a file's last frame crashed with "Could not scale
-frame". MP4 was exact before and is unchanged: `seek_exactly!` picks the frame VideoIO's own trim
-picks, and matched plain `seek` at every start checked. The mechanism is at `seek_exactly!`.
+**Tracks from `.MTS` (MPEG-TS) files made before this change are shifted by up to half a second**:
+their clock said `start`, but the first frame was up to a GOP later. MP4 output is unchanged — it
+matched plain `seek` at every start checked. The mechanism is at `seek_exactly!`.
 
 One upstream fix was measured and did not work. Bounding `avformat_seek_file`'s `max_ts` at the
 target (so the demuxer lands on a keyframe at or before it) still landed late on every MPEG-TS
