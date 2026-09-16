@@ -356,7 +356,7 @@ end
 # notices if that printing ever changes.
 function detection_digest(key)
     fingerprint = join((string(name, '=', _fingerprint(value)) for (name, value) in pairs(NamedTuple(key))), '\n')
-    return string(crc32c(fingerprint); base = 16, pad = 8)
+    return string(crc32c(String(fingerprint)); base = 16, pad = 8)   # `join` over unknown values may infer as an AnnotatedString, which crc32c has no method for
 end
 _fingerprint(value::AbstractString) = value
 _fingerprint(value) = repr(value)
@@ -372,7 +372,7 @@ end
 # video and extrinsic. `get_frame` reads the frame lazily; best effort, returning `nothing` if reading,
 # creating the folder or writing goes wrong. The name is built outside that: it is plain code over
 # the key, so a failure there is a bug to see, not a frame that could not be saved.
-function save_issue_frame(invocation_dir, key, get_frame)
+function save_issue_frame(invocation_dir::AbstractString, key, get_frame)
     path = joinpath(invocation_dir, issue_frame_name(key))
     try
         image = get_frame()
