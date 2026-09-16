@@ -83,16 +83,41 @@ follow this file. Rule 6 below exists because that has actually gone wrong.
    single tool. Then take the quiz: `usage_quiz`, answer everything, `usage_quiz(show_sols=true)`
    to self-grade. **Score ≥ 75 before doing real work**; below that, re-read
    `usage_instructions` and retake. Ask the user if anything stays unclear.
-1. `ping()` — is the server up, and how many Julia sessions are connected?
-2. `investigate_environment()` — **check the active project before evaluating anything.** The
-   user runs several REPLs at once; a session whose `pwd` is this repo may still have the global
-   `v1.12` environment active. If the active project is not `Fromage.jl`, do not use `ex` (see
-   below).
-3. Fire one cheap `grep_code` at `src/` early. Reading paths outside the bound project raises
+1. `ping()` — is the server up, and which Julia sessions are connected? The user usually has
+   other projects' sessions connected too (e.g. `tracking-ground-truth`, the codex project), so
+   **pass `ses=`/`session=` on every session-bound call** once more than one is listed.
+2. **Start your own session** rather than borrowing one:
+   `start_session(project_path="/home/yakir/Sync/evri/Fromage.jl", name="fromage")` returns an
+   8-char key. The repo is already in Kaimon's allowed projects (`~/.config/kaimon/projects.json`).
+   A healthy start takes well under a minute.
+   **If it fails with "Process died"**, read `~/.cache/kaimon/sessions/Fromage.jl.log` — it is
+   appended to across every session ever started, so read *from the last `--- Session … starting`
+   line*, not the first `ERROR`. The known failure is
+   `KaimonGate failed to precompile … Package ZMQ … is required but does not seem to be installed`.
+   Cause: the spawned REPL loads `KaimonGate` from the **global** environment of whatever Julia the
+   juliaup `release` channel points at, and Fromage.jl deliberately does not depend on it. When
+   `release` moved 1.12.7 → 1.13.0, `@v1.13` had no KaimonGate and every start died in ~4 s. Fixed
+   2026-09-16 by installing it there (never into this package's `Project.toml`):
+
+   ```sh
+   julia --project=@v1.13 --startup-file=no -e 'using Pkg; Pkg.add("KaimonGate")'
+   ```
+
+   **Repeat this for `@v1.14` (etc.) the day `release` moves again** — `juliaup status` shows the
+   current default. The codex project's session is no evidence either way: it lists KaimonGate as a
+   direct dependency, so it keeps working when ours breaks.
+3. `investigate_environment(session=<key>)` — **check the active project before evaluating
+   anything.** It must say `Project: Fromage vX.Y.Z` at this repo. A REPL whose `pwd` is this repo
+   can still have a global environment active; if the active project is not `Fromage.jl`, do not
+   use `ex` (see below). Then one cheap smoke eval:
+   `ex(e="using Fromage; (VERSION, pkgversion(Fromage), Threads.nthreads())", q=false, ses=<key>)`
+   — on 2026-09-16 that gave `(v"1.13.0", v"0.3.7", 32)`.
+4. Fire one cheap `grep_code` at `src/` early. Reading paths outside the bound project raises
    Kaimon's own access prompt, which **errors after ~50 s** if nobody answers — better it fires
    in the first minute than an hour in. This gate is separate from `.claude/settings.json`;
-   allowlisting the tool does not silence it. (To remove it properly, add this repo to Kaimon's
-   allowed workspace roots — server-side config, not a settings file.)
+   allowlisting the tool does not silence it. The repo is listed under `grep_paths` in
+   `~/.config/kaimon/projects.json`, and on 2026-09-16 the early `grep_code` raised no prompt —
+   keep firing it anyway, as the canary for that config having changed.
 
    The read-only Kaimon tools are allowlisted in `.claude/settings.json`, so they no longer
    prompt; add any new read-only tool there. These deliberately still prompt, because each runs
@@ -100,9 +125,16 @@ follow this file. Rule 6 below exists because that has actually gone wrong.
    `qdrant_reindex_file`, `qdrant_index_project`, `qdrant_sync_index`, `cancel_eval`. Bare
    `julia` / `python3` one-liners are **not** allowlisted and should not be — a wildcard on an
    interpreter is arbitrary code execution.
-4. `qdrant_list_collections()` if you're unsure what is indexed, then search with
-   `collection="fromage"`. Always pass it — `claude_dir_fromage` also exists and is
-   empty, so a domain query against it returns nothing and looks like "no such code".
+5. **Verify Qdrant**: `qdrant_list_collections()` must list `fromage` (vector counts show as
+   `unknown`; that is normal). Then one `search_code` with a query whose answer you know — e.g.
+   `"retry reading a video frame from the network share when it fails with EAGAIN"` should rank
+   `DECISIONS.md` and `src/shareio.jl` (L1–50) at the top — and confirm a hit's line with
+   `grep_code` (`src/shareio.jl:1` is `# Every retry in this package…`). Matching lines mean the
+   index is live and not stale for that file. Always pass `collection="fromage"` —
+   `claude_dir_fromage` also exists and is empty, so a domain query against it returns nothing and
+   looks like "no such code". The collection list also shows `codex`, `kaimon_all`,
+   `verifycalibrations` and `verifyruns`; the last two index the separate pre-merge repos under
+   `~/Sync/evri/`, not this one — never search them for current Fromage code.
 
 ### Finding code
 
@@ -156,10 +188,13 @@ qdrant_index_project(collection="fromage",
 - `println`/`print` output is stripped — **return a final expression** instead;
 - Revise auto-reloads `src/` before every eval; never call `Revise.revise()`;
 - long evals auto-promote to background jobs — poll `check_eval`, and make long loops
-  cooperative (`KaimonGate.is_cancelled()`, `KaimonGate.progress(…)`, `KaimonGate.stash(…)`).
+  cooperative (`KaimonGate.is_cancelled()`, `KaimonGate.progress(…)`, `KaimonGate.stash("key", v)`).
+  **`stash` takes a `String` key.** Kaimon's own `usage_instructions` and quiz show
+  `stash(:key, v)`, which throws `MethodError: no method matching stash(::Symbol, …)` on
+  KaimonGate 1.4.0 — the session log records that killing two long evals mid-run.
 
-Otherwise — and this has been the usual case here — run Julia through Bash against the package
-environment explicitly:
+If you cannot get a session of your own (step 2 above), run Julia through Bash against the
+package environment explicitly:
 
 ```sh
 JULIA_NUM_THREADS=auto julia --project -e '…'

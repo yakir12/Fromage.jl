@@ -178,10 +178,33 @@
         # The frame reader is injected, so both failure kinds can be driven directly. A failed read
         # must leave verification unharmed (nothing returned, nothing thrown)...
         dir = joinpath(DATADIR, "issues_besteffort")
-        @test VRect.save_issue_frame(dir, "v.mp4", 1.0, () -> error("no frame")) === nothing
+        key = (file = "v.mp4", extrinsic = 1.0)
+        @test VRect.save_issue_frame(dir, key, () -> error("no frame")) === nothing
         @test !isdir(dir)                       # nothing created when the frame never arrived
         # ...while a Ctrl-C during the read propagates instead of being absorbed as a failed save.
-        @test_throws InterruptException VRect.save_issue_frame(dir, "v.mp4", 1.0, () -> throw(InterruptException()))
+        @test_throws InterruptException VRect.save_issue_frame(dir, key, () -> throw(InterruptException()))
+        # ...and so does a key the name cannot be built from: that is a bug, not a failed save.
+        @test_throws FieldError VRect.save_issue_frame(dir, (extrinsic = 1.0,), () -> zeros(UInt8, 2, 2))
+        @test !isdir(dir)
+    end
+
+    @testset "issue frame names are distinct per detection, and stable across runs (#155)" begin
+        # The name used to be the video's basename and the extrinsic alone, so two videos called
+        # `session.mp4` in two folders — or two detections on one video that saw different frames —
+        # wrote to one path, and the first frame was silently replaced.
+        a = (file = "/data/camera_a/session.mp4", extrinsic = 1.0, blur = 0.0, n_corners = (5, 8))
+        b = merge(a, (file = "/data/camera_b/session.mp4",))
+        blurred = merge(a, (blur = 1.0,))
+        names = VRect.issue_frame_name.([a, b, blurred])
+        @test allunique(names)
+        # still readable: the video's name and the timestamp lead, a short identity tag follows
+        @test all(n -> startswith(n, "session_t1.0s_") && endswith(n, ".png"), names)
+        # deterministic — a literal, so the name is pinned across processes and Julia versions,
+        # which `Base.hash` makes no promise to be
+        @test VRect.issue_frame_name(a) == "session_t1.0s_d4b018d1.png"
+        # the same values under a different detector's columns are a different detection
+        @test VRect.issue_frame_name((file = a.file, extrinsic = 1.0, apriltags = 4)) !=
+            VRect.issue_frame_name((file = a.file, extrinsic = 1.0, n_corners = 4))
     end
 
     @testset "corner-detection failures are classified, not caught blindly" begin

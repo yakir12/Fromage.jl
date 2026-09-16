@@ -24,8 +24,12 @@ else
 Ground rule 6 applies: search_code(query=..., collection=\"fromage\") to find, grep_code to confirm.
 Always pass collection=\"fromage\" — claude_dir_fromage also exists and is empty, so a domain query
 against it returns nothing and looks like 'no such code'.
-Still run investigate_environment() before any 'ex' call: a REPL whose pwd is this repo may have the
-global v1.12 environment active, and 'ex' is only correct when the active project is Fromage.jl.
+Start your own session (start_session, CLAUDE.md §2 step 2). If it dies with 'KaimonGate failed to
+precompile … ZMQ … not installed', the juliaup release channel has moved to a Julia whose global
+environment lacks KaimonGate: julia --project=@v1.X -e 'using Pkg; Pkg.add(\"KaimonGate\")' — never
+into Fromage's Project.toml.
+Still run investigate_environment() before any 'ex' call: a REPL whose pwd is this repo may have a
+global environment active, and 'ex' is only correct when the active project is Fromage.jl.
 Fire one cheap grep_code at src/ early — Kaimon's access prompt errors after ~50s unanswered, so it
 is better triggered in the first minute than an hour in."
 fi

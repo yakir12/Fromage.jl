@@ -66,8 +66,10 @@ This is the same "is the arena square?" check the diagnostic video gives you, ex
 If a rectification fails detection — the checkerboard or the AprilTags can't be found in its extrinsic frame — Fromage saves that exact frame so you can see what it saw. The message in the report tells you where it went, e.g.:
 
 ```
-row 2 (rectification_id: morning): only 4 of 6 AprilTags detected at the extrinsic frame — saved the extrinsic frame to results_dir/issues/2026-08-20T14-22-05/board_t1.0s.png for inspection
+row 2 (rectification_id: morning): only 4 of 6 AprilTags detected at the extrinsic frame — saved the extrinsic frame of /data/camera_a/board.mp4 at 1.0 s to results_dir/issues/2026-08-20T14-22-05/board_t1.0s_3f9a02c1.png for inspection
 ```
+
+The frame is named for its video and extrinsic, followed by a short tag that tells apart videos with the same name in different folders — and two rectifications that looked at the same frame with different settings. The tag depends only on what was checked, so re-running on the same data saves the frame under the same name.
 
 Each time you run Fromage it gets its own time-stamped folder under `results_dir/issues`, named for the moment it started, so the folder holds exactly the frames of that run of Fromage and older ones stay where they are. That is true of a re-run too: Fromage remembers what it detected (see [re-running in the same Julia session](help.md#Re-running-in-the-same-Julia-session)), but it still saves the frame again, into the new folder. Nothing here is ever deleted: the folder is yours to clean out whenever you like.
 

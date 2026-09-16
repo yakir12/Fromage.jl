@@ -344,14 +344,39 @@ function _extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners
     return ismissing(res) ? "no corners detected at the extrinsic time stamp" : nothing
 end
 
+# Eight hex digits naming one detection: a CRC-32C of every column in its group key, names included.
+# The key holds the resolved :file, so two videos sharing a basename in different folders differ here,
+# and it holds every parameter that decides the frame the detector saw (blur, yadif, …) and which
+# detector saw it, so two detections of one video at one extrinsic differ too (#155). CRC32c rather
+# than `Base.hash`, which makes no promise to be stable across Julia versions or processes: the same
+# input must name the same frame on every run. Collision-resistant, not collision-proof — which is
+# enough for the handful of frames one invocation dumps. Strings go in as they are rather than through
+# `repr`, whose escaping of unassigned Unicode can move with Julia's Unicode tables; the other values
+# (numbers, tuples, `missing`) go through `repr`, and the pinned name in test_reading.jl is what
+# notices if that printing ever changes.
+function detection_digest(key)
+    fingerprint = join((string(name, '=', _fingerprint(value)) for (name, value) in pairs(NamedTuple(key))), '\n')
+    return string(crc32c(String(fingerprint)); base = 16, pad = 8)   # `join` over unknown values may infer as an AnnotatedString, which crc32c has no method for
+end
+_fingerprint(value::AbstractString) = value
+_fingerprint(value) = repr(value)
+
+# The frame's file name: still readable — the video's name and the extrinsic lead, e.g.
+# `board_t1.0s_3f9a02c1.png` — with `detection_digest` keeping every detection's frame on a path of its own.
+function issue_frame_name(key)
+    return string(first(splitext(basename(key.file))), "_t", key.extrinsic, "s_", detection_digest(key), ".png")
+end
+
 # Save the frame that failed detection into this invocation's issues folder (created on demand) for
-# the user to inspect, named by the video and extrinsic timestamp — e.g. `board_t1.0s.png`. `get_frame`
-# reads the frame lazily; best effort throughout, returning `nothing` if anything goes wrong.
-function save_issue_frame(invocation_dir, file, extrinsic, get_frame)
+# the user to inspect, named by `issue_frame_name`. `key` is the failing group's key, which names the
+# video and extrinsic. `get_frame` reads the frame lazily; best effort, returning `nothing` if reading,
+# creating the folder or writing goes wrong. The name is built outside that: it is plain code over
+# the key, so a failure there is a bug to see, not a frame that could not be saved.
+function save_issue_frame(invocation_dir::AbstractString, key, get_frame)
+    path = joinpath(invocation_dir, issue_frame_name(key))
     try
         image = get_frame()
         mkpath(invocation_dir)
-        path = joinpath(invocation_dir, string(first(splitext(basename(file))), "_t", extrinsic, "s.png"))
         FileIO.save(path, image)
         return path
     catch e
@@ -363,10 +388,11 @@ function save_issue_frame(invocation_dir, file, extrinsic, get_frame)
     end
 end
 
-# Append a "saved the frame to ..." note to an issue message, after dumping the failing frame.
-function note_saved_frame(issue, saved)
+# Append a "saved the frame to ..." note to an issue message, after dumping the failing frame. The
+# note names the video and extrinsic the frame came from, so the path is never the only link back.
+function note_saved_frame(issue, key, saved)
     isnothing(saved) && return issue
-    return string(issue, " — saved the extrinsic frame to ", saved, " for inspection")
+    return string(issue, " — saved the extrinsic frame of ", key.file, " at ", key.extrinsic, " s to ", saved, " for inspection")
 end
 
 # The tail the two extrinsic passes share, and the third does not: dump the frame the detector
@@ -376,15 +402,16 @@ end
 # verify_intrinsics! scans a whole window, so it has no single frame to dump. `get_frame` is how
 # each detector reads its own: deinterlaced/blurred gray for the checkerboard, raw for AprilTag.
 #
-# The message is built before `blank!`, and must stay that way: a group key is a live view onto the
-# parent's columns, so :extrinsic read back through `k` after the blank is `missing`.
+# The frame name and the message are built before `blank!`, and must stay that way: both read
+# :extrinsic through `k`, and a group key is a live view onto the parent's columns, so after the
+# blank it reads back as `missing`.
 #
 # `(g, k, issue)` is positional because `detect_per_group!` calls `flag!` that way; the two captures
 # are keywords because `issue` and `invocation_dir` are both strings and adjacent, and transposing
 # them would compile, run, and write the frame into a folder named by the issue message.
 function flag_extrinsic!(g::AbstractDataFrame, k, issue; invocation_dir, get_frame)
-    saved = save_issue_frame(invocation_dir, k.file, k.extrinsic, get_frame)
-    note = note_saved_frame(issue, saved)
+    saved = save_issue_frame(invocation_dir, k, get_frame)
+    note = note_saved_frame(issue, k, saved)
     blank!(g, :extrinsic)
     push!.(g.issues, note)
     return nothing

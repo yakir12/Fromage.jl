@@ -5,6 +5,7 @@ using ..Rectifications: get_corners, _vf, countkeys, extrinsic_gray_frame, findf
     from_extrinsic, from_matlab, from_uniform, from_checkerboard
 import ..Rectifications: Rectification                     # extended below on the row types this module owns
 using ..PawsomeTracker: PawsomeTracker, ApriltagRectification
+using CRC32c: crc32c
 using FileIO: FileIO
 using DataFrames: AbstractDataFrame, ByRow, DataFrame, Not, allowmissing!, completecases,
     groupby, nonunique, nrow, passmissing, subset
