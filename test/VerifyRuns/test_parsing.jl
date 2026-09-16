@@ -79,6 +79,34 @@
         @test flagged(check([runrow(darker_target = "maybe")]), 1, "wrong darker_target format")
     end
 
+    # "NaN"/"Inf" parse as floats, so they used to pass here and surface as an `InexactError` when
+    # tracking converted target_width × initial_search_factor into a window size (#151).
+    # target_width and initial_search_factor are the integer-converted fields; the rest are used as
+    # floats. Every numeric column is covered, so a new one cannot quietly slip past.
+    @testset "non-finite numbers are rejected, naming the column and the value" begin
+        for (col, cell, shown) in (
+                (:target_width, "NaN", "NaN"), (:initial_search_factor, "Inf", "Inf"),
+                (:downscale, "-Inf", "-Inf"), (:native_fps, "inf", "Inf"),
+                (:sample_fps, "nan", "NaN"), (:start, "-Inf", "-Inf"), (:stop, "Inf", "Inf"),
+            )
+            df = check([runrow(; col => cell)])
+            @test flagged(df, 1, "$col must be finite, got $shown")
+        end
+        # the integer columns never parse a non-finite value in the first place
+        @test flagged(check([runrow(background_length = "NaN")]), 1, "wrong background_length format")
+        @test flagged(check([runrow(window_size = "Inf")]), 1, "wrong window_size format")
+    end
+
+    @testset "non-finite numbers: check_runs reports, load_runs throws" begin
+        csv = write_rows(joinpath(DATADIR, "nonfinite.csv"), [runrow(target_width = "NaN")])
+        df = VR.check_runs(DATADIR, csv)
+        @test flagged(df, 1, "target_width must be finite, got NaN")
+        _, out = capturing() do
+            @test_throws "there were issues" VR.load_runs(DATADIR, csv)
+        end
+        @test occursin("row 1 (run_id: r): target_width must be finite, got NaN", out)
+    end
+
     @testset "defaults applied (with correct values) when optional fields omitted" begin
         runs = check([runrow()])   # only run_id + rectification_id + file set
         @test clean(runs)

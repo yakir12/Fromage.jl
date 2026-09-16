@@ -17,7 +17,7 @@ Among the things checked:
 - all referenced files and folders exist, and the videos are actually readable;
 - timestamps are well-formatted, non-negative, ordered (`start` < `stop`), and within the video's duration;
 - pixel coordinates lie inside the frame;
-- numeric parameters are within their valid ranges;
+- numeric parameters are finite (a `NaN` or `Inf` cell is rejected) and within their valid ranges;
 - `rectification_id`s are unique, and no two rectifications are effectively identical duplicates;
 - a filled cell in a column that the row's `type` doesn't use is flagged (it usually means the `type` itself is wrong);
 - the checkerboard is detected at the `extrinsic` timestamp, and — when a rectification window is given — at least 3 sampled frames within the intrinsic window [`intrinsic_start`, `intrinsic_stop`] have a detectable board (this is the expensive part of validation — it reads real frames);
@@ -147,7 +147,7 @@ main("path/to/data";
 - `rectification_defaults` may set: `checker_width`, `n_corners`, `temporal_step`, `radial_parameters`, `blur`, `yadif`, and — for `type = apriltag` rows — `apriltags`, `family`, `tag_cell_width`.
 - `tracking_defaults` may set: `target_width`, `window_size`, `darker_target`, `native_fps`, `sample_fps`, `initial_search_factor`, `downscale`, `background_length`.
 
-Anything else (identities, file names, timestamps, `start_location`/`center`/`north`) is per-row only, and an unrecognized or unconvertible entry is rejected with an error before anything runs. Global values pass through the same validation as csv cells — e.g. a global `sample_fps` must still not exceed each run's `native_fps`.
+Anything else (identities, file names, timestamps, `start_location`/`center`/`north`) is per-row only, and an unrecognized, unconvertible or non-finite (`NaN`, `Inf`) entry is rejected with an error before anything runs. Global values pass through the same validation as csv cells — e.g. a global `sample_fps` must still not exceed each run's `native_fps`.
 
 ## Macs
 

@@ -62,6 +62,37 @@
         @test flagged(check([matlabrow(extrinsic_index = "two")]), 1, "wrong extrinsic_index format")
     end
 
+    # "NaN"/"Inf" parse as floats, so they used to pass as well-formed cells (#151). Every
+    # float-valued column of every type, and the temporal ones, which accept seconds.
+    @testset "non-finite numbers are rejected, naming the column and the value" begin
+        for (r, col, cell, shown) in (
+                (checkerboardrow, :checker_width, "NaN", "NaN"),
+                (checkerboardrow, :temporal_step, "Inf", "Inf"),
+                (checkerboardrow, :blur, "-Inf", "-Inf"),
+                (checkerboardrow, :aspect, "nan", "NaN"),
+                (checkerboardrow, :extrinsic, "Inf", "Inf"),
+                (checkerboardrow, :intrinsic_start, "NaN", "NaN"),
+                (checkerboardrow, :intrinsic_stop, "Inf", "Inf"),
+                (uniformrow, :pixel_width, "inf", "Inf"),
+                (apriltagrow, :tag_cell_width, "NaN", "NaN"),
+                (matlabrow, :aspect, "-Inf", "-Inf"),
+            )
+            @test flagged(check([r(; col => cell)]), 1, "$col must be finite, got $shown")
+        end
+        # the integer columns never parse a non-finite value in the first place
+        @test flagged(check([checkerboardrow(radial_parameters = "NaN")]), 1, "wrong radial_parameters format")
+    end
+
+    @testset "non-finite numbers: check_rectifications reports, load_rectifications throws" begin
+        csv = write_rows(joinpath(DATADIR, "nonfinite.csv"), [uniformrow(pixel_width = "NaN")])
+        df = VRect.check_rectifications(DATADIR, csv; issues_dir = mktempdir())
+        @test flagged(df, 1, "pixel_width must be finite, got NaN")
+        _, out = capturing() do
+            @test_throws "there were issues" VRect.load_rectifications(DATADIR, csv; issues_dir = mktempdir())
+        end
+        @test occursin("row 1 (rectification_id: s): pixel_width must be finite, got NaN", out)
+    end
+
     @testset "intrinsic_start/intrinsic_stop must be paired (both directions)" begin
         @test flagged(check([checkerboardrow(intrinsic_start = "00:00:02", intrinsic_stop = missing)]), 1, "must be either both present or both missing")
         @test flagged(check([checkerboardrow(intrinsic_start = missing, intrinsic_stop = "00:00:08")]), 1, "must be either both present or both missing")
