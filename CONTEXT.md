@@ -69,6 +69,16 @@ What a run yields: timestamps paired with the target's position, in real-world c
 to `results_dir/<run_id>.csv`; `main` returns nothing, so that file is the only place a track lives
 once `main` has finished.
 
+### Diagnostic video and run diagnostic clip
+
+The **diagnostic video** is `results_dir/diagnostic.mp4`: every tracked run played back with the
+target marked, for checking by eye that the tracking held. It is stitched from one **run
+diagnostic clip** per run — one clip per run however many segments the run has, labelled with
+its `run_id`.
+
+Not "diagnostic segment": a *segment* is a piece of a run, and a run of three segments still
+yields one clip.
+
 ### Invocation
 
 **One execution of Fromage**: one call to `main` or to `verify`.
@@ -79,7 +89,7 @@ Named because the issues folder is per execution: each invocation gets its own t
 
 **The Julia process**, in the ordinary Julia sense of the word. One session holds as many
 invocations as the user cares to run, which is the whole point of the distinction: the memoized
-reads and detections live for the life of the SESSION (`Fromage.Memo`), while each INVOCATION gets
+reads, detections, builds and tracks live for the life of the SESSION (`Fromage.Memo`), while each INVOCATION gets
 its own issues folder. So re-running `main` after fixing one csv row re-reads nothing it had already
 read, and still reports afresh into a folder of its own.
 

@@ -55,8 +55,8 @@ tracked through; no tolerance moved.
 
 ### The diagnostic video is concatenated with ffmpeg's concat demuxer
 
-`main` writes one diagnostic segment per run and stream-copies them into a single
-`results_dir/diagnostic.mp4`. This works only because every segment shares one resolution, codec
+`main` writes one run diagnostic clip per run and stream-copies them into a single
+`results_dir/diagnostic.mp4`. This works only because every clip shares one resolution, codec
 and quality — which is why `DIAGNOSTIC_SIZE` is a fixed square canvas and every writer uses the
 same encoder settings, rather than each rectification rendering at its own natural size.
 
@@ -1042,7 +1042,7 @@ bound even though a built rectification is a far larger object than a probe `Dic
 had genuinely built a thousand distinct rectifications would have read a thousand videos to do it,
 and the maps are the small half of that.
 
-### The memo is keyed on the path, and never revalidated (#233, #251)
+### The memo is keyed on the path, and never revalidated (#233, #251, #249)
 
 A cached read is invalidated by nothing. The key is the resolved, canonical absolute path — file
 identity, not file content — and the entry lives for the life of the Julia process.
@@ -1054,9 +1054,43 @@ and compares by content — `String`s, numbers and `NTuple`s all the way down �
 parsed, identically specified rows are one entry. That is a property of what those structs are made
 of rather than a decision, so `test/memo.jl` asserts it structurally, over `fieldnames`, including
 the nested `Source`: an under-specified key is the one way this returns a WRONG rectification rather
-than merely a slow one. `Run` is the counter-example and the reason tracking is not memoized with it
-(#249): its `segments::Vector` field hashes by identity, so two identically specified runs are two
-entries and would never hit.
+than merely a slow one.
+
+#249 extends it again, from builds to TRACKS. `Run` is the counter-example to the build's key: it is
+an immutable struct holding `segments::Vector`, so its default `isequal` compares that field by
+identity and two identically specified runs would be two entries that never hit. Adding `hash`/`isequal`
+methods to `Run` was declined — it would change what `==` means for every caller to serve one cache —
+and so was keying on csv text, which would miss `tracking_defaults` and every probed value. The key is
+instead a tuple of `Run`'s fields plus the `RectificationMethod` (`Fromage.tracking_key`), which hashes
+by content because a `Vector` does, and is spelled from `fieldcount` so a new field joins it unasked.
+`test/memo.jl` varies every field, nested ones included, on its own. The method stands in for the
+built rectification and the fallback centre, both functions of it. `run_id` is in the key both as a
+field and as the clip's label (#22), so renaming a run re-tracks it; that is accepted.
+
+Tracking writes a file, which no other memoized computation does, so the value is the pair (track,
+path of its run diagnostic clip) and the clip is part of what is cached. Redrawing the clip from a
+cached track was declined: it would re-read every frame, the likely bulk of tracking's cost. Leaving
+cached runs out of `diagnostic.mp4` was declined too — it repeats `run_ids`' partial video, and an
+all-hit invocation would hand ffmpeg an empty list (#21).
+
+**The clips live in a folder the session owns, not in `results_dir`.** Track run 17 with specification
+X, then Y, then revert to X: the X entry hits, but `results_dir/17.mp4` was overwritten by Y, so the
+video would silently show Y's tracking under X's track. A stored path into `results_dir` also dangles
+when the user deletes that folder, or starts the next invocation from another working directory
+(`results_dir` is relative to `pwd`, #229). So `Memo.CLIP_FOLDER` is a temp folder created on first use
+and removed when Julia exits; each entry gets a subfolder of its own, and `LRU`'s `finalizer` deletes
+it when the entry leaves — on eviction and on `empty!`, so `empty_caches!` removes the files with no
+bookkeeping. It adds nothing to `results_dir`, so #86 is not involved. A track that throws stores
+nothing and removes its subfolder, so the rerun after a crash or a Ctrl-C tracks only what did not
+finish.
+
+The shared `CACHE_SIZE` stands. Within one invocation peak disk use is what it was — clips sat on disk
+for the whole of tracking before this — but across a session the clips of superseded specifications
+stay until evicted, so up to `CACHE_SIZE` of them can sit in the temp folder at once. An invocation of
+more runs than the bound would evict clips of its own before stitching them, after every run had been
+tracked; `main` raises the bound to its run count first (`Memo.make_room!`), which an LRU makes
+sufficient, since every entry an invocation used is more recent than any it did not. `main` says when it reused tracks, in
+one `@info` line, because a cached track inherits the path caveat below.
 
 The path caveat reaches builds transitively — a rectification is keyed on a specification whose
 `file` is a path — so replacing a video in place serves the rectification built from the old one.
@@ -1122,7 +1156,7 @@ Three things deliberately stay outside the memo, and all three would be bugs ins
 What is NOT cached is as deliberate: row-level or csv-text-keyed caching would gate column-wise
 predicates over a DataFrame — microseconds of pure CPU — behind machinery guarding something already
 free. Rectification building was the other half of #233's original request and landed in #251, on
-the terms above; tracking and the diagnostic segments are still open as #249.
+the terms above; tracking and the run diagnostic clips followed in #249.
 
 ### The frame dump stays out of `detect_per_group!` (#210)
 

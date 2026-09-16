@@ -5,7 +5,7 @@ module Fromage
 # nothing and almost everything depends on it (the coordinate-space conversions and the `RowCol`
 # alias), Paths next because both `main` and VerifyRectifications derive their output folders from
 # it, Memo because the memoized reads, detections and builds live in three modules below it — and, for
-# the build, in `main.jl` itself — and all of them name its caches, ShareIO because all three share-reading paths depend on it, Rectifications is used
+# the build and the track, in `main.jl` itself — and all of them name its caches, ShareIO because all three share-reading paths depend on it, Rectifications is used
 # by VerifyRectifications and (for the centre/north helpers) by PawsomeTracker, PawsomeTracker by
 # VerifyRuns, and the three shared modules by both gateways -- Parsing (CSV-cell machinery),
 # Probing (ffprobe plumbing) and Gateway (the csv -> verified DataFrame pipeline the two gateways
@@ -24,11 +24,10 @@ include("VerifyRuns/VerifyRuns.jl")
 
 using .Paths: RESULTS_DIR, DEFAULT_ISSUES_DIR
 using .Gateway: verify_cross_references!
-using .Memo: BUILT_RECTIFICATIONS
+using .Memo: BUILT_RECTIFICATIONS, CLIP_FOLDER, TRACKED_RUNS, make_room!
 using .Rectifications: Rectification, save_diagnostic
 using .PawsomeTracker: track
 
-using DataFrames: DataFrame, leftjoin!, transform!
 using FFMPEG: ffmpeg_exe
 using OhMyThreads: tforeach, tmap
 using ProgressMeter: @showprogress

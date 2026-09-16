@@ -1,15 +1,16 @@
-# The memo behind the iterate-on-your-csv workflow (#233, #251): a Julia process remembers every
-# read, every detection and every rectification it has BUILT, so a second `main`/`verify` over an
-# unchanged dataset spawns no ffprobe, reads no `.mat`, detects nothing and builds nothing.
+# The memo behind the iterate-on-your-csv workflow (#233, #251, #249): a Julia process remembers every
+# read, every detection, every rectification it has BUILT and every run it has TRACKED, so a second
+# `main`/`verify` over an unchanged dataset spawns no ffprobe, reads no `.mat`, detects nothing, builds
+# nothing and tracks nothing.
 #
 # Two things are asserted here, and the second is the one that matters. That the caches HIT is a
 # performance claim, and it is asserted on the hit/miss counters rather than on wall-clock time,
 # which on this machine is noise (DECISIONS). That every parameter a memoized computation reads is
 # part of its key is a CORRECTNESS claim: an under-specified key is the one way this change can
 # return a wrong answer rather than merely a slow one, so each parameter is varied on its own and
-# the recomputation asserted, rather than reasoned about from the source. The build's key is a whole
-# OBJECT rather than a tuple, so for that one the same claim is made structurally over `fieldnames`
-# — see `variants` below.
+# the recomputation asserted, rather than reasoned about from the source. The build's and the track's
+# arguments are whole OBJECTS, so for those the same claim is made structurally over `fieldnames` —
+# see `variants` below.
 #
 # Path-keyed caching is safe across the suite only because every fixture path is written exactly
 # once, with one content, for the life of the test process: the shared artifact blocks in both
@@ -29,11 +30,11 @@ const VRect = Fromage.VerifyRectifications
 const VRuns = Fromage.VerifyRuns
 const PT = Fromage.PawsomeTracker
 
-# Every cache the VERIFICATION half fills. The build cache (#251) is left out because the two
-# `check_*` functions build nothing, so it would never move with the others; derived from `M.CACHES`
-# by exclusion rather than listed, so a verification cache added later is counted here without this
-# line being touched.
-const VERIFICATION_CACHES = filter(c -> c !== M.BUILT_RECTIFICATIONS, M.CACHES)
+# Every cache the VERIFICATION half fills. The build and track caches (#251, #249) are left out
+# because the two `check_*` functions build and track nothing, so they would never move with the
+# others; derived from `M.CACHES` by exclusion rather than listed, so a verification cache added later
+# is counted here without this line being touched.
+const VERIFICATION_CACHES = filter(c -> !any(x -> x === c, (M.BUILT_RECTIFICATIONS, M.TRACKED_RUNS)), M.CACHES)
 
 # What every verification cache has computed so far, by identity. The counters are process-global
 # and other suites share them, so every assertion below is on a DELTA taken around one call.
@@ -81,7 +82,7 @@ const MAT2 = make_mat(joinpath(DIR, "memo_two.mat"), (320, 240))
 # rather than left blank so that varying them below is a change of value and not of type.
 src(file = PLAIN) = VRect.Source(file, 1.0, (10, 20), (30, 40), 1.0, 320, 240)
 
-# A different value of the same shape for every field type these four structs are built from, so a
+# A different value of the same shape for every field type these structs are built from, so a
 # one-field variant can be derived from `fieldnames` rather than from a hand-written list per kind —
 # a field added to one of them later is then covered without this file being edited.
 vary(x::Bool) = !x
@@ -89,10 +90,11 @@ vary(x::Int) = x + 1
 vary(x::Float64) = x + 1.0
 vary(x::String) = string(x, "-other")
 vary(x::NTuple{2, Int}) = (x[1] + 1, x[2])
+vary(x::Rational{Int}) = x + 1
 
 # Rebuild `x` with field `i` replaced. Reaching the constructor by NAME drops the type parameter, so
 # a `Checkerboard{Float64}` is rebuilt by its own constructor rather than pinned by this function;
-# for the three non-parametric kinds it is the type itself. `typeof(x).name.wrapper` does the same
+# for the non-parametric types it is the type itself. `typeof(x).name.wrapper` does the same
 # thing in one expression and is what this was first written as — but `TypeName.wrapper` is a Base
 # internal, and there is nothing internal about asking a module for a type it exports.
 function replace_field(x, i, v)
@@ -101,25 +103,28 @@ function replace_field(x, i, v)
     return constructor(ntuple(j -> j == i ? v : getfield(x, j), fieldcount(T))...)
 end
 
-# Every one-field variant of `c`, the fields of its nested `Source` included — those are fields of
-# the key just as much as the method's own, and are where an under-specified key would hurt most:
-# `center` and `north` change the map without changing anything else about the row.
-function variants(c)
-    # Every variant is still the same concrete type as `c` — varying one field never leaves its
+# The structs a key is built from that are themselves built from fields, and are varied field by
+# field rather than as one value: a rectification's `Source`, and a run's tuning, frame format and
+# segments. Those nested fields are part of the key just as much as the outer ones, and are where an
+# under-specified key would hurt most — `center` and `north` change the map without changing anything
+# else about the row, and a segment's `stop` changes the track without changing the run's id.
+const NESTED = Union{VRect.Source, PT.Tuning, PT.Segment, VRuns.FrameFormat}
+field_variants(f, name) = [name => vary(f)]
+field_variants(f::NESTED, name) = variants(f, name)
+# A run's segments: every field of the first one, and one segment more.
+field_variants(f::Vector{PT.Segment}, name) = [
+    [n => [v; f[2:end]] for (n, v) in field_variants(first(f), string(name, "[1]"))];
+    string(name, " (one segment more)") => [f; f]
+]
+
+# Every one-field variant of `x`, recursing into the `NESTED` fields.
+function variants(x, name = string(nameof(typeof(x))))
+    # Every variant is still the same concrete type as `x` — varying one field never leaves its
     # declared type, `Checkerboard{Float64}`'s two `::S` bounds included — so the eltype says so.
-    vs = Pair{String, typeof(c)}[]
-    T = typeof(c)
-    for i in 1:fieldcount(T)
-        f = getfield(c, i)
-        name = string(nameof(T), ".", fieldname(T, i))
-        if f isa VRect.Source
-            for j in 1:fieldcount(VRect.Source)
-                v = replace_field(c, i, replace_field(f, j, vary(getfield(f, j))))
-                push!(vs, string(name, ".", fieldname(VRect.Source, j)) => v)
-            end
-        else
-            push!(vs, name => replace_field(c, i, vary(f)))
-        end
+    T = typeof(x)
+    vs = Pair{String, T}[]
+    for i in 1:fieldcount(T), (n, v) in field_variants(getfield(x, i), string(name, ".", fieldname(T, i)))
+        push!(vs, n => replace_field(x, i, v))
     end
     return vs
 end
@@ -155,6 +160,18 @@ const METHODS = (
     VRect.Checkerboard(src(BOARD), "c", 0.0, 1.0, 4.0, (5, 8), 0.5, 1, 0.0, false),
     VRect.Apriltag(src(), "a", 4, "tag36h11", 12.0),
     VRect.MATLAB(src(), "m", MAT1, 1),
+)
+
+# The tracking half (#249). Two trackable videos — the shared known-trajectory disc, 100×100, 2 s at
+# 25 fps — and one that `track` cannot read. `RUN` is a verified run constructed directly, like
+# `METHODS`, for the tests about the key; the end-to-end testsets go through `main` and its csv.
+target(name) = joinpath(DIR, only(first(make_target_video(DIR, name))))
+const TARGET1 = target("memo_target1")
+const TARGET2 = target("memo_target2")
+const UNTRACKABLE = make_corrupt_video(joinpath(DIR, "memo_untrackable.mp4"))
+const RUN = VRuns.Run(
+    "memo_run", "u", tuning(TARGET1; target_width = 10.0), VRuns.FrameFormat(100, 100, 1 // 1),
+    [PT.Segment(TARGET1, 0.0, 1.0, (55, 50))]
 )
 
 # Each memoized computation, its cache, and an alternative value for EVERY one of its arguments.
@@ -198,6 +215,13 @@ const MEMOIZED = (
         name = "build_rectification", cache = M.BUILT_RECTIFICATIONS,
         f = Fromage.build_rectification,
         base = (METHODS[1],), alts = (VRect.Uniform(src(), "u-alt", 3.0),),
+    ),
+    # Tracking (#249). Like the build, each argument is a whole object; that every field of the run
+    # and of the rectification method is part of the key is the structural testset below.
+    (
+        name = "track_run", cache = M.TRACKED_RUNS, f = Fromage.track_run,
+        base = (RUN, METHODS[1]),
+        alts = (replace_field(RUN, 1, "memo_run-alt"), VRect.Uniform(src(), "u-alt", 3.0)),
     ),
 )
 
@@ -345,14 +369,18 @@ const MEMOIZED = (
 
         # That a hit serves the SAME object is asserted on `rectifier` above; `main` returns nothing
         # (#256), so there is no object here to compare, and the counters are the whole claim.
+        #
+        # Hits are counted as deltas because tracking asks the build cache too: `track_run` fetches
+        # the rectification it tracks through from there, and only when the track itself was not
+        # cached — so the cold invocation serves one, and the warm one, whose track is cached, none.
         Fromage.empty_caches!()
         go()
         @test M.misses(M.BUILT_RECTIFICATIONS) == 1
-        @test M.hits(M.BUILT_RECTIFICATIONS) == 0
+        hits = M.hits(M.BUILT_RECTIFICATIONS)
 
         go()
         @test M.misses(M.BUILT_RECTIFICATIONS) == 1                # nothing rebuilt
-        @test M.hits(M.BUILT_RECTIFICATIONS) == 1                  # served instead
+        @test M.hits(M.BUILT_RECTIFICATIONS) == hits + 1           # served instead
     end
 
     # The blank-window `Checkerboard{Missing}` is a different TYPE from the filled `{Float64}`, so it
@@ -484,10 +512,179 @@ const MEMOIZED = (
         end
     end
 
+    # The tracking memo (#249), end to end through `main`: the user's loop is "watch the diagnostic
+    # video, fix a row, run again", so every assertion is about what a second `main` tracked and what
+    # it still WROTE. One dataset, re-written between invocations — csv text is never memoized, only
+    # the videos it names, which are written once like every other fixture here.
+    @testset "a second `main` re-tracks only the runs whose specification changed" begin
+        rects_csv = joinpath(DIR, "memo_tracking.csv")
+        write(rects_csv, "rectification_id,path,file,type,extrinsic,pixel_width\nu1,.,memo_plain.mp4,uniform,00:00:01,2\n")
+        runs_csv = joinpath(DIR, "memo_tracking_runs.csv")
+        outdir = mktempdir()
+        results = joinpath(outdir, "results_dir")
+        diagnostic = joinpath(results, "diagnostic.mp4")
+        # `rows` are `run_id => stop`, a blank one tracking to the end of the video; the first row tracks
+        # TARGET1 and the second TARGET2. Every invocation starts from an empty `results_dir`, so a
+        # file found there afterwards was written by THAT invocation.
+        function go(rows; run_ids = nothing)
+            open(runs_csv, "w") do io
+                println(io, "run_id,rectification_id,path,file,start_location,stop")
+                for ((id, stop), file) in zip(rows, (TARGET1, TARGET2))
+                    println(io, id, ",u1,.,", basename(file), ",\"(55, 50)\",", stop)
+                end
+            end
+            rm(results; recursive = true, force = true)
+            return cd(
+                () -> Fromage.main(
+                    DIR; rectifications_file = basename(rects_csv), runs_file = basename(runs_csv),
+                    tracking_defaults = (target_width = 10,), run_ids
+                ), outdir
+            )
+        end
+        reused(n, of) = (:info, "Reused $n of $of tracks from earlier in this session; Fromage.empty_caches!() forces a re-track")
+        X = ["t1" => "", "t2" => ""]
+        Y = ["t1" => "", "t2" => "00:00:01"]
+
+        # Cold: both tracked, and nothing said about reuse — `@test_logs` with no pattern asserts that
+        # no log record was emitted at all.
+        Fromage.empty_caches!()
+        @test_logs go(X)
+        @test (M.misses(M.TRACKED_RUNS), M.hits(M.TRACKED_RUNS)) == (2, 0)
+        x_video = read(diagnostic)
+        x_csvs = read.(joinpath.(results, ["t1.csv", "t2.csv"]))
+        @test probe_stream(diagnostic).nframes == 2 * 25        # two runs × 25 written frames each
+
+        @testset "an unchanged dataset tracks nothing, and still writes everything" begin
+            @test_logs reused(2, 2) go(X)
+            @test (M.misses(M.TRACKED_RUNS), M.hits(M.TRACKED_RUNS)) == (2, 2)
+            @test read.(joinpath.(results, ["t1.csv", "t2.csv"])) == x_csvs
+            @test probe_stream(diagnostic).nframes == 2 * 25
+        end
+
+        @testset "editing one run's row re-tracks that run and no other" begin
+            @test_logs reused(1, 2) go(Y)
+            @test (M.misses(M.TRACKED_RUNS), M.hits(M.TRACKED_RUNS)) == (3, 3)
+            @test probe_stream(diagnostic).nframes < 2 * 25        # t2 now tracked for half the video
+        end
+
+        # Track X, then Y, then revert to X. X's entry hits, and the video must show X's clip — which it
+        # would not if the clip lived at a path Y had since overwritten, such as `results_dir/t2.mp4`.
+        # That is why each entry has a folder of its own (DECISIONS).
+        @testset "reverting a row serves the reverted row's clip, not the one tracked in between" begin
+            y_video = read(diagnostic)
+            @test_logs reused(2, 2) go(X)
+            @test M.misses(M.TRACKED_RUNS) == 3
+            @test read(diagnostic) == x_video
+            @test read(diagnostic) != y_video
+        end
+
+        # `run_id` is part of the key, and is the clip's on-screen label (#22): a renamed run is
+        # re-tracked, and the video differs from X's in that label and nothing else — same frame count.
+        @testset "renaming a run re-tracks it, and the video carries the new label" begin
+            @test_logs reused(1, 2) go(["t1-renamed" => "", "t2" => ""])
+            @test M.misses(M.TRACKED_RUNS) == 4
+            @test isfile(joinpath(results, "t1-renamed.csv"))
+            @test probe_stream(diagnostic).nframes == 2 * 25
+            @test read(diagnostic) != x_video
+        end
+
+        @testset "a narrowed invocation fills the entries a full one reuses" begin
+            Fromage.empty_caches!()
+            @test_logs go(X; run_ids = ["t1"])
+            @test readdir(results) == ["diagnostic.mp4", "t1.csv"]
+            @test_logs reused(1, 2) go(X)
+            @test (M.misses(M.TRACKED_RUNS), M.hits(M.TRACKED_RUNS)) == (2, 1)
+            @test read(diagnostic) == x_video
+        end
+    end
+
+    # The correctness half for tracking, the same claim the build's structural testset makes: every
+    # field of the run — its tuning, frame format and segments field by field included — and every
+    # field of the rectification method is part of the key. Asserted on the cache with a sentinel
+    # entry rather than by tracking every variant, most of which could not be tracked at all.
+    #
+    # `Run` cannot be the key itself: it is an immutable struct holding a `Vector`, so two identically
+    # specified runs compare `===`-unequal and hash differently. The first assertion is that the key
+    # nevertheless finds an identically specified run built separately.
+    @testset "every field of the run and of $(nameof(typeof(c))) is part of the track's key" for c in METHODS
+        Fromage.empty_caches!()
+        get!(() -> ((), joinpath(mktempdir(), "sentinel.mp4")), M.TRACKED_RUNS, Fromage.tracking_key(RUN, c))
+        @test haskey(M.TRACKED_RUNS, Fromage.tracking_key(deepcopy(RUN), deepcopy(c)))
+        @testset "$name" for (name, variant) in variants(RUN)
+            @test !haskey(M.TRACKED_RUNS, Fromage.tracking_key(variant, c))
+        end
+        @testset "$name" for (name, variant) in variants(c)
+            @test !haskey(M.TRACKED_RUNS, Fromage.tracking_key(RUN, variant))
+        end
+    end
+
+    # A failed track stores nothing (`get!` never does when its closure throws) and leaves no folder
+    # behind in the session's clip folder; a run that succeeded in the same invocation stays cached, so
+    # the rerun after a crash or a Ctrl-C tracks only what did not finish.
+    @testset "a failed track is never remembered, and a finished one is" begin
+        c = METHODS[1]
+        broken = replace_field(RUN, 5, [PT.Segment(UNTRACKABLE, 0.0, 1.0, (55, 50))])
+        Fromage.empty_caches!()
+        @test_throws TaskFailedException Fromage.track_runs([RUN, broken], [c, c])
+        @test haskey(M.TRACKED_RUNS, Fromage.tracking_key(RUN, c))
+        @test !haskey(M.TRACKED_RUNS, Fromage.tracking_key(broken, c))
+        @test length(readdir(M.CLIP_FOLDER())) == 1                 # the finished run's, and only that
+        hits = M.hits(M.TRACKED_RUNS)
+        Fromage.track_run(RUN, c)
+        @test M.hits(M.TRACKED_RUNS) == hits + 1
+    end
+
+    # A clip lives exactly as long as its entry: `LRU`'s finalizer runs on eviction and on `empty!`, so
+    # neither `empty_caches!` nor a full cache leaves a file behind.
+    @testset "a track's clip is deleted with its entry" begin
+        Fromage.empty_caches!()
+        clip = Fromage.track_run(RUN, METHODS[1]).clip
+        @test isfile(clip)
+        @test basename(clip) == "memo_run.mp4"                      # the label (#22)
+        @test dirname(dirname(clip)) == M.CLIP_FOLDER()
+        Fromage.empty_caches!()
+        @test !ispath(dirname(clip))
+
+        clip = Fromage.track_run(RUN, METHODS[1]).clip
+        resize!(M.TRACKED_RUNS; maxsize = 0)                        # evicts the one entry
+        resize!(M.TRACKED_RUNS; maxsize = M.CACHE_SIZE)
+        @test isempty(M.TRACKED_RUNS)
+        @test !ispath(dirname(clip))
+        @test isempty(readdir(M.CLIP_FOLDER()))
+    end
+
+    # The bound is a guard, not a working set, and must never cost an invocation its own clips: with
+    # more runs than the cache holds, the first ones tracked would be evicted — their clips deleted —
+    # before `concatenate` reached them. `main` raises the bound to its run count first.
+    @testset "an invocation of more runs than the cache holds keeps every clip it stitches" begin
+        rects_csv = joinpath(DIR, "memo_room.csv")
+        write(rects_csv, "rectification_id,path,file,type,extrinsic,pixel_width\nu1,.,memo_plain.mp4,uniform,00:00:01,2\n")
+        runs_csv = joinpath(DIR, "memo_room_runs.csv")
+        write(
+            runs_csv, "run_id,rectification_id,path,file,start_location\n" *
+                "a,u1,.,$(basename(TARGET1)),\"(55, 50)\"\nb,u1,.,$(basename(TARGET2)),\"(55, 50)\"\n"
+        )
+        outdir = mktempdir()
+        Fromage.empty_caches!()
+        resize!(M.TRACKED_RUNS; maxsize = 1)
+        try
+            cd(
+                () -> Fromage.main(
+                    DIR; rectifications_file = basename(rects_csv), runs_file = basename(runs_csv),
+                    tracking_defaults = (target_width = 10,)
+                ), outdir
+            )
+            @test length(M.TRACKED_RUNS) == 2                   # nothing evicted
+            @test probe_stream(joinpath(outdir, "results_dir", "diagnostic.mp4")).nframes == 2 * 25
+        finally
+            resize!(M.TRACKED_RUNS; maxsize = M.CACHE_SIZE)
+        end
+    end
+
     @testset "empty_caches! clears every cache in the package" begin
-        # Prime all five, whatever the tests above left behind, through the memoized functions
+        # Prime every cache, whatever the tests above left behind, through the memoized functions
         # themselves — a cache holds what its own computation returns, so there is no sentinel value
-        # that fits all five.
+        # that fits them all.
         foreach(m -> m.f(m.base...), MEMOIZED)
         @test all(!isempty, M.CACHES)
         Fromage.empty_caches!()
