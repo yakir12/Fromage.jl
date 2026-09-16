@@ -609,6 +609,21 @@ reading it was declined as too unreliable (frequently absent, frequently mangled
 reject good footage over. The csv row order is the user's statement of what follows what, and the
 user's to get right.
 
+### A window starts at the frame its `start` names, not where VideoIO's `seek` lands (VideoIO.jl#427)
+
+Until this was fixed, every window cut from an `.MTS` (MPEG-TS) file began up to a GOP late:
+`seek` landed 1–13 frames (up to 0.52 s) after `start` on the lab's 25 fps AVCHD footage, while the
+track's clock still said `start`. So **tracks from `.MTS` files made before this change are shifted
+by up to half a second**, and a window running to a file's last frame crashed with "Could not scale
+frame". MP4 was exact before and is unchanged: `seek_exactly!` picks the frame VideoIO's own trim
+picks, and matched plain `seek` at every start checked. The mechanism is at `seek_exactly!`.
+
+One upstream fix was measured and did not work. Bounding `avformat_seek_file`'s `max_ts` at the
+target (so the demuxer lands on a keyframe at or before it) still landed late on every MPEG-TS
+case, because the H.264 decoder waits for the next keyframe after the flush anyway. The fix proposed
+upstream is the same back-off `seek_exactly!` does. When it is released, delete `seek_exactly!` and
+go back to plain `seek`.
+
 ### The background stack stores `Gray{N0f8}`, and `detect` widens before subtracting (#27)
 
 The stack is the largest allocation in the program: a 1080p frame at `background_length = 250` is

@@ -213,9 +213,10 @@ end
 function read_frame_at(file, t)
     vid = open_gray_video(file)   # serialized open (openvideo isn't thread-safe); see OPENVIDEO_LOCK
     try
-        read(vid)                 # prime a frame so gettime returns the stream's base time
-        seek(vid, t + gettime(vid))
-        return read(vid)
+        img = read(vid)           # prime a frame so gettime returns the stream's base time
+        t₀ = gettime(vid)
+        seek_exactly!(vid, img, t + t₀, t₀)   # not `seek`: JuliaIO/VideoIO.jl#427
+        return read!(vid, img)
     finally
         # Guarded as every close of a reader in this module is (#149): this one sits on the share
         # read that WHY-FRAMES-FAIL.md is about, where the exception being replaced would be the
