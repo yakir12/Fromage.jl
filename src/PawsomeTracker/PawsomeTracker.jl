@@ -67,6 +67,49 @@ open_gray_video(file) = ShareIO.withretry(; transient = ShareIO.videoio_transien
     lock(() -> openvideo(file; target_format = AV_PIX_FMT_GRAY8), OPENVIDEO_LOCK)
 end
 
+# WORKAROUND for JuliaIO/VideoIO.jl#427 — remove once that is fixed upstream, and go back to a plain
+# `seek(vid, t)` at the two call sites (`Video`, `read_frame_at`).
+#
+# In a container with no seek index — MPEG-TS, i.e. camcorder `.MTS` — VideoIO's `seek` can decode
+# its first frame after the target (the decoder waits for the next keyframe), and VideoIO then only
+# trims forward, so the next frame read is up to a GOP late: 13 frames (0.52 s) on the lab's 25 fps
+# AVCHD files, 0 on MP4. Every track from such a file was shifted by that much, and a window
+# reaching the file's last frame ran out of frames and died in `read!` with "Could not scale frame".
+#
+# So seek to `backoff` seconds early, which lands before the target frame, and read forward to the
+# frame just before it; if the seek still overshot, back off twice as far. A seek to before the
+# stream's first frame lands exactly on that frame (measured on MPEG-TS and MP4), which is what ends
+# the doubling and covers a target that IS the first frame — one that cannot be read past and then
+# un-read.
+#
+# Leaves `vid` positioned so the next read returns the frame whose interval `[pts, pts + period)`
+# holds stream time `t` (seconds, as `gettime` reports it) — on progressive video the frame VideoIO's
+# own trim picks, so where `seek` was already exact (MP4) the frame is unchanged. `t₀` is the first
+# frame's time and `period` the seconds between frames, from the caller: NOT `framerate(vid)`, which
+# is the FIELD rate on field-coded interlaced footage (#145) and would land every seek a frame late.
+# `buf` is a scratch frame of the reader's size. `tol` absorbs float noise in `pts × time_base`.
+function seek_exactly!(vid, buf, t, t₀, period)
+    tol = period / 1000
+    backoff = 1.0
+    while true
+        seek_to = t - backoff
+        seek(vid, seek_to)
+        seek_to < t₀ && t + tol < t₀ + period && return vid
+        read!(vid, buf)
+        landed = gettime(vid)
+        if landed + period <= t + tol          # landed before the target frame
+            while landed + 2period <= t + tol  # ...and the next frame is not yet the target
+                read!(vid, buf)
+                landed = gettime(vid)
+            end
+            return vid
+        end
+        seek_to < t₀ && error("seeking before the first frame of the video landed at $landed s, after the target $t s")
+        backoff *= 2
+    end
+    return
+end
+
 # The AprilTag C detector (`apriltag_detector_detect`) is not reentrant: it has global/static state
 # that concurrent calls corrupt, even across distinct per-thread detectors on distinct frames, and
 # under enough pressure it segfaults. Every detection call is therefore serialized process-wide
@@ -170,7 +213,7 @@ struct Video
     # declared rate would be silently ignored by the only code that matters.
     # The reader is opened first and every step below it can throw, so the open is guarded rather
     # than moved: unlike the diagnostic writer's constructor (#160), the fallible work here IS the
-    # reader — `read`, `gettime`, `seek`, `aspect_ratio`, and the `WarpedView` extent measured on
+    # reader — `read`, `gettime`, `seek_exactly!`, `aspect_ratio`, and the `WarpedView` extent measured on
     # the frame `read` returned — and those are exactly the calls the share fails
     # (WHY-FRAMES-FAIL.md). Without the guard each failure leaked a descriptor and a decoder
     # context, and tracking opens one reader per segment under `tmap` (#149).
@@ -189,12 +232,13 @@ struct Video
             # video's. `WarpedView`'s axes depend only on `axes(img)` and the transform, so wrapping the
             # frame we already hold measures it without decoding or allocating a second one.
             height, width = size(WarpedView(img, LinearMap(1 / downscale); fillvalue = zero(eltype(img))))
-            seek(vid, start + t₀)
+            # not `seek`: JuliaIO/VideoIO.jl#427. `img` is only a read buffer from here on (`next!`).
+            seek_exactly!(vid, img, start + t₀, t₀, 1 / native_fps)
             # Frames the window holds at the video's own rate, then how many of them the stride visits.
             # Sample i reads raw frame (i-1)*skip, and `cld` is exactly the count keeping that index
             # inside the window — cld(n, s) == fld(n - 1, s) + 1 — so the reads cannot run off the end.
             # The epsilon absorbs a duration that computes to 59.999999996 rather than 60; the `max`
-            # makes a window shorter than one frame period yield the single frame `seek` lands on.
+            # makes a window shorter than one frame period yield the single frame `seek_exactly!` lands on.
             navailable = max(1, floor(Int, (stop - start) * native_fps + 1.0e-9))
             nframes = cld(navailable, skip)
             sar = aspect_ratio(vid)
