@@ -24,6 +24,7 @@ include("VerifyRuns/VerifyRuns.jl")
 
 using .Paths: RESULTS_DIR, DEFAULT_ISSUES_DIR
 using .Gateway: verify_cross_references!
+using .Memo: BUILT_RECTIFICATIONS
 using .Rectifications: Rectification, save_diagnostic
 using .PawsomeTracker: track
 using .VerifyRectifications: load_rectifications

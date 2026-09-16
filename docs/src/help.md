@@ -77,6 +77,13 @@ AprilTag detection at each rectification's `extrinsic` timestamp, and the scan o
 window — is remembered for as long as that Julia session is alive, so the rows you did not touch
 cost nothing the second time. Edit a row and only what that row changed is re-read.
 
+The **built rectifications** are remembered too. Building one is the expensive half of a run: it
+reads the source video again and detects the board or the tags in it, and a `checkerboard` with an
+intrinsic window scans that whole window. A rectification is remembered by the `rectifications.csv`
+row that describes it, so as long as you did not change that row — and editing a `runs.csv` row
+changes none of them — the second `main` builds nothing at all and goes straight to tracking.
+Change one rectification row and only that one rectification is rebuilt.
+
 This matters most where it hurts most: on a network share, reading a video is the slow part of
 checking a dataset, and a second run over a 300-run folder used to cost the same as the first.
 
@@ -85,8 +92,9 @@ There is one assumption in it, and it is worth knowing:
 !!! warning "A file is remembered by its name, not by its contents"
     Fromage never re-checks a file it has already read. If you **replace a video or a `.mat` file in
     place** — re-copying a corrupt recording, re-exporting a calibration — while Julia is still
-    running, Fromage will keep reporting what the old file said. So will `Revise.jl` users who
-    change Fromage itself mid-session.
+    running, Fromage will keep reporting what the old file said, and will keep handing you the
+    rectification it built from the old one: a rectification is remembered by its csv row, and that
+    row still names the same file. So will `Revise.jl` users who change Fromage itself mid-session.
 
     Two ways out, either is fine:
 
@@ -98,12 +106,14 @@ There is one assumption in it, and it is worth knowing:
     also works, since the name is what is remembered.
 
 What is remembered is what Fromage *found* — the video's size and duration, whether the board was
-detectable. A file it could **not read at all** is never remembered, so a network hiccup on the share
-does not become permanent: run it again and that file is read again.
+detectable — and what it *built*. A file it could **not read at all** is never remembered, and
+neither is a rectification that failed to build, so a network hiccup on the share does not become
+permanent: run it again and that file is read again.
 
 Nothing else is affected either: the report you get is exactly the report you would have got from a
-cold start, and the [issues folder](results.md#The-issues-folder) still gets a fresh, time-stamped
-folder on every run.
+cold start, the [issues folder](results.md#The-issues-folder) still gets a fresh, time-stamped
+folder on every run, and `rectification_diagnostics = true` still writes every image on every run —
+including for the rectifications it did not have to build again.
 
 ## Changing a default for all rows at once
 

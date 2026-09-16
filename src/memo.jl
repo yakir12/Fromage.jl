@@ -1,11 +1,12 @@
-# The process-global memo behind the iterate-on-your-csv workflow (#233).
+# The process-global memo behind the iterate-on-your-csv workflow (#233, #251).
 #
 # A user fixing a dataset runs `main`, reads the report, edits one row, and runs `main` again. Every
 # call used to re-do all of verification from cold — one ffprobe per physical video, one `matread`
 # per `.mat`, corner detection at each rectification's extrinsic timestamp, and a scan of each
-# intrinsic window — including for the rows they did not touch. On the lab share every one of those
-# reads is slow and occasionally fails (see WHY-FRAMES-FAIL.md), so the second call cost as much as
-# the first for no new information. These caches make it cost nothing.
+# intrinsic window — including for the rows they did not touch; and then to BUILD every rectification
+# from cold on top of that, reading and detecting in those same videos all over again. On the lab
+# share every one of those reads is slow and occasionally fails (see WHY-FRAMES-FAIL.md), so the
+# second call cost as much as the first for no new information. These caches make it cost nothing.
 #
 # Everything memoized here is a PURE function of its arguments plus the contents of a file on disk.
 # Nothing that mutates a DataFrame is memoized: its effect is the mutation, not the return value,
@@ -81,12 +82,43 @@ const APRILTAG_DETECTIONS = newcache(Tuple, Union{Nothing, String})
 # to the end.
 const INTRINSIC_DETECTIONS = newcache(Tuple, Union{Nothing, String})
 
+# `Fromage.build_rectification(c)` — the image <-> real map one verified rectifications row
+# describes (#251). The most expensive thing here: three of the four kinds read the source video and
+# detect in it, and a checkerboard with an intrinsic window scans that whole window again. A user who
+# edited a `runs.csv` row changed none of it, and used to pay for all of it.
+#
+# The key is the `RectificationMethod` object ITSELF, which IS the builder's complete argument list —
+# `Rectification(c)` takes `c` and nothing else — so this module's header rule holds with no key to
+# construct and no second place for a parameter to be stated. It works as a key because every subtype
+# hashes and compares by CONTENT; that is a property of what they are made of (`String`s, numbers,
+# `NTuple`s) rather than a decision, and test/memo.jl asserts it field by field, structurally over
+# `fieldnames`. A `Run` is the counter-example: its `segments::Vector` hashes by identity, which is
+# why tracking is the hard half (#249) and this is not.
+#
+# `Any` for both parameters, where every cache above names its own. Neither type CAN be spelled here:
+# `Memo` is included before `Rectifications`, `PawsomeTracker` and `VerifyRectifications`, so
+# `RectificationMethod`, `StaticRectification` and `ApriltagRectification` do not exist yet -- the
+# include order in `Fromage.jl` is load-bearing. Nor would a concrete VALUE type exist if they did:
+# `Rectification` returns `StaticRectification{I, R}` for three kinds and `ApriltagRectification{I}`
+# for the fourth, with parameters that vary per build. That costs no inference the package was not
+# paying already — `build_rectifications` maps over a deliberately abstract
+# `Vector{RectificationMethod}` (`VerifyRectifications.build_methods`), so its element type was never
+# inferrable, and JET is green on the result.
+#
+# The shared `CACHE_SIZE` stands even though a built rectification is a far larger object than a probe
+# `Dict`: the bound is a guard against a pathological loop, not a working set, and a session that had
+# genuinely built a thousand distinct rectifications would have read a thousand videos to do it.
+const BUILT_RECTIFICATIONS = newcache(Any, Any)
+
 # A failed READ is never remembered. It is a fact about the share at that moment and not about the
 # file (WHY-FRAMES-FAIL.md), so the next invocation must be free to retry it rather than re-report a
 # hiccup for the life of the session — which would break the very workflow this memo exists for.
 #
-# Three of the five computations get that for free by catching OUTSIDE `get!`, which stores nothing
-# when its closure throws. This is for the other two, whose catch belongs to a function that reports
+# The same is true of a failed BUILD, which needs no machinery at all: a builder THROWS rather than
+# reporting (`ApriltagRectification` turns `reference_space`'s report into an `error`; the other three
+# let their reads' exceptions propagate), and `get!` stores nothing when its closure throws.
+#
+# Three of the five READS get that for free the same way, by catching OUTSIDE `get!`. This is for the other two, whose catch belongs to a function that reports
 # rather than throws (`read_matlab`, `reference_space`) and has callers relying on that: remember
 # what `f` returned, `unless` it is one of those reports, which is then forgotten.
 #
@@ -106,7 +138,10 @@ end
 # Every cache in this module, so `Fromage.empty_caches!` cannot be left behind by a new one — and so
 # a test can assert that it wasn't (test/memo.jl). A tuple of the caches themselves rather than of
 # their names: it is what `empty!` is mapped over.
-const CACHES = (VIDEO_PROBES, MATLAB_METADATA, EXTRINSIC_DETECTIONS, APRILTAG_DETECTIONS, INTRINSIC_DETECTIONS)
+const CACHES = (
+    VIDEO_PROBES, MATLAB_METADATA, EXTRINSIC_DETECTIONS, APRILTAG_DETECTIONS, INTRINSIC_DETECTIONS,
+    BUILT_RECTIFICATIONS,
+)
 
 # What a cache has served and what it had to compute — the only honest way to assert that a second
 # verification read nothing, since wall-clock time on this machine is noise (DECISIONS, "Wall-clock
