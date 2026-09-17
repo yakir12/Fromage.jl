@@ -328,7 +328,8 @@ end
     @test !isfile(failed)
 
     # and it reaches the *pixels*: two diagnostics differing only in file name must differ in
-    # content. The encoder is deterministic, so before the label they came out byte-identical.
+    # content. Weaker than it looks: encoding is not byte-reproducible on every runner (#262), so on
+    # those this inequality would hold even without the label.
     outs = map(("aaaa", "wwww")) do name
         d = joinpath(dir, "$name.mp4")
         track1(
