@@ -33,7 +33,7 @@ A run is an **event in the world, not a file**. Fromage meets it twice: as the `
 describing it, and as the **track** it yields.
 
 - A run is tracked as one or more **segments**, each a video file and a window of it. They are one
-  run because they share a `run_id`, and their rows sit together in `runs.csv`, one after another.
+  run because they share a `run_id`.
 - Segments and files are **not** one-to-one. A run recorded across several files has a segment per
   file; a run that cuts unwanted stretches out of one file has several segments in that one file.
 - A run therefore has **one timeline, one set of run-level parameters, and one track file** —
@@ -46,7 +46,8 @@ describing it, and as the **track** it yields.
 One piece of a run: a video file and the window of it to track. "Segment" names a *division of the
 run*, whether you look at it as the input video portion or the track portion it yields. A segment
 never spans two files: it holds one `file` with one `start` and one `stop`, so a division that
-crosses a file boundary is two segments, not one.
+crosses a file boundary is two segments, not one. A run's segments are **consecutive rows** of
+`runs.csv`: no other run's row may sit between two of them (`verify_consecutive_runs!`, #263).
 
 **Times compare only within a file.** `start` and `stop` are in their own file's seconds, so two
 segments cut from one file can be ordered, overlapped or found to leave a hole between them, while
@@ -77,8 +78,8 @@ A tracked frame has two times, and they agree only within the first segment:
 ### Segment number
 
 A segment's 1-based position among its own run's `runs.csv` rows, in row order — not its row number
-in the file. A run's rows are one unbroken block of the csv (`verify_contiguous_runs!` rejects a run
-split by another run's row, #263), so the segment number is the row's position within that block.
+in the file. A run's rows are one unbroken block of the csv (see *Segment*), so the segment number
+is the row's position within that block.
 
 ### Track
 

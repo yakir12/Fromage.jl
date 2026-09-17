@@ -190,9 +190,10 @@
         @test flagged(df3, 1, msg)
         @test flagged(df3, 3, msg)
 
-        # ...and under strict it aborts in the first tier, before the corrupt video is opened (#121)
+        # ...and under strict it aborts in the first tier, before the corrupt video is opened (#121) —
+        # even when the split run also carries an unrelated bad cell, which the check is not gated on
         rows = [
-            runrow(run_id = "a", file = ART.a),
+            runrow(run_id = "a", file = ART.a, target_width = "wide"),
             runrow(run_id = "b", file = ART.corrupt),
             runrow(run_id = "a", file = ART.b),
         ]

@@ -111,20 +111,26 @@ function verify_ids!(df::AbstractDataFrame)
     verify_id_filename!(df, :run_id)
     # Before the rectification comparison: a split run is the more basic mistake, and once it is
     # flagged that comparison skips the run rather than stacking a second report on it.
-    verify_contiguous_runs!(df)
+    verify_consecutive_runs!(df)
     verify_run_rectification!(df)
     return df
 end
 
-# A run's rows must be one unbroken block of the csv (#263), so its segment number is its position
-# within that block. Every row of a split run is flagged — the run is at fault, not one row — and the
-# rows that split it are not, unless they are split themselves. Compared only among otherwise-clean
-# rows, as the neighbouring checks are: a group already carrying an id issue is reported for that.
-function verify_contiguous_runs!(df::AbstractDataFrame)
+# A run's rows must be consecutive in the csv (#263), so its segment number is its position within
+# that block. Every row of a split run is flagged — the run is at fault, not one row — and the rows
+# that split it are not, unless they are split themselves.
+#
+# Deliberately NOT gated on otherwise-clean rows, unlike the neighbouring checks. Their gate keeps a
+# field nulled by a failed parse from reading as a spurious disagreement; this reads only the row
+# positions and a non-missing `run_id`, which no parse failure can null. Gating would instead hide a
+# split run behind an unrelated bad cell, so under `strict` it would slip past this tier, open its
+# videos, and surface only on a second pass.
+function verify_consecutive_runs!(df::AbstractDataFrame)
     for g in groupby(df, :run_id)
-        (nrow(g) > 1 && !ismissing(g.run_id[1]) && all(isempty, g.issues)) || continue
+        (nrow(g) > 1 && !ismissing(g.run_id[1])) || continue
         # `groupby` keeps each group's rows in csv order, so the block is unbroken exactly when its
-        # first and last row span no more rows than it has.
+        # first and last row span no more rows than it has. `parentindices` are csv row positions
+        # only because `df` is the parsed table itself, not a view of it — as in `reject_duplicates!`.
         rows = parentindices(g)[1]
         last(rows) - first(rows) + 1 == nrow(g) && continue
         push!.(g.issues, "run segments must be consecutive rows")
@@ -147,7 +153,7 @@ end
 
 # ---- second tier ------------------------------------------------------------------------------
 
-# A run may be split across several CSV rows (one per segment video) sharing a :run_id. Those rows
+# A run may span several consecutive CSV rows (one per segment) sharing a :run_id. Those rows
 # must agree on every run-level parameter; only file/start/stop/start_location may vary. Compared
 # only among otherwise-clean rows, since a field nulled by an earlier failed check would read as a
 # spurious disagreement.
