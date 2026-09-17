@@ -13,6 +13,7 @@ using Fromage.PawsomeTracker: PawsomeTracker, Segment, Tuning, get_window, track
 
 export make_video, make_checkerboard_video, make_corrupt_video, make_target_video,
     tracking_rmse, probe_stream, probe_frames, read_labels, label_differences,
+    LABEL_CHANGED, ENCODING_NOISE,
     make_apriltag_video, drone_pose, apriltag_ground, render_pose, pose_apply,
     tuning, segments, track1
 
@@ -335,28 +336,15 @@ function read_labels(file, candidates, font)
         abs(Float32(a) - Float32(b))
             for (a, b) in zip(PawsomeTracker.stamp!(copy(frame), face, font, run_id, k, t), frame)
     )
-    vid = PawsomeTracker.open_gray_video(file)
-    labels = eltype(candidates)[]
-    try
-        while !eof(vid)
-            frame = collect(read(vid))
-            push!(labels, argmin(c -> mismatch(frame, c), candidates))
-        end
-    finally
-        close(vid)
-    end
-    return labels
+    return [argmin(c -> mismatch(frame, c), candidates) for frame in decode_frames(file)]
 end
 
-# Every frame of `file`, decoded to gray.
+"Every frame of `file`, decoded to gray, in order."
 function decode_frames(file)
     vid = PawsomeTracker.open_gray_video(file)
     try
-        frames = [collect(read(vid))]
-        while !eof(vid)
-            push!(frames, collect(read(vid)))
-        end
-        return frames
+        # `eof` is asked before each read, as a `while !eof` loop would, but the vector comes out typed
+        return [collect(read(vid)) for _ in Iterators.takewhile(_ -> !eof(vid), Iterators.repeated(nothing))]
     finally
         close(vid)
     end
@@ -377,32 +365,41 @@ function label_region(run_ids, font, frame)
     for run_id in run_ids, v in (zero(eltype(frame)), oneunit(eltype(frame)))
         canvas = fill(v, size(frame))
         # the second line's widest plausible text; the pad absorbs any glyph wider than an 8
-        changed .|= PawsomeTracker.stamp!(copy(canvas), face, font, run_id, 88, 3600 * 88 + 88.888) .!= canvas
+        segment, t = 88, 3600 * 88 + 88.888
+        changed .|= PawsomeTracker.stamp!(copy(canvas), face, font, run_id, segment, t) .!= canvas
     end
-    rows, cols = extrema(i -> i[1], findall(changed)), extrema(i -> i[2], findall(changed))
+    drawn = findall(changed)
+    isempty(drawn) && throw(ArgumentError("`stamp!` drew nothing at font $font on a $(size(frame)) canvas"))
+    (r0, r1), (c0, c1) = extrema(i -> i[1], drawn), extrema(i -> i[2], drawn)
     pad = 16
     region = falses(size(frame))
-    region[max(1, rows[1] - pad):min(end, rows[2] + pad), max(1, cols[1] - pad):min(end, cols[2] + pad)] .= true
+    region[max(1, r0 - pad):min(end, r1 + pad), max(1, c0 - pad):min(end, c1 + pad)] .= true
     return region
 end
+
+# The two sides of `label_differences`, measured on the AprilTag fixture: a changed label scores
+# 0.040 in its region, and the same label re-encoded at another preset or at crf 28 at most 0.0006
+# (0.00003 outside it). A frame whose label changed must score above the first, and content that
+# did not change must score below the second, in whichever region.
+const LABEL_CHANGED = 0.01
+const ENCODING_NOISE = 0.002
 
 """
     label_differences(a, b, run_ids, font; frames = :)
 
 How far the diagnostics `a` and `b` differ, decoded, inside the label region of `run_ids` (see
-`label_region`) and outside it, as `(label, elsewhere)`: for each, the largest fraction of that
-region's pixels, over the compared `frames`, whose gray value differs by more than a quarter of the
-range. A glyph against its background box differs by far more than that, and encoding noise at the
+`label_region`) and outside it, as `(label, elsewhere)`: one score per compared frame for each,
+the fraction of that region's pixels whose gray value differs by more than a quarter of the range.
+A glyph against its background box differs by far more than that, and encoding noise at the
 diagnostic's crf by far less, so a region that carries different text scores high and the same
-content encoded twice scores close to zero.
+content encoded twice scores close to zero — see `LABEL_CHANGED` and `ENCODING_NOISE`.
 """
 function label_differences(a, b, run_ids, font; frames = :)
     fa, fb = decode_frames(a)[frames], decode_frames(b)[frames]
-    @assert length(fa) == length(fb) && !isempty(fa)
+    length(fa) == length(fb) && !isempty(fa) ||
+        throw(ArgumentError("compared $(length(fa)) frames of $a with $(length(fb)) of $b"))
     region = label_region(run_ids, font, first(fa))
-    score(mask) = maximum(zip(fa, fb)) do (x, y)
-        count(abs.(Float32.(x[mask]) .- Float32.(y[mask])) .> 0.25) / count(mask)
-    end
+    score(mask) = [count(abs.(Float32.(x[mask]) .- Float32.(y[mask])) .> 0.25) / count(mask) for (x, y) in zip(fa, fb)]
     return score(region), score(.!region)
 end
 

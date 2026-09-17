@@ -322,6 +322,7 @@ end
     # the label is the diagnostic file's name — which `main` sets to the run_id
     dia = PT.diagnose_apriltag(joinpath(dir, "run7.mp4"), rect, true, 25)
     @test dia.label == "run7"
+    font = dia.font                         # the size the label region below is worked out at
     close(dia)
 
     # The do-block form's cleanup (#160), on the mode that does NOT go through `diagnose`: a failed
@@ -339,8 +340,8 @@ end
     # because encoding is not byte-reproducible on every runner (#262), so unequal bytes would prove
     # nothing. Different names must differ inside the label's region and match everywhere else; the
     # same name encoded twice must match inside it too, so the tolerance separates a changed label
-    # from encoding noise rather than passing anything. Measured: 0.040 for a changed label, at most
-    # 0.0006 for the same one re-encoded at another preset or crf 28, and 0.00003 elsewhere.
+    # from encoding noise rather than passing anything; the two thresholds, and what they were
+    # measured against, are in the fixtures beside `label_differences`.
     function render(name, folder)
         out = joinpath(mkpath(joinpath(dir, folder)), "$name.mp4")
         track1(
@@ -350,11 +351,10 @@ end
         return out
     end
     a, w, again = render("aaaa", "first"), render("wwww", "first"), render("aaaa", "second")
-    font = PT.DIAGNOSTIC_SIZE ÷ 16          # the AprilTag scene's font, in `diagnose_apriltag`
     label, elsewhere = label_differences(a, w, ("aaaa", "wwww"), font)
-    @test label > 0.01
-    @test elsewhere < 0.002
-    @test all(<(0.002), label_differences(a, again, ("aaaa", "wwww"), font))
+    @test all(>(LABEL_CHANGED), label)
+    @test all(<(ENCODING_NOISE), elsewhere)
+    @test all(<(ENCODING_NOISE), vcat(label_differences(a, again, ("aaaa", "wwww"), font)...))
 end
 
 @testset "AprilTag calibration: failing extrinsic frame is dumped to the issues folder" begin

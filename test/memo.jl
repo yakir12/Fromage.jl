@@ -594,9 +594,9 @@ const MEMOIZED = (
             @test isfile(joinpath(results, "t1-renamed.csv"))
             @test probe_stream(diagnostic).nframes == 2 * 25
             label, elsewhere = label_differences(diagnostic, x_file, ("t1", "t1-renamed"), font; frames = 1:25)
-            @test label > 0.01
-            @test elsewhere < 0.002
-            @test all(<(0.002), label_differences(diagnostic, x_file, ("t2",), font; frames = 26:50))
+            @test all(>(LABEL_CHANGED), label)
+            @test all(<(ENCODING_NOISE), elsewhere)
+            @test all(<(ENCODING_NOISE), vcat(label_differences(diagnostic, x_file, ("t2",), font; frames = 26:50)...))
         end
 
         @testset "a narrowed invocation fills the entries a full one reuses" begin
@@ -615,7 +615,7 @@ const MEMOIZED = (
             @test probe_stream(diagnostic).nframes == 2 * 25
             # What the renaming testset's tolerance must absorb: the same labels, encoded again, match
             # X's inside the label region as well as outside it.
-            @test all(<(0.002), label_differences(diagnostic, x_file, ("t1", "t2"), font))
+            @test all(<(ENCODING_NOISE), vcat(label_differences(diagnostic, x_file, ("t1", "t2"), font)...))
         end
     end
 
