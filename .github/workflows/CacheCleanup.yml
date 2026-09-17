@@ -9,19 +9,15 @@ name: Cache cleanup
 #   and a closed PR has no later jobs, so they waited out GitHub's 7-day-unused eviction.
 # - Tag caches: AutoRelease dispatches Docs on each release tag, which saves a ~720 MB cache scoped
 #   to that tag. No other ref can restore it and the tag is never built again. Tag builds still
-#   *restore* main's Docs cache, which is why caching stays on for them.
+#   *restore* main's Docs cache, which is why caching stays on for them. Only the schedule removes
+#   them: a `workflow_run` trigger on Docs never fired for a tag build (v0.4.3, #138), because
+#   AutoRelease dispatches that build with GITHUB_TOKEN, and such runs trigger no further workflows.
 # - Superseded caches on main: julia-actions/cache deliberately never prunes the default branch.
 #   The newest cache of each key is kept, because PRs and the next main run restore from it.
 
 on:
   pull_request:
     types: [closed]
-  # Whether this fires for the tag build is unverified: AutoRelease dispatches that build with
-  # GITHUB_TOKEN, and runs started that way may not trigger further workflows. The schedule removes
-  # tag caches too, so a tag cache lives at most a day either way.
-  workflow_run:
-    workflows: [Docs]
-    types: [completed]
   schedule:
     - cron: "17 4 * * *"
   workflow_dispatch:
@@ -51,9 +47,6 @@ concurrency:
 jobs:
   cleanup:
     name: Delete unreachable caches
-    # Tag caches are what a Docs completion leaves behind, and only the tag build saves one. A PR's
-    # Docs run leaves nothing for this mode to do, so it is skipped rather than run as a no-op.
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.event != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -67,10 +60,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           # Deletes unless this is a manual dispatch that left the dry-run input on.
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
-          MODE: >-
-            ${{ github.event_name == 'pull_request' && 'pr'
-            || github.event_name == 'workflow_run' && 'tags'
-            || 'all' }}
+          MODE: ${{ github.event_name == 'pull_request' && 'pr' || 'all' }}
           # Empty, and ignored, outside a `pull_request` event.
           PR_NUMBER: ${{ github.event.number }}
         run: .github/scripts/cache-cleanup.sh "$MODE" "$PR_NUMBER"
