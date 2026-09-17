@@ -33,7 +33,7 @@ A run is an **event in the world, not a file**. Fromage meets it twice: as the `
 describing it, and as the **track** it yields.
 
 - A run is tracked as one or more **segments**, each a video file and a window of it. They are one
-  run because they share a `run_id`.
+  run because they share a `run_id`, and their rows sit together in `runs.csv`, one after another.
 - Segments and files are **not** one-to-one. A run recorded across several files has a segment per
   file; a run that cuts unwanted stretches out of one file has several segments in that one file.
 - A run therefore has **one timeline, one set of run-level parameters, and one track file** —
@@ -77,7 +77,8 @@ A tracked frame has two times, and they agree only within the first segment:
 ### Segment number
 
 A segment's 1-based position among its own run's `runs.csv` rows, in row order — not its row number
-in the file. The second row carrying `run_id` `a` is segment 2 of `a`, wherever it sits.
+in the file. A run's rows are one unbroken block of the csv (`verify_contiguous_runs!` rejects a run
+split by another run's row, #263), so the segment number is the row's position within that block.
 
 ### Track
 

@@ -109,7 +109,26 @@ function verify_ids!(df::AbstractDataFrame)
     resolve_run_ids!(df)
     # run_id names the track file and the run diagnostic clip, so it must be a usable file name.
     verify_id_filename!(df, :run_id)
+    # Before the rectification comparison: a split run is the more basic mistake, and once it is
+    # flagged that comparison skips the run rather than stacking a second report on it.
+    verify_contiguous_runs!(df)
     verify_run_rectification!(df)
+    return df
+end
+
+# A run's rows must be one unbroken block of the csv (#263), so its segment number is its position
+# within that block. Every row of a split run is flagged — the run is at fault, not one row — and the
+# rows that split it are not, unless they are split themselves. Compared only among otherwise-clean
+# rows, as the neighbouring checks are: a group already carrying an id issue is reported for that.
+function verify_contiguous_runs!(df::AbstractDataFrame)
+    for g in groupby(df, :run_id)
+        (nrow(g) > 1 && !ismissing(g.run_id[1]) && all(isempty, g.issues)) || continue
+        # `groupby` keeps each group's rows in csv order, so the block is unbroken exactly when its
+        # first and last row span no more rows than it has.
+        rows = parentindices(g)[1]
+        last(rows) - first(rows) + 1 == nrow(g) && continue
+        push!.(g.issues, "run segments must be consecutive rows")
+    end
     return df
 end
 
