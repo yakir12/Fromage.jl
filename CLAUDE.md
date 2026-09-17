@@ -487,10 +487,15 @@ of those is "done" on its own, and none of them should be reported as done.
   `gh release list --json`, which 2.23.0 did not have. `gh api`, `gh run list --json` and
   `gh release view --json` still work. **If a `gh` call fails now, it is a real failure — do not
   reach for `gh api` as a version workaround.**
-- **`gh pr checks` exits 8 while any check is still pending**, 0 when all have passed, 1 when one
-  failed; `--json` carries a `bucket` field sorting each check into `pass`/`fail`/`pending`/
-  `skipping`/`cancel`. That pair is the polling primitive to build a watcher on — an exit-code test
-  beats counting rows out of the human-readable table.
+- **Plain `gh pr checks <n>` exits 8 while any check is still pending**, 0 when all have passed,
+  1 when one failed — that exit code is the polling primitive to build a watcher on, and it beats
+  counting rows out of the table. **Adding `--json` drops it:** on 2.100.0, `gh pr checks 269 --json
+  name,bucket` exited **0 with three checks pending** (2026-09-17, #269), so a watcher looping
+  `until` a non-8 exit on the `--json` form stops on its first pass and reports CI settled when it
+  has not started. `--json`'s `bucket` field (`pass`/`fail`/`pending`/`skipping`/`cancel`) is still
+  the way to *print* what each check is doing; take the exit code from a separate plain call, or
+  decide from the buckets themselves. (Whether `--json` exits 1 on a failed check was not
+  observed.)
 - **Do not follow a PR with `gh pr checks <n> --watch` from here** — diagnosed on 2.23.0 and
   deliberately **not** retested on 2.100.0, because retesting needs a PR with genuinely pending
   checks and manufacturing one means a push that cuts a release. On the old version it drew a
