@@ -4,7 +4,6 @@
 # runs; runnable locally too, with an authenticated `gh`, and dry-run unless DRY_RUN=false.
 #
 #   cache-cleanup.sh pr <number>   every cache on refs/pull/<number>/merge
-#   cache-cleanup.sh tags          every cache on a tag ref
 #   cache-cleanup.sh all           tags, closed PRs' refs, and superseded caches on main
 #
 # Every failure is fatal and nothing is silenced: a cleanup that reports success after doing
@@ -56,10 +55,9 @@ closed_pr_caches() {
     echo "$selected"
 }
 
-mode=${1:?usage: cache-cleanup.sh pr <number> | tags | all}
+mode=${1:?usage: cache-cleanup.sh pr <number> | all}
 case $mode in
     pr) candidates=$(pr_caches "${2:?usage: cache-cleanup.sh pr <number>}") ;;
-    tags) candidates=$(jq "$tag_caches" <<<"$caches") ;;
     all)
         # No process substitution here: its exit status is discarded, so a failure would be lost.
         tags=$(jq "$tag_caches" <<<"$caches")
