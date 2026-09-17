@@ -139,6 +139,75 @@
         @test !flagged(df2, 1, "run segments disagree on rectification_id")
     end
 
+    @testset "a run's segments must be consecutive rows (#263)" begin
+        msg = "run segments must be consecutive rows"
+
+        # split by another run ⇒ every row of the split run is flagged, the splitting run is not
+        df = check(
+            [
+                runrow(run_id = "a", file = ART.a),
+                runrow(run_id = "b", file = ART.a),
+                runrow(run_id = "a", file = ART.b),
+            ]
+        )
+        @test flagged(df, 1, msg)
+        @test !flagged(df, 2, msg)
+        @test flagged(df, 3, msg)
+
+        # both runs split each other ⇒ all four rows
+        df2 = check(
+            [
+                runrow(run_id = "a", file = ART.a),
+                runrow(run_id = "b", file = ART.a),
+                runrow(run_id = "a", file = ART.b),
+                runrow(run_id = "b", file = ART.b),
+            ]
+        )
+        @test all(r -> flagged(df2, r, msg), 1:4)
+
+        # contiguous blocks, in either order, load clean
+        # (run a's two rows get different files, so their default whole-file windows do not overlap)
+        for rows in (
+                [runrow(run_id = "a", file = ART.a), runrow(run_id = "a", file = ART.b), runrow(run_id = "b")],
+                [runrow(run_id = "b"), runrow(run_id = "a", file = ART.a), runrow(run_id = "a", file = ART.b)],
+            )
+            runs = check(rows)
+            @test clean(runs)
+            @test Dict(r.run_id => length(r.segments) for r in runs) == Dict("a" => 2, "b" => 1)
+        end
+
+        # auto-numbered ids are one row per run, so trivially contiguous
+        @test clean(check([runrow(run_id = missing), runrow(run_id = missing)]))
+
+        # an identity check: reported although no referenced video exists
+        df3 = check(
+            [
+                runrow(run_id = "a", file = "no_such_1.mp4"),
+                runrow(run_id = "b", file = "no_such_2.mp4"),
+                runrow(run_id = "a", file = "no_such_3.mp4"),
+            ]
+        )
+        @test flagged(df3, 1, msg)
+        @test flagged(df3, 3, msg)
+
+        # ...and under strict it aborts in the first tier, before the corrupt video is opened (#121) —
+        # even when the split run also carries an unrelated bad cell, which the check is not gated on
+        rows = [
+            runrow(run_id = "a", file = ART.a, target_width = "wide"),
+            runrow(run_id = "b", file = ART.corrupt),
+            runrow(run_id = "a", file = ART.b),
+        ]
+        _, out = capturing() do
+            try
+                check("split_run_abort.csv", rows; strict = true)
+            catch e
+                e
+            end
+        end
+        @test occursin(msg, out)
+        @test !occursin("issue reading from video file", out)
+    end
+
     @testset "a single bad segment fails the whole run load" begin
         # second segment points at a missing file: the load reports it (non-strict ⇒ returns the df)
         df = check(
