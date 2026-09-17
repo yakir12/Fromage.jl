@@ -334,18 +334,27 @@ end
     @test err.value.msg == "injected apriltag export failure"
     @test !isfile(failed)
 
-    # and it reaches the *pixels*: two diagnostics differing only in file name must differ in
-    # content. Weaker than it looks: encoding is not byte-reproducible on every runner (#262), so on
-    # those this inequality would hold even without the label.
-    outs = map(("aaaa", "wwww")) do name
-        d = joinpath(dir, "$name.mp4")
+    # and it reaches the *pixels*. The same video tracked three times, differing only in the
+    # diagnostic's file name — `aaaa` twice, into separate folders, and `wwww` once — and decoded,
+    # because encoding is not byte-reproducible on every runner (#262), so unequal bytes would prove
+    # nothing. Different names must differ inside the label's region and match everywhere else; the
+    # same name encoded twice must match inside it too, so the tolerance separates a changed label
+    # from encoding noise rather than passing anything. Measured: 0.040 for a changed label, at most
+    # 0.0006 for the same one re-encoded at another preset or crf 28, and 0.00003 elsewhere.
+    function render(name, folder)
+        out = joinpath(mkpath(joinpath(dir, folder)), "$name.mp4")
         track1(
             file; rectification = rect, start_location = sl, target_width = 12,
-            diagnostic_file = d
+            diagnostic_file = out
         )
-        read(d)
+        return out
     end
-    @test outs[1] != outs[2]
+    a, w, again = render("aaaa", "first"), render("wwww", "first"), render("aaaa", "second")
+    font = PT.DIAGNOSTIC_SIZE ÷ 16          # the AprilTag scene's font, in `diagnose_apriltag`
+    label, elsewhere = label_differences(a, w, ("aaaa", "wwww"), font)
+    @test label > 0.01
+    @test elsewhere < 0.002
+    @test all(<(0.002), label_differences(a, again, ("aaaa", "wwww"), font))
 end
 
 @testset "AprilTag calibration: failing extrinsic frame is dumped to the issues folder" begin

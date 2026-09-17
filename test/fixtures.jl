@@ -12,7 +12,7 @@ using StaticArrays: SVector, SMatrix
 using Fromage.PawsomeTracker: PawsomeTracker, Segment, Tuning, get_window, track
 
 export make_video, make_checkerboard_video, make_corrupt_video, make_target_video,
-    tracking_rmse, probe_stream, probe_frames, read_labels,
+    tracking_rmse, probe_stream, probe_frames, read_labels, label_differences,
     make_apriltag_video, drone_pose, apriltag_ground, render_pose, pose_apply,
     tuning, segments, track1
 
@@ -346,6 +346,64 @@ function read_labels(file, candidates, font)
         close(vid)
     end
     return labels
+end
+
+# Every frame of `file`, decoded to gray.
+function decode_frames(file)
+    vid = PawsomeTracker.open_gray_video(file)
+    try
+        frames = [collect(read(vid))]
+        while !eof(vid)
+            push!(frames, collect(read(vid)))
+        end
+        return frames
+    finally
+        close(vid)
+    end
+end
+
+"""
+    label_region(run_ids, font, frame)
+
+The pixels a diagnostic's label can cover, as a `BitMatrix` the size of `frame`, for a run named any of
+`run_ids` and drawn at pixel size `font`. Taken from `stamp!` itself rather than from its geometry
+restated: every pixel it changes on a black canvas or a white one (so the glyphs and the box behind
+them both count), over a bounding box grown by one 16-pixel H.264 macroblock on every side, because
+a lossy encode smears a change into the blocks around it.
+"""
+function label_region(run_ids, font, frame)
+    face = PawsomeTracker.FTFont(String(PawsomeTracker.FONT))
+    changed = falses(size(frame))
+    for run_id in run_ids, v in (zero(eltype(frame)), oneunit(eltype(frame)))
+        canvas = fill(v, size(frame))
+        # the second line's widest plausible text; the pad absorbs any glyph wider than an 8
+        changed .|= PawsomeTracker.stamp!(copy(canvas), face, font, run_id, 88, 3600 * 88 + 88.888) .!= canvas
+    end
+    rows, cols = extrema(i -> i[1], findall(changed)), extrema(i -> i[2], findall(changed))
+    pad = 16
+    region = falses(size(frame))
+    region[max(1, rows[1] - pad):min(end, rows[2] + pad), max(1, cols[1] - pad):min(end, cols[2] + pad)] .= true
+    return region
+end
+
+"""
+    label_differences(a, b, run_ids, font; frames = :)
+
+How far the diagnostics `a` and `b` differ, decoded, inside the label region of `run_ids` (see
+`label_region`) and outside it, as `(label, elsewhere)`: for each, the largest fraction of that
+region's pixels, over the compared `frames`, whose gray value differs by more than a quarter of the
+range. A glyph against its background box differs by far more than that, and encoding noise at the
+diagnostic's crf by far less, so a region that carries different text scores high and the same
+content encoded twice scores close to zero.
+"""
+function label_differences(a, b, run_ids, font; frames = :)
+    fa, fb = decode_frames(a)[frames], decode_frames(b)[frames]
+    @assert length(fa) == length(fb) && !isempty(fa)
+    region = label_region(run_ids, font, first(fa))
+    score(mask) = maximum(zip(fa, fb)) do (x, y)
+        count(abs.(Float32.(x[mask]) .- Float32.(y[mask])) .> 0.25) / count(mask)
+    end
+    return score(region), score(.!region)
 end
 
 

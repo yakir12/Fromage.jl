@@ -551,6 +551,9 @@ const MEMOIZED = (
         @test_logs go(X)
         @test (M.misses(M.TRACKED_RUNS), M.hits(M.TRACKED_RUNS)) == (2, 0)
         x_video = read(diagnostic)
+        x_file = joinpath(mktempdir(), "diagnostic.mp4")      # the same bytes, where a decoder can read them
+        write(x_file, x_video)
+        font = PT.DIAGNOSTIC_SIZE ÷ 16                          # the rectified scene's, in `diagnose`
         x_csvs = read.(joinpath.(results, ["t1.csv", "t2.csv"]))
         @test probe_stream(diagnostic).nframes == 2 * 25        # two runs × 25 written frames each
 
@@ -580,12 +583,20 @@ const MEMOIZED = (
 
         # `run_id` is part of the key, and is the clip's on-screen label (#22): a renamed run is
         # re-tracked, and the video differs from X's in that label and nothing else — same frame count.
+        # Compared decoded, not as bytes: the renamed clip is a fresh encode, and encoding is not
+        # byte-reproducible on every runner (#262), so unequal bytes would hold without the label. The
+        # combined video is t1's 25 frames and then t2's: in t1's, the label region must differ and
+        # the rest match; t2's clip was reused, so all of it must match. The tolerance is checked
+        # from the other side below, where a re-encoded `t1` must match X inside the label too.
         @testset "renaming a run re-tracks it, and the video carries the new label" begin
             @test_logs reused(1, 2) go(["t1-renamed" => "", "t2" => ""])
             @test M.misses(M.TRACKED_RUNS) == 4
             @test isfile(joinpath(results, "t1-renamed.csv"))
             @test probe_stream(diagnostic).nframes == 2 * 25
-            @test read(diagnostic) != x_video
+            label, elsewhere = label_differences(diagnostic, x_file, ("t1", "t1-renamed"), font; frames = 1:25)
+            @test label > 0.01
+            @test elsewhere < 0.002
+            @test all(<(0.002), label_differences(diagnostic, x_file, ("t2",), font; frames = 26:50))
         end
 
         @testset "a narrowed invocation fills the entries a full one reuses" begin
@@ -602,6 +613,9 @@ const MEMOIZED = (
             # served from the cache, so they are the same files.
             @test read.(joinpath.(results, ["t1.csv", "t2.csv"])) == x_csvs
             @test probe_stream(diagnostic).nframes == 2 * 25
+            # What the renaming testset's tolerance must absorb: the same labels, encoded again, match
+            # X's inside the label region as well as outside it.
+            @test all(<(0.002), label_differences(diagnostic, x_file, ("t1", "t2"), font))
         end
     end
 
