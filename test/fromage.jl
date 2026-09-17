@@ -67,7 +67,7 @@ end
         println(io, "c1,$(only(target)),\"(55, 50)\"")
     end
 
-    # main writes results_dir/diagnostic.mp4 relative to the current directory
+    # with no `results_dir`, main writes results_dir/diagnostic.mp4 relative to the current directory
     outdir = mktempdir()
     returned = cd(
         () -> main(
@@ -495,7 +495,7 @@ end
 # The three concat testsets below all build one list out of real videos and read the joined result
 # back, because the escaping is ffmpeg's rule and only real ffmpeg can say whether a name survived
 # it. `stems` are file-name stems; the return is the file `concatenate` writes, always
-# `results_dir/diagnostic.mp4` under a fresh folder. Each segment is 5 frames.
+# `diagnostic.mp4` in a fresh output folder. Each segment is 5 frames.
 function concat_stems(stems)
     dir = mktempdir()
     segs = map(stems) do stem
@@ -503,7 +503,7 @@ function concat_stems(stems)
         make_video(f; duration = 1, size = (64, 64), rate = 5)
         f
     end
-    results_dir = mktempdir()                       # `main` makes it; this calls concatenate directly
+    results_dir = mktempdir()
     Fromage.concatenate(results_dir, dir, segs)
     return joinpath(results_dir, "diagnostic.mp4")
 end
@@ -545,7 +545,7 @@ end
     for bad in ("seg\nment.mp4", "seg\rment.mp4")
         @testset "path = $(repr(bad))" begin
             f = joinpath(dir, bad)
-            e = (@test_throws ArgumentError Fromage.concatenate(dir, dir, [f])).value
+            e = (@test_throws ArgumentError Fromage.concatenate(mktempdir(), dir, [f])).value
             @test occursin(repr(f), e.msg)          # the offending path, in full
             @test occursin("concat list", e.msg)    # and the format that cannot hold it
         end

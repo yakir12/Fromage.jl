@@ -45,13 +45,13 @@ issues_folder(results_dir) = joinpath(results_dir, ISSUES_FOLDER)
 # the same second and both dumping frames would land in one folder (unwritten folders cannot be
 # counted), but an invocation reads video off disk before it can fail a detection, so that race isn't
 # reachable.
-function invocation_issues_dir(issues)
+function invocation_issues_dir(issues_root)
     stamp = format(now(), dateformat"yyyy-mm-dd\THH-MM-SS")
-    dir = joinpath(issues, stamp)
+    dir = joinpath(issues_root, stamp)
     n = 1
     while ispath(dir)
         n += 1
-        dir = joinpath(issues, string(stamp, '_', n))
+        dir = joinpath(issues_root, string(stamp, '_', n))
     end
     return dir
 end

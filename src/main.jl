@@ -299,7 +299,7 @@ function main(
     # Every rectification is built, and its `rectification_diagnostics` image written, BEFORE any run
     # is tracked — `build_rectifications` returns only once all of them are done, and the tracking
     # below starts after it. docs/src/help.md relies on that order: it tells a user to watch
-    # `results_dir/rectifications/` fill and interrupt `main` if an image is wrong, which is only
+    # `<results_dir>/rectifications/` fill and interrupt `main` if an image is wrong, which is only
     # cheap while nothing has been tracked yet (#256). What it returns is not kept: `track_run` takes
     # each back out of the build cache.
     build_rectifications(results_dir, cs, rectification_diagnostics)
