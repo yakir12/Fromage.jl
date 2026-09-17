@@ -322,7 +322,7 @@ end
 
 The label each frame of the diagnostic `file` carries, as the `(segment number, file time)` pair
 from `candidates` that it matches. `font` is the pixel size the diagnostic drew at, and the `run_id`
-is the file's name, as `main` sets it.
+is the file's name, as `Diagnostic` takes it.
 
 A decoded frame is lossy, so no candidate reproduces it exactly: the label a frame carries is the
 candidate whose rendering over it changes it least. That is only a claim about the candidates

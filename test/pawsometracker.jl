@@ -386,7 +386,7 @@ const DATADIR = mktempdir()
         samples = [(k, start + (i - 1) / 25) for (k, start) in ((1, 0.4), (2, 1.2)) for i in 1:10]
         run_time = [0.4 + (n - 1) / 25 for n in 1:20]
         candidates = unique([(k, t) for k in 1:2 for t in vcat(last.(samples), run_time)])
-        @test read_labels(df, candidates, 20) == samples[1:2:end]
+        @test read_labels(df, candidates, 20) == samples[1:2:end]   # 20: the raw scene's font, in `diagnose`
     end
 
     @testset "Tuning's native_fps is what the tracker believes, not the file" begin
@@ -539,7 +539,7 @@ const DATADIR = mktempdir()
             err = @test_throws ErrorException PT.diagnose(df, false, nothing, 25.0) do dia
                 writer[] = dia.writer
                 PT.update_ratio!(dia, size(frame))
-                dia(0.0, frame, (10, 10))            # a real frame first, so the file is genuinely partial
+                dia(0.0, frame, (10, 10))       # a real frame first, so the file is genuinely partial
                 error("injected frame-writing failure")
             end
             @test err.value.msg == "injected frame-writing failure"   # unchanged in type and message

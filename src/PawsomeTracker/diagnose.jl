@@ -28,8 +28,9 @@ const DIAGNOSTIC_ENCODER = (crf = 23, preset = "veryfast")
 
 # All three diagnostics do the same thing with a tracked frame: on every `skip`-th one, render it to
 # a canvas, ring the target, trail the last TRACE_BUFFER_SIZE marks behind it, stamp the label (the
-# run's name (#22), and the segment number and file time of the frame shown) and write. What differs is only how the frame becomes a canvas and where the target lands on
-# it — that is the `scene`, and it is the only thing a fourth diagnostic would have to supply.
+# run's name (#22), then the segment number and file time of the frame shown) and write. What
+# differs is only how the frame becomes a canvas and where the target lands on it — that is the
+# `scene`, and it is the only thing a fourth diagnostic would have to supply.
 #
 # The writer is called as `dia(t, frame, point, extra...)`, `t` being the frame's file time, and is
 # told which segment it is in by `begin_segment!` — see CONTEXT.md, "File time and run time".
@@ -106,12 +107,13 @@ function (dia::Diagnostic)(t, frame, point, extra...)
     return nothing
 end
 
-begin_segment!(dia::Diagnostic, k) = dia.segment[] = k
+begin_segment!(dia::Diagnostic, k) = (dia.segment[] = k; nothing)
 
 # The label, top left: the run on the first line, and `<segment number> - <file time>` beneath it.
 # Two lines rather than one, so a long `run_id` clips only itself at the canvas edge, never the time.
-# `renderstring!` draws a single line, each on a background box of its own.
-function stamp!(canvas, face, font, label, segment, t)
+# `renderstring!` draws one line per call, each on its own background box. `font` is the pixel size,
+# and `::Integer` for JET: `renderstring!` also takes a tuple there, which the line height cannot.
+function stamp!(canvas, face, font::Integer, label, segment, t)
     renderstring!(canvas, label, face, font, font, font, halign = :hleft, valign = :vtop)
     line2 = string(segment, " - ", format_file_time(t))
     renderstring!(canvas, line2, face, font, font + round(Int, LABEL_LINE_HEIGHT * font), font, halign = :hleft, valign = :vtop)

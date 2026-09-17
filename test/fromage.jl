@@ -302,7 +302,7 @@ end
     samples = [(k, (i - 1) / 25) for (k, n) in ((1, nA), (2, nB)) for i in 1:n]
     run_time = [(n - 1) / 25 for n in 1:(nA + nB)]
     candidates = unique([(k, t) for k in 1:2 for t in run_time])
-    font = Fromage.PawsomeTracker.DIAGNOSTIC_SIZE ÷ 16
+    font = Fromage.PawsomeTracker.DIAGNOSTIC_SIZE ÷ 16          # the AprilTag scene's font, in `diagnose_apriltag`
     @test read_labels(diag, candidates, font) == samples[1:2:end]
 end
 
