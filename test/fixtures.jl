@@ -12,7 +12,7 @@ using StaticArrays: SVector, SMatrix
 using Fromage.PawsomeTracker: PawsomeTracker, Segment, Tuning, get_window, track
 
 export make_video, make_checkerboard_video, make_corrupt_video, make_target_video,
-    tracking_rmse, probe_stream, probe_frames,
+    tracking_rmse, probe_stream, probe_frames, read_labels,
     make_apriltag_video, drone_pose, apriltag_ground, render_pose, pose_apply,
     tuning, segments, track1
 
@@ -315,6 +315,37 @@ function probe_frames(file)
         push!(dts, parse(Int, parts[2]))
     end
     return sizes, pts, dts
+end
+
+"""
+    read_labels(file, candidates, font)
+
+The label each frame of the diagnostic `file` carries, as the `(segment number, file time)` pair
+from `candidates` that it matches. `font` is the pixel size the diagnostic drew at, and the `run_id`
+is the file's name, as `Diagnostic` takes it.
+
+A decoded frame is lossy, so no candidate reproduces it exactly: the label a frame carries is the
+candidate whose rendering over it changes it least. That is only a claim about the candidates
+offered, so offer the wrong answers a bug would produce — the run time, the other segment's number.
+"""
+function read_labels(file, candidates, font)
+    run_id = first(splitext(basename(file)))
+    face = PawsomeTracker.FTFont(String(PawsomeTracker.FONT))
+    mismatch(frame, (k, t)) = sum(
+        abs(Float32(a) - Float32(b))
+            for (a, b) in zip(PawsomeTracker.stamp!(copy(frame), face, font, run_id, k, t), frame)
+    )
+    vid = PawsomeTracker.open_gray_video(file)
+    labels = eltype(candidates)[]
+    try
+        while !eof(vid)
+            frame = collect(read(vid))
+            push!(labels, argmin(c -> mismatch(frame, c), candidates))
+        end
+    finally
+        close(vid)
+    end
+    return labels
 end
 
 

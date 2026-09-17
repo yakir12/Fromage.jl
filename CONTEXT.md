@@ -63,6 +63,22 @@ stretch cut out of one file, or the join between two files — is closed up, and
 sign of it. Removed time is recoverable from `runs.csv`; the track and any speed derived from it
 ignore it by design (see DECISIONS).
 
+### File time and run time
+
+A tracked frame has two times, and they agree only within the first segment:
+
+- **File time** — where the frame sits in its own video file, counted from that file's first frame.
+  It is what a video player shows, so it is how you find the frame in the original footage. It
+  jumps at every segment boundary, and restarts near zero whenever a run moves to a new file.
+- **Run time** — the run's timeline above: the `time` column of the track. It never jumps.
+
+"Timestamp" alone says neither; say which.
+
+### Segment number
+
+A segment's 1-based position among its own run's `runs.csv` rows, in row order — not its row number
+in the file. The second row carrying `run_id` `a` is segment 2 of `a`, wherever it sits.
+
 ### Track
 
 What a run yields: timestamps paired with the target's position, in real-world coordinates. Written
@@ -73,8 +89,9 @@ once `main` has finished.
 
 The **diagnostic video** is `results_dir/diagnostic.mp4`: every tracked run played back with the
 target marked, for checking by eye that the tracking held. It is stitched from one **run
-diagnostic clip** per run — one clip per run however many segments the run has, labelled with
-its `run_id`.
+diagnostic clip** per run — one clip per run however many segments the run has. Every frame of a
+clip is labelled with its `run_id`, and beneath that the segment number and file time of the frame
+shown, so any frame can be found again in the original footage.
 
 Not "diagnostic segment": a *segment* is a piece of a run, and a run of three segments still
 yields one clip.

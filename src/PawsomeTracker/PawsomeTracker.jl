@@ -472,11 +472,12 @@ function detect(guess, stack, j, tr::Tracker, downscale, level = Ref(0.0))
     return coord / downscale, guess
 end
 
-function track!(coords, stack, guess, tr, vid, dia)
+# `ts` are the samples' file times, which the diagnostic labels its frames with.
+function track!(coords, stack, guess, tr, vid, dia, ts)
     level = Ref(0.0)                 # running response level for detect's confidence gate
     for i in axes(stack, 3)
         coords[i], guess = detect(guess, stack, i, tr, vid.downscale, level)
-        dia(selectdim(parent(parent(stack)), 3, i), round.(Int, Tuple(coords[i])))
+        dia(ts[i], selectdim(parent(parent(stack)), 3, i), round.(Int, Tuple(coords[i])))
     end
     n_bkgd = size(stack, 3)
     subtract = !isnothing(tr.bkgd_reduce)   # no background model ⇒ nothing to protect the target from
@@ -490,7 +491,7 @@ function track!(coords, stack, guess, tr, vid, dia)
         protect, keep = subtract ? protect_target(stack, j, guess, tr.radii, vid.downscale) : (nothing, nothing)
         populate_slice!(stack, j, vid)
         coords[i], guess = detect(guess, stack, j, tr, vid.downscale, level)
-        dia(selectdim(parent(parent(stack)), 3, j), round.(Int, Tuple(coords[i])))
+        dia(ts[i], selectdim(parent(parent(stack)), 3, j), round.(Int, Tuple(coords[i])))
         isnothing(protect) || restore_background!(stack, j, protect, keep)
     end
     return
@@ -510,9 +511,10 @@ function track_one(rseg::ResolvedSegment, tuning::Tuning, scaled::ScaledTuning, 
         stack = collect_stack(vid, tr.sz, tr.h, n_background(vid, tuning.background_length))
         coords = Vector{RowCol}(undef, vid.nframes)
         guess = get_guess(rseg.start_location, stack, vid, tuning.darker_target, scaled.width, scaled.search, subtract)
-        track!(coords, stack, guess, tr, vid, dia)
         # sample i is raw frame (i-1)*skip, i.e. start + (i-1)/effective_fps (#17)
-        return (range(rseg.start; step = 1 / vid.sample_fps, length = vid.nframes), coords)
+        ts = range(rseg.start; step = 1 / vid.sample_fps, length = vid.nframes)
+        track!(coords, stack, guess, tr, vid, dia, ts)
+        return (ts, coords)
     end
 end
 
@@ -612,6 +614,7 @@ function track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnos
         segs = Vector{Vector{Union{Missing, GroundXY}}}(undef, nsegments)
         diagnose_apriltag(diagnostic_file, rectification, tuning.darker_target, dia_fps) do dia
             for (i, s) in enumerate(segments)
+                begin_segment!(dia, i)
                 # The `Segment` itself, unresolved: nothing chains here, so its start_location
                 # is already final — what the csv said, or `missing` for a centre search.
                 tss[i], segs[i] = track_apriltag(s, tuning, scaled, dia, rectification)
@@ -628,6 +631,7 @@ function track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnos
             # previous one ended. That carried-over value is a `RowCol`, which a `Segment` cannot
             # hold (#18) — hence `ResolvedSegment`, whose union names exactly what `get_guess` takes.
             rseg = ResolvedSegment(s.file, s.start, s.stop, coalesce(s.start_location, end_location))
+            begin_segment!(dia, i)
             tss[i], ijs[i] = track_one(rseg, tuning, scaled, dia)
             end_location = ijs[i][end]
         end

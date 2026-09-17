@@ -6,6 +6,8 @@ const DIAGNOSTIC_VIDEO_SIZE = (360, 640)
 # per rectification instead; see DiagnoseRectified.
 const DIAGNOSTIC_SIZE = 540
 const TRACE_BUFFER_SIZE = 100
+# The label's second line starts this many font sizes below its first.
+const LABEL_LINE_HEIGHT = 1.25
 # Diagnostic videos play back at DIAGNOSTIC_SPEEDUP × real time, decimated to roughly
 # DIAGNOSTIC_FPS frames per second of playback, so long runs skim quickly and a high tracking fps
 # doesn't slow playback down.
@@ -25,9 +27,13 @@ diagnostic_framerate(fps, skip) = DIAGNOSTIC_SPEEDUP * fps / skip
 const DIAGNOSTIC_ENCODER = (crf = 23, preset = "veryfast")
 
 # All three diagnostics do the same thing with a tracked frame: on every `skip`-th one, render it to
-# a canvas, ring the target, trail the last TRACE_BUFFER_SIZE marks behind it, stamp the run's label
-# (#22) and write. What differs is only how the frame becomes a canvas and where the target lands on
-# it — that is the `scene`, and it is the only thing a fourth diagnostic would have to supply.
+# a canvas, ring the target, trail the last TRACE_BUFFER_SIZE marks behind it, stamp the label (the
+# run's name (#22), then the segment number and file time of the frame shown) and write. What
+# differs is only how the frame becomes a canvas and where the target lands on it — that is the
+# `scene`, and it is the only thing a fourth diagnostic would have to supply.
+#
+# The writer is called as `dia(t, frame, point, extra...)`, `t` being the frame's file time, and is
+# told which segment it is in by `begin_segment!` — see CONTEXT.md, "File time and run time".
 #
 # A scene is a callable `(frame, point, extra...) -> (canvas, ij)`, where `ij` may be `missing` on a
 # frame the mode cannot locate the target in (the marker and trace are then skipped, the frame is
@@ -40,6 +46,7 @@ struct Diagnostic{S}
     # abstract, so the field would be boxed. The constructor's `Ref(0)` already makes a
     # `RefValue{Int}` — only the declaration was loose.
     state::Base.RefValue{Int}
+    segment::Base.RefValue{Int}   # the segment number of the frames being written; `begin_segment!`
     skip::Int
     color::Gray{N0f8}
     radius::Int
@@ -65,7 +72,7 @@ function Diagnostic(file::AbstractString, darker_target, fps, scene; radius, fon
     )
     built = false
     return try
-        dia = Diagnostic(label, writer, trace, Ref(0), skip, color, radius, font, face, scene)
+        dia = Diagnostic(label, writer, trace, Ref(0), Ref(0), skip, color, radius, font, face, scene)
         built = true
         dia
     finally
@@ -82,7 +89,7 @@ end
 # first tested the opening frame as `rem(1, skip)`, so the one frame that shows where tracking
 # actually began was the one frame never written, unless the stride happened to be 1. That is the
 # frame a reader checking for a wrong `start_location` needs (see results.md).
-function (dia::Diagnostic)(frame, point, extra...)
+function (dia::Diagnostic)(t, frame, point, extra...)
     write_now = rem(dia.state[], dia.skip) == 0
     dia.state[] += 1
     write_now || return nothing
@@ -95,10 +102,31 @@ function (dia::Diagnostic)(frame, point, extra...)
     # A warped canvas is offset-indexed; the writer wants the plain storage behind it (a no-op for
     # the raw scene, whose canvas already is that storage). The label goes on last, so it stays
     # legible wherever the target happens to be.
-    out = parent(canvas)
-    renderstring!(out, dia.label, dia.face, dia.font, dia.font, dia.font, halign = :hleft, valign = :vtop)
+    out = stamp!(parent(canvas), dia.face, dia.font, dia.label, dia.segment[], t)
     write(dia.writer, out)
     return nothing
+end
+
+begin_segment!(dia::Diagnostic, k) = (dia.segment[] = k; nothing)
+
+# The label, top left: the run on the first line, and `<segment number> - <file time>` beneath it.
+# Two lines rather than one, so a long `run_id` clips only itself at the canvas edge, never the time.
+# `renderstring!` draws one line per call, each on its own background box. `font` is the pixel size,
+# and `::Integer` for JET: `renderstring!` also takes a tuple there, which the line height cannot.
+function stamp!(canvas, face, font::Integer, label, segment, t)
+    renderstring!(canvas, label, face, font, font, font, halign = :hleft, valign = :vtop)
+    line2 = string(segment, " - ", format_file_time(t))
+    renderstring!(canvas, line2, face, font, font + round(Int, LABEL_LINE_HEIGHT * font), font, halign = :hleft, valign = :vtop)
+    return canvas
+end
+
+# `t` seconds as `HH:MM:SS.mmm`, rounded to the nearest millisecond — fixed-width, so the label does
+# not shift from frame to frame.
+function format_file_time(t)
+    s, ms = divrem(round(Int, 1000t), 1000)
+    m, s = divrem(s, 60)
+    h, m = divrem(m, 60)
+    return string(lpad(h, 2, '0'), ':', lpad(m, 2, '0'), ':', lpad(s, 2, '0'), '.', lpad(ms, 3, '0'))
 end
 
 Base.close(dia::Diagnostic) = close_video_out!(dia.writer)
@@ -107,9 +135,10 @@ struct Dont end
 # `file` (the diagnostic_file) is nothing: no diagnostic video requested, whatever the rectification.
 diagnose(::Nothing, _, _, _) = Dont()
 # Shaped like `Diagnostic`'s own call signature, so the two stay in step: the apriltag callback
-# passes a third argument, anything else passes two.
-(::Dont)(_, _, _...) = nothing
+# passes a fourth argument, anything else passes three.
+(::Dont)(_, _, _, _...) = nothing
 Base.close(::Dont) = nothing
+begin_segment!(::Dont, _) = nothing
 update_ratio!(::Dont, _) = nothing
 
 # An export that did not finish is not a diagnostic: the encoder wrote a header and however many
