@@ -364,6 +364,31 @@ const DATADIR = mktempdir()
         @test probe_stream(df).nframes == 25
     end
 
+    @testset "file time reads HH:MM:SS.mmm, to the nearest millisecond" begin
+        @test PT.format_file_time(0.0) == "00:00:00.000"
+        @test PT.format_file_time(134.1234) == "00:02:14.123"
+        @test PT.format_file_time(134.1236) == "00:02:14.124"
+        @test PT.format_file_time(59.9996) == "00:01:00.000"     # the rounding carries through every field
+        @test PT.format_file_time(3599.9999) == "01:00:00.000"
+        @test PT.format_file_time(37230.5) == "10:20:30.500"
+    end
+
+    @testset "each diagnostic frame carries its segment number and file time" begin
+        # Two windows of one file, so file time and run time part at the join: the second window's
+        # first sample is 1.2 s into the file but 0.8 s into the run. 25 fps at stride 2 writes every
+        # other sample, and the writer's count runs on across the join, so the written frames are
+        # samples 1, 3, …, 19 of the run's 20.
+        df = joinpath(DATADIR, "labelled.mp4")
+        track1(
+            [base_file, base_file]; start = [0.4, 1.2], stop = [0.8, 1.6],
+            start_location = [(55, 50), missing], diagnostic_file = df
+        )
+        samples = [(k, start + (i - 1) / 25) for (k, start) in ((1, 0.4), (2, 1.2)) for i in 1:10]
+        run_time = [0.4 + (n - 1) / 25 for n in 1:20]
+        candidates = unique([(k, t) for k in 1:2 for t in vcat(last.(samples), run_time)])
+        @test read_labels(df, candidates, 20) == samples[1:2:end]
+    end
+
     @testset "Tuning's native_fps is what the tracker believes, not the file" begin
         # `Tuning.native_fps` is the rate the gateway settled — the probe's, or the one runs.csv
         # declared in its place — and the tracker never opens the video to ask. base_file really
@@ -479,7 +504,7 @@ const DATADIR = mktempdir()
             PT.diagnose(df, false, nothing, 25.0) do dia
                 writer[] = dia.writer
                 PT.update_ratio!(dia, size(frame))
-                dia(frame, (10, 10))
+                dia(0.0, frame, (10, 10))
             end
             @test isfile(df)
             @test filesize(df) > 0
@@ -498,11 +523,11 @@ const DATADIR = mktempdir()
             # guard around it can close it. Before the fix this left the writer registered, and
             # VideoIO's `atexit` barrier timed out on it at the end of the session.
             err = @test_throws MethodError PT.Diagnostic(df, false, 25.0, PT.RawScene(); radius = 1.5, font = 20)
-            # …and it is the ten-argument inner call that failed, not the four-argument one: a
+            # …and it is the eleven-argument inner call that failed, not the four-argument one: a
             # `MethodError` raised BEFORE the open would satisfy every other assertion here for the
             # wrong reason, and go green on a constructor that leaks again.
             @test err.value.f === PT.Diagnostic
-            @test length(err.value.args) == 10
+            @test length(err.value.args) == 11
             @test nactive() == before
             @test !isfile(df)
         end
@@ -514,7 +539,7 @@ const DATADIR = mktempdir()
             err = @test_throws ErrorException PT.diagnose(df, false, nothing, 25.0) do dia
                 writer[] = dia.writer
                 PT.update_ratio!(dia, size(frame))
-                dia(frame, (10, 10))            # a real frame first, so the file is genuinely partial
+                dia(0.0, frame, (10, 10))            # a real frame first, so the file is genuinely partial
                 error("injected frame-writing failure")
             end
             @test err.value.msg == "injected frame-writing failure"   # unchanged in type and message
@@ -529,7 +554,7 @@ const DATADIR = mktempdir()
             before = nactive()
             dia = PT.diagnose(df, false, nothing, 25.0)
             PT.update_ratio!(dia, size(frame))
-            dia(frame, (10, 10))
+            dia(0.0, frame, (10, 10))
             w = dia.writer
             # The load-bearing assertions here are the message and the missing file: the writer is
             # already closed by `CloseThenFail` itself, which is what makes the throw a FINALIZATION

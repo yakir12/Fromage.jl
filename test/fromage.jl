@@ -297,6 +297,13 @@ end
     # whole frame short — measured 0.0 residual, and vacuous anyway.
     @test s.nframes == (nA + nB) ÷ 2
     @test s.fps ≈ 25 rtol = 1.0e-6
+    # Two files, so segment B's file time restarts at zero while the run's clock carries on from
+    # 1.6 s: the label must show the former, with B's segment number.
+    samples = [(k, (i - 1) / 25) for (k, n) in ((1, nA), (2, nB)) for i in 1:n]
+    run_time = [(n - 1) / 25 for n in 1:(nA + nB)]
+    candidates = unique([(k, t) for k in 1:2 for t in run_time])
+    font = Fromage.PawsomeTracker.DIAGNOSTIC_SIZE ÷ 16
+    @test read_labels(diag, candidates, font) == samples[1:2:end]
 end
 
 @testset "the AprilTag diagnostic carries the run's label (#22)" begin

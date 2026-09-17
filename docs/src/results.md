@@ -23,7 +23,9 @@ The coordinates are already fully converted — lens distortion, perspective, an
 
 ## The diagnostic video
 
-`main` also writes `results_dir/diagnostic.mp4`: every run rendered top-down through its rectification into a fixed 540×540 canvas, with a circle around the tracked position, a trailing trace, and the run's `run_id` as a label — one run after the other, playing at 2× real time (≈24 fps regardless of the run's `sample_fps`).
+`main` also writes `results_dir/diagnostic.mp4`: every run rendered top-down through its rectification into a fixed 540×540 canvas, with a circle around the tracked position, a trailing trace, and a label — one run after the other, playing at 2× real time (≈24 fps regardless of the run's `sample_fps`).
+
+The label, top left, has two lines: the run's `run_id`, and beneath it `<segment> - <time>`, e.g. `2 - 00:02:14.123`. The segment is which of the run's `runs.csv` rows the frame comes from (1 for the first of them, 2 for the second, …), and the time is where the frame sits **in that segment's own video file** — open the file in any video player and seek to that time to find the same frame. It is not the `time` column of the track csv: that one is the run's continuous clock, and the two differ from the second segment on.
 
 The canvas is oriented by the rectification's `north`, pointing up. Give two rectifications of the same arena a `center` and a `north` on the same physical landmarks and their tracks come out in the same orientation, so you can compare them directly. Without a `north`, each rectification is oriented however its own rectification frame happened to fall — for `apriltag` rectifications that means the orientation of one tag board, which is easy to change between field days without noticing.
 
