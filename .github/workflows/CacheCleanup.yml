@@ -1,0 +1,76 @@
+name: Cache cleanup
+
+# Keeps the repository's Actions caches under GitHub's 10 GB limit (#138). At the limit GitHub
+# evicts least-recently-used entries, so warm caches went cold unpredictably. The caches deleted
+# here are ones no job can restore, or will ever restore again; the selection and its rules live in
+# .github/scripts/cache-cleanup.sh.
+#
+# - A closed PR's caches: julia-actions/cache prunes only when a later job on the same ref saves,
+#   and a closed PR has no later jobs, so they waited out GitHub's 7-day-unused eviction.
+# - Tag caches: AutoRelease dispatches Docs on each release tag, which saves a ~720 MB cache scoped
+#   to that tag. No other ref can restore it and the tag is never built again. Tag builds still
+#   *restore* main's Docs cache, which is why caching stays on for them.
+# - Superseded caches on main: julia-actions/cache deliberately never prunes the default branch.
+#   The newest cache of each key is kept, because PRs and the next main run restore from it.
+
+on:
+  pull_request:
+    types: [closed]
+  # Whether this fires for the tag build is unverified: AutoRelease dispatches that build with
+  # GITHUB_TOKEN, and runs started that way may not trigger further workflows. The schedule removes
+  # tag caches too, so a tag cache lives at most a day either way.
+  workflow_run:
+    workflows: [Docs]
+    types: [completed]
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: List what would be deleted, and delete nothing
+        type: boolean
+        default: true
+
+permissions:
+  # `gh cache delete` needs `actions: write`; the repository default is read-only.
+  actions: write
+  contents: read
+  # `gh pr view`, to tell a closed PR's caches from an open one's.
+  pull-requests: read
+
+concurrency:
+  # One group for every trigger, so two cleanup runs never delete from the same listing. GitHub
+  # keeps only the newest *pending* run of a group, so a run can still be superseded while it waits;
+  # the daily `all` run picks up whatever it would have deleted. julia-actions/cache's own pruning is not
+  # in this group, so a cache it deletes between the listing and the delete fails the run, and the
+  # next run finishes the job; that is rare, because it never prunes main, tags or a closed PR.
+  # Fork PRs get a read-only token, so a fork PR's close fails here too; this repository has none.
+  group: cache-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Delete unreachable caches
+    # Tag caches are what a Docs completion leaves behind, and only the tag build saves one. A PR's
+    # Docs run leaves nothing for this mode to do, so it is skipped rather than run as a no-op.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.event != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The default ref of a `closed` event is the PR's merge ref, which an unmerged PR may no
+          # longer have; the script only needs to exist, so take it from the default branch.
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts
+      - name: Delete caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Deletes unless this is a manual dispatch that left the dry-run input on.
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+          MODE: >-
+            ${{ github.event_name == 'pull_request' && 'pr'
+            || github.event_name == 'workflow_run' && 'tags'
+            || 'all' }}
+          # Empty, and ignored, outside a `pull_request` event.
+          PR_NUMBER: ${{ github.event.number }}
+        run: .github/scripts/cache-cleanup.sh "$MODE" "$PR_NUMBER"
