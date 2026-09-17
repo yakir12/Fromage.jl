@@ -39,7 +39,7 @@ using Tables: Tables
 # `renamed` maps a retired column name to a description of where its value went. A rename is the
 # one unrecognized column a user cannot debug from the message alone: their file was correct when
 # they wrote it, and "unrecognized column/s: [:checker_size]" tells them it is gone without telling
-# them what replaced it. Both gateways have retired columns, so both pass a map.
+# them what replaced it. A gateway that has retired no column passes an empty map.
 function read_rows(file, columns, what; renamed)
     isfile(file) || error("$what `.csv` file missing")
     rows = CSV.Rows(read(file); stripwhitespace = true)

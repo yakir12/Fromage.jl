@@ -139,8 +139,8 @@ call site back:
    `fit_metric`'s `maxiter`/`tol` and `set_detector!`'s `nthreads` went, and the one-argument
    loader methods (`load_runs(file)` → `dirname(file)`) went too, because they existed only for
    human callers. `fit_metric`'s `canon` stayed, as a required keyword, because `reference_space`
-   passes a per-family square. For the same reason `place_square` still takes `canon` and
-   `_worst_side` still takes `side`. `ShareIO.capture`'s `tries` also stayed, because
+   passes a per-family square. So `place_square` still takes `canon`, and `_worst_side` still
+   takes `side`, which `fit_metric` derives from that square. `ShareIO.capture`'s `tries` also stayed, because
    `test/shareio.jl` passes `tries = 1`. `ReferenceSpace(ids, corners)` no longer splats `kw...`
    into `fit_metric`, and fits in `CANON`.
 3. **No enforcement test.** This was a one-off cleanup, and review keeps it that way.

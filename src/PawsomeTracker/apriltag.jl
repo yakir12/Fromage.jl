@@ -113,7 +113,11 @@ place_square(D, canon) = map(rigid_align(canon, D), canon)
 # the caller's policy (see METRIC_FIT_TOLERANCE), which lets `reference_space` report a
 # non-converged fit as an issue string rather than catch a throw from in here.
 #
-# `canon` is the tag's true square in ground units (`canon_square`).
+# `canon` is the tag's true square in ground units (`canon_square`). Each bootstrap refines for at
+# most METRIC_FIT_MAXITER iterations, stopping once one moves the worst error by less than
+# METRIC_FIT_STEP.
+const METRIC_FIT_MAXITER = 1000
+const METRIC_FIT_STEP = 1.0e-9
 function fit_metric(tag_corners; canon)
     side = norm(canon[1] - canon[2])
     flat = reduce(vcat, tag_corners)
@@ -128,7 +132,7 @@ function fit_metric(tag_corners; canon)
     bestM, beste = fit(first(boots))
     for boot in boots
         M, e = boot == first(boots) ? (bestM, beste) : fit(boot)
-        for _ in 1:1000                                       # iteration cap per bootstrap
+        for _ in 1:METRIC_FIT_MAXITER
             sq = [place_square(SVector{2, Float64}[apply_h(M, p) for p in tc], canon) for tc in tag_corners]
             T = rigid_align(sq[1], canon)                     # pin gauge: tag 1 → canonical square
             G = reduce(vcat, [[T(g) for g in s] for s in sq])
@@ -138,7 +142,7 @@ function fit_metric(tag_corners; canon)
                 bestM = Mn
                 beste = en
             end
-            if abs(e - en) < 1.0e-9                           # converged: the error stopped moving
+            if abs(e - en) < METRIC_FIT_STEP
                 break
             end
             M = Mn
