@@ -582,18 +582,18 @@ end
 # those files report. `verify_ids!` has already run and passed (or, on the `check_*` path, flagged
 # the rows it rejected — which every stage below skips, since they all subset to unflagged rows).
 function verifications!(
-        df::AbstractDataFrame, data_path, issues_dir = DEFAULT_ISSUES_DIR;
+        df::AbstractDataFrame, data_path, results_dir = RESULTS_DIR;
         progress = true
     )
 
     # This INVOCATION's frames go in a folder of their own, named for the moment it started, so the
     # folder reflects only this invocation without anything being deleted to make that true —
-    # `issues_dir` itself is the caller's, and Fromage only ever adds to it (#86). save_issue_frame
+    # the issues folder itself is the caller's, and Fromage only ever adds to it (#86). save_issue_frame
     # creates the folder on the first frame it dumps, so an invocation that finds nothing to report
     # writes nothing. It is per EXECUTION, not per Julia session and not per `Run` — see paths.jl.
     # The detectors below are memoized for the life of the session (`Memo`); the frame dump is not,
     # so a re-verified failure is reported afresh, with this invocation's own path in the message.
-    invocation_dir = invocation_issues_dir(issues_dir)
+    invocation_dir = invocation_issues_dir(issues_folder(results_dir))
 
     # The resolved :file is the identity every later step uses (the read passes, duplicate
     # detection); :matlab_file (the .mat, matlab rows only) groups the .mat reads.

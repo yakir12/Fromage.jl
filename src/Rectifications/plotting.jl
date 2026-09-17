@@ -33,12 +33,13 @@ end
 # rows differing only in `center` are not duplicates by `verify_unique_rectifications!` and warp
 # differently, so one would have silently overwritten the other.
 #
-# `mkpath` here rather than in the caller keeps the function correct when called on its own, and is
-# safe under `build_rectifications`' `tmap`: it tolerates the directory already existing.
-function save_diagnostic(rectification::StaticRectification, file, extrinsic, rectification_id)
+# `results_dir` is the output folder (#229); the image goes in its rectifications subfolder, whose
+# name `Paths` owns. `mkpath` here rather than in the caller keeps the function correct when called on
+# its own, and is safe under `build_rectifications`' `tmap`: it tolerates the directory already existing.
+function save_diagnostic(results_dir, rectification::StaticRectification, file, extrinsic, rectification_id)
     warp_trans = get_warp(rectification.ratio, rectification.real2image)
     imgw = warp_extrinsic(file, extrinsic, rectification.width, rectification.height, warp_trans)
-    mkpath(RECTIFICATIONS_DIR)
-    FileIO.save(joinpath(RECTIFICATIONS_DIR, string(rectification_id, ".jpg")), parent(imgw))
+    folder = mkpath(rectifications_folder(results_dir))
+    FileIO.save(joinpath(folder, string(rectification_id, ".jpg")), parent(imgw))
     return
 end

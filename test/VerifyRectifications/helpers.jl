@@ -215,15 +215,15 @@ mixedrow(; kw...) = _merge(
 "Write `rows` to a CSV in DATADIR and load it. Scenario rows keep indices 1:length(rows).
 (`parse_row` back-fills every COLUMNS entry with missing, so even a single-type CSV has every
 column `verifications!` references — no column-completing filler rows are needed.)"
-# `issues_dir` defaults to a fresh temp dir so failure scenarios (which now dump the failing
-# extrinsic frame) don't write into the test's working directory; a test that inspects the dumped
-# frames passes an explicit path.
+# `results_dir` defaults to a fresh temp dir so failure scenarios (which now dump the failing
+# extrinsic frame into its issues subfolder) don't write into the test's working directory; a test
+# that inspects the dumped frames passes an explicit path.
 # `strict` selects the ENTRY POINT, not a flag inside one, and the non-strict branch keeps the
 # old data-dependent shape for the suite's benefit — see the fuller note in VerifyRuns' helpers.
-function check(name, rows; strict = false, header = HEADER, defaults = (;), issues_dir = mktempdir())
+function check(name, rows; strict = false, header = HEADER, defaults = (;), results_dir = mktempdir())
     csv = write_rows(joinpath(DATADIR, name), rows; header)
-    strict && return VRect.load_rectifications(DATADIR, csv; defaults, issues_dir)
-    df = VRect.check_rectifications(DATADIR, csv; defaults, issues_dir)
+    strict && return VRect.load_rectifications(DATADIR, csv; defaults, results_dir)
+    df = VRect.check_rectifications(DATADIR, csv; defaults, results_dir)
     return any(!isempty, df.issues) ? df : VRect.build_methods(df)
 end
 

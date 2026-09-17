@@ -364,7 +364,7 @@ end
     # given (#86): a second run adds a second folder, leaving the first run's frame — and whatever
     # the user keeps there — untouched.
     dir = mktempdir(); idir = mktempdir()
-    keepsake = joinpath(idir, "my_notes.txt")          # the user's own file, in the folder they named
+    keepsake = joinpath(mkpath(joinpath(idir, "issues")), "my_notes.txt")   # the user's own file, beside the frames
     write(keepsake, "hands off")
     vid, _, _, _ = make_apriltag_video(dir, "drone")
     open(joinpath(dir, "rectifications.csv"), "w") do io
@@ -372,8 +372,8 @@ end
         println(io, "drone,apriltag,$vid,0,6,tag36h11,12")
     end
     # named for what it does here; `verify` is now an exported entry point of its own
-    check_calibs() = Fromage.VerifyRectifications.check_rectifications(dir, joinpath(dir, "rectifications.csv"); issues_dir = idir)
-    invocation_dirs() = filter(isdir, readdir(idir; join = true))
+    check_calibs() = Fromage.VerifyRectifications.check_rectifications(dir, joinpath(dir, "rectifications.csv"); results_dir = idir)
+    invocation_dirs() = filter(isdir, readdir(joinpath(idir, "issues"); join = true))
     frames(d) = filter(endswith(".png"), readdir(d; join = true))
 
     df = check_calibs()
@@ -495,7 +495,7 @@ end
 # The three concat testsets below all build one list out of real videos and read the joined result
 # back, because the escaping is ffmpeg's rule and only real ffmpeg can say whether a name survived
 # it. `stems` are file-name stems; the return is the file `concatenate` writes, always
-# `results_dir/diagnostic.mp4` under the current directory. Each segment is 5 frames.
+# `results_dir/diagnostic.mp4` under a fresh folder. Each segment is 5 frames.
 function concat_stems(stems)
     dir = mktempdir()
     segs = map(stems) do stem
@@ -503,12 +503,9 @@ function concat_stems(stems)
         make_video(f; duration = 1, size = (64, 64), rate = 5)
         f
     end
-    outdir = mktempdir()
-    cd(outdir) do
-        mkpath("results_dir")                       # `main` makes it; this calls concatenate directly
-        Fromage.concatenate(dir, segs)
-    end
-    return joinpath(outdir, "results_dir", "diagnostic.mp4")
+    results_dir = mktempdir()                       # `main` makes it; this calls concatenate directly
+    Fromage.concatenate(results_dir, dir, segs)
+    return joinpath(results_dir, "diagnostic.mp4")
 end
 
 @testset "an apostrophe in a segment path survives the concat list" begin
@@ -548,7 +545,7 @@ end
     for bad in ("seg\nment.mp4", "seg\rment.mp4")
         @testset "path = $(repr(bad))" begin
             f = joinpath(dir, bad)
-            e = (@test_throws ArgumentError Fromage.concatenate(dir, [f])).value
+            e = (@test_throws ArgumentError Fromage.concatenate(dir, dir, [f])).value
             @test occursin(repr(f), e.msg)          # the offending path, in full
             @test occursin("concat list", e.msg)    # and the format that cannot hold it
         end
@@ -675,6 +672,64 @@ end
     # the uniform builder, named by its rectification_id
     @test readdir(joinpath(results, "rectifications")) == ["c1.jpg"]
     @test filesize(joinpath(results, "rectifications", "c1.jpg")) > 0
+end
+
+# `results_dir` names the output folder itself, so where output goes no longer depends on the working
+# directory (#229). None of these call `main` or `verify` inside a `cd`: that is the point.
+@testset "results_dir: the caller names the output folder (#229)" begin
+    dir = mktempdir()
+    make_video(joinpath(dir, "cal.mp4"); size = (320, 240), duration = 2)
+    target, _ = make_target_video(dir, "elsewhere")
+    write(joinpath(dir, "rectifications.csv"), "rectification_id,type,file,extrinsic,pixel_width\nc1,uniform,cal.mp4,1,2\n")
+    write(joinpath(dir, "runs.csv"), "run_id,rectification_id,file,start_location\nr1,c1,$(only(target)),\"(55, 50)\"\n")
+
+    @testset "main writes everything under it, twice in one session" begin
+        # Two analyses of one dataset kept side by side. The second call's track comes out of the
+        # memo, and must still be written out in full into its own folder.
+        first, second = (joinpath(mktempdir(), "exp", name) for name in ("a", "b"))   # neither exists yet
+        for results_dir in (first, second)
+            main(dir; tracking_defaults = (target_width = 10,), rectification_diagnostics = true, results_dir)
+            @test readdir(results_dir; sort = true) == ["diagnostic.mp4", "r1.csv", "rectifications"]
+            @test readdir(joinpath(results_dir, "rectifications")) == ["c1.jpg"]
+            @test filesize(joinpath(results_dir, "diagnostic.mp4")) > 0
+        end
+        @test read(joinpath(first, "r1.csv"), String) == read(joinpath(second, "r1.csv"), String)
+    end
+
+    @testset "a clean verify creates nothing, the folder included" begin
+        results_dir = joinpath(mktempdir(), "out")
+        out = verify(dir; results_dir)
+        @test all(isempty, out.rectifications.issues) && all(isempty, out.runs.issues)
+        @test !ispath(results_dir)
+    end
+
+    # A failing AprilTag detection is what dumps an issue frame.
+    tagdir = mktempdir()
+    vid, _, _, _ = make_apriltag_video(tagdir, "drone")
+    write(joinpath(tagdir, "rectifications.csv"), "rectification_id,type,file,extrinsic,apriltags,family,tag_cell_width\ndrone,apriltag,$vid,0,6,tag36h11,12\n")
+    write(joinpath(tagdir, "runs.csv"), "rectification_id,file,start_location\ndrone,$vid,\"(55, 50)\"\n")
+    saved_frame(out) = only(
+        m.captures[1] for m in (match(r" to (.+\.png) for inspection$", msg) for msg in only(out.rectifications.issues))
+            if !isnothing(m)
+    )
+
+    @testset "verify puts its issue frames under it" begin
+        results_dir = joinpath(mktempdir(), "out")
+        frame = saved_frame(verify(tagdir; results_dir))
+        @test isfile(frame)
+        @test dirname(dirname(frame)) == joinpath(results_dir, "issues")   # issues/<stamp>/<frame>.png
+    end
+
+    # Changing the working directory part-way through a call cannot be staged from outside it, so this
+    # asserts what makes that safe instead: a relative `results_dir` is resolved once, on entry, so the
+    # path the report names is already absolute, against the directory the call was made from.
+    @testset "a relative results_dir resolves against the working directory at the call" begin
+        cwd = mktempdir()
+        frame = cd(() -> saved_frame(verify(tagdir; results_dir = "rel")), cwd)
+        @test isabspath(frame)
+        @test startswith(frame, joinpath(cd(pwd, cwd), "rel", "issues"))
+        @test isfile(frame)
+    end
 end
 
 end

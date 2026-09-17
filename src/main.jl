@@ -34,17 +34,17 @@ end
 
 concat_escape(f) = replace(f, "'" => raw"'\''")
 
-function concatenate(path, files)
+function concatenate(results_dir, path, files)
     foreach(check_concat_representable, files)   # all of them, before any of the list is written
     list = joinpath(path, "list.txt")
     open(list, "w") do io
         foreach(f -> println(io, "file '", concat_escape(f), "'"), files)
     end
-    out = joinpath(RESULTS_DIR, "diagnostic.mp4")
+    out = joinpath(results_dir, "diagnostic.mp4")
     return ffmpeg_exe(` -y -loglevel error -f concat -safe 0 -i $list -c copy $out`)
 end
 
-# Save one run's track to results_dir/<run_id>.csv: one row per coordinate, with the `time` stamp
+# Save one run's track to <results_dir>/<run_id>.csv: one row per coordinate, with the `time` stamp
 # (seconds on the run's clock — the first segment's `start`, plus one sampling interval per tracked
 # frame, so time left out between segments is closed up) and the `x`/`y` real-world coordinates.
 # `track` returns coordinates the rectification's `image2real` has already been applied to, so the
@@ -55,8 +55,8 @@ end
 # the package's output contract meets it, and the only place the convention is undone.
 # A `missing` coordinate (AprilTag tracking, where a frame's target couldn't be localized) keeps its
 # `time` with empty `x`/`y`, so the time axis stays intact and the gaps are explicit.
-function save2csv(run_id, (ts, coords))
-    return open(joinpath(RESULTS_DIR, string(run_id, ".csv")), "w") do io
+function save2csv(results_dir, run_id, (ts, coords))
+    return open(joinpath(results_dir, string(run_id, ".csv")), "w") do io
         println(io, "time,x,y")
         for (t, c) in zip(ts, coords)
             if ismissing(c)
@@ -90,11 +90,11 @@ end
 # rectification has no fixed image->real map to warp through and quietly produces no image (that
 # method is a no-op, in VerifyRectifications/types.jl); its top-down diagnostic is the per-run video
 # instead.
-function build_rectifications(cs, rectification_diagnostics::Bool)
+function build_rectifications(results_dir, cs, rectification_diagnostics::Bool)
     function build(c)
         rectification = build_rectification(c)
         rectification_diagnostics &&
-            save_diagnostic(rectification, c.source.file, c.source.extrinsic, c.rectification_id)
+            save_diagnostic(results_dir, rectification, c.source.file, c.source.extrinsic, c.rectification_id)
         return rectification
     end
     return @showprogress desc = "Building rectifications" tmap(build, cs)
@@ -181,7 +181,7 @@ track_runs(rs, cs) = @showprogress desc = "Building runs" tmap(track_run, rs, cs
 # The two loaders are driven a tier at a time rather than through `load_rectifications`/`load_runs`,
 # which validate one file end to end: the cross-file check has to happen between the tiers, and it
 # needs both files parsed to run at all.
-function _validate_dataset(data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults)
+function _validate_dataset(results_dir, data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults)
     rects, rects_ids_ok = VerifyRectifications.parse_rectifications(
         data_path, joinpath(data_path, rectifications_file); defaults = rectification_defaults
     )
@@ -203,7 +203,7 @@ function _validate_dataset(data_path, rectifications_file, runs_file, rectificat
         tier1_bad |= VerifyRuns.report_runs(runs, false)
     end
 
-    VerifyRectifications.verifications!(rects, data_path, DEFAULT_ISSUES_DIR)
+    VerifyRectifications.verifications!(rects, data_path, results_dir)
     VerifyRuns.verifications!(runs, data_path)
 
     bad = VerifyRectifications.report_rectifications(rects, false)
@@ -212,9 +212,9 @@ function _validate_dataset(data_path, rectifications_file, runs_file, rectificat
 end
 
 # Build both, or throw. Always returns the two vectors.
-function load_dataset(data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults)
+function load_dataset(results_dir, data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults)
     rects, runs, bad = _validate_dataset(
-        data_path, rectifications_file, runs_file,
+        results_dir, data_path, rectifications_file, runs_file,
         rectification_defaults, tracking_defaults
     )
     bad && error("there were issues with the data (see above)")
@@ -224,9 +224,9 @@ end
 # Validate and report, never throw. Always returns both annotated DataFrames — both, not just the
 # offending one: a dataset is accepted or rejected as a whole, and runs whose rectification was
 # rejected are not buildable anyway.
-function check_dataset(data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults)
+function check_dataset(results_dir, data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults)
     rects, runs, _ = _validate_dataset(
-        data_path, rectifications_file, runs_file,
+        results_dir, data_path, rectifications_file, runs_file,
         rectification_defaults, tracking_defaults
     )
     return rects, runs
@@ -235,16 +235,17 @@ end
 """
     main(data_path; rectifications_file = "rectifications.csv", runs_file = "runs.csv",
          rectification_defaults = (;), tracking_defaults = (;), run_ids = nothing,
-         rectification_diagnostics = false)
+         rectification_diagnostics = false, results_dir = "results_dir")
 
 Run the whole pipeline over the data folder `data_path`: validate `rectifications.csv` and `runs.csv` as one
 dataset, build the map each rectification row describes, track every run through the one it names, and
 write the results. Returns `nothing`.
 
-Everything produced lands under `results_dir/`, created in the folder Julia was started in: one
-`<run_id>.csv` per run (a row per coordinate, with `time` in seconds on the run's clock — starting
-at its first segment's `start` — and `x`/`y` in the rectification's real-world unit, origin at its
-`center`), and `diagnostic.mp4`.
+Everything produced lands in the output folder `results_dir` (see below), created if it does not
+exist: one `<run_id>.csv` per run (a row per coordinate, with `time` in seconds on the run's clock —
+starting at its first segment's `start` — and `x`/`y` in the rectification's real-world unit, origin
+at its `center`), `diagnostic.mp4`, and the `rectifications/` and `issues/` subfolders when there is
+anything to put in them. A file of the same name already there is overwritten.
 
 # Keyword arguments
 
@@ -261,13 +262,21 @@ at its first segment's `start` — and `x`/`y` in the rectification's real-world
   are built. An id matching no row is an error, not a request for less (#21).
 
 - `rectification_diagnostics`: also save each rectification's extrinsic frame, warped through the
-  rectification fitted to it, to `results_dir/rectifications/<rectification_id>.jpg`. The same "are
+  rectification fitted to it, to `<results_dir>/rectifications/<rectification_id>.jpg`. The same "are
   the straight edges straight" check the diagnostic video offers, but available as soon as the
   rectifications are built rather than after every run has been tracked: every rectification is built,
   and its image saved, before the first run is tracked, so a wrong one can be spotted and `main`
   interrupted without waiting for the tracking. An `apriltag` rectification
   has no fixed image→real map to warp through and quietly produces no image; its top-down
   diagnostic is the per-run video instead.
+
+- `results_dir`: the output folder itself, not a parent to create one in — so
+  `results_dir = "/scratch/exp3"` writes `/scratch/exp3/diagnostic.mp4`, and naming a different folder
+  is how two analyses of one dataset are kept side by side. The default, `"results_dir"`, is a folder
+  of that name in the working directory. A relative path is resolved once, against the working
+  directory at the call, so a `cd` while `main` runs does not move its output. The frames of a
+  rectification that failed detection are saved under `<results_dir>/issues/`, in a time-stamped
+  folder per invocation.
 
 Issues in either csv abort the run. To inspect a dataset instead of processing it, call [`verify`](@ref),
 which reports everything wrong with both files and returns them for inspection without building
@@ -276,10 +285,10 @@ anything.
 function main(
         data_path::String; rectifications_file = "rectifications.csv", runs_file = "runs.csv",
         rectification_defaults = (;), tracking_defaults = (;), run_ids = nothing,
-        rectification_diagnostics::Bool = false
+        rectification_diagnostics::Bool = false, results_dir::String = RESULTS_DIR
     )
-    mkpath(RESULTS_DIR)
-    cs, rs = load_dataset(data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults)
+    results_dir = mkpath(abspath(results_dir))   # resolved once, so every artefact lands in one place
+    cs, rs = load_dataset(results_dir, data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults)
 
     # Coherence guarantees every rectification is used, so with no `run_ids` this keeps all of them;
     # with one, it drops the rectifications the surviving runs no longer reference.
@@ -293,7 +302,7 @@ function main(
     # `results_dir/rectifications/` fill and interrupt `main` if an image is wrong, which is only
     # cheap while nothing has been tracked yet (#256). What it returns is not kept: `track_run` takes
     # each back out of the build cache.
-    build_rectifications(cs, rectification_diagnostics)
+    build_rectifications(results_dir, cs, rectification_diagnostics)
 
     # Before anything is tracked: a clip path the concat list cannot hold would otherwise surface only
     # after every run had been tracked, which is the cost `concatenate` cannot undo. `run_id`, the
@@ -314,15 +323,15 @@ function main(
 
     # Every invocation writes everything, hit or miss: the csvs, and the diagnostic video stitched
     # from every run's clip in run order. Only the tracking was skipped.
-    mktempdir(path -> concatenate(path, [t.clip for t in runs]))
-    tforeach((r, t) -> save2csv(r.run_id, t.track), rs, runs)
+    mktempdir(path -> concatenate(results_dir, path, [t.clip for t in runs]))
+    tforeach((r, t) -> save2csv(results_dir, r.run_id, t.track), rs, runs)
 
     return nothing
 end
 
 """
     verify(data_path; rectifications_file = "rectifications.csv", runs_file = "runs.csv",
-           rectification_defaults = (;), tracking_defaults = (;))
+           rectification_defaults = (;), tracking_defaults = (;), results_dir = "results_dir")
 
 Validate `rectifications.csv` and `runs.csv` in `data_path` as one dataset and report everything wrong with
 them, **without building or tracking anything**. For looking at a dataset rather than processing it;
@@ -336,14 +345,20 @@ is the question to ask.
 
 Every row is validated, including rows `main`'s `run_ids` would have narrowed away: narrowing
 decides what gets built, never what gets checked. There is correspondingly no `run_ids` here.
+
+The only files `verify` writes are the frames of rectifications that failed detection, saved under
+`<results_dir>/issues/` in a time-stamped folder per invocation. `results_dir` is the output folder
+itself, as in [`main`](@ref), and a relative one is resolved against the working directory at the call.
+A dataset with nothing to report creates nothing, not even `results_dir`.
 """
 function verify(
         data_path::String; rectifications_file = "rectifications.csv", runs_file = "runs.csv",
-        rectification_defaults = (;), tracking_defaults = (;)
+        rectification_defaults = (;), tracking_defaults = (;), results_dir::String = RESULTS_DIR
     )
-    mkpath(RESULTS_DIR)
+    # Not created here: the issue frames are the only thing `verify` writes, and their folder is made
+    # when the first one is saved, so a clean dataset leaves no trace (#86).
     rects, runs = check_dataset(
-        data_path, rectifications_file, runs_file,
+        abspath(results_dir), data_path, rectifications_file, runs_file,
         rectification_defaults, tracking_defaults
     )
     return (; rectifications = rects, runs)

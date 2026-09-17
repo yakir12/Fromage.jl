@@ -2,6 +2,18 @@
 
 When `main` finishes, everything it produced is on disk, in a `results_dir` folder created in the folder Julia was started in: a track file per run, one diagnostic video, and — if you asked for them — an image per rectification.
 
+## Choosing the output folder
+
+To put the results somewhere else, name the folder with `results_dir`:
+
+```julia
+main("path/to/data"; results_dir = "/scratch/experiment3")
+```
+
+That folder *is* the output folder — the diagnostic video lands at `/scratch/experiment3/diagnostic.mp4`, not in a `results_dir` inside it — and it is created if it doesn't exist. Every path on this page that starts with `results_dir/` then starts with your folder instead. A relative name, like `results_dir = "second_try"`, is taken relative to the folder Julia is in when you call `main`.
+
+Running `main` again into the same folder overwrites the track files and the diagnostic video, so naming a different folder is how you keep two analyses of the same data side by side. `verify` takes the same keyword, for where it saves [the issues folder](#The-issues-folder).
+
 ## The track files
 
 Each run's track is written to `results_dir/<run_id>.csv` — a plain csv you can open in Excel, R, Python, MATLAB, or anything else. It has three columns:

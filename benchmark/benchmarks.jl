@@ -125,12 +125,10 @@ const MAIN_DIR = let dir = mktempdir()
     dir
 end
 
-# `main` writes results_dir relative to the working directory, so each run gets a fresh one.
-run_main() = cd(
-    () -> main(
-        MAIN_DIR; rectification_defaults = (n_corners = (5, 8),),
-        tracking_defaults = (target_width = 10,)
-    ), mktempdir()
+# Each run writes into a fresh output folder.
+run_main() = main(
+    MAIN_DIR; rectification_defaults = (n_corners = (5, 8),),
+    tracking_defaults = (target_width = 10,), results_dir = mktempdir()
 )
 
 # The gateways, without any video: every path points at a file that does not exist, so each row is

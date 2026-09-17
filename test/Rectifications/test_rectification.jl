@@ -124,11 +124,10 @@
         @testset "diagnostic frame written" begin
             # The builder writes nothing since #209: `save_diagnostic` renders from the rectification
             # it returned, which is what `build_rectifications` does when `rectification_diagnostics`
-            # is set. The image lands under results_dir, which is relative to the working directory,
-            # hence the `cd`.
+            # is set. The image lands in the rectifications subfolder of the output folder it is given.
             outdir = mktempdir()
-            cd(() -> R.save_diagnostic(rect, vid, extrinsic_t, "c1"), outdir)
-            jpg = joinpath(outdir, "results_dir", "rectifications", "c1.jpg")   # named by rectification_id
+            R.save_diagnostic(outdir, rect, vid, extrinsic_t, "c1")
+            jpg = joinpath(outdir, "rectifications", "c1.jpg")   # named by rectification_id
             @test isfile(jpg)
             @test filesize(jpg) > 0
         end

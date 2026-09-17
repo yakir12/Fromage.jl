@@ -22,7 +22,7 @@ include("gateway.jl")
 include("VerifyRectifications/VerifyRectifications.jl")
 include("VerifyRuns/VerifyRuns.jl")
 
-using .Paths: RESULTS_DIR, DEFAULT_ISSUES_DIR
+using .Paths: RESULTS_DIR
 using .Gateway: verify_cross_references!
 using .Memo: BUILT_RECTIFICATIONS, CLIP_FOLDER, TRACKED_RUNS, make_room!
 using .Rectifications: Rectification, save_diagnostic

@@ -2,7 +2,7 @@ module Rectifications
 
 using ColorTypes: Gray
 using CoordinateTransformations: AffineMap, IdentityTransformation, LinearMap, PerspectiveMap, Translation
-using ..Paths: RECTIFICATIONS_DIR
+using ..Paths: rectifications_folder
 using ..ShareIO: ShareIO
 using ..Spaces: RowCol, display_center_x, to_stored
 using FFMPEG: FFMPEG

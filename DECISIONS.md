@@ -1471,6 +1471,29 @@ Windows.
 Fromage removes nothing from the issues folder, including anything of the user's that happens to
 live there. Cleaning it out is their call.
 
+### The output folder is passed down, not overridden for a call (#229)
+
+Every output location used to be a relative constant in `Paths`, so where `main` wrote depended on
+the process's working directory, and redirecting it meant `cd` — which a whole test suite did for no
+other reason. `main` and `verify` now take `results_dir`, the output folder itself (not a parent to
+create one in: `main` overwrites `<run_id>.csv` and `diagnostic.mp4`, so naming the folder is how two
+analyses of one dataset stay side by side). The default reproduces the old layout exactly.
+
+- **Passed explicitly, down to every function that writes.** A `ScopedValue` holding the root for the
+  length of a call was considered and rejected: it is a hidden route for a value to reach deep code,
+  the same kind of hole as #140/#141's kwargs channel, and the call graph below `main` is shallow
+  enough that threading one argument costs little. `Paths` keeps the default and spells the two
+  fixed subfolder names (`issues`, `rectifications`); everything else joins them onto the root it was
+  handed.
+- **Resolved once, at entry.** A relative `results_dir` is made absolute at the start of `main` and
+  `verify`, so a `cd` during a long `main` cannot split one invocation's output across two folders.
+- **`issues_dir` was removed from the rectifications gateway**, not kept beside it. Nobody needed issue
+  frames anywhere but inside the output folder; the gateway takes `results_dir` like everything else
+  and adds the subfolder itself, and no entry point has a separate issues-folder setting.
+- **`verify` stopped creating the output folder up front.** The issue frames are the only thing it
+  writes and their folder is made on the first one, so a clean `verify` now leaves no trace, as #86
+  intended. `main` still creates it, because it always writes.
+
 ---
 
 ## Error handling

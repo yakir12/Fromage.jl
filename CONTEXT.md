@@ -84,14 +84,15 @@ is the row's position within that block.
 ### Track
 
 What a run yields: timestamps paired with the target's position, in real-world coordinates. Written
-to `results_dir/<run_id>.csv`; `main` returns nothing, so that file is the only place a track lives
-once `main` has finished.
+to `<run_id>.csv` in the output folder — the caller's `results_dir`, by default `results_dir/`;
+`main` returns nothing, so that file is the only place a track lives once `main` has finished.
 
 ### Diagnostic video and run diagnostic clip
 
-The **diagnostic video** is `results_dir/diagnostic.mp4`: every tracked run played back with the
-target marked, for checking by eye that the tracking held. It is stitched from one **run
-diagnostic clip** per run — one clip per run however many segments the run has. Every frame of a
+The **diagnostic video** is `diagnostic.mp4` in the output folder (the caller's `results_dir`, by
+default `results_dir/`): every tracked run played back with the target marked, for checking by eye
+that the tracking held. It is stitched from one **run diagnostic clip** per run — one clip per run
+however many segments the run has. Every frame of a
 clip is labelled with its `run_id`, and beneath that the segment number and file time of the frame
 shown, so any frame can be found again in the original footage.
 
@@ -102,7 +103,8 @@ yields one clip.
 
 **One execution of Fromage**: one call to `main` or to `verify`.
 Named because the issues folder is per execution: each invocation gets its own time-stamped folder
-(`Paths.invocation_issues_dir`), and nothing is ever deleted from it.
+(`Paths.invocation_issues_dir`) under `issues/` in the output folder it was given — its
+`results_dir`, by default `results_dir/` — and nothing is ever deleted from it.
 
 ### Session
 
