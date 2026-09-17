@@ -109,6 +109,49 @@ The old `.ts` segments defaulted to MPEG-2 at libavcodec's default *average* bit
 bits per second, which turned to mush as the tracking fps rose. `.mp4` selects H.264, whose `crf`
 option gives constant quality instead.
 
+### Only the public functions take default argument values (#273)
+
+**Public** means `main` and `verify` (exported) and `Fromage.empty_caches!` (documented in
+`docs/src/help.md`). They keep their defaults, because a default exists to make a call easier for
+a human to write. **Every other function in `src/` takes none**, positional or keyword. That
+includes the gateway loaders `load_rectifications`/`check_rectifications` and
+`load_runs`/`check_runs`: their submodules export them, but `Fromage` does not re-export them and
+the docs never mention them. A method extending a function Fromage does not own is exempt, since
+its signature is not ours to choose.
+
+An internal function is called only by this package's own code and tests, so a default there helps
+no one and does two kinds of harm. It turns a forgotten argument into a silent fallback instead of
+a `MethodError`. #229 was the prompt: `verifications!` kept `results_dir = RESULTS_DIR` although
+every caller passed the folder, so a future caller that forgot it would have dumped issue frames
+into the working directory rather than the folder the user named. A default is also a second
+definition site for a value. `progress = true` was spelled on 14 internal functions, which is the
+same shape of hole #140/#141 closed for tracking parameters.
+
+Three points were settled with the maintainer, and they are what to check before "simplifying" a
+call site back:
+
+1. **Ban defaults, not keywords.** A required keyword (`f(x; progress)`) is already explicit at the
+   call site, and it is how the rectification builders keep their many mostly-numeric arguments from
+   being silently swapped (Rectifications, "Rectification builders take keywords, and are chosen by
+   type"). No keyword became positional, and `progress` stays a
+   keyword.
+2. **A value no caller varies is deleted, not made required.** A test counts as a caller. So
+   `fit_metric`'s `maxiter`/`tol` and `set_detector!`'s `nthreads` went, and the one-argument
+   loader methods (`load_runs(file)` → `dirname(file)`) went too, because they existed only for
+   human callers. `fit_metric`'s `canon` stayed, as a required keyword, because `reference_space`
+   passes a per-family square. So `place_square` still takes `canon`, and `_worst_side` still
+   takes `side`, which `fit_metric` derives from that square. `ShareIO.capture`'s `tries` also stayed, because
+   `test/shareio.jl` passes `tries = 1`. `ReferenceSpace(ids, corners)` no longer splats `kw...`
+   into `fit_metric`, and fits in `CANON`.
+3. **No enforcement test.** This was a one-off cleanup, and review keeps it that way.
+
+`parseto!`'s `default = nothing` meant "this cell is required". A bare `nothing` at twenty call
+sites does not say that, so a required cell now passes `Parsing.REQUIRED` (which is `nothing`,
+still dispatched on by `set!`). The maintainer chose that over splitting the function in two.
+
+Helpers in `test/` and `benchmark/` (`make_video`, the harness `check`, and so on) are out of scope.
+They are an API for humans writing tests, which is what defaults are for.
+
 ---
 
 ## Concurrency

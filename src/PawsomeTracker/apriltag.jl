@@ -75,7 +75,7 @@ end
 
 # worst deviation (real units) of any tag edge from the true side length `side`, under an
 # image→ground homography `M`
-_worst_side(M, tag_corners, side = TAG_SIZE_CM) = maximum(
+_worst_side(M, tag_corners, side) = maximum(
     abs(norm(apply_h(M, tc[i]) - apply_h(M, tc[mod1(i + 1, 4)])) - side)
         for tc in tag_corners for i in 1:4
 )
@@ -99,7 +99,7 @@ end
 # Place the canonical square `canon` (no scaling — its size is known exactly) onto four measured ground
 # points, giving the best-fit true square at that pose. This is how each tag's known metric geometry
 # is imposed during the consensus fit: the same Kabsch solve as above, evaluated at `canon` itself.
-place_square(D, canon = CANON) = map(rigid_align(canon, D), canon)
+place_square(D, canon) = map(rigid_align(canon, D), canon)
 
 # Fit the metric map `M : image → ground units` from all tags jointly. Bootstrap from one tag's
 # corners, then alternate: place a true square on each tag's current ground estimate (Procrustes), pin
@@ -112,7 +112,13 @@ place_square(D, canon = CANON) = map(rigid_align(canon, D), canon)
 # Returns `(M, worst_error)`: it computes, it does not decide. Whether that error is acceptable is
 # the caller's policy (see METRIC_FIT_TOLERANCE), which lets `reference_space` report a
 # non-converged fit as an issue string rather than catch a throw from in here.
-function fit_metric(tag_corners; canon = CANON, maxiter = 1000, tol = 1.0e-9)
+#
+# `canon` is the tag's true square in ground units (`canon_square`). Each bootstrap refines for at
+# most METRIC_FIT_MAXITER iterations, stopping once one moves the worst error by less than
+# METRIC_FIT_STEP.
+const METRIC_FIT_MAXITER = 1000
+const METRIC_FIT_STEP = 1.0e-9
+function fit_metric(tag_corners; canon)
     side = norm(canon[1] - canon[2])
     flat = reduce(vcat, tag_corners)
     # The first bootstrap doubles as the fallback result: `beste` starts at its UNREFINED error, so
@@ -126,7 +132,7 @@ function fit_metric(tag_corners; canon = CANON, maxiter = 1000, tol = 1.0e-9)
     bestM, beste = fit(first(boots))
     for boot in boots
         M, e = boot == first(boots) ? (bestM, beste) : fit(boot)
-        for _ in 1:maxiter
+        for _ in 1:METRIC_FIT_MAXITER
             sq = [place_square(SVector{2, Float64}[apply_h(M, p) for p in tc], canon) for tc in tag_corners]
             T = rigid_align(sq[1], canon)                     # pin gauge: tag 1 → canonical square
             G = reduce(vcat, [[T(g) for g in s] for s in sq])
@@ -136,7 +142,7 @@ function fit_metric(tag_corners; canon = CANON, maxiter = 1000, tol = 1.0e-9)
                 bestM = Mn
                 beste = en
             end
-            if abs(e - en) < tol
+            if abs(e - en) < METRIC_FIT_STEP
                 break
             end
             M = Mn
@@ -164,9 +170,10 @@ end
 
 # Direct construction from detected corners: this one throws on a non-converged fit, since a caller
 # building a reference space by hand has nowhere to put an issue string. The pipeline entry point
-# (`reference_space`) does the same check itself and returns the message instead.
-function ReferenceSpace(ids::AbstractVector{<:Integer}, tag_corners; kw...)
-    M, err = fit_metric(tag_corners; kw...)
+# (`reference_space`) does the same check itself and returns the message instead. It fits in the
+# default `CANON` gauge; the pipeline, which knows the family and cell size, builds its own.
+function ReferenceSpace(ids::AbstractVector{<:Integer}, tag_corners)
+    M, err = fit_metric(tag_corners; canon = CANON)
     err > METRIC_FIT_TOLERANCE && error(metric_fit_issue(err))
     return ReferenceSpace(collect(Int, ids), reduce(vcat, tag_corners), M)
 end
@@ -409,8 +416,8 @@ const PROTECT_PAD = 5
 # stack), so detection always runs on the raw frame. Whole-frame detection is used only to establish
 # the reference and to relocate the (stationary) tags in a run's first frame; every frame after that
 # goes through the per-tag local search below.
-function set_detector!(det; nthreads = 1)
-    det.nThreads = nthreads
+function set_detector!(det)
+    det.nThreads = 1              # the parallelism is the callers' `tmap`; the detector runs under APRILTAG_LOCK
     det.quad_decimate = 1.0
     det.quad_sigma = 0.0
     det.refine_edges = 1

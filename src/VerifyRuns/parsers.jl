@@ -54,8 +54,8 @@ resolve_defaults(overrides) = Parsing.resolve_defaults(overrides, DEFAULTS, DEFA
 # resolves to; `window_size`/`start_location` stay missing and are imputed later.
 function parse_run!(dict, row, defaults)
     parseto!(dict, row, :run_id, String, missing)               # all-or-nothing: blank only allowed when every row is blank (then imputed from the row number); see resolve_run_ids!
-    parseto!(dict, row, :rectification_id, String)                # required: Fromage joins runs to rectifications on it
-    parseto!(dict, row, :file, String)
+    parseto!(dict, row, :rectification_id, String, REQUIRED)      # Fromage joins runs to rectifications on it
+    parseto!(dict, row, :file, String, REQUIRED)
     parseto!(dict, row, :path, String, ".")
     parseto!(dict, row, :start, MyTemporal, 0.0)
     parseto!(dict, row, :stop, MyTemporal, missing)              # imputed from video duration
@@ -70,7 +70,7 @@ function parse_run!(dict, row, defaults)
     return parseto!(dict, row, :background_length, Int, defaults.background_length)
 end
 
-function parse_row(row, defaults = DEFAULTS)
+function parse_row(row, defaults)
     dict = Dict{Symbol, Any}(:issues => String[])
     parse_run!(dict, row, defaults)
     return backfill!(dict, COLUMNS)

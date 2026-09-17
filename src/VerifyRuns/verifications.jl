@@ -23,7 +23,7 @@ end
 # One ffprobe per physical video file fills the intermediate :dimension/:duration/:sar columns and
 # imputes the three blank-able run parameters: :stop (← duration), :native_fps (← the video's own
 # frame rate) and :sample_fps (← :native_fps).
-function read_video_metadata!(df::AbstractDataFrame; progress = true)
+function read_video_metadata!(df::AbstractDataFrame; progress)
     blank!(df, :dimension, :duration, :sar, :probed_fps)
     return read_per_file!(df, :file, [:file], "Reading runs videos...", probe_video, apply_video_metadata!; progress)
 end
@@ -221,7 +221,7 @@ end
 # The second tier: everything that has to open a file, plus the value checks that depend on what
 # those files report. `verify_ids!` has already run and passed (or, on the `check_*` path, flagged
 # the rows it rejected — which every stage below skips, since they all subset to unflagged rows).
-function verifications!(df::AbstractDataFrame, data_path; progress = true)
+function verifications!(df::AbstractDataFrame, data_path; progress)
     # :file becomes the canonical absolute path — the identity used for per-file reads and segment
     # grouping.
     resolve_paths!(df, data_path, :file)

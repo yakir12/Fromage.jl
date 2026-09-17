@@ -63,7 +63,7 @@ const OPENVIDEO_LOCK = ReentrantLock()
 #
 # The lock is taken INSIDE the retried closure, so the backoff sleeps without holding it — retrying
 # under the lock would stall every other open in the process for the duration.
-open_gray_video(file) = ShareIO.withretry(; transient = ShareIO.videoio_transient) do
+open_gray_video(file) = ShareIO.withretry(; tries = ShareIO.TRIES, transient = ShareIO.videoio_transient) do
     lock(() -> openvideo(file; target_format = AV_PIX_FMT_GRAY8), OPENVIDEO_LOCK)
 end
 
@@ -196,7 +196,7 @@ function get_guess(::Missing, stack, vid, darker_target, target_width, initial_s
     guess = sz .÷ 2
     window_size = fix_window_size(floor(Int, min(sz...) / initial_search_factor))
     tr = Tracker(vid, darker_target, target_width, window_size, sz, subtract)
-    _, guess = detect(guess, stack, 1, tr, vid.downscale)
+    _, guess = detect(guess, stack, 1, tr, vid.downscale, Ref(0.0))   # a one-off search: no gate history
     return guess
 end
 
@@ -298,10 +298,9 @@ struct Tracker
     # its own trajectory), so there the background is the per-pixel `minimum`. `nothing` means
     # background subtraction is off (background_length = 0): detect runs on the raw slice.
     bkgd_reduce::Union{Nothing, typeof(maximum), typeof(minimum)}
-    # `sz` is the working-canvas size the tracker's buffers cover: the scaled frame by default, or
-    # the scaled REFERENCE viewport in AprilTag mode (where the stack is registered — see
-    # track_apriltag).
-    function Tracker(vid, darker_target, target_width, window_size, sz = (vid.height, vid.width), subtract::Bool = true)
+    # `sz` is the working-canvas size the tracker's buffers cover: the scaled frame, or the scaled
+    # REFERENCE viewport in AprilTag mode (where the stack is registered — see track_apriltag).
+    function Tracker(vid, darker_target, target_width, window_size, sz, subtract::Bool)
         # window_size arrives as (rows, cols) in display pixels; the stored frame is squeezed
         # horizontally, so the COLUMN extent — and only it — is converted to stored pixels by
         # `stored_x`, otherwise an anamorphic (sar < 1) target fills its own search window.
@@ -435,7 +434,7 @@ end / sum(v)
 # out `tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, tr.bkgd_reduce` at each of them is five
 # copies of one list to keep in step. `Tuning` and `Segment` exist so run-level values travel as one
 # typed object; this is the one hot path that undid that.
-function detect(guess, stack, j, tr::Tracker, downscale, level = Ref(0.0))
+function detect(guess, stack, j, tr::Tracker, downscale, level)
     h, img, radii, buff, kernel, sz, bkgd_reduce = tr.h, tr.img, tr.radii, tr.buff, tr.kernel, tr.sz, tr.bkgd_reduce
     slice = selectdim(stack, 3, j)
     bkgd_indices = CartesianIndices(UnitRange.(guess .- h, guess .+ h)) ∩ CartesianIndices(Base.OneTo.(sz))

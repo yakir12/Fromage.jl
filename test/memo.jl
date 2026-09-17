@@ -146,7 +146,9 @@ end
 function rectifier(csv; rectification_diagnostics = false)
     outdir = mktempdir()
     rectify() = Fromage.build_rectifications(
-        outdir, VRect.load_rectifications(csv; results_dir = outdir), rectification_diagnostics
+        outdir,
+        VRect.load_rectifications(dirname(csv), csv; defaults = (;), results_dir = outdir, progress = true),
+        rectification_diagnostics
     )
     return outdir, rectify
 end
@@ -243,8 +245,8 @@ const MEMOIZED = (
         # One output folder for both passes, so the per-invocation folders land side by side and can
         # be told apart.
         idir = mktempdir()
-        check_rects() = VRect.check_rectifications(DIR, csv; results_dir = idir)
-        check_runs() = VRuns.check_runs(DIR, runs_csv)
+        check_rects() = VRect.check_rectifications(DIR, csv; defaults = (;), results_dir = idir, progress = true)
+        check_runs() = VRuns.check_runs(DIR, runs_csv; defaults = (;), progress = true)
 
         # First pass: everything is read and detected for the first time, so every cache misses.
         before = snapshot()

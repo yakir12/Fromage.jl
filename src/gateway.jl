@@ -39,8 +39,8 @@ using Tables: Tables
 # `renamed` maps a retired column name to a description of where its value went. A rename is the
 # one unrecognized column a user cannot debug from the message alone: their file was correct when
 # they wrote it, and "unrecognized column/s: [:checker_size]" tells them it is gone without telling
-# them what replaced it. Nothing else needs the map, so gateways that have retired no column pass none.
-function read_rows(file, columns, what; renamed = Dict{Symbol, String}())
+# them what replaced it. A gateway that has retired no column passes an empty map.
+function read_rows(file, columns, what; renamed)
     isfile(file) || error("$what `.csv` file missing")
     rows = CSV.Rows(read(file); stripwhitespace = true)
     isempty(Tables.rows(rows)) && error("csv file is empty")
@@ -112,7 +112,7 @@ end
 # Flagged rows are skipped, as in every other second-tier stage: a row that is already rejected —
 # for a quarantined identity (#122), or anything else — has nothing to gain from the read, and on a
 # share a read is the expensive part.
-function read_per_file!(df::AbstractDataFrame, filecol, groupcols, desc, read, apply!; progress = true)
+function read_per_file!(df::AbstractDataFrame, filecol, groupcols, desc, read, apply!; progress)
     usable = subset(dropmissing(df, groupcols; view = true), :issues => ByRow(isempty); view = true)
     groups = collect(groupby(usable, groupcols))
     metas = @showprogress desc = desc enabled = progress tmap(g -> read(g[1, filecol]), groups)
@@ -148,8 +148,7 @@ end
 # it can fail in ways it has no vocabulary for — see the note over `verify_extrinsics!`, which is
 # the pass that learned it.
 function detect_per_group!(
-        df::AbstractDataFrame, requiredcols, groupcols, desc, detect, flag!;
-        progress = true
+        df::AbstractDataFrame, requiredcols, groupcols, desc, detect, flag!; progress
     )
     requiredcols ⊆ groupcols ||
         throw(ArgumentError("every required column must also be grouped on, or `detect` cannot read it; missing from groupcols: $(setdiff(requiredcols, groupcols))"))

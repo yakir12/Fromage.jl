@@ -36,7 +36,9 @@ end
 # goes through the same memoized builder, so within one session this is the very object `main`
 # tracked through — which the callers assert on the memo's hit counter rather than take on trust.
 function rebuilt_rectification(csv, rectification_id; defaults = (;))
-    cs = Fromage.VerifyRectifications.load_rectifications(csv; defaults)
+    cs = Fromage.VerifyRectifications.load_rectifications(
+        dirname(csv), csv; defaults, results_dir = mktempdir(), progress = true
+    )
     return Fromage.build_rectification(only(filter(c -> c.rectification_id == rectification_id, cs)))
 end
 
@@ -372,7 +374,9 @@ end
         println(io, "drone,apriltag,$vid,0,6,tag36h11,12")
     end
     # named for what it does here; `verify` is now an exported entry point of its own
-    check_calibs() = Fromage.VerifyRectifications.check_rectifications(dir, joinpath(dir, "rectifications.csv"); results_dir = idir)
+    check_calibs() = Fromage.VerifyRectifications.check_rectifications(
+        dir, joinpath(dir, "rectifications.csv"); defaults = (;), results_dir = idir, progress = true
+    )
     invocation_dirs() = filter(isdir, readdir(joinpath(idir, "issues"); join = true))
     frames(d) = filter(endswith(".png"), readdir(d; join = true))
 

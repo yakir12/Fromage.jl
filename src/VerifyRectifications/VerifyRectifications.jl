@@ -12,8 +12,8 @@ using DataFrames: AbstractDataFrame, ByRow, DataFrame, Not, allowmissing!, compl
 using ..Gateway: backfill!, blank!, detect_per_group!, issue_report, read_per_file!, read_rows,
     report_issues, resolve_paths!, verify!, verify_id_filename!
 using ..Memo: EXTRINSIC_DETECTIONS, INTRINSIC_DETECTIONS, MATLAB_METADATA, remember
-using ..Parsing: Parsing, MyTemporal, filled, parseto!
-using ..Paths: RESULTS_DIR, invocation_issues_dir, issues_folder
+using ..Parsing: Parsing, MyTemporal, REQUIRED, filled, parseto!
+using ..Paths: invocation_issues_dir, issues_folder
 using ..Probing: frame_geometry, is_interlaced, no_video_stream, parse_sample_aspect, probe_fields
 using MAT: MAT, matread
 using OhMyThreads: OhMyThreads, tmap
@@ -52,19 +52,6 @@ include("types.jl")
 include("parsers.jl")
 include("verifications.jl")
 
-# `results_dir` is the output folder: the extrinsic frame of a rectification that fails
-# checkerboard/AprilTag detection is dumped for inspection into its issues subfolder (see
-# `verifications!`). Every invocation writes into a new time-stamped folder of its own inside that, so
-# what it dumped is exactly what its folder holds; nothing there is ever deleted, including anything
-# the user keeps beside it.
-function load_rectifications(file; defaults = (;), results_dir = RESULTS_DIR, progress = true)
-    return load_rectifications(dirname(file), file; defaults, results_dir, progress)
-end
-
-function check_rectifications(file; defaults = (;), results_dir = RESULTS_DIR, progress = true)
-    return check_rectifications(dirname(file), file; defaults, results_dir, progress)
-end
-
 # `defaults` globally replaces the hardcoded fallbacks of the whitelisted rectification parameters
 # (see DEFAULTS in parsers.jl); the hierarchy is csv cell → `defaults` → hardcoded/probed value.
 # Read the csv and settle its identities: parse every cell, then the first tier of verification
@@ -72,7 +59,7 @@ end
 # `:issues` carrying whatever the parse and that tier found — and whether every identity came
 # through usable. Split out of `load_rectifications` so `main` can settle BOTH files' identities
 # before either one opens a video (#121).
-function parse_rectifications(data_path, file; defaults = (;), progress = true)
+function parse_rectifications(data_path, file; defaults, progress)
     defaults = resolve_defaults(defaults)   # fail fast on unknown keys / unconvertible values
     csvrows = read_rows(file, COLUMNS, "rectification"; renamed = RENAMED_COLUMNS)
 
@@ -105,10 +92,13 @@ build_methods(df) = RectificationMethod[RectificationMethod(r) for r in eachrow(
 # Build the rectification methods, or throw. Always returns `Vector{RectificationMethod}`.
 # The first-tier gate; see the matching comment in `load_runs`. This aborts before a single video is
 # probed or corner-detected.
-function load_rectifications(
-        data_path, file; defaults = (;), results_dir = RESULTS_DIR,
-        progress = true
-    )
+#
+# `results_dir` is the output folder: the extrinsic frame of a rectification that fails
+# checkerboard/AprilTag detection is dumped for inspection into its issues subfolder (see
+# `verifications!`). Every invocation writes into a new time-stamped folder of its own inside that, so
+# what it dumped is exactly what its folder holds; nothing there is ever deleted, including anything
+# the user keeps beside it.
+function load_rectifications(data_path, file; defaults, results_dir, progress)
     df, identities_ok = parse_rectifications(data_path, file; defaults, progress)
     identities_ok || report_rectifications(df, true)
     verifications!(df, data_path, results_dir; progress)
@@ -118,10 +108,7 @@ end
 
 # Validate and report, never throw. Always returns the annotated DataFrame — see `check_runs` for
 # why that unconditional return is the point.
-function check_rectifications(
-        data_path, file; defaults = (;), results_dir = RESULTS_DIR,
-        progress = true
-    )
+function check_rectifications(data_path, file; defaults, results_dir, progress)
     df, identities_ok = parse_rectifications(data_path, file; defaults, progress)
     identities_ok || report_rectifications(df, false)
     verifications!(df, data_path, results_dir; progress)

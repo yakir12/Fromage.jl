@@ -183,10 +183,10 @@ track_runs(rs, cs) = @showprogress desc = "Building runs" tmap(track_run, rs, cs
 # needs both files parsed to run at all.
 function _validate_dataset(results_dir, data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults)
     rects, rects_ids_ok = VerifyRectifications.parse_rectifications(
-        data_path, joinpath(data_path, rectifications_file); defaults = rectification_defaults
+        data_path, joinpath(data_path, rectifications_file); defaults = rectification_defaults, progress = true
     )
     runs, runs_ids_ok = VerifyRuns.parse_runs(
-        data_path, joinpath(data_path, runs_file); defaults = tracking_defaults
+        data_path, joinpath(data_path, runs_file); defaults = tracking_defaults, progress = true
     )
 
     # Coherence is a property of the two files AS WRITTEN, so it is checked on all of their rows —
@@ -203,8 +203,8 @@ function _validate_dataset(results_dir, data_path, rectifications_file, runs_fil
         tier1_bad |= VerifyRuns.report_runs(runs, false)
     end
 
-    VerifyRectifications.verifications!(rects, data_path, results_dir)
-    VerifyRuns.verifications!(runs, data_path)
+    VerifyRectifications.verifications!(rects, data_path, results_dir; progress = true)
+    VerifyRuns.verifications!(runs, data_path; progress = true)
 
     bad = VerifyRectifications.report_rectifications(rects, false)
     bad |= VerifyRuns.report_runs(runs, false)

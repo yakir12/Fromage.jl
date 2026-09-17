@@ -85,10 +85,10 @@
 
     @testset "non-finite numbers: check_rectifications reports, load_rectifications throws" begin
         csv = write_rows(joinpath(DATADIR, "nonfinite.csv"), [uniformrow(pixel_width = "NaN")])
-        df = VRect.check_rectifications(DATADIR, csv; results_dir = mktempdir())
+        df = check_csv(csv)
         @test flagged(df, 1, "pixel_width must be finite, got NaN")
         _, out = capturing() do
-            @test_throws "there were issues" VRect.load_rectifications(DATADIR, csv; results_dir = mktempdir())
+            @test_throws "there were issues" load_csv(csv)
         end
         @test occursin("row 1 (rectification_id: s): pixel_width must be finite, got NaN", out)
     end
@@ -179,7 +179,7 @@
     end
 
     @testset "type defaults to video when column absent or empty" begin
-        @test VRect.parse_row((file = "x.mp4", extrinsic = "00:00:01"))[:type] == "checkerboard"
-        @test VRect.parse_row((type = missing, file = "x.mp4"))[:type] == "checkerboard"
+        @test VRect.parse_row((file = "x.mp4", extrinsic = "00:00:01"), VRect.DEFAULTS)[:type] == "checkerboard"
+        @test VRect.parse_row((type = missing, file = "x.mp4"), VRect.DEFAULTS)[:type] == "checkerboard"
     end
 end

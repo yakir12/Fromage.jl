@@ -3,7 +3,7 @@ module VerifyRuns
 using DataFrames: AbstractDataFrame, DataFrame, allowmissing!, groupby, nrow
 using ..Gateway: backfill!, blank!, issue_report, read_per_file!, read_rows, report_issues, resolve_paths!,
     verify!, verify_id_filename!
-using ..Parsing: Parsing, MyTemporal, parseto!
+using ..Parsing: Parsing, MyTemporal, REQUIRED, parseto!
 import ..Parsing: mytryparse                # extended on MyWindow (a type this module owns)
 using ..Probing: frame_geometry, native_framerate, no_video_stream, parse_sar, probe_fields
 using ..Spaces: display_center_x
@@ -43,20 +43,12 @@ include("types.jl")
 include("parsers.jl")
 include("verifications.jl")
 
-function load_runs(file; defaults = (;), progress = true)
-    return load_runs(dirname(file), file; defaults, progress)
-end
-
-function check_runs(file; defaults = (;), progress = true)
-    return check_runs(dirname(file), file; defaults, progress)
-end
-
 # Read the csv and settle its identities: parse every cell, then the first tier of verification
 # (`verify_ids!`), which touches nothing but `run_id` and `rectification_id`. Returns the annotated
 # DataFrame — `:issues` carrying whatever the parse and that tier found — and whether every identity
 # came through usable. Split out of `load_runs` so `main` can settle BOTH files' identities before
 # either one opens a video (#121).
-function parse_runs(data_path, file; defaults = (;), progress = true)
+function parse_runs(data_path, file; defaults, progress)
     defaults = resolve_defaults(defaults)   # fail fast on unknown keys / unconvertible values
     csvrows = read_rows(file, COLUMNS, "runs"; renamed = RENAMED_COLUMNS)
 
@@ -97,7 +89,7 @@ build_runs(df) = Run[Run(g) for g in groupby(df, :run_id)]
 #
 # Only identity issues open this gate. A malformed `start` in one row does not make the other rows'
 # videos less worth checking, so it rides along to the full report rather than cutting the run short.
-function load_runs(data_path, file; defaults = (;), progress = true)
+function load_runs(data_path, file; defaults, progress)
     df, identities_ok = parse_runs(data_path, file; defaults, progress)
     identities_ok || report_runs(df, true)
     verifications!(df, data_path; progress)
@@ -113,7 +105,7 @@ end
 # No first-tier abort here: nothing is going to be built, so the rows stay and are quarantined
 # instead. Every second-tier stage skips flagged rows, so the rest of the file is still validated
 # and the caller gets one combined report at the end.
-function check_runs(data_path, file; defaults = (;), progress = true)
+function check_runs(data_path, file; defaults, progress)
     df, identities_ok = parse_runs(data_path, file; defaults, progress)
     identities_ok || report_runs(df, false)
     verifications!(df, data_path; progress)

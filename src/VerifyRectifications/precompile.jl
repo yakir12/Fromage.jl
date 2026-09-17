@@ -27,7 +27,7 @@
         # issues report, which is a genuine println to stdout. Neither belongs in precompile output.
         redirect_stdout(devnull) do
             try
-                check_rectifications(dir, csv; progress = false)
+                check_rectifications(dir, csv; defaults = (;), results_dir = dir, progress = false)
             catch e
                 # Deliberately broad: precompilation must not fail because the workload did. Ctrl-C
                 # during precompile should still stop it.
