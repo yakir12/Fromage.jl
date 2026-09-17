@@ -57,13 +57,14 @@
 
     @testset "a failing extrinsic frame is dumped to the issues folder" begin
         idir = mktempdir()
-        # a file of the caller's own proves the folder they named is only ever added to (#86)
-        touch(joinpath(idir, "stale.png"))
-        df = check([checkerboardrow(file = ART.video, n_corners = (5, 8))]; issues_dir = idir)
+        issues = mkpath(joinpath(idir, "issues"))
+        # a file of the caller's own proves the issues folder is only ever added to (#86)
+        touch(joinpath(issues, "stale.png"))
+        df = check([checkerboardrow(file = ART.video, n_corners = (5, 8))]; results_dir = idir)
         @test flagged(df, 1, "no corners detected")
         @test flagged(df, 1, "saved the extrinsic frame")          # the message points at the file
-        @test isfile(joinpath(idir, "stale.png"))                  # nothing of the caller's is removed
-        invocation_dir = only(filter(isdir, readdir(idir; join = true)))   # this invocation's own folder
+        @test isfile(joinpath(issues, "stale.png"))                # nothing of the caller's is removed
+        invocation_dir = only(filter(isdir, readdir(issues; join = true)))   # this invocation's own folder
         pngs = filter(endswith(".png"), readdir(invocation_dir; join = true))
         @test length(pngs) == 1                                    # exactly the one failing frame
         @test filesize(only(pngs)) > 0                             # a real, non-empty image
@@ -71,7 +72,7 @@
 
     # What a report's issues say about the frames they dumped: (message, saved path) per note.
     saved_notes(df) = [(m, String(only(match(r" s to (.+\.png) for inspection$", m).captures))) for msgs in df.issues for m in msgs if occursin("saved the extrinsic frame", m)]
-    invocation_pngs(idir) = sort(basename.(filter(endswith(".png"), readdir(only(readdir(idir; join = true)); join = true))))
+    invocation_pngs(idir) = sort(basename.(filter(endswith(".png"), readdir(only(readdir(joinpath(idir, "issues"); join = true)); join = true))))
 
     @testset "videos sharing a basename in different folders keep their own frames (#155)" begin
         # Two cameras, each writing `session.mp4` into a folder of its own, both failing at one
@@ -83,7 +84,7 @@
         end
         rows = [checkerboardrow(rectification_id = cam, path = cam, file = "session.mp4") for cam in ("camera_a", "camera_b")]
         idir = mktempdir()
-        df = check(rows; issues_dir = idir)
+        df = check(rows; results_dir = idir)
         notes = saved_notes(df)
         @test length(notes) == 2
         @test allunique(last.(notes))
@@ -99,7 +100,7 @@
         end
         # Re-verifying the same input names the same frames, into the new invocation's folder.
         idir2 = mktempdir()
-        check(rows; issues_dir = idir2)
+        check(rows; results_dir = idir2)
         @test invocation_pngs(idir2) == invocation_pngs(idir)
     end
 
@@ -112,7 +113,7 @@
             apriltagrow(rectification_id = "tags", file = ART.video, apriltags = 4, family = "tag36h11", tag_cell_width = 12),
         ]
         idir = mktempdir()
-        df = check(rows; issues_dir = idir)
+        df = check(rows; results_dir = idir)
         notes = saved_notes(df)
         @test length(notes) == 3
         @test allunique(last.(notes))

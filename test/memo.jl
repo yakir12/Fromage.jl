@@ -137,17 +137,16 @@ const BOARD_W, BOARD_H = let f = Fromage.Probing.probe_fields(BOARD, "stream=wid
 end
 
 # Both build testsets drive the real build: the rectifications gateway's loader, then
-# `build_rectifications`, the function `main` builds through — without a run to track. Both mkpath
-# under `results_dir` relative to `pwd` (a failing detection's frame, a diagnostic image), so each
-# runs in a scratch directory of its own rather than in whatever the suite was started from. Returns
+# `build_rectifications`, the function `main` builds through — without a run to track. Both write
+# under an output folder (a failing detection's frame, a diagnostic image), so each gets a scratch
+# directory of its own rather than whatever the suite was started from. Returns
 # that directory (the diagnostic testset needs it to find the image) and a closure performing one
 # invocation. The csv itself stays at the call sites: what the two write differs, and this is the
 # only part of the shape that was the same.
 function rectifier(csv; rectification_diagnostics = false)
     outdir = mktempdir()
-    rectify() = cd(
-        () -> Fromage.build_rectifications(VRect.load_rectifications(csv), rectification_diagnostics),
-        outdir
+    rectify() = Fromage.build_rectifications(
+        outdir, VRect.load_rectifications(csv; results_dir = outdir), rectification_diagnostics
     )
     return outdir, rectify
 end
@@ -241,10 +240,10 @@ const MEMOIZED = (
             println(io, "r1,board,.,memo_plain.mp4,00:00:00,00:00:01")
         end
 
-        # One issues root for both passes, so the per-invocation folders land side by side and can
+        # One output folder for both passes, so the per-invocation folders land side by side and can
         # be told apart.
         idir = mktempdir()
-        check_rects() = VRect.check_rectifications(DIR, csv; issues_dir = idir)
+        check_rects() = VRect.check_rectifications(DIR, csv; results_dir = idir)
         check_runs() = VRuns.check_runs(DIR, runs_csv)
 
         # First pass: everything is read and detected for the first time, so every cache misses.
@@ -271,7 +270,7 @@ const MEMOIZED = (
         @test saved_frames(first_rects) != saved_frames(second_rects)
         @test all(isfile, [saved_frames(first_rects); saved_frames(second_rects)])
         @test dirname(only(saved_frames(first_rects))) != dirname(only(saved_frames(second_rects)))
-        @test all(==(idir) ∘ dirname ∘ dirname, [saved_frames(first_rects); saved_frames(second_rects)])
+        @test all(==(joinpath(idir, "issues")) ∘ dirname ∘ dirname, [saved_frames(first_rects); saved_frames(second_rects)])
 
         # After `empty_caches!` the same dataset is read from scratch again, with the same verdict.
         Fromage.empty_caches!()
@@ -439,7 +438,7 @@ const MEMOIZED = (
             println(io, "d1,.,memo_plain.mp4,uniform,00:00:01,2")
         end
         outdir, rectify = rectifier(csv; rectification_diagnostics = true)
-        jpg = joinpath(outdir, Fromage.Paths.RECTIFICATIONS_DIR, "d1.jpg")
+        jpg = joinpath(Fromage.Paths.rectifications_folder(outdir), "d1.jpg")
 
         Fromage.empty_caches!()
         rectify()

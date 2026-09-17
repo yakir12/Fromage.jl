@@ -85,10 +85,10 @@
 
     @testset "non-finite numbers: check_rectifications reports, load_rectifications throws" begin
         csv = write_rows(joinpath(DATADIR, "nonfinite.csv"), [uniformrow(pixel_width = "NaN")])
-        df = VRect.check_rectifications(DATADIR, csv; issues_dir = mktempdir())
+        df = VRect.check_rectifications(DATADIR, csv; results_dir = mktempdir())
         @test flagged(df, 1, "pixel_width must be finite, got NaN")
         _, out = capturing() do
-            @test_throws "there were issues" VRect.load_rectifications(DATADIR, csv; issues_dir = mktempdir())
+            @test_throws "there were issues" VRect.load_rectifications(DATADIR, csv; results_dir = mktempdir())
         end
         @test occursin("row 1 (rectification_id: s): pixel_width must be finite, got NaN", out)
     end

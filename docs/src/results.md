@@ -2,6 +2,18 @@
 
 When `main` finishes, everything it produced is on disk, in a `results_dir` folder created in the folder Julia was started in: a track file per run, one diagnostic video, and — if you asked for them — an image per rectification.
 
+## Choosing the output folder
+
+To put the results somewhere else, name the folder with `results_dir`:
+
+```julia
+main("path/to/data"; results_dir = "/scratch/experiment3")
+```
+
+That folder *is* the output folder — the diagnostic video lands at `/scratch/experiment3/diagnostic.mp4`, not in a `results_dir` inside it — and it is created if it doesn't exist. Every path on this page that starts with `results_dir/` then starts with your folder instead. A relative name, like `results_dir = "second_try"`, is taken relative to the folder Julia is in when you call `main`.
+
+Running `main` again into the same folder overwrites the track files and the diagnostic video, so naming a different folder is how you keep two analyses of the same data side by side. `verify` takes the same keyword, for where it saves [the issues folder](#The-issues-folder).
+
 ## The track files
 
 Each run's track is written to `results_dir/<run_id>.csv` — a plain csv you can open in Excel, R, Python, MATLAB, or anything else. It has three columns:
@@ -68,7 +80,7 @@ This is the same "is the arena square?" check the diagnostic video gives you, ex
 If a rectification fails detection — the checkerboard or the AprilTags can't be found in its extrinsic frame — Fromage saves that exact frame so you can see what it saw. The message in the report tells you where it went, e.g.:
 
 ```
-row 2 (rectification_id: morning): only 4 of 6 AprilTags detected at the extrinsic frame — saved the extrinsic frame of /data/camera_a/board.mp4 at 1.0 s to results_dir/issues/2026-08-20T14-22-05/board_t1.0s_3f9a02c1.png for inspection
+row 2 (rectification_id: morning): only 4 of 6 AprilTags detected at the extrinsic frame — saved the extrinsic frame of /data/camera_a/board.mp4 at 1.0 s to /home/me/experiment/results_dir/issues/2026-08-20T14-22-05/board_t1.0s_3f9a02c1.png for inspection
 ```
 
 The frame is named for its video and extrinsic, followed by a short tag that tells apart videos with the same name in different folders — and two rectifications that looked at the same frame with different settings. The tag depends only on what was checked, so re-running on the same data saves the frame under the same name.

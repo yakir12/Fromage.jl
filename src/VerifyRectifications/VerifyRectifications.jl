@@ -13,7 +13,7 @@ using ..Gateway: backfill!, blank!, detect_per_group!, issue_report, read_per_fi
     report_issues, resolve_paths!, verify!, verify_id_filename!
 using ..Memo: EXTRINSIC_DETECTIONS, INTRINSIC_DETECTIONS, MATLAB_METADATA, remember
 using ..Parsing: Parsing, MyTemporal, filled, parseto!
-using ..Paths: DEFAULT_ISSUES_DIR, invocation_issues_dir
+using ..Paths: RESULTS_DIR, invocation_issues_dir, issues_folder
 using ..Probing: frame_geometry, is_interlaced, no_video_stream, parse_sample_aspect, probe_fields
 using MAT: MAT, matread
 using OhMyThreads: OhMyThreads, tmap
@@ -52,16 +52,17 @@ include("types.jl")
 include("parsers.jl")
 include("verifications.jl")
 
-# `issues_dir` is where the extrinsic frame of a rectification that fails checkerboard/AprilTag
-# detection is dumped for inspection (see `verifications!`). Every run writes into a new time-stamped
-# folder of its own inside it, so what a run dumped is exactly what its folder holds; nothing here is
-# ever deleted, including anything the user keeps in the folder they name.
-function load_rectifications(file; defaults = (;), issues_dir = DEFAULT_ISSUES_DIR, progress = true)
-    return load_rectifications(dirname(file), file; defaults, issues_dir, progress)
+# `results_dir` is the output folder: the extrinsic frame of a rectification that fails
+# checkerboard/AprilTag detection is dumped for inspection into its issues subfolder (see
+# `verifications!`). Every invocation writes into a new time-stamped folder of its own inside that, so
+# what it dumped is exactly what its folder holds; nothing there is ever deleted, including anything
+# the user keeps beside it.
+function load_rectifications(file; defaults = (;), results_dir = RESULTS_DIR, progress = true)
+    return load_rectifications(dirname(file), file; defaults, results_dir, progress)
 end
 
-function check_rectifications(file; defaults = (;), issues_dir = DEFAULT_ISSUES_DIR, progress = true)
-    return check_rectifications(dirname(file), file; defaults, issues_dir, progress)
+function check_rectifications(file; defaults = (;), results_dir = RESULTS_DIR, progress = true)
+    return check_rectifications(dirname(file), file; defaults, results_dir, progress)
 end
 
 # `defaults` globally replaces the hardcoded fallbacks of the whitelisted rectification parameters
@@ -105,12 +106,12 @@ build_methods(df) = RectificationMethod[RectificationMethod(r) for r in eachrow(
 # The first-tier gate; see the matching comment in `load_runs`. This aborts before a single video is
 # probed or corner-detected.
 function load_rectifications(
-        data_path, file; defaults = (;), issues_dir = DEFAULT_ISSUES_DIR,
+        data_path, file; defaults = (;), results_dir = RESULTS_DIR,
         progress = true
     )
     df, identities_ok = parse_rectifications(data_path, file; defaults, progress)
     identities_ok || report_rectifications(df, true)
-    verifications!(df, data_path, issues_dir; progress)
+    verifications!(df, data_path, results_dir; progress)
     report_rectifications(df, true)
     return build_methods(df)
 end
@@ -118,12 +119,12 @@ end
 # Validate and report, never throw. Always returns the annotated DataFrame — see `check_runs` for
 # why that unconditional return is the point.
 function check_rectifications(
-        data_path, file; defaults = (;), issues_dir = DEFAULT_ISSUES_DIR,
+        data_path, file; defaults = (;), results_dir = RESULTS_DIR,
         progress = true
     )
     df, identities_ok = parse_rectifications(data_path, file; defaults, progress)
     identities_ok || report_rectifications(df, false)
-    verifications!(df, data_path, issues_dir; progress)
+    verifications!(df, data_path, results_dir; progress)
     report_rectifications(df, false)
     return df
 end

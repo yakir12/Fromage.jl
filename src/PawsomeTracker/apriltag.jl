@@ -199,7 +199,7 @@ end
 # definition time and `Rectifications` is included BEFORE `PawsomeTracker` (src/Fromage.jl) — it
 # cannot name this type. This module owns the type, which is what makes extending someone else's
 # function on it legitimate; same shape as `VerifyRuns`' `import ..Parsing: mytryparse`.
-save_diagnostic(::ApriltagRectification, file, extrinsic, rectification_id) = nothing
+save_diagnostic(results_dir, ::ApriltagRectification, file, extrinsic, rectification_id) = nothing
 
 # family CSV value → detector enum; also the validity gate for the `family` column.
 function april_family(family::AbstractString)
