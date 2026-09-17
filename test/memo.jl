@@ -594,7 +594,14 @@ const MEMOIZED = (
             @test readdir(results) == ["diagnostic.mp4", "t1.csv"]
             @test_logs reused(1, 2) go(X)
             @test (M.misses(M.TRACKED_RUNS), M.hits(M.TRACKED_RUNS)) == (2, 1)
-            @test read(diagnostic) == x_video
+            # Both runs were tracked again after `empty_caches!`, so both clips were ENCODED again, and
+            # re-encoding is not reproducible byte for byte: on the ubuntu runners the same dataset,
+            # tracked twice from cold, decodes to different frames in one run's clip about half the
+            # time, while its tracks match exactly (#262). So compare what tracking produced, not the
+            # video's bytes. The byte comparison above, on reverting a row, stays: those clips are
+            # served from the cache, so they are the same files.
+            @test read.(joinpath.(results, ["t1.csv", "t2.csv"])) == x_csvs
+            @test probe_stream(diagnostic).nframes == 2 * 25
         end
     end
 
