@@ -683,6 +683,9 @@ function track_apriltag(
             !seeded && error("no frame in the background window held all $ntags AprilTags")
 
             slice(k) = selectdim(parent(parent(stack)), 3, k)   # frame k's raw image (in the stack)
+            # labeled from the effective rate, as in track_one (see the Video constructor): the
+            # track's timestamps, and the file times the diagnostic stamps on its frames
+            ts = range(segment.start; step = 1 / vid.sample_fps, length = n)
 
             # track the already-read background-window frames. Frames without a registration of
             # their own are reported `missing` and skipped (their borrowed alignment is good enough
@@ -697,7 +700,7 @@ function track_apriltag(
                     rc, guess = detect(guess, stack, i, tr, vid.downscale, level)
                     coords[i] = img_to_ground(ref.M, rc)       # rc is reference px; ref.M is the fixed metric map
                 end
-                dia(slice(i), coords[i], H)
+                dia(ts[i], slice(i), coords[i], H)
             end
 
             # rolling phase: read, register, roll into the stack, track
@@ -727,12 +730,11 @@ function track_apriltag(
                     rc, guess = detect(guess, stack, j, tr, vid.downscale, level)
                     coords[i] = img_to_ground(ref.M, rc)
                 end
-                dia(vid.img, coords[i], H)
+                dia(ts[i], vid.img, coords[i], H)
                 isnothing(protect) || restore_background!(stack, j, protect, keep)
             end
 
-            # labeled from the effective rate, as in track_one (see the Video constructor)
-            return (range(segment.start; step = 1 / vid.sample_fps, length = n), coords)
+            return (ts, coords)
         finally
             foreach(freeDetector!, dets)
         end
