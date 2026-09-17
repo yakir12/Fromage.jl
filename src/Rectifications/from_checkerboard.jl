@@ -26,7 +26,7 @@ _cmd(file, t, vf) = `$(FFMPEG.ffmpeg()) -hide_banner -loglevel error -ss $t -i $
 
 # Read one frame off the share. Every retry in this package lives in `ShareIO`, including the one
 # that used to sit here; see that module for what the share does and why this is needed at all.
-_read_frame(file, t, vf) = ShareIO.capture(_cmd(file, t, vf), "ffmpeg could not read the frame at $(t)s")
+_read_frame(file, t, vf) = ShareIO.capture(_cmd(file, t, vf), "ffmpeg could not read the frame at $(t)s"; tries = ShareIO.TRIES)
 
 function _frame_at(file, t, vf, w, h)
     buf = _read_frame(file, t, vf)

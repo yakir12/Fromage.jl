@@ -53,7 +53,7 @@ end
 function _probe_fields(file, entries)
     exe = ffprobe()
     cmd = `$exe -v error -select_streams v:0 -show_entries $entries -of default=noprint_wrappers=1 $file`
-    out = String(ShareIO.capture(cmd, "ffprobe could not read it"))   # throws; caught above, outside the memo
+    out = String(ShareIO.capture(cmd, "ffprobe could not read it"; tries = ShareIO.TRIES))   # throws; caught above, outside the memo
     fields = Dict{String, String}()
     for line in eachline(IOBuffer(out))
         occursin('=', line) || continue        # a line without a separator would not destructure

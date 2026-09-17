@@ -99,10 +99,10 @@
 
     @testset "non-finite numbers: check_runs reports, load_runs throws" begin
         csv = write_rows(joinpath(DATADIR, "nonfinite.csv"), [runrow(target_width = "NaN")])
-        df = VR.check_runs(DATADIR, csv)
+        df = check_csv(csv)
         @test flagged(df, 1, "target_width must be finite, got NaN")
         _, out = capturing() do
-            @test_throws "there were issues" VR.load_runs(DATADIR, csv)
+            @test_throws "there were issues" load_csv(csv)
         end
         @test occursin("row 1 (run_id: r): target_width must be finite, got NaN", out)
     end

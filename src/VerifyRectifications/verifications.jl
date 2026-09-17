@@ -21,7 +21,7 @@ end
 # the video :width/:height (always taken from the file — they are the frame size used to decode it)
 # and impute :aspect/:yadif. Grouping on the canonical resolved :file reads one physical file once,
 # not once per spelling.
-function read_video_metadata!(df::AbstractDataFrame; progress = true)
+function read_video_metadata!(df::AbstractDataFrame; progress)
     # :width/:height have no CSV column (they are not user-supplied); create them here so the probe
     # can fill them, alongside the intermediate :duration/:dimension columns.
     blank!(df, :duration, :dimension, :width, :height)
@@ -140,7 +140,7 @@ end
 # (:n_extrinsics) and the ImageSize cross-check against the source video. Grouping on the canonical
 # resolved :matlab_file reads each physical file once. The source-video :dimension was already filled
 # by read_video_metadata!, so the cross-check runs here against it.
-function read_matlab_metadata!(df::AbstractDataFrame; progress = true)
+function read_matlab_metadata!(df::AbstractDataFrame; progress)
     blank!(df, :n_extrinsics)
     # matlab_file is set for matlab rows only, so non-matlab rows form no group and are untouched.
     return read_per_file!(
@@ -426,7 +426,7 @@ function flag_intrinsic!(g::AbstractDataFrame, issue)
     return nothing
 end
 
-function verify_extrinsics!(df::AbstractDataFrame, invocation_dir; progress = true)
+function verify_extrinsics!(df::AbstractDataFrame, invocation_dir; progress)
     # :file is the canonical resolved path, so grouping on it corner-detects a file reached via different
     # spellings once per (extrinsic, blur, n_corners).
     checkerboards = subset(df, :type => ByRow(passmissing(==("checkerboard"))); view = true, skipmissing = true)
@@ -495,7 +495,7 @@ function _intrinsic_issue(file, intrinsic_start, intrinsic_stop, temporal_step, 
     return "fewer than 3 frames with detectable corners between intrinsic_start and intrinsic_stop"
 end
 
-function verify_intrinsics!(df::AbstractDataFrame; progress = true)
+function verify_intrinsics!(df::AbstractDataFrame; progress)
     # Rows already flagged are skipped by `detect_per_group!`: a failed probe, extrinsic or window
     # check implies this (expensive) scan would fail too — re-running it wastes frame reads and
     # re-reports noise. A missing intrinsic window (both bounds blank) is skipped like everywhere
@@ -517,7 +517,7 @@ end
 # `family` must be detectable and their metric fit must converge (coplanar, not mis-detected). Reads
 # real frames, so it runs only on otherwise-clean apriltag rows, grouped so one physical file is
 # checked once per (extrinsic, apriltags, family, tag_cell_width).
-function verify_apriltag_extrinsics!(df::AbstractDataFrame, invocation_dir; progress = true)
+function verify_apriltag_extrinsics!(df::AbstractDataFrame, invocation_dir; progress)
     tags = subset(df, :type => ByRow(passmissing(==("apriltag"))); view = true, skipmissing = true)
     cols = [:file, :extrinsic, :apriltags, :family, :tag_cell_width]   # nothing here is imputed, so it both requires and groups on all five
     detect_per_group!(
@@ -581,10 +581,7 @@ end
 # The second tier: everything that has to open a file, plus the value checks that depend on what
 # those files report. `verify_ids!` has already run and passed (or, on the `check_*` path, flagged
 # the rows it rejected — which every stage below skips, since they all subset to unflagged rows).
-function verifications!(
-        df::AbstractDataFrame, data_path, results_dir = RESULTS_DIR;
-        progress = true
-    )
+function verifications!(df::AbstractDataFrame, data_path, results_dir; progress)
 
     # This INVOCATION's frames go in a folder of their own, named for the moment it started, so the
     # folder reflects only this invocation without anything being deleted to make that true —

@@ -69,7 +69,12 @@ end
 filled(row, k) = haskey(row, k) && !ismissing(row[k]) &&
     !(row[k] isa AbstractString && isempty(strip(row[k])))
 
-function parseto!(dict, row, k, ::Type{T}, default = nothing) where {T}
+# The `default` a required cell passes: an absent one is reported as "is missing" rather than
+# filled in (see `set!`'s `::Nothing` method). Named so a call site says "required" rather than a
+# bare `nothing`; there is no default argument doing it silently (#273).
+const REQUIRED = nothing
+
+function parseto!(dict, row, k, ::Type{T}, default) where {T}
     return if filled(row, k)
         y = mytryparse(T, row[k])
         set!(dict, y, k, "wrong $k format")

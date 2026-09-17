@@ -9,7 +9,7 @@ using StaticArrays
 using Random: Xoshiro
 using LinearAlgebra
 # the geometry is internal to the submodule; import the (non-exported) names directly
-using Fromage.PawsomeTracker: CANON, apply_h, homography_dlt, place_square, fit_metric, rigid_align,
+using Fromage.PawsomeTracker: CANON, TAG_SIZE_CM, apply_h, homography_dlt, place_square, fit_metric, rigid_align,
     _worst_side, ReferenceSpace, register,
     RegisteredWarp, build_stack, canvas2raw, Gray, N0f8, METRIC_FIT_TOLERANCE,
     ApriltagScene, apriltag_image2real, _real_to_canvas, DIAGNOSTIC_SIZE
@@ -64,15 +64,15 @@ project(H) = [[apply_h(H, c) for c in tc] for tc in TAGS_CM]
 
     @testset "place_square recovers a true 96 cm square" begin
         placed = [rot(0.3) * c + SVector(120.0, -50) for c in CANON]
-        fit = place_square(placed)
+        fit = place_square(placed, CANON)
         @test all(norm(fit[i] - fit[mod1(i + 1, 4)]) ≈ 96.0 for i in 1:4)
         @test maximum(norm(fit[i] - placed[i]) for i in 1:4) < 1.0e-9
     end
 
     @testset "fit_metric makes every tag a 96 cm square, jointly (not one tag)" begin
-        M, err = fit_metric(project(HMILD))
+        M, err = fit_metric(project(HMILD); canon = CANON)
         @test err < 1.0e-3                                             # converged
-        @test _worst_side(M, project(HMILD)) < 1.0e-3                  # every tag metric
+        @test _worst_side(M, project(HMILD), TAG_SIZE_CM) < 1.0e-3                  # every tag metric
         # metric scale is correct: a known ground distance is recovered (gauge-invariant)
         a, b = CENTERS[1], CENTERS[3]
         â = apply_h(M, apply_h(HMILD, a)); b̂ = apply_h(M, apply_h(HMILD, b))
@@ -80,7 +80,7 @@ project(H) = [[apply_h(H, c) for c in tc] for tc in TAGS_CM]
     end
 
     @testset "robust under strong perspective (gauge-pinned consensus)" begin
-        @test _worst_side(first(fit_metric(project(HHARSH))), project(HHARSH)) < 0.1
+        @test _worst_side(first(fit_metric(project(HHARSH); canon = CANON)), project(HHARSH), TAG_SIZE_CM) < 0.1
     end
 
     @testset "non-coplanar / mis-detected tags fail loudly, not silently" begin
@@ -88,7 +88,7 @@ project(H) = [[apply_h(H, c) for c in tc] for tc in TAGS_CM]
         bad[4] = [apply_h(HMILD, CENTERS[4] + rot(ANGLES[4]) * (c * 150 / 96)) for c in CANON]  # not 96
         # fit_metric computes and reports; it does not decide. The error it returns is well past
         # the tolerance, and the direct constructor still turns that into a throw.
-        @test last(fit_metric(bad)) > METRIC_FIT_TOLERANCE
+        @test last(fit_metric(bad; canon = CANON)) > METRIC_FIT_TOLERANCE
         @test_throws ErrorException ReferenceSpace([0, 1, 2, 3], bad)
     end
 
@@ -165,7 +165,7 @@ project(H) = [[apply_h(H, c) for c in tc] for tc in TAGS_CM]
         R90 = SMatrix{3, 3, Float64}(0, 1, 0, -1, 0, 0, 0, 0, 1)          # ground space turned 90°
         M2 = R90 * ref.M
         ref2 = ReferenceSpace(ref.ids, ref.corners, M2)
-        @test _worst_side(M2, project(HMILD)) ≈ _worst_side(ref.M, project(HMILD))
+        @test _worst_side(M2, project(HMILD), TAG_SIZE_CM) ≈ _worst_side(ref.M, project(HMILD), TAG_SIZE_CM)
 
         # center/north as REFERENCE-IMAGE pixels: both frames share one reference image, so the
         # same pixels are the same physical points — exactly the user-facing promise being tested.

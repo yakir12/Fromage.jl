@@ -2,17 +2,17 @@
     # These error unconditionally (before the strict block), so they throw regardless.
 
     @testset "missing csv file" begin
-        @test_throws "missing" VR.load_runs(DATADIR, joinpath(DATADIR, "does_not_exist.csv"))
+        @test_throws "missing" load_csv(joinpath(DATADIR, "does_not_exist.csv"))
     end
 
     @testset "empty csv file" begin
         csv = write_rows(joinpath(DATADIR, "empty.csv"), [])   # header only, no data rows
-        @test_throws "csv file is empty" VR.load_runs(DATADIR, csv)
+        @test_throws "csv file is empty" load_csv(csv)
     end
 
     @testset "unrecognized column" begin
         csv = write_rows(joinpath(DATADIR, "badcol.csv"), [["x", "y"]]; header = ["run_id", "foo"])
-        @test_throws "unrecognized column" VR.load_runs(DATADIR, csv)
+        @test_throws "unrecognized column" load_csv(csv)
     end
 
     @testset "a header with stray whitespace is still recognized" begin
@@ -23,7 +23,7 @@
             joinpath(DATADIR, "padded_header.csv"), [["r", "c", ART.a, "1"]];
             header = [" run_id", "rectification_id ", " file ", "\tstart"]
         )
-        @test clean(VR.load_runs(DATADIR, csv))
+        @test clean(load_csv(csv))
     end
 
     @testset "the split fps column is rejected with a hint" begin
@@ -33,9 +33,9 @@
             joinpath(DATADIR, "fps_split.csv"), [["c1", "a.mp4", "15"]];
             header = ["rectification_id", "file", "fps"]
         )
-        @test_throws "unrecognized column" VR.load_runs(DATADIR, csv)
-        @test_throws "sample_fps" VR.load_runs(DATADIR, csv)
-        @test_throws "native_fps" VR.load_runs(DATADIR, csv)
+        @test_throws "unrecognized column" load_csv(csv)
+        @test_throws "sample_fps" load_csv(csv)
+        @test_throws "native_fps" load_csv(csv)
     end
 
     @testset "the renamed scale column points at downscale, never pixel_width" begin
@@ -46,10 +46,10 @@
             joinpath(DATADIR, "scale_renamed.csv"), [["c1", "a.mp4", "0.5"]];
             header = ["rectification_id", "file", "scale"]
         )
-        @test_throws "unrecognized column" VR.load_runs(DATADIR, csv)
-        @test_throws "scale was renamed to downscale" VR.load_runs(DATADIR, csv)
+        @test_throws "unrecognized column" load_csv(csv)
+        @test_throws "scale was renamed to downscale" load_csv(csv)
         err = try
-            VR.load_runs(DATADIR, csv)
+            load_csv(csv)
         catch e
             sprint(showerror, e)
         end
@@ -63,8 +63,8 @@
             joinpath(DATADIR, "calibid_renamed.csv"), [["c1", "a.mp4"]];
             header = ["calibration_id", "file"]
         )
-        @test_throws "unrecognized column" VR.load_runs(DATADIR, csv)
-        @test_throws "calibration_id was renamed to rectification_id" VR.load_runs(DATADIR, csv)
+        @test_throws "unrecognized column" load_csv(csv)
+        @test_throws "calibration_id was renamed to rectification_id" load_csv(csv)
     end
 
     @testset "the removed white_point column is now rejected by name (#19)" begin
@@ -75,7 +75,7 @@
             joinpath(DATADIR, "wp_removed.csv"), [["c1", "a.mp4", "1.0"]];
             header = ["rectification_id", "file", "white_point"]
         )
-        @test_throws "unrecognized column" VR.load_runs(DATADIR, csv)
-        @test_throws "white_point" VR.load_runs(DATADIR, csv)
+        @test_throws "unrecognized column" load_csv(csv)
+        @test_throws "white_point" load_csv(csv)
     end
 end

@@ -2,17 +2,17 @@
     # These error unconditionally (before the strict block), so they throw regardless.
 
     @testset "missing csv file" begin
-        @test_throws "missing" VRect.load_rectifications(DATADIR, joinpath(DATADIR, "does_not_exist.csv"))
+        @test_throws "missing" load_csv(joinpath(DATADIR, "does_not_exist.csv"))
     end
 
     @testset "empty csv file" begin
         csv = write_rows(joinpath(DATADIR, "empty.csv"), [])   # header only, no data rows
-        @test_throws "csv file is empty" VRect.load_rectifications(DATADIR, csv)
+        @test_throws "csv file is empty" load_csv(csv)
     end
 
     @testset "unrecognized column" begin
         csv = write_rows(joinpath(DATADIR, "badcol.csv"), [["x", "y"]]; header = ["rectification_id", "foo"])
-        @test_throws "unrecognized column" VRect.load_rectifications(DATADIR, csv)
+        @test_throws "unrecognized column" load_csv(csv)
     end
 
     # A retired column is the one unrecognized name a user cannot debug from the generic message:
@@ -23,8 +23,8 @@
             joinpath(DATADIR, "renamedcol.csv"), [["c", "4"]];
             header = ["rectification_id", "checker_size"]
         )
-        @test_throws "checker_size was renamed to checker_width" VRect.load_rectifications(DATADIR, csv)
-        @test_throws "tag_cell_width" VRect.load_rectifications(DATADIR, csv)
+        @test_throws "checker_size was renamed to checker_width" load_csv(csv)
+        @test_throws "tag_cell_width" load_csv(csv)
     end
 
     # The v0.2.23 and v0.2.24 vocabulary migrations. Each old name is rejected at the file level, before any row
@@ -39,8 +39,8 @@
                     joinpath(DATADIR, "renamed_$old.csv"), [["c", "1"]];
                     header = ["rectification_id", string(old)]
                 )
-                @test_throws "unrecognized column" VRect.load_rectifications(DATADIR, csv)
-                @test_throws "$old was renamed to $new" VRect.load_rectifications(DATADIR, csv)
+                @test_throws "unrecognized column" load_csv(csv)
+                @test_throws "$old was renamed to $new" load_csv(csv)
             end
         end
         # rectifications.csv's `scale` and runs.csv's `scale` went to different places; this file must never
@@ -50,7 +50,7 @@
             header = ["rectification_id", "scale"]
         )
         err = try
-            VRect.load_rectifications(DATADIR, csv)
+            load_csv(csv)
         catch e
             sprint(showerror, e)
         end
@@ -68,7 +68,7 @@
                     header = ["rectification_id", "file", "type", "extrinsic"]
                 )
                 @test flagged(
-                    VRect.check_rectifications(DATADIR, csv), 1,
+                    check_csv(csv), 1,
                     "wrong type ($old was renamed to $new)"
                 )
             end
@@ -78,6 +78,6 @@
             joinpath(DATADIR, "wrong_type_plain.csv"), [["c", ART.video, "banana", "1"]];
             header = ["rectification_id", "file", "type", "extrinsic"]
         )
-        @test flagged(VRect.check_rectifications(DATADIR, csv), 1, "wrong type")
+        @test flagged(check_csv(csv), 1, "wrong type")
     end
 end

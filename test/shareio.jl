@@ -118,7 +118,7 @@ const S = ShareIO
         # implemented — `capture` is a one-line delegation to it — so this needs no subprocess and
         # makes no assumption about the platform's shell.
         n = Ref(0)
-        @test_throws SystemError S.withretry(; tries = 3) do
+        @test_throws SystemError S.withretry(; tries = 3, transient = S.istransient) do
             n[] += 1
             throw(SystemError("transient", 11))
         end
@@ -140,7 +140,7 @@ const S = ShareIO
         # `t < 0.2` measured a fresh `withretry` specialisation, so first-call compilation sat
         # inside the measurement, and it would have passed a version that retried quickly.
         n = Ref(0)
-        @test_throws MethodError S.withretry() do
+        @test_throws MethodError S.withretry(; tries = S.TRIES, transient = S.istransient) do
             n[] += 1
             nothing + nothing
         end
@@ -150,11 +150,11 @@ const S = ShareIO
     @testset "the transient predicate is a parameter, and open_gray_video widens it" begin
         # `withretry(; transient = …)` is how PawsomeTracker.open_gray_video widens what counts as
         # retryable: VideoIO reports an unreadable file, a share failure and a seek past the end
-        # alike as a bare ErrorException, so it passes `videoio_transient` instead of the default.
+        # alike as a bare ErrorException, so it passes `videoio_transient` instead of `istransient`.
         # That wiring had no test at all — the predicates were asserted, but nothing checked that
         # `withretry` actually honours a non-default one.
         n = Ref(0)
-        @test_throws ErrorException S.withretry(; tries = 3) do      # DEFAULT predicate
+        @test_throws ErrorException S.withretry(; tries = 3, transient = S.istransient) do      # the subprocess predicate
             n[] += 1
             error("VideoIO-style failure")
         end
@@ -179,7 +179,7 @@ const S = ShareIO
     @testset "withretry stops as soon as it succeeds" begin
         n = Ref(0)
         # fails twice, then succeeds — three calls total, and the value comes back
-        v = S.withretry(; tries = 4) do
+        v = S.withretry(; tries = 4, transient = S.istransient) do
             n[] += 1
             n[] < 3 && throw(SystemError("transient", 11))
             :ok
@@ -189,7 +189,7 @@ const S = ShareIO
     end
 
     @testset "a successful read returns the bytes" begin
-        @test S.capture(`echo hi`, "it failed") == codeunits("hi\n")
+        @test S.capture(`echo hi`, "it failed"; tries = S.TRIES) == codeunits("hi\n")
     end
 
     @testset "stdout larger than a pipe buffer does not deadlock" begin
@@ -197,7 +197,7 @@ const S = ShareIO
         # concurrently with the wait. Draining them in sequence deadlocks against a writer blocked
         # on a full pipe — which would hang the whole rectification stage, not fail it.
         n = 1_000_000
-        @test length(S.capture(`sh -c "head -c $n /dev/zero"`, "it failed")) == n
+        @test length(S.capture(`sh -c "head -c $n /dev/zero"`, "it failed"; tries = S.TRIES)) == n
     end
 
 end

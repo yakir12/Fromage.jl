@@ -81,16 +81,17 @@ istransient(e) = e isa ShareReadError || e isa Base.IOError || e isa SystemError
 videoio_transient(e) = istransient(e) || e isa ErrorException
 
 """
-    withretry(f; tries = TRIES, transient = istransient)
+    withretry(f; tries, transient)
 
-Call `f()`, retrying transient failures with exponential backoff. The last attempt is made outside
-the `try`, so a persistent failure propagates as itself and the function provably never returns
-`nothing`.
+Call `f()` up to `tries` times, retrying the failures `transient` accepts with exponential backoff.
+The last attempt is made outside the `try`, so a persistent failure propagates as itself and the
+function provably never returns `nothing`.
 
-`transient` widens the rule for callers whose library reports share failures less precisely than a
-process exit code does — see `PawsomeTracker.open_gray_video`.
+Production callers pass `tries = TRIES`. `transient` is `istransient` for a subprocess, and
+`videoio_transient` for callers whose library reports share failures less precisely than a process
+exit code does — see `PawsomeTracker.open_gray_video`.
 """
-function withretry(f; tries = TRIES, transient = istransient)
+function withretry(f; tries, transient)
     for i in 1:(tries - 1)
         try
             return f()
@@ -129,6 +130,6 @@ function capture_once(cmd, what)
     throw(ShareReadError(what, Int(proc.exitcode), Int(proc.termsignal), why))
 end
 
-capture(cmd, what; tries = TRIES) = withretry(() -> capture_once(cmd, what); tries)
+capture(cmd, what; tries) = withretry(() -> capture_once(cmd, what); tries, transient = istransient)
 
 end # module

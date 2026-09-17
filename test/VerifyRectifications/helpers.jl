@@ -222,10 +222,16 @@ column `verifications!` references — no column-completing filler rows are need
 # old data-dependent shape for the suite's benefit — see the fuller note in VerifyRuns' helpers.
 function check(name, rows; strict = false, header = HEADER, defaults = (;), results_dir = mktempdir())
     csv = write_rows(joinpath(DATADIR, name), rows; header)
-    strict && return VRect.load_rectifications(DATADIR, csv; defaults, results_dir)
-    df = VRect.check_rectifications(DATADIR, csv; defaults, results_dir)
+    strict && return VRect.load_rectifications(DATADIR, csv; defaults, results_dir, progress = true)
+    df = VRect.check_rectifications(DATADIR, csv; defaults, results_dir, progress = true)
     return any(!isempty, df.issues) ? df : VRect.build_methods(df)
 end
+
+# One entry point on an already-written csv, with the arguments every such test wants. The loaders
+# themselves take no defaults (#273), so these spell them once for the suite — including a fresh
+# output folder, for the reason given over `check`.
+load_csv(csv) = VRect.load_rectifications(DATADIR, csv; defaults = (;), results_dir = mktempdir(), progress = true)
+check_csv(csv) = VRect.check_rectifications(DATADIR, csv; defaults = (;), results_dir = mktempdir(), progress = true)
 
 # Each scenario is loaded as its own csv, so the name only has to be unique within DATADIR — the
 # suite generates it. Name one explicitly only when the test is about the file itself.

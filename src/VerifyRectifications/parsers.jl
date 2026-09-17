@@ -42,10 +42,10 @@ const DEFAULT_TYPES = (;
 resolve_defaults(overrides) = Parsing.resolve_defaults(overrides, DEFAULTS, DEFAULT_TYPES, "rectification")
 
 function parse_uniform!(dict, row)
-    parseto!(dict, row, :rectification_id, String)
-    parseto!(dict, row, :file, String)
-    parseto!(dict, row, :extrinsic, MyTemporal)
-    parseto!(dict, row, :pixel_width, Float64)
+    parseto!(dict, row, :rectification_id, String, REQUIRED)
+    parseto!(dict, row, :file, String, REQUIRED)
+    parseto!(dict, row, :extrinsic, MyTemporal, REQUIRED)
+    parseto!(dict, row, :pixel_width, Float64, REQUIRED)
     parseto!(dict, row, :path, String, ".")
     parseto!(dict, row, :center, NTuple{2, Int}, missing)
     parseto!(dict, row, :north, NTuple{2, Int}, missing)
@@ -60,9 +60,9 @@ end
 # aspect is imputed from the video (unused by the method). All three tunables take their default
 # from `defaults`, so `rectification_defaults` reaches them like any other (#140).
 function parse_apriltag!(dict, row, defaults)
-    parseto!(dict, row, :rectification_id, String)
-    parseto!(dict, row, :file, String)
-    parseto!(dict, row, :extrinsic, MyTemporal)
+    parseto!(dict, row, :rectification_id, String, REQUIRED)
+    parseto!(dict, row, :file, String, REQUIRED)
+    parseto!(dict, row, :extrinsic, MyTemporal, REQUIRED)
     parseto!(dict, row, :apriltags, Int, defaults.apriltags)
     parseto!(dict, row, :family, String, defaults.family)
     parseto!(dict, row, :tag_cell_width, Float64, defaults.tag_cell_width)
@@ -73,11 +73,11 @@ function parse_apriltag!(dict, row, defaults)
 end
 
 function parse_matlab!(dict, row)
-    parseto!(dict, row, :rectification_id, String)
-    parseto!(dict, row, :file, String)
-    parseto!(dict, row, :matlab_file, String)
-    parseto!(dict, row, :extrinsic, MyTemporal)
-    parseto!(dict, row, :extrinsic_index, Int)
+    parseto!(dict, row, :rectification_id, String, REQUIRED)
+    parseto!(dict, row, :file, String, REQUIRED)
+    parseto!(dict, row, :matlab_file, String, REQUIRED)
+    parseto!(dict, row, :extrinsic, MyTemporal, REQUIRED)
+    parseto!(dict, row, :extrinsic_index, Int, REQUIRED)
     parseto!(dict, row, :path, String, ".")
     parseto!(dict, row, :center, NTuple{2, Int}, missing)
     parseto!(dict, row, :north, NTuple{2, Int}, missing)
@@ -87,9 +87,9 @@ function parse_matlab!(dict, row)
 end
 
 function parse_checkerboard!(dict, row, defaults)
-    parseto!(dict, row, :rectification_id, String)
-    parseto!(dict, row, :file, String)
-    parseto!(dict, row, :extrinsic, MyTemporal)
+    parseto!(dict, row, :rectification_id, String, REQUIRED)
+    parseto!(dict, row, :file, String, REQUIRED)
+    parseto!(dict, row, :extrinsic, MyTemporal, REQUIRED)
     parseto!(dict, row, :intrinsic_start, MyTemporal, missing)
     parseto!(dict, row, :intrinsic_stop, MyTemporal, missing)
     parseto!(dict, row, :path, String, ".")
@@ -173,7 +173,7 @@ function verify_irrelevant(dict, row)
     return
 end
 
-function parse_row(row, defaults = DEFAULTS)
+function parse_row(row, defaults)
     dict = Dict{Symbol, Any}(:issues => String[])
     # trim whitespace (as for the other string fields); a now-empty cell takes the default
     type = String(strip(coalesce(get(row, :type, "checkerboard"), "checkerboard")))

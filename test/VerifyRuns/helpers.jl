@@ -66,10 +66,15 @@ runrow(; kw...) = _merge((run_id = "r", rectification_id = "c", file = ART.a); k
 # produced them. `test_integration.jl` and `test_reading.jl` assert the real entry points directly.
 function check(name, rows; strict = false, header = HEADER, defaults = (;))
     csv = write_rows(joinpath(DATADIR, name), rows; header)
-    strict && return VR.load_runs(DATADIR, csv; defaults)
-    df = VR.check_runs(DATADIR, csv; defaults)
+    strict && return VR.load_runs(DATADIR, csv; defaults, progress = true)
+    df = VR.check_runs(DATADIR, csv; defaults, progress = true)
     return any(!isempty, df.issues) ? df : VR.build_runs(df)
 end
+
+# One entry point on an already-written csv, with the arguments every such test wants. The loaders
+# themselves take no defaults (#273), so these spell them once for the suite.
+load_csv(csv) = VR.load_runs(DATADIR, csv; defaults = (;), progress = true)
+check_csv(csv) = VR.check_runs(DATADIR, csv; defaults = (;), progress = true)
 
 # Each scenario is loaded as its own csv, so the name only has to be unique within DATADIR — the
 # suite generates it. Name one explicitly only when the test is about the file itself.

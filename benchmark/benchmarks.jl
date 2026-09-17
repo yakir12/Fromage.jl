@@ -75,7 +75,7 @@ const TAG = [SVector(c[1] + 400, c[2] - 400) for c in PT.CANON]
 
 tags = SUITE["micro"]["apriltag geometry"] = BenchmarkGroup()
 tags["homography_dlt"] = @benchmarkable PT.homography_dlt($HOMOG, $HOMOG_DST)
-tags["place_square"] = @benchmarkable PT.place_square($TAG)
+tags["place_square"] = @benchmarkable PT.place_square($TAG, PT.CANON)
 
 # Candidate 06 asks whether `imfilter!(CPUThreads(...))` earns its keep on a search window a few
 # tens of pixels wide. Measured against the serial algorithm on the same window and the same
@@ -157,11 +157,13 @@ end
 # redrawing a progress bar is real work, and a sampled benchmark would pay for it every evaluation.
 gates = SUITE["micro"]["gateways"] = BenchmarkGroup()
 gates["check_runs, 200 rows"] =
-    @benchmarkable Fromage.VerifyRuns.check_runs(joinpath($GATEWAY_DIR, "runs.csv"); progress = false)
+    @benchmarkable Fromage.VerifyRuns.check_runs(
+    $GATEWAY_DIR, joinpath($GATEWAY_DIR, "runs.csv"); defaults = (;), progress = false
+)
 gates["check_rectifications, 5 rows"] =
     @benchmarkable Fromage.VerifyRectifications.check_rectifications(
-    joinpath($GATEWAY_DIR, "rectifications.csv");
-    progress = false
+    $GATEWAY_DIR, joinpath($GATEWAY_DIR, "rectifications.csv");
+    defaults = (;), results_dir = $(mktempdir()), progress = false
 )
 
 # `track` takes no keyword arguments (#140, #141): a run's `Segment`s and its `Tuning` are what the

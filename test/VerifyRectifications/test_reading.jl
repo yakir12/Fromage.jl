@@ -248,8 +248,8 @@
         # of "it loaded" are now separate: `load_rectifications` builds (and would have thrown), and
         # `check_rectifications` returns the annotated frame with nothing flagged -- unconditionally,
         # which is exactly what the old `strict = false` did NOT do.
-        @test VRect.load_rectifications(DATADIR, csv) isa Vector{VRect.RectificationMethod}
-        df = VRect.check_rectifications(DATADIR, csv)
+        @test load_csv(csv) isa Vector{VRect.RectificationMethod}
+        df = check_csv(csv)
         @test all(isempty, df.issues)                 # the frame comes back either way; nothing flagged
     end
 

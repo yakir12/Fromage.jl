@@ -50,7 +50,7 @@ const CACHE_SIZE = 1000
 # RELEASES the lock while computing a missing value. A lock held across an ffprobe or a detection
 # would serialize exactly the parallelism the gateways exist to get. DECISIONS, "LRUCache, not a
 # memoization package", records what the alternatives do instead.
-newcache(::Type{K}, ::Type{V}; finalizer = nothing) where {K, V} =
+newcache(::Type{K}, ::Type{V}; finalizer) where {K, V} =
     LRU{K, V}(maxsize = CACHE_SIZE, finalizer = finalizer)
 
 # `Probing.probe_fields(file, entries)` — one ffprobe spawn per (physical file, `-show_entries`
@@ -60,13 +60,13 @@ newcache(::Type{K}, ::Type{V}; finalizer = nothing) where {K, V} =
 #
 # The value is ffprobe's `key => value` output, or the issue string of a file it could not read.
 # Callers only ever `get` from that Dict; it is shared, so nothing may mutate it.
-const VIDEO_PROBES = newcache(Tuple{String, String}, Dict{String, String})
+const VIDEO_PROBES = newcache(Tuple{String, String}, Dict{String, String}; finalizer = nothing)
 
 # `VerifyRectifications.matlab_metadata(file)` — one `matread` per physical `.mat`, plus the
 # structure/extrinsic-count/`ImageSize` derivation off the same dict. The DERIVED metadata is
 # cached, not the parsed dict: the dict is the large object, and nothing outside that function reads
 # it.
-const MATLAB_METADATA = newcache(Tuple{String}, Union{String, NamedTuple{(:n_extrinsics, :dimension)}})
+const MATLAB_METADATA = newcache(Tuple{String}, Union{String, NamedTuple{(:n_extrinsics, :dimension)}}; finalizer = nothing)
 
 # The three detection caches key on a bare `Tuple` where the two file reads name their element types:
 # a detector's arguments arrive from a `detect_per_group!` group key, so their concrete types are the
@@ -78,13 +78,13 @@ const MATLAB_METADATA = newcache(Tuple{String}, Union{String, NamedTuple{(:n_ext
 # extrinsic timestamp — and `PawsomeTracker.apriltag_extrinsic_issue(...)`, the AprilTag analogue.
 # Two caches rather than one because the two detectors take different argument lists, which is to
 # say they are asking different questions of the frame.
-const EXTRINSIC_DETECTIONS = newcache(Tuple, Union{Nothing, String})
-const APRILTAG_DETECTIONS = newcache(Tuple, Union{Nothing, String})
+const EXTRINSIC_DETECTIONS = newcache(Tuple, Union{Nothing, String}; finalizer = nothing)
+const APRILTAG_DETECTIONS = newcache(Tuple, Union{Nothing, String}; finalizer = nothing)
 
 # `VerifyRectifications.intrinsic_issue(...)` — the scan of a rectification's intrinsic window for
 # three frames with detectable corners. The most expensive of the lot on a bad window, which scans
 # to the end.
-const INTRINSIC_DETECTIONS = newcache(Tuple, Union{Nothing, String})
+const INTRINSIC_DETECTIONS = newcache(Tuple, Union{Nothing, String}; finalizer = nothing)
 
 # `Fromage.build_rectification(c)` — the image ↔ real map one verified rectifications row
 # describes (#251). The most expensive thing here: three of the four kinds read the source video and
@@ -112,7 +112,7 @@ const INTRINSIC_DETECTIONS = newcache(Tuple, Union{Nothing, String})
 # The shared `CACHE_SIZE` stands even though a built rectification is a far larger object than a probe
 # `Dict`: the bound is a guard against a pathological loop, not a working set, and a session that had
 # genuinely built a thousand distinct rectifications would have read a thousand videos to do it.
-const BUILT_RECTIFICATIONS = newcache(Any, Any)
+const BUILT_RECTIFICATIONS = newcache(Any, Any; finalizer = nothing)
 
 # `Fromage.track_run(r, c)` — one run tracked through the rectification `c` describes (#249), and by
 # far the most expensive thing a `main` does: ~89% of an invocation over the reference dataset

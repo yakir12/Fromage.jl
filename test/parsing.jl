@@ -51,18 +51,18 @@ Base.convert(::Type{Int}, ::Boom) = error("boom")
         fresh() = Dict{Symbol, Any}(:issues => String[])
 
         # a filled, parseable cell: the value, and nothing reported
-        d = fresh(); P.parseto!(d, (; n = "42"), :n, Int)
+        d = fresh(); P.parseto!(d, (; n = "42"), :n, Int, P.REQUIRED)
         @test d[:n] == 42
         @test isempty(d[:issues])
 
         # a filled cell that will not parse: the field is NULLED, and the issue names the column.
         # The nulling is what stops later checks piling on the same row.
-        d = fresh(); P.parseto!(d, (; n = "not_a_number"), :n, Int)
+        d = fresh(); P.parseto!(d, (; n = "not_a_number"), :n, Int, P.REQUIRED)
         @test d[:n] === missing
         @test d[:issues] == ["wrong n format"]
 
-        # absent, with no default: reported as missing
-        d = fresh(); P.parseto!(d, (;), :n, Int)
+        # absent and REQUIRED: reported as missing
+        d = fresh(); P.parseto!(d, (;), :n, Int, P.REQUIRED)
         @test d[:n] === missing
         @test d[:issues] == ["n is missing"]
 
@@ -87,7 +87,7 @@ Base.convert(::Type{Int}, ::Boom) = error("boom")
                 (Float64, "nan", "NaN"), (Float64, " infinity ", "Inf"),
                 (P.MyTemporal, "Inf", "Inf"), (P.MyTemporal, "NaN", "NaN"),
             )
-            d = fresh(); P.parseto!(d, (; x = cell), :x, T)
+            d = fresh(); P.parseto!(d, (; x = cell), :x, T, P.REQUIRED)
             @test d[:x] === missing
             @test d[:issues] == ["x must be finite, got $shown"]
         end
