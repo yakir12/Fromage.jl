@@ -408,6 +408,29 @@ end
         @test fit.model.frow ≈ BASELINE_CAMERA.f rtol = 1.0e-5
     end
 
+    # a rig whose flat board goes undetected reaches no map, and still reports the intrinsics of its
+    # calibration frames (#294); every failure keeps a quantity's rows, so each rig reports the same rows
+    @testset "failures keep their rows" begin
+        local cam = Camera(; BASELINE_CAMERA...)
+        g = CRS.Gauge(cam)
+        calibration = [CRS.fromage_corners(cam, p.board) for p in board_poses(cam)[1:(end - 1)]]
+        fits = CRS.builder_fits(cam, g, "no video is read", calibration, CRS.Failure("not detected"))
+        @test fits.from_checkerboard.rect == fits.from_extrinsic.rect == fits.from_extrinsic.model == CRS.Failure("not detected")
+        @test fits.from_checkerboard.model.frow ≈ BASELINE_CAMERA.f rtol = 1.0e-4
+        ctx = (; rig = "r", rung = "builders", builder = "from_checkerboard", section = "fromage")
+        failed = CRS.fit_rows(ctx, cam, g, fits.from_checkerboard)
+        @test all(r.status == "ok" for r in failed if r.quantity == "intrinsics")
+        @test all(r.status == "not detected" && ismissing(r.value) for r in failed if r.quantity == "map")
+        exact = CRS.fit_rows(ctx, cam, g, CRS.analytic_fit(cam, g, [CRS.fromage_corners(cam, p.board) for p in board_poses(cam)], 1))
+        layout(rows) = [(r.quantity, r.split, r.statistic) for r in rows]
+        @test layout(failed) == layout(exact)
+        ctx = (; rig = "r", rung = "builders")
+        @test layout(CRS.dot_rows(ctx, cam, CRS.Failure("not detected"))) == layout(CRS.dot_rows(ctx, cam, [area_centroid(cam, c) for c in CRS.DOT_CENTRES]))
+        # a frame the detector throws on is that frame's finding: its detection row says so
+        thrown = CRS.frame_corners(cam, "no such video.mp4", 0, missing)
+        @test thrown isa CRS.Failure && startswith(thrown.status, "threw: ")
+    end
+
     @testset "rigs" begin
         @test only(CRS.select_rigs(["baseline"])) === first(VARIANTS)
         @test_throws ArgumentError CRS.select_rigs(["no such rig"])

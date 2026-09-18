@@ -31,17 +31,32 @@ struct Failure
     status::String
 end
 
+value_of(x) = x
+value_of(::Failure) = missing
+status_of(_) = "ok"
+status_of(f::Failure) = f.status
+# whether a self-check's `x` is under its tolerance; one with nothing to check has failed
+passes(x, tolerance) = x < tolerance
+passes(::Failure, _) = false
+
 """
     attempt(f) -> Union{result of f, Failure}
 
 `f()`, or the [`Failure`](@ref) recording what it threw, the exception's text verbatim. An
 interrupt is not a failure of the rig, and is rethrown.
+
+It catches everything else on purpose, against the package's rule of catching the specific
+exception: the report exists to record how Fromage fails under a rig, and a failure nobody
+anticipated is the one it most needs to keep (#294, "a failure becomes a `status` row"). As with
+cleanup (`DECISIONS.md`, "No bare `catch`", "Cleanup inverts the rule"), nothing is lost: the report
+keeps the message, and the log keeps the backtrace.
 """
 function attempt(f)
     try
         return f()
     catch e
         e isa InterruptException && rethrow()
+        @warn "recorded as a failure in the report" exception = (e, catch_backtrace())
         return Failure("threw: " * sprint(showerror, e))
     end
 end
@@ -56,7 +71,7 @@ function stat_rows(ctx, quantity, split, unit, e)
     return [row(ctx; quantity, split, statistic = String(s), value = v, unit) for (s, v) in pairs(summarize(e))]
 end
 function stat_rows(ctx, quantity, split, unit, f::Failure)
-    return [row(ctx; quantity, split, statistic = String(s), value = missing, unit, status = f.status) for s in (:RMS, :p95, :max)]
+    return [row(ctx; quantity, split, statistic = String(s), value = missing, unit, status = f.status) for s in STATISTICS]
 end
 
 """
@@ -68,7 +83,8 @@ the first such seed's status.
 """
 function aggregate_seeds(runs)
     out = Row[]
-    for rs in zip(runs...)
+    for i in eachindex(first(runs))
+        rs = [run[i] for run in runs]
         failed = findfirst(r -> r.status != "ok", rs)
         vs = [r.value for r in rs]
         for (name, f) in (("median", median), ("min", minimum), ("max", maximum))
@@ -91,7 +107,10 @@ function print_summary(io::IO, rows)
         rs = filter(r -> r.rig == rig, rows)
         println(io, "\n", rig)
         failed = filter(r -> r.quantity == "rig", rs)
-        isempty(failed) || (println(io, "  ", only(failed).status); continue)
+        if !isempty(failed)
+            println(io, "  ", only(failed).status)
+            continue
+        end
         detected = only(r for r in rs if r.quantity == "detection" && r.split == "all")
         println(io, "  frames detected: ", fmt(detected.value, "%.0f"), " of ", length(filter(r -> r.quantity == "detection", rs)) - 1)
         missed = [r.split for r in rs if r.quantity == "detection" && r.split != "all" && r.value == 0]
@@ -100,12 +119,15 @@ function print_summary(io::IO, rows)
         println(io, "  self-checks: ", join(("$(r.quantity) ($(r.split)) $(r.passed ? "ok" : "FAILED")" for r in checks), ", "))
         println(io, "  map error (mm)                         arena RMS / max    on board          off board         Procrustes")
         for section in ("fromage", "control"), builder in ("from_checkerboard", "from_extrinsic")
-            m = filter(r -> r.section == section && isequal(r.builder, builder) && r.quantity == "map" && coalesce(r.aggregate, "median") == "median", rs)
+            m = filter(rs) do r
+                r.section == section && isequal(r.builder, builder) && r.quantity == "map" &&
+                    coalesce(r.aggregate, "median") == "median"
+            end
             isempty(m) && continue
             cell(split) = join((fmt(only(r for r in m if r.split == split && r.statistic == s).value, "%7.3f") for s in ("RMS", "max")), " / ")
             label = section == "control" ? "$builder, analytic" : builder
             status = first(m).status == "ok" ? "" : "  " * first(m).status
-            println(io, "  ", rpad(label, 36), join((cell(s) for s in ("arena", "on board", "off board", "Procrustes")), "  "), status)
+            println(io, "  ", rpad(label, 36), join((cell(s) for s in MAP_SPLITS), "  "), status)
         end
     end
     return

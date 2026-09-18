@@ -35,8 +35,9 @@ struct Gauge
     north::SVector{2, Float64}
     "the truth's origin, world `(X, Y)` m"
     origin::SVector{2, Float64}
-    "the truth's unit +X and +Y, world"
+    "the truth's unit +X, world"
     x::SVector{2, Float64}
+    "the truth's unit +Y, world"
     y::SVector{2, Float64}
 end
 
@@ -88,7 +89,7 @@ function map_errors(image2real, cam::Camera, g::Gauge)
     truth = [truth_mm(g, P) for P in ARENA_GRID]
     e = norm.(got .- truth)
     on = on_flat_board.(ARENA_GRID)
-    return ("arena" => e, "on board" => e[on], "off board" => e[.!on], "Procrustes" => procrustes(got, truth))
+    return Tuple(MAP_SPLITS .=> (e, e[on], e[.!on], procrustes(got, truth)))
 end
 
 """
@@ -104,5 +105,10 @@ function procrustes(A, B)
     return [norm(R * (a - ma) + mb - b) for (a, b) in zip(A, B)]
 end
 
+"The map's splits (#294): the whole arena, on the flat board's footprint, off it, after Procrustes."
+const MAP_SPLITS = ("arena", "on board", "off board", "Procrustes")
+
 "The statistics each error is reported as (#294): p95 because one point at the rim can own the max."
-summarize(e) = (RMS = sqrt(mean(abs2, e)), p95 = quantile(e, 0.95), max = maximum(e))
+const STATISTICS = (:RMS, :p95, :max)
+
+summarize(e) = NamedTuple{STATISTICS}((sqrt(mean(abs2, e)), quantile(e, 0.95), maximum(e)))
