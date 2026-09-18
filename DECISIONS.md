@@ -2222,7 +2222,7 @@ gate Fromage on something unproven, and a release would advance `/stable/` for a
 never loads.
 
 So `simulation/**` is in `Test.yml`'s `paths-ignore` (which stops `AutoRelease` too), and excluded
-from `Format` and `Lint`; `TestOnPRs` never matched it, since its `*.toml` does not cross `/`. Its
-gate is its own `Pkg.test()`, run locally, with the output in the PR. Nothing of it goes into
-Fromage's `test/`. Promoting it to CI, or into `Pkg.test()`, is out of scope until its behaviour has
+from `Format` and `Lint` (and, for Lint's weekly sweep, from `.lychee.toml`); `TestOnPRs` never
+matched it, since its `*.toml` does not cross `/`. Its gate is its own `Pkg.test()`, run locally,
+with the output in the PR. Nothing of it goes into Fromage's `test/`. Promoting it to CI, or into `Pkg.test()`, is out of scope until its behaviour has
 earned that (#289, "Out of scope") — at which point these exclusions are the thing to undo.

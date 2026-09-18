@@ -2,7 +2,7 @@ using CalibrationRigSimulation: CalibrationRigSimulation, Camera, project, ray
 using LinearAlgebra: normalize
 using OpenCV: OpenCV
 using StaticArrays: SVector
-using Test: @test, @testset
+using Test: @test, @test_throws, @testset
 
 const CRS = CalibrationRigSimulation
 
@@ -12,12 +12,14 @@ camera(k, sar) = Camera(;
     f = 900.0, principal_point = SVector(971.8, 531.7), k, sar,
 )
 
-# the `k1` variants (#289), the canonical no distortion, and a `k1 + k2` lens. That lens's values
-# are this test's own; #304 fixes the one the variants use.
+# the `k1` variants (#289), the canonical no distortion, a `k1 + k2` lens, and a lens with `k3`,
+# which places k3 in OpenCV's `(k1, k2, p1, p2, k3)`. The last two are this test's own; #304 fixes
+# the `k1 + k2` lens the variants use.
 const LENSES = [
     (0.0, 0.0, 0.0),
     (-0.05, 0.0, 0.0), (-0.15, 0.0, 0.0), (-0.3, 0.0, 0.0), (0.05, 0.0, 0.0),
     (-0.25, 0.08, 0.0),
+    (-0.2, 0.05, -0.01),
 ]
 const SARS = (1 // 1, 1 // 2, 2 // 1)
 
@@ -71,6 +73,21 @@ end
         end
     end
 
+    @testset "arguments" begin
+        # a float sar once became a rational whose terms overflowed against an integer pixel
+        @test_throws TypeError camera(LENSES[1], 0.9)
+        @test ray(camera(LENSES[1], 9 // 10), SVector(500, 1919)) ≈ ray(camera(LENSES[1], 9 // 10), SVector(500.0, 1919.0))
+        @test_throws ArgumentError camera((NaN, 0.0, 0.0), 1 // 1)
+        @test_throws ArgumentError Camera(;
+            position = SVector(1.0, 0.0, 1.0), target = SVector(1.0, 0.0, 1.0),
+            f = 900.0, principal_point = SVector(971.8, 531.7), k = LENSES[1], sar = 1,
+        )
+        @test_throws ArgumentError Camera(;
+            position = SVector(0.0, 0.0, 1.0), target = SVector(0.0, 0.0, 0.0),
+            f = 900.0, principal_point = SVector(971.8, 531.7), k = LENSES[1], sar = 1,
+        )
+    end
+
     @testset "inverse" begin
         for k in LENSES, sar in SARS
             cam = camera(k, sar)
@@ -97,6 +114,12 @@ end
         for k1 in (-0.05, -0.15, -0.3)
             @test CRS.fold_radius((k1, 0.0, 0.0)) ≈ sqrt(-1 / 3k1) rtol = 1.0e-12
         end
+        # with k3 the fold is the first root of the slope, inside MAX_RADIUS
+        k = (-0.2, 0.05, -0.01)
+        fold3 = CRS.fold_radius(k)
+        @test 1 < fold3 < CRS.MAX_RADIUS
+        @test abs(CRS.distorted_slope(k, fold3)) < 1.0e-12
+        @test all(r -> CRS.distorted_slope(k, r) > 0, range(0, 0.999fold3, 1000))
 
         cam = camera((-0.3, 0.0, 0.0), 1 // 1)
         fold = sqrt(1 / 0.9)
