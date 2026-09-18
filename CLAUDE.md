@@ -70,6 +70,7 @@ follow this file. Rule 6 below exists because that has actually gone wrong.
 | `test/persistent_tasks.jl` | Aqua's persistent-task check — the one network-dependent check, run by its own non-gating workflow (#159) |
 | `test/jet.jl` | JET; gated on an allowlist of Julia minors (`JET_MINORS` in `runtests.jl`, currently 1.13) |
 | `benchmark/benchmarks.jl` | BenchmarkTools `SUITE`, `"micro"` + `"macro"`. Deliberately **not** in CI |
+| `simulation/` | `CalibrationRigSimulation`, a separate package: the calibration-rig simulation (#289). Its own `Pkg.test()`; **no CI, no release** |
 | `docs/src/` | The user-facing site (`get-started`, `data-folder`, `runs`, `rectifications`, `results`, `help`) |
 
 ---
@@ -426,10 +427,12 @@ branch starts from `main`, and if `main` has moved, rebase onto it rather than s
 6. **Watch the PR's CI** — by polling `gh pr checks <n>` in a loop, *not* with `--watch` (see the
    `gh` notes below). Poll on the **exit code**, not on the table: 8 means checks are still pending,
    0 that every one passed. **`TestOnPRs` triggers only on `src/**`, `test/**`, `*.toml` and
-   `.github/workflows/**`**, and **`Format` only on `**.jl`** —
+   `.github/workflows/**`**, and **`Format` only on `**.jl` outside `simulation/`** —
    so a docs-only or top-level-`*.md` PR legitimately has no *`TestOnPRs`* run, while a PR touching
    only `docs/make.jl` gets `Format`, `Lint` and `Docs` (all three match `docs/**`) but still no
-   `TestOnPRs`. Absent checks there is expected, not something to wait on.
+   `TestOnPRs`. Absent checks there is expected, not something to wait on. A PR touching only
+   `simulation/**` triggers **no check at all** (DECISIONS, "The simulation runs no CI and cuts no
+   release"): its gate is `julia --project=simulation -e 'using Pkg; Pkg.test()'`, run locally.
    Watch what the *merge* triggers separately, and on the right ref: an `AutoRelease` tag build
    (`Docs` on `v0.x.y`) does not appear in `gh run list --branch main`, so a watcher scoped to
    `main` reports the chain complete while the tag's docs build is still running.
@@ -469,15 +472,17 @@ of those is "done" on its own, and none of them should be reported as done.
 - **What does and does not release** — `Test.yml`'s `paths-ignore` is the single source of truth,
   because `AutoRelease` triggers on `Test` completing, so anything `Test` skips is never released.
   It ignores top-level `*.md` (`*` does not cross `/`, so `docs/src/*.md` still counts), `LICENSE`,
-  `.gitignore`, `codecov.yml`, `.lychee.toml`, `.copier-answers.yml`, **`docs/agents/**`** and
-  **`.claude/**`**. Everything else under `src/` or `docs/` does release — so batch a `docs/src/`
-  correction into the PR that needs it, or it costs a second version bump.
-  The last two are easy to get wrong in the direction that *costs* you nothing and *tells* you
+  `.gitignore`, `codecov.yml`, `.lychee.toml`, `.copier-answers.yml`, **`docs/agents/**`**,
+  **`.claude/**`** and **`simulation/**`**. Everything else under `src/` or `docs/` does release —
+  so batch a `docs/src/` correction into the PR that needs it, or it costs a second version bump.
+  Two of those are easy to get wrong in the direction that *costs* you nothing and *tells* you
   something false: `docs/agents/**` and `.claude/**` look like they release because they sit under
   `docs/` and look like config, and they do not — neither is loaded by the package or built into the
   site, so there is no `/stable/` for a tag to advance. `Docs.yml` carves `docs/agents/**` out with
   a negated pattern for the same reason, so a PR touching only those paths legitimately gets **no
   `Docs`, no `TestOnPRs` and no `Format`** — `Lint` alone, which matches `**/*.md`.
+  `simulation/**` is excluded on purpose rather than because nothing there ships: it is a package in
+  development that runs no CI until it is trusted (#289, #297). `Format` and `Lint` carve it out too.
 - **`gh` here is 2.100.0 (released 2026-09-03), upgraded from 2.23.0 on 2026-09-11.** Every
   limitation this file used to record is gone. What follows was *retested* on the new version, not
   assumed: `gh issue view <n>` and `gh pr edit` both used to die with a Projects-classic GraphQL
