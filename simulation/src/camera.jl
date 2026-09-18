@@ -19,7 +19,7 @@ const NOMINAL_DISPLAY = (1920, 1080)
 
 """
 The largest undistorted normalised radius (`tan` of the angle off the optical axis, ≈ 83°) either
-direction of the model accepts when the lens has no fold closer in. It bounds the bisection's
+direction of the model accepts when the lens has no fold closer in. It bounds the inverse's
 bracket; no rig looks that far off axis.
 """
 const MAX_RADIUS = 8.0
@@ -119,11 +119,26 @@ function bisect(below, lo, hi)
     return
 end
 
-# the bracketed inverse of the radial map on its monotone branch [0, max_radius]; `nothing` past it
+# The bracketed inverse of the radial map on its monotone branch [0, max_radius]; `nothing` past it.
+# Newton steps, each one narrowing the bracket, and a bisection whenever a step would leave it (as it
+# does near the fold, where the slope goes to zero); it stops when a step moves nothing. Each step
+# lands strictly inside the bracket and shrinks it, so it always stops. Every ray the
+# renderer casts comes through here, 256 to a pixel, and bisecting to Float64 resolution alone made
+# the inverse 25× the cost of tracing the ray (#299).
 function undistorted_radius(cam::Camera, rd)
-    hi = cam.max_radius
+    lo, hi = 0.0, cam.max_radius
     rd > hi * radial(cam.k, hi^2) && return nothing
-    return bisect(r -> r * radial(cam.k, r^2) < rd, 0.0, hi)
+    r = min(rd, hi)
+    while true
+        g = r * radial(cam.k, r^2) - rd
+        iszero(g) && return r
+        g < 0 ? (lo = r) : (hi = r)
+        next = r - g / distorted_slope(cam.k, r)
+        lo < next < hi || (next = (lo + hi) / 2)
+        (next == r || next == lo || next == hi) && return r
+        r = next
+    end
+    return
 end
 
 """

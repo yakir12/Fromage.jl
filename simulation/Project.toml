@@ -6,6 +6,7 @@ authors = ["Yakir Gagnon <12.yakir@gmail.com> and contributors"]
 [deps]
 Fromage = "f7d2997e-1be8-4771-a487-05d70e6e0672"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+OhMyThreads = "67456a42-1dca-4109-a031-0a68de7e3ad5"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [sources]
@@ -13,6 +14,7 @@ Fromage = {path = ".."}
 
 [compat]
 LinearAlgebra = "1"
+OhMyThreads = "0.8.6"
 OpenCV = "4.9.0"
 StaticArrays = "1.9"
 Test = "1"
