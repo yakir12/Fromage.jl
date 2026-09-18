@@ -289,7 +289,8 @@ end
     # the sar (#293). 4×4 sampling keeps it quick and still greys the edges; the ramp holds every
     # 8-bit level, so a range conversion (#293's `yuv420p` route was off by one level) cannot hide.
     @testset "lossless round trip at sar $sar" for sar in (1 // 2, 10 // 11, 1 // 1, 16 // 15, 64 // 45, 2 // 1)
-        cam = Camera(; BASELINE_CAMERA..., sar)
+        # `local`: an assignment in a testset's loop would otherwise rebind the enclosing testset's `cam`
+        local cam = Camera(; BASELINE_CAMERA..., sar)
         ramp = [UInt8((i + j) % 256) for i in 1:cam.height, j in 1:cam.width]
         frames = [render(cam, last(board_poses(cam)).board; samples = 4), ramp]
         @test length(unique(first(frames))) > 3
@@ -308,6 +309,7 @@ end
 
     @testset "cache" begin
         # one unsampled frame of the rig with no board keeps each render cheap
+        local cam = Camera(; BASELINE_CAMERA...)
         mktempdir() do cache_dir
             request(cam) = cached_video(cache_dir, cam, [nothing]; samples = 1)
             file = request(cam)
@@ -328,6 +330,20 @@ end
             key(version) = CRS.cache_key(cam, [nothing], 1, version)
             @test basename(file) == key(RENDERER_VERSION) * ".mp4"
             @test key(RENDERER_VERSION + 1) != key(RENDERER_VERSION)
+            # the same boards are the same key whatever the vector's element type, and whatever the
+            # requesting session has imported: `repr` once printed both into the key
+            board = last(board_poses(cam)).board
+            @test CRS.cache_key(cam, [board], 1, 1) == CRS.cache_key(cam, Union{Board, Nothing}[board], 1, 1)
+            elsewhere = """import CalibrationRigSimulation as C
+            print(C.cache_key(C.Camera(; C.BASELINE_CAMERA...), [nothing], 1, $RENDERER_VERSION))"""
+            @test readchomp(`$(Base.julia_cmd()) --project=$(Base.active_project()) --startup-file=no -e $elsewhere`) == key(RENDERER_VERSION)
         end
+    end
+
+    @testset "encoding failures" begin
+        @test_throws ArgumentError encode(joinpath(mktempdir(), "empty.mp4"), Matrix{UInt8}[], 1 // 1)
+        @test_throws ArgumentError encode(joinpath(mktempdir(), "ragged.mp4"), [zeros(UInt8, 4, 4), zeros(UInt8, 4, 6)], 1 // 1)
+        # ffmpeg's own reason reaches the exception, rather than only the terminal
+        @test_throws r"^ffmpeg could not encode .+ \(exit \d+\): \S" encode(joinpath(mktempdir(), "missing", "x.mp4"), [zeros(UInt8, 4, 4)], 1 // 1)
     end
 end

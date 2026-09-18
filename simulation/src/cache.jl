@@ -13,8 +13,14 @@ const RENDERER_VERSION = 1
 # The key of the video of `boards` seen by `cam` at `samples` × `samples`: a hash of every setting
 # that decides its pixels, plus the renderer's version. `repr` prints each float in full, so a
 # setting changed in its last bit is a different key; and the digest, unlike `hash`, is the same in
-# every Julia session. A Julia that printed these differently would miss the cache, never hit a wrong video.
-cache_key(cam::Camera, boards, samples, version) = bytes2hex(sha256(repr((; version, cam, boards = collect(boards), samples))))
+# every Julia session. What `repr` prints is pinned: types are named from this module, not from
+# whatever the requesting session has imported, and the boards always print as the same vector type,
+# because either once changed the key of an identical rig. A Julia that printed these differently
+# would miss the cache, never hit a wrong video.
+function cache_key(cam::Camera, boards, samples, version)
+    settings = (; version, cam, boards = Union{Board, Nothing}[b for b in boards], samples)
+    return bytes2hex(sha256(repr(settings; context = :module => @__MODULE__)))
+end
 
 """
     cached_video(cache_dir, cam::Camera, boards; samples = SUPERSAMPLING) -> path
