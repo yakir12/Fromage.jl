@@ -9,11 +9,16 @@ on:
   pull_request:
     branches:
       - main
+    # `simulation/**` is excluded here and, for the weekly sweep, in `.lychee.toml`: the
+    # CalibrationRigSimulation package runs no CI until its behaviour earns it (#289, #297;
+    # DECISIONS.md, "The simulation runs no CI and cuts no release"). The exclusion must come
+    # after the `**/*.md` it carves out of.
     paths:
       - "docs/**"
       - "**/*.md"
       - ".lychee.toml"
       - ".github/workflows/Lint.yml"
+      - "!simulation/**"
     types: [opened, synchronize, reopened]
   workflow_dispatch:
 

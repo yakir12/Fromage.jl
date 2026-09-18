@@ -5,5 +5,7 @@ exclude = [
 ]
 
 exclude_path = [
-  "docs/build"
+  "docs/build",
+  # the CalibrationRigSimulation package runs no CI (#289, #297; Lint.yml)
+  "simulation",
 ]
