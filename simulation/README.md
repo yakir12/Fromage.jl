@@ -10,6 +10,20 @@ the system departs from the physics. The spec is the wayfinder map
 It is a research instrument: it reports discrepancies and gates nothing. It runs no CI and cuts no
 release (`DECISIONS.md`, "The simulation runs no CI and cuts no release").
 
+## Running it
+
+```julia
+using CalibrationRigSimulation
+simulate(; results_dir = "/somewhere/results", cache_dir = "/somewhere/cache")
+```
+
+Neither folder has a default, and both belong outside the repository. `variants` picks rigs by name
+(`variants = ["baseline"]`) or takes `Rig`s. Each run writes `report.csv` into its own folder of
+`results_dir`, named for the date, Fromage's version and commit, the simulation's version and
+Julia's; it prints a table of the primary quantities and returns the report as a `DataFrame`. The
+first run of a rig renders its video, about a minute on 32 threads; later runs read it from
+`cache_dir`.
+
 ## Running the tests
 
 From the repository root:
@@ -58,3 +72,17 @@ The simulation's own words, kept here rather than in the root `CONTEXT.md`, whic
   it outside the repository) under a hash of the camera, the boards, the sampling and
   `RENDERER_VERSION`. **Bump `RENDERER_VERSION` by hand whenever rendering changes**, or the cache
   keeps serving the old videos.
+- `src/truth.jl` — what Fromage's map is checked against: the `Gauge` (`center` and `north` snapped
+  to whole display pixels and back-projected onto the ground, #294), the 5 cm grid over the arena,
+  `map_errors` in its four splits (whole arena, on the flat board's footprint, off it, after
+  Procrustes), and RMS / p95 / max.
+- `src/builder_rung.jl` — the builder rung: detection of the 28 frames counted with Fromage's own
+  detector, corners against their analytic projections, `from_checkerboard` and `from_extrinsic`
+  called as the csv calls them (`blur = 1.0`), each intrinsic term, the map, and the dot separation;
+  the analytic-corner controls; and the run-time self-checks (the round trip, the dot detector, the
+  analytic control).
+- `src/report.jl` — the long-format report, one row per rig × rung × builder × section × quantity ×
+  split × statistic, each with a `status` (`ok`, `not detected`, `threw: <message>`), and the
+  printed table.
+- `src/simulate.jl` — `simulate`, `Rig` and `VARIANTS`, the rigs a run can measure (the baseline
+  only, for now).
