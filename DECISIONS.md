@@ -2212,6 +2212,30 @@ two-tier rule: the `"macro"` group still cannot settle a design question, whatev
 
 ## Simulation
 
+### Verdicts use the baseline's board-jitter floor (#296, #302)
+
+The ideal sensor is deterministic: rendering the same rig again cannot measure a noise floor.
+Ten seeded replicates instead shift every board, including the flat one, in its own plane by up
+to half a stored pixel at its depth, without rotating it. Moving the camera would move the truth;
+jittering supersampling offsets after the 16×16 convergence established in #292 would understate
+the floor. Neither is varied.
+
+Each quantity's floor is the largest error magnitude across those ten replicates, without assuming
+a distribution from ten samples. Signed intrinsic and dot-separation errors use magnitudes so a
+large negative error cannot disappear from the comparison. Only the baseline gets replicates:
+repeating them for every variant would multiply the rendering cost, and a fixed reference makes
+variant discrepancies visible. A variant with a higher noise floor is consequently judged against
+a floor too low; the report states that the floor belongs to the baseline. Videos are cached,
+while measurements are repeated because the Fromage code they exercise may change.
+
+The `total` family compares detected-corner results with that floor. The `model` family compares
+analytic-corner maps with the baseline's controls, using the largest of the ten noisy control
+seeds for `from_extrinsic`. Relative thresholds also need absolute map/distance tolerances so
+tiny numerical differences do not become serious discrepancies. The model family's 0.1 mm
+tolerance was proposed in #296, unlike the user-set total tolerances, and should be revisited when
+variant measurements exist. RMS and max are judged; p95 remains available for reading. Verdicts
+mark rows worth investigating and are not pass/fail gates.
+
 ### The simulation runs no CI and cuts no release (#289, #297)
 
 `simulation/` is the package `CalibrationRigSimulation`: a physical simulation of the arena and

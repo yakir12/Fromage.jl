@@ -99,8 +99,10 @@ end
 """
     print_summary(io, rows)
 
-The printed table of the primary quantities: per rig, the frames detected, the self-checks, and
-the map error in mm per builder and section, each split as RMS / max.
+The printed table of the judged `rows` (see [`judged`](@ref)): per rig, the frames detected, the
+self-checks, the corners, the map error per builder and section, the dot separation and the
+intrinsics. A serious value is marked `!!` and a diagnostic one `!`. It ends by stating the floor,
+and with the list of serious rows.
 """
 function print_summary(io::IO, rows)
     for rig in unique(r.rig for r in rows)
@@ -111,26 +113,61 @@ function print_summary(io::IO, rows)
             println(io, "  ", only(failed).status)
             continue
         end
-        detected = only(r for r in rs if r.quantity == "detection" && r.split == "all")
-        println(io, "  frames detected: ", fmt(detected.value, "%.0f"), " of ", length(filter(r -> r.quantity == "detection", rs)) - 1)
-        missed = [r.split for r in rs if r.quantity == "detection" && r.split != "all" && r.value == 0]
+        one(; kw...) = only(r for r in rs if all(isequal(r[k], v) for (k, v) in kw))
+        frames = filter(r -> r.quantity == "detection" && r.split != "all", rs)
+        println(io, "  frames detected: ", fmt(one(quantity = "detection", split = "all").value, "%.0f"), " of ", length(frames))
+        missed = [r.split * marked(r) for r in frames if r.value == 0]
         isempty(missed) || println(io, "  missed: ", join(missed, ", "))
         checks = filter(r -> r.section == "self-check" && r.passed !== missing, rs)
         println(io, "  self-checks: ", join(("$(r.quantity) ($(r.split)) $(r.passed ? "ok" : "FAILED")" for r in checks), ", "))
-        println(io, "  map error (mm)                         arena RMS / max    on board          off board         Procrustes")
+
+        println(io, "  corners                                all frames RMS / max    flat board RMS / max")
+        for unit in unique(r.unit for r in rs if r.quantity == "corners")
+            cell(split) = pair(filter(r -> r.quantity == "corners" && r.unit == unit && r.split == split, rs))
+            println(io, "  ", rpad(unit, 37), cell("all frames"), "    ", cell("flat board"))
+        end
+
+        println(io, "  map error (mm)                         ", join((rpad("$s RMS / max", 24) for s in MAP_SPLITS)))
         for section in ("fromage", "control"), builder in ("from_checkerboard", "from_extrinsic")
             m = filter(rs) do r
                 r.section == section && isequal(r.builder, builder) && r.quantity == "map" &&
                     coalesce(r.aggregate, "median") == "median"
             end
             isempty(m) && continue
-            cell(split) = join((fmt(only(r for r in m if r.split == split && r.statistic == s).value, "%7.3f") for s in ("RMS", "max")), " / ")
             label = section == "control" ? "$builder, analytic" : builder
             status = first(m).status == "ok" ? "" : "  " * first(m).status
-            println(io, "  ", rpad(label, 36), join((cell(s) for s in MAP_SPLITS), "  "), status)
+            println(io, "  ", rpad(label, 36), join((pair(filter(r -> r.split == split, m)) * "    " for split in MAP_SPLITS)), status)
+        end
+
+        for builder in ("from_checkerboard", "from_extrinsic")
+            fromage = filter(r -> r.section == "fromage" && isequal(r.builder, builder), rs)
+            separation = only(r for r in fromage if r.quantity == "dot separation")
+            errors = filter(r -> r.quantity == "intrinsics" && r.statistic == "error", fromage)
+            println(
+                io, "  ", rpad(builder, 18), "dot separation ", fmt(separation.value, "%+.3f"), " mm", marked(separation),
+                "; intrinsics error ", join(("$(r.split) $(fmt(r.value, "%+.3g"))$(marked(r))" for r in errors), "  "),
+            )
         end
     end
+
+    println(io, "\nevery rig is judged against the baseline rig's floor: the largest value of $(length(REPLICATES)) jittered replicates, and the baseline's own controls (#296)")
+    serious = filter(r -> r.verdict == "serious", rows)
+    println(io, "serious rows: ", isempty(serious) ? "none" : length(serious))
+    for r in serious
+        where = join(skipmissing((r.rig, r.rung, r.builder, r.section, r.quantity, r.split, r.statistic, r.aggregate)), " / ")
+        println(io, "  !! ", where, ": ", fmt(r.value, "%.4g"), " ", r.unit, ", floor ", fmt(r.floor, "%.4g"), ", ratio ", fmt(r.ratio, "%.3g"))
+    end
     return
+end
+
+"How the printed table marks a verdict."
+const MARKS = Dict("serious" => "!!", "diagnostic" => "!")
+marked(r) = get(MARKS, r.verdict, "")
+
+# a quantity's RMS / max, each with its mark, from its rows
+function pair(rs)
+    cell(s) = (r = only(r for r in rs if r.statistic == s); rpad(fmt(r.value, "%7.3f") * marked(r), 9))
+    return cell("RMS") * " / " * cell("max")
 end
 
 fmt(::Missing, _) = "—"

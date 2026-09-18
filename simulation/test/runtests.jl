@@ -54,6 +54,9 @@ function opencv_project(cam::Camera, Ps)
 end
 
 @testset "CalibrationRigSimulation" begin
+    include("verdicts.jl")
+    include("floor.jl")
+
     @testset "camera model vs the OpenCV oracle" begin
         for k in LENSES, sar in SARS
             cam = camera(k, sar)
@@ -440,7 +443,7 @@ end
     end
 
     # the acceptance of #301: a baseline run lands near #292's numbers, and a failing rig is recorded
-    # while the run goes on. It renders the baseline rig's video, about a minute on 32 threads.
+    # while the run goes on. #302 also measures the ten jittered baseline replicates.
     @testset "baseline run" begin
         results_dir, cache_dir = mktempdir(), mktempdir()
         broken = Rig("broken", (; f = -1.0))
@@ -452,12 +455,18 @@ end
             @test occursin(part, basename(folder))
         end
         @test nrow(CSV.read(joinpath(folder, "report.csv"), DataFrame)) == nrow(report)
+        @test all(c -> c in names(report), ["floor", "ratio", "tolerance", "family", "verdict"])
+        replicates = CSV.read(joinpath(folder, "replicates.csv"), DataFrame)
+        @test length(unique(replicates.rig)) == 10
+        @test all(==("ok"), replicates.status)
+        @test all(==(true), skipmissing(replicates.passed))
         # one row per rig × rung × builder × section × quantity × split × statistic (× seed aggregate)
         key = [:rig, :rung, :builder, :section, :quantity, :split, :statistic, :aggregate, :unit]
         @test allunique(eachrow(coalesce.(report[:, key], "")))
 
         baseline = report[report.rig .== "baseline", :]
         @test all(==("ok"), baseline.status)
+        @test !any(==("serious"), baseline.verdict)
         value(; kw...) = only(r.value for r in eachrow(baseline) if all(isequal(r[k], v) for (k, v) in kw))
         @test value(quantity = "detection", split = "all") == 28
         @test all(==(true), skipmissing(baseline.passed))
@@ -472,5 +481,19 @@ end
         failed = only(eachrow(report[report.rig .== "broken", :]))
         @test failed.status == "threw: ArgumentError: f must be positive, got -1.0"
         @test ismissing(failed.value)
+
+        # Exercise the printed markers and closing list using the real report's layout.
+        rows = NamedTuple.(eachrow(baseline))
+        plain = sprint(CRS.print_summary, rows)
+        @test occursin("baseline rig's floor", plain) && occursin("serious rows: none", plain)
+        missed = findfirst(r -> r.quantity == "detection" && r.split == "flat", rows)
+        corners = findfirst(r -> r.quantity == "corners" && r.statistic == "RMS" && r.split == "all frames", rows)
+        rows[missed] = merge(rows[missed], (; value = 0.0, verdict = "serious"))
+        rows[corners] = merge(rows[corners], (; verdict = "diagnostic"))
+        flagged = sprint(CRS.print_summary, rows)
+        @test occursin("flat!!", flagged) && occursin("serious rows: 1", flagged)
+        @test occursin("detection / flat / detected", flagged)
+        @test occursin(CRS.fmt(rows[corners].value, "%7.3f") * "!", flagged)
+        @info "Baseline acceptance: no serious rows; measured floors and replicates saved" folder cache_dir
     end
 end

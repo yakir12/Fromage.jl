@@ -121,13 +121,13 @@ function separation_row(ctx, error)
 end
 
 """
-    measure_builders(rig_name, cam::Camera, file) -> Vector{Row}
+    measure_builders(rig_name, cam::Camera, poses, file) -> Vector{Row}
 
 The builder rung's rows for the rig whose video `file` (from [`cached_video`](@ref)) holds its 28
-board poses, frames 0–27 with the flat board last, and the rig with no board as frame 28.
+board `poses` (as [`board_poses`](@ref) returns them, or [`jittered`](@ref)), frames 0–27 with the
+flat board last, and the rig with no board as frame 28.
 """
-function measure_builders(rig_name, cam::Camera, file)
-    poses = board_poses(cam)
+function measure_builders(rig_name, cam::Camera, poses, file)
     flat, no_board = lastindex(poses) - 1, lastindex(poses)
     g = Gauge(cam)
     ctx = (; rig = rig_name, rung = "builders")
