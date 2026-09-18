@@ -2209,3 +2209,20 @@ the number was real, it just measured the machine rather than the change.
 and that is what a design claim has to rest on. A wall-clock difference is worth acting on only if
 it survives a re-run of both sides and is far larger than the spread above. This sits *under* the
 two-tier rule: the `"macro"` group still cannot settle a design question, whatever it reports.
+
+## Simulation
+
+### The simulation runs no CI and cuts no release (#289, #297)
+
+`simulation/` is the package `CalibrationRigSimulation`: a physical simulation of the arena and
+camera that checks Fromage's checkerboard rectification against analytic truth. It is a research
+instrument in development, and nobody trusts it yet — its own self-checks (the OpenCV oracle, the
+lossless round trip, the dot detector) are still landing, one issue at a time. A CI job over it would
+gate Fromage on something unproven, and a release would advance `/stable/` for a change the package
+never loads.
+
+So `simulation/**` is in `Test.yml`'s `paths-ignore` (which stops `AutoRelease` too), and excluded
+from `Format` and `Lint`; `TestOnPRs` never matched it, since its `*.toml` does not cross `/`. Its
+gate is its own `Pkg.test()`, run locally, with the output in the PR. Nothing of it goes into
+Fromage's `test/`. Promoting it to CI, or into `Pkg.test()`, is out of scope until its behaviour has
+earned that (#289, "Out of scope") — at which point these exclusions are the thing to undo.

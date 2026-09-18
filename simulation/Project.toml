@@ -1,0 +1,28 @@
+name = "CalibrationRigSimulation"
+uuid = "1a750161-c511-48f7-a22e-fb8e8b752bd3"
+version = "0.1.0"
+authors = ["Yakir Gagnon <12.yakir@gmail.com> and contributors"]
+
+[deps]
+Fromage = "f7d2997e-1be8-4771-a487-05d70e6e0672"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+
+[sources]
+Fromage = {path = ".."}
+
+[compat]
+LinearAlgebra = "1"
+OpenCV = "4.9.0"
+StaticArrays = "1.9"
+Test = "1"
+julia = "1.13"
+
+# OpenCV is an oracle, never a dependency of the model: it checks the camera model in the tests and
+# nowhere else (#282, #289).
+[extras]
+OpenCV = "f878e3a2-a245-4720-8660-60795d644f2a"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["OpenCV", "Test"]

@@ -17,3 +17,4 @@ coverage
 env
 node_modules
 /benchmark/Manifest.toml
+/simulation/Manifest.toml
