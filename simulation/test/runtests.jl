@@ -1,9 +1,12 @@
-using CalibrationRigSimulation: CalibrationRigSimulation, BASELINE_CAMERA, Board, Camera, area_centroid,
-    board_poses, corner_projections, detect_dots, inner_corners, project, ray, render, trace
+using CalibrationRigSimulation: CalibrationRigSimulation, BASELINE_CAMERA, Board, Camera, RENDERER_VERSION,
+    area_centroid, board_poses, cached_video, corner_projections, detect_dots, encode, inner_corners, project,
+    ray, render, trace
+using Fromage: Fromage
 using LinearAlgebra: norm, normalize, ×
 using OpenCV: OpenCV
 using StaticArrays: SVector
 using Test: @test, @test_throws, @testset
+using VideoIO: VideoIO
 
 const CRS = CalibrationRigSimulation
 
@@ -279,5 +282,68 @@ end
         for c in CRS.DOT_CENTRES
             @test minimum(norm(d - area_centroid(cam, c)) for d in found) < 0.05
         end
+    end
+
+    # render → encode → decode through the frame reader Fromage's builders use returns the same
+    # pixels, and every sar reader Fromage has (both gateways' ffprobe, the tracker's VideoIO) sees
+    # the sar (#293). 4×4 sampling keeps it quick and still greys the edges; the ramp holds every
+    # 8-bit level, so a range conversion (#293's `yuv420p` route was off by one level) cannot hide.
+    @testset "lossless round trip at sar $sar" for sar in (1 // 2, 10 // 11, 1 // 1, 16 // 15, 64 // 45, 2 // 1)
+        # `local`: an assignment in a testset's loop would otherwise rebind the enclosing testset's `cam`
+        local cam = Camera(; BASELINE_CAMERA..., sar)
+        ramp = [UInt8((i + j) % 256) for i in 1:cam.height, j in 1:cam.width]
+        frames = [render(cam, last(board_poses(cam)).board; samples = 4), ramp]
+        @test length(unique(first(frames))) > 3
+        mktempdir() do dir
+            file = encode(joinpath(dir, "board.mp4"), frames, sar)
+            for (k, frame) in enumerate(frames)
+                # frame k - 1 is at t = k - 1 s
+                @test Fromage.Rectifications._frame_at(file, k - 1, missing, cam.width, cam.height) == frame
+            end
+            probed = Fromage.VerifyRectifications.probe_video(file)
+            @test (probed.width, probed.height, probed.aspect) == (cam.width, cam.height, float(sar))
+            @test Fromage.VerifyRuns.probe_video(file).sar == sar
+            @test VideoIO.openvideo(VideoIO.aspect_ratio, file) == sar
+        end
+    end
+
+    @testset "cache" begin
+        # one unsampled frame of the rig with no board keeps each render cheap
+        local cam = Camera(; BASELINE_CAMERA...)
+        mktempdir() do cache_dir
+            request(cam) = cached_video(cache_dir, cam, [nothing]; samples = 1)
+            file = request(cam)
+            @test isfile(file) && dirname(file) == cache_dir
+            @test Fromage.Rectifications._frame_at(file, 0, missing, cam.width, cam.height) == render(cam, nothing; samples = 1)
+            # a second request for the same rig finds the video and re-renders nothing
+            before = stat(file)
+            @test request(Camera(; BASELINE_CAMERA...)) == file
+            @test (stat(file).inode, stat(file).mtime) == (before.inode, before.mtime)
+            @test readdir(cache_dir) == [basename(file)]
+            # changing one setting, the sampling, or the boards is a different video
+            other = request(Camera(; BASELINE_CAMERA..., k = (-0.05, 0.0, 0.0)))
+            @test other != file && isfile(other)
+            @test cached_video(cache_dir, cam, [nothing]; samples = 2) ∉ (file, other)
+            @test cached_video(cache_dir, cam, [nothing, nothing]; samples = 1) ∉ (file, other)
+            @test length(readdir(cache_dir)) == 4
+            # and so does bumping the renderer's version: the key moves, so the video is re-rendered
+            key(version) = CRS.cache_key(cam, [nothing], 1, version)
+            @test basename(file) == key(RENDERER_VERSION) * ".mp4"
+            @test key(RENDERER_VERSION + 1) != key(RENDERER_VERSION)
+            # the same boards are the same key whatever the vector's element type, and whatever the
+            # requesting session has imported: `repr` once printed both into the key
+            board = last(board_poses(cam)).board
+            @test CRS.cache_key(cam, [board], 1, 1) == CRS.cache_key(cam, Union{Board, Nothing}[board], 1, 1)
+            elsewhere = """import CalibrationRigSimulation as C
+            print(C.cache_key(C.Camera(; C.BASELINE_CAMERA...), [nothing], 1, $RENDERER_VERSION))"""
+            @test readchomp(`$(Base.julia_cmd()) --project=$(Base.active_project()) --startup-file=no -e $elsewhere`) == key(RENDERER_VERSION)
+        end
+    end
+
+    @testset "encoding failures" begin
+        @test_throws ArgumentError encode(joinpath(mktempdir(), "empty.mp4"), Matrix{UInt8}[], 1 // 1)
+        @test_throws ArgumentError encode(joinpath(mktempdir(), "ragged.mp4"), [zeros(UInt8, 4, 4), zeros(UInt8, 4, 6)], 1 // 1)
+        # ffmpeg's own reason reaches the exception, rather than only the terminal
+        @test_throws r"^ffmpeg could not encode .+ \(exit \d+\): \S" encode(joinpath(mktempdir(), "missing", "x.mp4"), [zeros(UInt8, 4, 4)], 1 // 1)
     end
 end
