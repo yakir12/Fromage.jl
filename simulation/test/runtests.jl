@@ -1,8 +1,10 @@
 using CalibrationRigSimulation: CalibrationRigSimulation, BASELINE_CAMERA, Board, Camera, RENDERER_VERSION,
-    area_centroid, board_poses, cached_video, corner_projections, detect_dots, encode, inner_corners, project,
-    ray, render, trace
+    Rig, VARIANTS, area_centroid, board_poses, cached_video, corner_projections, detect_dots, encode,
+    inner_corners, project, ray, render, simulate, trace
+using CSV: CSV
 using Fromage: Fromage
-using LinearAlgebra: norm, normalize, ×
+using DataFrames: DataFrame, nrow
+using LinearAlgebra: norm, normalize, ×, ⋅
 using OpenCV: OpenCV
 using StaticArrays: SVector
 using Test: @test, @test_throws, @testset
@@ -345,5 +347,130 @@ end
         @test_throws ArgumentError encode(joinpath(mktempdir(), "ragged.mp4"), [zeros(UInt8, 4, 4), zeros(UInt8, 4, 6)], 1 // 1)
         # ffmpeg's own reason reaches the exception, rather than only the terminal
         @test_throws r"^ffmpeg could not encode .+ \(exit \d+\): \S" encode(joinpath(mktempdir(), "missing", "x.mp4"), [zeros(UInt8, 4, 4)], 1 // 1)
+    end
+
+    # `center`/`north` snapped to whole display pixels, and the truth they define (#294)
+    @testset "gauge" begin
+        local cam = Camera(; BASELINE_CAMERA...)
+        g = CRS.Gauge(cam)
+        shown(P) = CRS.display_point(cam, project(cam, P))
+        @test g.center == round.(shown(SVector(0.0, 0.0, 0.0))) && g.north == round.(shown(SVector(0.0, 0.5, 0.0)))
+        # the snapped origin is within a pixel's footprint of the arena's middle, and north within a
+        # pixel's turn of +Y
+        @test norm(g.origin) < 0.002
+        @test abs(g.y[1]) < 0.002 && g.y[2] > 0
+        @test g.x ⋅ g.y ≈ 0 atol = 1.0e-12
+        # Fromage's real (y, x) is (−Y, X) in the gauge's frame (#290), here in mm
+        @test CRS.truth_mm(g, g.origin) == SVector(0.0, 0.0)
+        @test CRS.truth_mm(g, g.origin + 0.1g.y) ≈ SVector(-100.0, 0.0)
+        @test CRS.truth_mm(g, g.origin + 0.1g.x) ≈ SVector(0.0, 100.0)
+        # a map that is the truth scores zero everywhere
+        exact(p) = CRS.truth_mm(g, CRS.ground_point(cam, p)) / CRS.MM_PER_REAL
+        errors = CRS.map_errors(exact, cam, g)
+        @test first.(errors) == ("arena", "on board", "off board", "Procrustes")
+        @test all(maximum(e) < 1.0e-9 for (_, e) in errors)
+        @test length(last(errors[1])) == length(last(errors[2])) + length(last(errors[3])) == length(CRS.ARENA_GRID)
+        # the flat board's footprint is 52 cm along Y and 40 cm along X
+        @test CRS.on_flat_board(SVector(0.19, 0.25)) && !CRS.on_flat_board(SVector(0.21, 0.0)) && !CRS.on_flat_board(SVector(0.0, 0.27))
+    end
+
+    @testset "Procrustes" begin
+        A = [SVector(cos(t), sin(2t)) for t in 0:0.3:6]
+        R = [cos(0.4) -sin(0.4); sin(0.4) cos(0.4)]
+        @test maximum(CRS.procrustes(A, [R * a + SVector(3.0, -1.0) for a in A])) < 1.0e-12
+        # a mirror is a shape error, not a gauge error
+        @test maximum(CRS.procrustes(A, [SVector(-a[1], a[2]) for a in A])) > 0.1
+    end
+
+    # the analytic projections in Fromage's order are what its detector finds, index for index
+    @testset "Fromage's corner order" begin
+        local cam = Camera(; BASELINE_CAMERA...)
+        for (; board) in board_poses(cam)[[1, 7, 24, 28]]
+            mktempdir() do dir
+                file = encode(joinpath(dir, "board.mp4"), [render(cam, board; samples = 4)], cam.sar)
+                found = Fromage.Rectifications.get_corners(file, 0.0, missing, cam.width, cam.height, CRS.N_CORNERS)
+                truth = CRS.fromage_corners(cam, board)
+                @test maximum(norm, CRS.corner_errors(found, truth)) < 0.5
+                # a board found half a turn round is the same grid
+                @test CRS.corner_errors(reverse(found), truth) ≈ reverse(CRS.corner_errors(found, truth))
+            end
+        end
+    end
+
+    # the acceptance of #301: exact corners through Fromage's fit reproduce the truth's map
+    @testset "analytic control" begin
+        local cam = Camera(; BASELINE_CAMERA...)
+        g = CRS.Gauge(cam)
+        fit = CRS.analytic_fit(cam, g, [CRS.fromage_corners(cam, p.board) for p in board_poses(cam)], CRS.RADIAL_PARAMETERS)
+        arena = CRS.summarize(last(first(CRS.map_errors(fit.rect.image2real, cam, g))))
+        @test arena.RMS ≈ 0.003 atol = 0.002
+        @test arena.RMS < CRS.CONTROL_TOLERANCE
+        @test fit.model.frow ≈ BASELINE_CAMERA.f rtol = 1.0e-5
+    end
+
+    # a rig whose flat board goes undetected reaches no map, and still reports the intrinsics of its
+    # calibration frames (#294); every failure keeps a quantity's rows, so each rig reports the same rows
+    @testset "failures keep their rows" begin
+        local cam = Camera(; BASELINE_CAMERA...)
+        g = CRS.Gauge(cam)
+        calibration = [CRS.fromage_corners(cam, p.board) for p in board_poses(cam)[1:(end - 1)]]
+        fits = CRS.builder_fits(cam, g, "no video is read", calibration, CRS.Failure("not detected"))
+        @test fits.from_checkerboard.rect == fits.from_extrinsic.rect == fits.from_extrinsic.model == CRS.Failure("not detected")
+        @test fits.from_checkerboard.model.frow ≈ BASELINE_CAMERA.f rtol = 1.0e-4
+        ctx = (; rig = "r", rung = "builders", builder = "from_checkerboard", section = "fromage")
+        failed = CRS.fit_rows(ctx, cam, g, fits.from_checkerboard)
+        @test all(r.status == "ok" for r in failed if r.quantity == "intrinsics")
+        @test all(r.status == "not detected" && ismissing(r.value) for r in failed if r.quantity == "map")
+        exact = CRS.fit_rows(ctx, cam, g, CRS.analytic_fit(cam, g, [CRS.fromage_corners(cam, p.board) for p in board_poses(cam)], 1))
+        layout(rows) = [(r.quantity, r.split, r.statistic) for r in rows]
+        @test layout(failed) == layout(exact)
+        ctx = (; rig = "r", rung = "builders")
+        @test layout(CRS.dot_rows(ctx, cam, CRS.Failure("not detected"))) == layout(CRS.dot_rows(ctx, cam, [area_centroid(cam, c) for c in CRS.DOT_CENTRES]))
+        # a frame the detector throws on is that frame's finding: its detection row says so
+        thrown = CRS.frame_corners(cam, "no such video.mp4", 0, missing)
+        @test thrown isa CRS.Failure && startswith(thrown.status, "threw: ")
+    end
+
+    @testset "rigs" begin
+        @test only(CRS.select_rigs(["baseline"])) === first(VARIANTS)
+        @test_throws ArgumentError CRS.select_rigs(["no such rig"])
+        rig = Rig("wide", (; sar = 2 // 1))
+        @test CRS.select_rigs([rig]) == [rig]
+        @test Camera(rig).sar == 2 && Camera(rig).f == BASELINE_CAMERA.f
+    end
+
+    # the acceptance of #301: a baseline run lands near #292's numbers, and a failing rig is recorded
+    # while the run goes on. It renders the baseline rig's video, about a minute on 32 threads.
+    @testset "baseline run" begin
+        results_dir, cache_dir = mktempdir(), mktempdir()
+        broken = Rig("broken", (; f = -1.0))
+        report = redirect_stdout(devnull) do
+            simulate(; results_dir, cache_dir, variants = [first(VARIANTS), broken])
+        end
+        folder = joinpath(results_dir, only(readdir(results_dir)))
+        for part in ("fromage-$(pkgversion(Fromage))", "simulation-$(pkgversion(CalibrationRigSimulation))", "julia-$VERSION")
+            @test occursin(part, basename(folder))
+        end
+        @test nrow(CSV.read(joinpath(folder, "report.csv"), DataFrame)) == nrow(report)
+        # one row per rig × rung × builder × section × quantity × split × statistic (× seed aggregate)
+        key = [:rig, :rung, :builder, :section, :quantity, :split, :statistic, :aggregate, :unit]
+        @test allunique(eachrow(coalesce.(report[:, key], "")))
+
+        baseline = report[report.rig .== "baseline", :]
+        @test all(==("ok"), baseline.status)
+        value(; kw...) = only(r.value for r in eachrow(baseline) if all(isequal(r[k], v) for (k, v) in kw))
+        @test value(quantity = "detection", split = "all") == 28
+        @test all(==(true), skipmissing(baseline.passed))
+        @test count(!ismissing, baseline.passed) == 4
+        map_rms(builder, section) = value(; builder, section, quantity = "map", split = "arena", statistic = "RMS", aggregate = section == "control" && builder == "from_extrinsic" ? "median" : missing)
+        @test 0.1 < map_rms("from_checkerboard", "fromage") < 0.4
+        @test 2 < map_rms("from_extrinsic", "fromage") < 4
+        @test map_rms("from_checkerboard", "control") < CRS.CONTROL_TOLERANCE
+        @test 1 < map_rms("from_extrinsic", "control") < 5
+        @test value(quantity = "corners", split = "all frames", statistic = "RMS", unit = "stored px") < 0.15
+
+        failed = only(eachrow(report[report.rig .== "broken", :]))
+        @test failed.status == "threw: ArgumentError: f must be positive, got -1.0"
+        @test ismissing(failed.value)
     end
 end
