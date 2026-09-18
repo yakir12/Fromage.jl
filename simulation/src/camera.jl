@@ -119,11 +119,25 @@ function bisect(below, lo, hi)
     return
 end
 
-# the bracketed inverse of the radial map on its monotone branch [0, max_radius]; `nothing` past it
+# The bracketed inverse of the radial map on its monotone branch [0, max_radius]; `nothing` past it.
+# Newton steps, each one narrowing the bracket, and a bisection whenever a step would leave it (as it
+# does near the fold, where the slope goes to zero); it stops when a step moves nothing. Every ray the
+# renderer casts comes through here, 256 to a pixel, and bisecting to Float64 resolution alone made
+# the inverse 25× the cost of tracing the ray (#299).
 function undistorted_radius(cam::Camera, rd)
-    hi = cam.max_radius
+    lo, hi = 0.0, cam.max_radius
     rd > hi * radial(cam.k, hi^2) && return nothing
-    return bisect(r -> r * radial(cam.k, r^2) < rd, 0.0, hi)
+    r = min(rd, hi)
+    for _ in 1:200
+        g = r * radial(cam.k, r^2) - rd
+        iszero(g) && return r
+        g < 0 ? (lo = r) : (hi = r)
+        next = r - g / distorted_slope(cam.k, r)
+        lo < next < hi || (next = (lo + hi) / 2)
+        (next == r || next == lo || next == hi) && return r
+        r = next
+    end
+    return r
 end
 
 """

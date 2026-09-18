@@ -1,5 +1,6 @@
-using CalibrationRigSimulation: CalibrationRigSimulation, Camera, project, ray
-using LinearAlgebra: normalize
+using CalibrationRigSimulation: CalibrationRigSimulation, BASELINE_CAMERA, Board, Camera, area_centroid,
+    board_poses, detect_dots, inner_corners, project, ray, render, trace
+using LinearAlgebra: norm, normalize, ×
 using OpenCV: OpenCV
 using StaticArrays: SVector
 using Test: @test, @test_throws, @testset
@@ -143,5 +144,116 @@ end
         @test hypot(p[1], p[2]) / p[3] < fold
         # the corners of this camera's frame lie past the fold, and have no ray
         @test ray(cam, SVector(0.0, 0.0)) === nothing
+    end
+
+    # the baseline rig, and its flat frame rendered once for the renderer and dot detector testsets
+    cam = Camera(; BASELINE_CAMERA...)
+    poses = board_poses(cam)
+    flat = render(cam, last(poses).board)
+
+    @testset "poses" begin
+        @test length(poses) == 28
+        @test count(p -> startswith(p.name, "waved about vertical"), poses) == 13
+        @test count(p -> startswith(p.name, "waved about horizontal"), poses) == 10
+        @test count(p -> startswith(p.name, "corner"), poses) == 4
+        @test last(poses).name == "flat"
+        @test allunique(p.name for p in poses)
+        @test last(poses).board.center == SVector(0.0, 0.0, 0.0)
+        @test last(poses).board.e1 == SVector(0.0, 1.0, 0.0)
+        # the whole board, its white margin included, lies inside the stored frame
+        inside(p) = p !== nothing && 0 ≤ p[1] ≤ cam.height - 1 && 0 ≤ p[2] ≤ cam.width - 1
+        for (; board) in poses
+            @test all(inside(project(cam, P)) for P in CRS.outline(board))
+            @test size(inner_corners(board)) == (10, 7)
+        end
+        # every waved and corner pose is fitted as far as it goes: its edge sits on the pose margin
+        margin = CRS.POSE_MARGIN * cam.height
+        for (; board) in poses[1:(end - 1)]
+            ps = [project(cam, P) for P in CRS.outline(board)]
+            gap = minimum(min(p[1], cam.height - 1 - p[1], p[2], cam.width - 1 - p[2]) for p in ps)
+            @test gap ≈ margin atol = 0.5
+        end
+        # a corner pose is held where its board, untilted on the optical axis, would span ⅕ of the
+        # frame's width, and sits in its own corner
+        for (; name, board) in filter(p -> startswith(p.name, "corner"), poses)
+            @test norm(board.center - cam.position) ≈ 900 * 0.52 / (1920 / 5)
+            p = project(cam, board.center)
+            @test (p[1] < cam.principal_point[2]) == occursin("top", name)
+            @test (p[2] < cam.principal_point[1]) == occursin("left", name)
+        end
+        # the waved poses face the camera straight on at 0°, and turn by the frozen angles
+        facing(board) = rad2deg(acos(clamp(-CRS.forward(cam)' * (board.e2 × board.e1), -1, 1)))
+        for (; name, board) in filter(p -> startswith(p.name, "waved"), poses)
+            @test facing(board) ≈ abs(parse(Int, match(r"(-?\d+)°", name)[1])) atol = 1.0e-9
+        end
+    end
+
+    @testset "surface precedence" begin
+        ground(X, Y) = CRS.ground(SVector(X, Y))
+        # the arena's rim, along two directions
+        for θ in (0.0, 1.0)
+            @test ground(0.999cos(θ), 0.999sin(θ)) == CRS.ARENA
+            @test ground(1.001cos(θ), 1.001sin(θ)) == CRS.FLOOR
+        end
+        # a dot is painted over the arena, at both dots
+        for Y in (0.5, -0.5)
+            @test ground(0.0, Y) == CRS.DOT
+            @test ground(0.0, Y + 0.019) == CRS.DOT
+            @test ground(0.0, Y + 0.021) == CRS.ARENA
+        end
+        # a ray from the camera to a world point, with and without a board
+        towards(board, P) = trace(board, cam.position, normalize(P - cam.position))
+        board = last(poses).board
+        @test towards(nothing, SVector(0.0, 0.0, 0.0)).surface == CRS.ARENA
+        @test towards(nothing, SVector(0.0, 0.5, 0.0)).surface == CRS.DOT
+        @test towards(nothing, SVector(1.2, 0.0, 0.0)).surface == CRS.FLOOR
+        # the flat board lies on the arena, coplanar with it, and is drawn over it
+        @test towards(board, SVector(0.01, 0.01, 0.0)).surface == CRS.BOARD
+        # inside the white margin (the board is 52 cm long, along y) and just past it
+        @test towards(board, SVector(0.0, 0.25, 0.0)) == (surface = CRS.BOARD, reflectance = 1.0)
+        @test towards(board, SVector(0.0, 0.27, 0.0)).surface == CRS.ARENA
+        # the first square is black, its neighbour along the long axis white
+        first_square = board.center - 0.2board.e1 - 0.14board.e2
+        @test towards(board, first_square) == (surface = CRS.BOARD, reflectance = 0.0)
+        @test towards(board, first_square + 0.04board.e1) == (surface = CRS.BOARD, reflectance = 1.0)
+        # a board held above the arena hides the ground behind it, and not the ground beside it
+        for (; board) in poses[1:(end - 1)]
+            @test towards(board, board.center).surface == CRS.BOARD
+            @test towards(board, board.center + 0.3board.e1 + 0.3board.e2).surface != CRS.BOARD
+        end
+        # a ray that leaves the ground plane meets nothing
+        @test trace(nothing, cam.position, SVector(0.0, 0.0, 1.0)).surface == CRS.SKY
+        # a board's axes must be orthonormal
+        @test_throws ArgumentError Board(SVector(0.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0), SVector(0.5, 0.0, 0.0))
+        @test_throws ArgumentError Board(SVector(0.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0), SVector(0.0, 1.0, 0.0))
+    end
+
+    @testset "renderer" begin
+        @test size(flat) == (cam.height, cam.width)
+        pixel(P) = (p = round.(Int, project(cam, P)); flat[p[1] + 1, p[2] + 1])
+        @test pixel(SVector(0.6, 0.6, 0.0)) == 0xff  # arena
+        @test pixel(SVector(1.1, 0.0, 0.0)) == 0x80  # floor, mid-grey
+        @test pixel(SVector(0.0, 0.5, 0.0)) == 0x00  # a dot's centre
+        @test pixel(SVector(0.0, 0.25, 0.0)) == 0xff  # the board's white margin
+        # a pixel on the edge between a black and a white square is grey
+        board = last(poses).board
+        @test 0x10 < pixel(board.center - 0.18board.e1 - 0.14board.e2) < 0xf0
+        # each pixel is the mean over its explicit samples, so one sample per pixel leaves the
+        # frame's mean where it was but moves the pixels on edges
+        coarse = render(cam, board; samples = 1)
+        @test abs(sum(Int, flat) - sum(Int, coarse)) / length(flat) < 0.5
+        @test count(flat .!= coarse) > 1000
+    end
+
+    @testset "dot detector" begin
+        found = detect_dots(flat)
+        # the flat board's black squares touch each other and its margin, so none is a dot
+        @test length(found) == 2
+        for c in CRS.DOT_CENTRES
+            truth = area_centroid(cam, c)
+            # the perspective bias the area centroid corrects (#292)
+            @test 0.02 < norm(truth - project(cam, SVector(c[1], c[2], 0.0))) < 0.08
+            @test minimum(norm(d - truth) for d in found) < 0.05
+        end
     end
 end
