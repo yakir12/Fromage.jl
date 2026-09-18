@@ -4,27 +4,33 @@ version = "0.1.0"
 authors = ["Yakir Gagnon <12.yakir@gmail.com> and contributors"]
 
 [deps]
+FFMPEG = "c87230d0-a227-11e9-1b43-d7ebe4e7570a"
 Fromage = "f7d2997e-1be8-4771-a487-05d70e6e0672"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 OhMyThreads = "67456a42-1dca-4109-a031-0a68de7e3ad5"
+SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [sources]
 Fromage = {path = ".."}
 
 [compat]
+FFMPEG = "0.4.5"
 LinearAlgebra = "1"
 OhMyThreads = "0.8.6"
 OpenCV = "4.9.0"
+SHA = "0.7, 1"
 StaticArrays = "1.9"
 Test = "1"
+VideoIO = "1.1"
 julia = "1.13"
 
 # OpenCV is an oracle, never a dependency of the model: it checks the camera model in the tests and
-# nowhere else (#282, #289).
+# nowhere else (#282, #289). VideoIO is the tracker's sar reader, which the round trip checks (#293).
 [extras]
 OpenCV = "f878e3a2-a245-4720-8660-60795d644f2a"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+VideoIO = "d6d074c3-1acf-5d4c-9a43-ef38773959a2"
 
 [targets]
-test = ["OpenCV", "Test"]
+test = ["OpenCV", "Test", "VideoIO"]

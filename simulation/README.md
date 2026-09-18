@@ -50,3 +50,11 @@ The simulation's own words, kept here rather than in the root `CONTEXT.md`, whic
 - `src/dots.jl` — the simulation's own dot detector, `detect_dots`: a sub-pixel centroid whose
   background is the arena, never estimated from the whole frame (#283). Its truth is `area_centroid`,
   the centroid of the dot's projected area, 0.04 px from the projection of its centre (#292).
+- `src/encode.jl` — `encode`: frames to a lossless video, gray x264 at `-qp 0` with the `sar` set by
+  `setsar`, one frame per second so frame `k` is at `t = k` s. On it Fromage's frame reader returns
+  the rendered pixels exactly, and both gateways' ffprobe and the tracker's VideoIO read the `sar`
+  (#293).
+- `src/cache.jl` — `cached_video`: a rig's video, rendered once into a `cache_dir` (no default: keep
+  it outside the repository) under a hash of the camera, the boards, the sampling and
+  `RENDERER_VERSION`. **Bump `RENDERER_VERSION` by hand whenever rendering changes**, or the cache
+  keeps serving the old videos.

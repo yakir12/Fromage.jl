@@ -14,6 +14,7 @@ export Board, inner_corners, trace
 export render
 export BASELINE_CAMERA, board_poses, corner_projections
 export detect_dots, area_centroid
+export encode, cached_video, RENDERER_VERSION
 
 # the later files name `Camera` and `Board` in signatures, and the dot detector's background is the
 # arena's reflectance, both evaluated when the file is included: the camera and the objects go first
@@ -22,5 +23,7 @@ include("objects.jl")
 include("render.jl")
 include("poses.jl")
 include("dots.jl")
+include("encode.jl")
+include("cache.jl")
 
 end
