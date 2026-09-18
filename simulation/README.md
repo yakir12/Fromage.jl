@@ -20,9 +20,28 @@ simulate(; results_dir = "/somewhere/results", cache_dir = "/somewhere/cache")
 Neither folder has a default, and both belong outside the repository. `variants` picks rigs by name
 (`variants = ["baseline"]`) or takes `Rig`s. Each run writes `report.csv` into its own folder of
 `results_dir`, named for the date, Fromage's version and commit, the simulation's version and
-Julia's; it prints a table of the primary quantities and returns the report as a `DataFrame`. The
-first run of a rig renders its video, about a minute on 32 threads; later runs read it from
-`cache_dir`.
+Julia's; it prints a table of the primary quantities and returns the report as a `DataFrame`.
+It first measures ten seeded replicates of the baseline, each board shifted in its own plane by up
+to half a stored pixel at its depth. Their rows are saved alongside the report in `replicates.csv`.
+The first run renders eleven videos (the ten replicates and the baseline), about a minute each on
+32 threads; later runs read them from `cache_dir` and repeat the measurements against Fromage.
+
+Every rig is judged against the **baseline's floor**, even when `variants` leaves out the baseline:
+the largest error magnitude across its ten replicates for the `total` family, and the baseline's
+analytic-corner controls for the `model` family (the largest across the ten seeds for
+`from_extrinsic`). A variant with a higher noise floor is therefore judged against a floor too low.
+The csv adds `floor`, `ratio`, `tolerance`, `family` and `verdict`:
+
+- Missed frames are `serious`; absent map values are `n/a`.
+- Total map errors are `serious` above both 3× the floor and 1 mm RMS / 3 mm max; dot separation
+  uses 3× and 1 mm. Corners and intrinsic errors are only `diagnostic`, above 3×.
+- Model map errors are `serious` above both 10× the control floor and 0.1 mm.
+- RMS and max are judged; p95 and the other unjudged rows are `n/a`. Ratios use magnitudes;
+  zero over zero is 0, and a nonzero error over a zero floor has an infinite ratio.
+
+The printed table marks serious values `!!` and diagnostic values `!`, states whose floor is used,
+and ends with the serious rows. These are aids for exploring, not pass/fail gates
+([#296](https://github.com/yakir12/Fromage.jl/issues/296)).
 
 ## Running the tests
 
@@ -84,5 +103,7 @@ The simulation's own words, kept here rather than in the root `CONTEXT.md`, whic
 - `src/report.jl` — the long-format report, one row per rig × rung × builder × section × quantity ×
   split × statistic, each with a `status` (`ok`, `not detected`, `threw: <message>`), and the
   printed table.
+- `src/floor.jl` — seeded board jitter and the baseline's replicate and control floors.
+- `src/verdicts.jl` — the two verdict families, thresholds and the columns they add to each row.
 - `src/simulate.jl` — `simulate`, `Rig` and `VARIANTS`, the rigs a run can measure (the baseline
   only, for now).
