@@ -39,7 +39,8 @@ What a ray meets first. The last of `FLOOR`, `ARENA`, `DOT` and `BOARD` wins whe
 
 # uniform lighting and pure reflectance: no shading, no shadows (#289). The dots and the sky are
 # black; the board's reflectance depends on where it is hit (`board_reflectance`).
-reflectance(s::Surface) = s == FLOOR ? 0.5 : s == ARENA ? 1.0 : 0.0
+reflectance(s::Surface) = s === FLOOR ? 0.5 : s === ARENA ? 1.0 : s === DOT || s === SKY ? 0.0 :
+    throw(ArgumentError("$s has no single reflectance"))
 
 """
     Board(center, e1, e2)
@@ -67,7 +68,7 @@ on_board(b::Board, u, v) = b.center + u * b.e1 + v * b.e2
     inner_corners(b::Board) -> Matrix{SVector{3, Float64}}
 
 The board's 10×7 inner corners (world, m): `[i, j]` is the `i`th along `e1` and the `j`th along `e2`.
-Their analytic projections are `project.(Ref(cam), inner_corners(b))`.
+Their analytic projections are [`corner_projections`](@ref).
 """
 inner_corners(b::Board) = [
     on_board(b, -HALF_SQUARES[1] + SQUARE * i, -HALF_SQUARES[2] + SQUARE * j)
@@ -75,14 +76,12 @@ inner_corners(b::Board) = [
 ]
 
 # points along the board's outer edge, margin included, 21 to a side: to check it is in frame
-outline(b::Board) = [
-    on_board(b, u, v) for (u, v) in Iterators.flatten(
-            (
-                ((t * HALF_BOARD[1], s * HALF_BOARD[2]) for t in range(-1, 1, 21), s in (-1, 1)),
-                ((s * HALF_BOARD[1], t * HALF_BOARD[2]) for t in range(-1, 1, 21), s in (-1, 1)),
-            )
-        )
-]
+function outline(b::Board)
+    t = range(-1, 1, 21)
+    along_e1 = [on_board(b, x * HALF_BOARD[1], s * HALF_BOARD[2]) for x in t, s in (-1, 1)]
+    along_e2 = [on_board(b, s * HALF_BOARD[1], x * HALF_BOARD[2]) for x in t, s in (-1, 1)]
+    return [vec(along_e1); vec(along_e2)]
+end
 
 # the board's reflectance at `(u, v)` from its centre, or `nothing` off the board
 function board_reflectance(u, v)
@@ -92,27 +91,28 @@ function board_reflectance(u, v)
 end
 
 """
-    ground(P) -> Surface
+    ground_surface(P) -> Surface
 
 The surface at ground point `P`, world `(X, Y)` in m: a dot over the arena over the floor.
 """
-function ground(P)
+function ground_surface(P)
     any(c -> norm(P - c) ≤ DOT_RADIUS, DOT_CENTRES) && return DOT
     norm(P) ≤ ARENA_RADIUS && return ARENA
     return FLOOR
 end
 
-# the distance along the unit ray to the board's plane, when it crosses the board; `Inf` otherwise
-board_distance(::Nothing, origin, d) = (Inf, 0.0)
+# the distance along the unit ray to where it crosses the board, and the board's reflectance there
+const MISSED = (Inf, 0.0)
+board_distance(::Nothing, origin, d) = MISSED
 function board_distance(b::Board, origin, d)
     n = cross(b.e1, b.e2)
     den = dot(d, n)
-    abs(den) > 1.0e-12 || return (Inf, 0.0)
+    abs(den) > 1.0e-12 || return MISSED
     t = dot(b.center - origin, n) / den
-    t > 0 || return (Inf, 0.0)
+    t > 0 || return MISSED
     q = origin + t * d - b.center
     ρ = board_reflectance(dot(q, b.e1), dot(q, b.e2))
-    return ρ === nothing ? (Inf, 0.0) : (t, ρ)
+    return ρ === nothing ? MISSED : (t, ρ)
 end
 
 """
@@ -122,14 +122,14 @@ The first surface the ray from `origin` (world, m) along the unit direction `d` 
 reflectance there. `board` is a [`Board`](@ref), or `nothing` for a rig with no board in view.
 
 The board wins a tie with the ground, within 1 nm along the ray: the flat board lies on the arena,
-coplanar with it, and is drawn over it.
+coplanar with it, and covers it.
 """
-function trace(board, origin, d)
+function trace(board::Union{Board, Nothing}, origin, d)
     tg = d[3] < 0 ? -origin[3] / d[3] : Inf
     tb, ρ = board_distance(board, origin, d)
     isfinite(tb) && tb ≤ tg + 1.0e-9 && return (surface = BOARD, reflectance = ρ)
     isfinite(tg) || return (surface = SKY, reflectance = reflectance(SKY))
     P = origin + tg * d
-    s = ground(SVector(P[1], P[2]))
+    s = ground_surface(SVector(P[1], P[2]))
     return (surface = s, reflectance = reflectance(s))
 end

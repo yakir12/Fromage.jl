@@ -21,7 +21,7 @@ const BASELINE_CAMERA = (;
 The waved board's frozen angle set, degrees (#291): about the board's vertical axis (`e2`) and about
 its horizontal one (`e1`), in 10° steps; the unrotated board once, with the vertical set.
 """
-const WAVED_ANGLES = (vertical = -60:10:60, horizontal = [-50:10:-10; 10:10:50])
+const WAVED_ANGLES = (vertical = collect(-60:10:60), horizontal = [-50:10:-10; 10:10:50])
 
 "The share of the frame's display width a corner pose's board spans before its tilt (#291)."
 const CORNER_SPAN = 1 / 5
@@ -59,12 +59,11 @@ function boundary(fits, bad, good)
     return good
 end
 
-# facing the camera, centred on its optical axis, rotated by `deg` about the board's own `axis`
-# (`:vertical`, e2, or `:horizontal`, e1), and held as close to the camera as fits in frame
-function waved(cam::Camera, axis, deg)
-    e1, e2 = right(cam), down(cam)
-    a = axis == :vertical ? e2 : e1
-    e1, e2 = rotate(e1, a, deg2rad(deg)), rotate(e2, a, deg2rad(deg))
+# facing the camera, centred on its optical axis, rotated by `deg` about `a` (the board's own
+# vertical or horizontal axis, world), and held as close to the camera as fits in frame
+function waved(cam::Camera, a, deg)
+    θ = deg2rad(deg)
+    e1, e2 = rotate(right(cam), a, θ), rotate(down(cam), a, θ)
     pose(D) = Board(cam.position + D * forward(cam), e1, e2)
     return pose(boundary(D -> in_frame(cam, pose(D)), 0.1, 5.0))
 end
@@ -83,14 +82,14 @@ function corner(cam::Camera, sx, sy)
         τ = cross(r, normalize(sx * e1 + sy * e2))
         return Board(cam.position + D * r, rotate(e1, τ, deg2rad(CORNER_TILT)), rotate(e2, τ, deg2rad(CORNER_TILT)))
     end
-    return pose(boundary(s -> (b = pose(s); b !== nothing && in_frame(cam, b)), 1.0, 0.0))
+    return something(pose(boundary(s -> (b = pose(s); b !== nothing && in_frame(cam, b)), 1.0, 0.0)))
 end
 
 """
 The flat (extrinsic) board: on the arena, centred at the origin, long axis along y, face up. Both
 dots fall outside its footprint (±26 cm), the realistic, extrapolating case.
 """
-const FLAT = Board(SVector(0.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0), SVector(1.0, 0.0, 0.0))
+const FLAT_BOARD = Board(SVector(0.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0), SVector(1.0, 0.0, 0.0))
 
 """
     board_poses(cam::Camera) -> Vector{@NamedTuple{name::String, board::Board}}
@@ -101,12 +100,27 @@ says which it is, e.g. `"waved about vertical -60°"`, `"corner top left"`, `"fl
 """
 function board_poses(cam::Camera)
     poses = @NamedTuple{name::String, board::Board}[]
-    for axis in (:vertical, :horizontal), deg in WAVED_ANGLES[axis]
-        push!(poses, (name = "waved about $axis $(deg)°", board = waved(cam, axis, deg)))
+    for (axis, a) in ((:vertical, down(cam)), (:horizontal, right(cam))), deg in WAVED_ANGLES[axis]
+        push!(poses, (name = "waved about $axis $(deg)°", board = waved(cam, a, deg)))
     end
     for (sy, row) in ((-1, "top"), (1, "bottom")), (sx, col) in ((-1, "left"), (1, "right"))
         push!(poses, (name = "corner $row $col", board = corner(cam, sx, sy)))
     end
-    push!(poses, (name = "flat", board = FLAT))
+    push!(poses, (name = "flat", board = FLAT_BOARD))
     return poses
+end
+
+"""
+    corner_projections(cam::Camera, b::Board) -> Matrix{SVector{2, Float64}}
+
+The analytic projections, 0-based stored `(row, col)`, of the board's 10×7 inner corners, indexed as
+[`inner_corners`](@ref). Throws when a corner does not project, which no pose of `board_poses(cam)`
+allows.
+"""
+function corner_projections(cam::Camera, b::Board)
+    return map(inner_corners(b)) do P
+        p = project(cam, P)
+        p === nothing && throw(ArgumentError("the board's corner at $P does not project"))
+        p
+    end
 end

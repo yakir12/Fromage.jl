@@ -28,37 +28,48 @@ function detect_dots(img::AbstractMatrix{UInt8})
     dark = img .< BACKGROUND ÷ 2
     seen = falses(size(img))
     found = SVector{2, Float64}[]
-    stack = CartesianIndex{2}[]
-    blob = CartesianIndex{2}[]
-    steps = (CartesianIndex(1, 0), CartesianIndex(-1, 0), CartesianIndex(0, 1), CartesianIndex(0, -1))
     for I in CartesianIndices(img)
         (dark[I] && !seen[I]) || continue
-        empty!(blob)
-        push!(stack, I)
-        seen[I] = true
-        while !isempty(stack)
-            J = pop!(stack)
-            push!(blob, J)
-            for s in steps
-                K = J + s
-                checkbounds(Bool, img, K) && dark[K] && !seen[K] && (seen[K] = true; push!(stack, K))
-            end
-        end
-        lo, hi = minimum(blob) - CartesianIndex(DOT_PAD, DOT_PAD), maximum(blob) + CartesianIndex(DOT_PAD, DOT_PAD)
-        checkbounds(Bool, img, lo) && checkbounds(Bool, img, hi) || continue
-        box = lo:hi
-        on_arena = all(img[K] == BACKGROUND for K in box if K[1] in (lo[1], hi[1]) || K[2] in (lo[2], hi[2]))
-        on_arena || continue
-        w = r = c = 0.0
-        for K in box
-            wk = Float64(BACKGROUND) - img[K]
-            w += wk
-            r += wk * (K[1] - 1)
-            c += wk * (K[2] - 1)
-        end
-        push!(found, SVector(r / w, c / w))
+        blob = flood!(seen, dark, I)
+        pad = CartesianIndex(DOT_PAD, DOT_PAD)
+        box = (minimum(blob) - pad):(maximum(blob) + pad)
+        alone_on_arena(img, box) && push!(found, centroid(img, box))
     end
     return found
+end
+
+# the 4-connected pixels of `dark` reached from `I`, each marked in `seen`
+function flood!(seen, dark, I)
+    blob, stack = CartesianIndex{2}[], [I]
+    seen[I] = true
+    while !isempty(stack)
+        J = pop!(stack)
+        push!(blob, J)
+        for s in (CartesianIndex(1, 0), CartesianIndex(-1, 0), CartesianIndex(0, 1), CartesianIndex(0, -1))
+            K = J + s
+            checkbounds(Bool, dark, K) && dark[K] && !seen[K] && (seen[K] = true; push!(stack, K))
+        end
+    end
+    return blob
+end
+
+# whether `box` lies inside the frame with every pixel of its border the arena's grey level
+function alone_on_arena(img, box)
+    checkbounds(Bool, img, box) || return false
+    lo, hi = first(box), last(box)
+    return all(img[K] == BACKGROUND for K in box if K[1] in (lo[1], hi[1]) || K[2] in (lo[2], hi[2]))
+end
+
+# 0-based `(row, col)` centroid of `box`, each pixel weighed by how much darker than the arena it is
+function centroid(img, box)
+    w = r = c = 0.0
+    for K in box
+        wk = Float64(BACKGROUND) - img[K]
+        w += wk
+        r += wk * (K[1] - 1)
+        c += wk * (K[2] - 1)
+    end
+    return SVector(r / w, c / w)
 end
 
 """

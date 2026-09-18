@@ -1,5 +1,5 @@
 using CalibrationRigSimulation: CalibrationRigSimulation, BASELINE_CAMERA, Board, Camera, area_centroid,
-    board_poses, detect_dots, inner_corners, project, ray, render, trace
+    board_poses, corner_projections, detect_dots, inner_corners, project, ray, render, trace
 using LinearAlgebra: norm, normalize, ×
 using OpenCV: OpenCV
 using StaticArrays: SVector
@@ -165,7 +165,14 @@ end
         for (; board) in poses
             @test all(inside(project(cam, P)) for P in CRS.outline(board))
             @test size(inner_corners(board)) == (10, 7)
+            @test corner_projections(cam, board) == project.(Ref(cam), inner_corners(board))
         end
+        # the corners are indexed along e1, then e2, from the black first square's inner corner
+        board = last(poses).board
+        @test inner_corners(board)[1, 1] ≈ board.center + (0.04 - 0.22) * board.e1 + (0.04 - 0.16) * board.e2
+        @test inner_corners(board)[10, 7] ≈ board.center + (0.22 - 0.04) * board.e1 + (0.16 - 0.04) * board.e2
+        # a board behind the camera has no projection
+        @test_throws ArgumentError corner_projections(cam, CRS.Board(cam.position + SVector(1.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0), SVector(1.0, 0.0, 0.0)))
         # every waved and corner pose is fitted as far as it goes: its edge sits on the pose margin
         margin = CRS.POSE_MARGIN * cam.height
         for (; board) in poses[1:(end - 1)]
@@ -176,7 +183,7 @@ end
         # a corner pose is held where its board, untilted on the optical axis, would span ⅕ of the
         # frame's width, and sits in its own corner
         for (; name, board) in filter(p -> startswith(p.name, "corner"), poses)
-            @test norm(board.center - cam.position) ≈ 900 * 0.52 / (1920 / 5)
+            @test norm(board.center - cam.position) ≈ BASELINE_CAMERA.f * 0.52 / (1920 * CRS.CORNER_SPAN)
             p = project(cam, board.center)
             @test (p[1] < cam.principal_point[2]) == occursin("top", name)
             @test (p[2] < cam.principal_point[1]) == occursin("left", name)
@@ -189,7 +196,7 @@ end
     end
 
     @testset "surface precedence" begin
-        ground(X, Y) = CRS.ground(SVector(X, Y))
+        ground(X, Y) = CRS.ground_surface(SVector(X, Y))
         # the arena's rim, along two directions
         for θ in (0.0, 1.0)
             @test ground(0.999cos(θ), 0.999sin(θ)) == CRS.ARENA
@@ -223,6 +230,8 @@ end
         end
         # a ray that leaves the ground plane meets nothing
         @test trace(nothing, cam.position, SVector(0.0, 0.0, 1.0)).surface == CRS.SKY
+        # the board's reflectance depends on where it is hit, so it has no single value
+        @test_throws ArgumentError CRS.reflectance(CRS.BOARD)
         # a board's axes must be orthonormal
         @test_throws ArgumentError Board(SVector(0.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0), SVector(0.5, 0.0, 0.0))
         @test_throws ArgumentError Board(SVector(0.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0), SVector(0.0, 1.0, 0.0))
@@ -254,6 +263,21 @@ end
             # the perspective bias the area centroid corrects (#292)
             @test 0.02 < norm(truth - project(cam, SVector(c[1], c[2], 0.0))) < 0.08
             @test minimum(norm(d - truth) for d in found) < 0.05
+        end
+    end
+
+    # the stored footprint is rectangular in display space at `sar ≠ 1`: the dots still land on their
+    # area centroids, and the poses still fit, at the narrowed width and at the halved height
+    @testset "sar $sar" for sar in (2 // 1, 1 // 2)
+        cam = Camera(; BASELINE_CAMERA..., sar)
+        poses = board_poses(cam)
+        @test length(poses) == 28
+        inside(p) = p !== nothing && 0 ≤ p[1] ≤ cam.height - 1 && 0 ≤ p[2] ≤ cam.width - 1
+        @test all(inside(project(cam, P)) for (; board) in poses for P in CRS.outline(board))
+        found = detect_dots(render(cam, last(poses).board))
+        @test length(found) == 2
+        for c in CRS.DOT_CENTRES
+            @test minimum(norm(d - area_centroid(cam, c)) for d in found) < 0.05
         end
     end
 end

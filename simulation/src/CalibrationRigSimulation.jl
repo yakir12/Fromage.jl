@@ -12,7 +12,7 @@ module CalibrationRigSimulation
 export Camera, project, ray
 export Board, inner_corners, trace
 export render
-export BASELINE_CAMERA, board_poses
+export BASELINE_CAMERA, board_poses, corner_projections
 export detect_dots, area_centroid
 
 # the later files name `Camera` and `Board` in signatures, and the dot detector's background is the

@@ -23,7 +23,7 @@ model, evenly spaced over its stored footprint, which is rectangular in display 
 
 The matrix is column-major, as Julia's are; raw video is row-major, so it is written out transposed.
 """
-function render(cam::Camera, board; samples = SUPERSAMPLING)
+function render(cam::Camera, board::Union{Board, Nothing}; samples = SUPERSAMPLING)
     img = Matrix{UInt8}(undef, cam.height, cam.width)
     offsets = ((0:(samples - 1)) .+ 0.5) ./ samples .- 0.5
     tforeach(axes(img, 1)) do i

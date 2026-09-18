@@ -45,8 +45,8 @@ The simulation's own words, kept here rather than in the root `CONTEXT.md`, whic
   16×16 rays cast backwards through the camera model (#292), 8 bit, threaded over rows. It returns a
   column-major matrix; raw video is row-major.
 - `src/poses.jl` — the baseline rig as data: `BASELINE_CAMERA`, and `board_poses`, its 28 board
-  poses (23 waved at the frozen angles, four corner poses, the flat board). A pose's analytic corner
-  projections are `project.(Ref(cam), inner_corners(board))`.
+  poses (23 waved at the frozen angles, four corner poses, the flat board), and `corner_projections`,
+  the analytic projections of a pose's inner corners.
 - `src/dots.jl` — the simulation's own dot detector, `detect_dots`: a sub-pixel centroid whose
   background is the arena, never estimated from the whole frame (#283). Its truth is `area_centroid`,
   the centroid of the dot's projected area, 0.04 px from the projection of its centre (#292).
