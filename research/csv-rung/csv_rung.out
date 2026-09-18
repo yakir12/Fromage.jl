@@ -1,0 +1,66 @@
+
+=== sq: stored 1920×1080, sar 1//1 (render 0.5 s) ===
+3×13 DataFrame
+ Row │ rectification_id  aspect    width   height  yadif  blur      n_corners  checker_width  temporal_step  radial_parameters  center      north       issues
+     │ String?           Float64?  Int64?  Int64?  Bool?  Float64?  Tuple…?    Float64?       Float64?       Int64?             Tuple…?     Tuple…?     Array…?
+─────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   1 │ full                   1.0    1920    1080  false       1.0  (7, 10)              4.0            1.0                  1  missing     missing     String[]
+   2 │ extr                   1.0    1920    1080  false       1.0  (7, 10)              4.0            2.0                  1  missing     missing     String[]
+   3 │ gauged                 1.0    1920    1080  false       1.0  (7, 10)              4.0            1.0                  1  (947, 532)  (950, 638)  String[]
+runs issues: Union{Missing, Vector{String}}[String[], String[], String[]]
+Fromage.VerifyRectifications.Checkerboard{Float64} full source=Fromage.VerifyRectifications.Source("/tmp/jl_j5zLbN/sq/board.mp4", 6.0, missing, missing, 1.0, 1920, 1080)
+Fromage.VerifyRectifications.Checkerboard{Missing} extr source=Fromage.VerifyRectifications.Source("/tmp/jl_j5zLbN/sq/board.mp4", 6.0, missing, missing, 1.0, 1920, 1080)
+Fromage.VerifyRectifications.Checkerboard{Float64} gauged source=Fromage.VerifyRectifications.Source("/tmp/jl_j5zLbN/sq/board.mp4", 6.0, (947, 532), (950, 638), 1.0, 1920, 1080)
+max |gateway − builder rung| on the extrinsic corners (cm): 0.0
+full                 Procrustes RMS residual (mm) = 0.0189   det = -1.0
+extr                 Procrustes RMS residual (mm) = 0.262   det = -1.0
+gauged               Procrustes RMS residual (mm) = 0.0189   det = -1.0
+direct_exact_gauge   Procrustes RMS residual (mm) = 0.0189   det = -1.0
+aspect=1/sar (#275)  Procrustes RMS residual (mm) = 0.0189   det = -1.0
+gauged(csv Int)    centre→[0.0469, -0.0349] cm   north direction (deg from +axis 1)=179.819
+direct(exact)      centre→[0.0, 0.0] cm   north direction (deg from +axis 1)=180.0
+csv centre/north (display, Int): [947, 532] [950, 638]   exact: [947.432, 531.562] [949.966, 637.981]
+
+=== hdv: stored 1440×1080, sar 4//3 (render 0.3 s) ===
+3×13 DataFrame
+ Row │ rectification_id  aspect    width   height  yadif  blur      n_corners  checker_width  temporal_step  radial_parameters  center      north       issues
+     │ String?           Float64?  Int64?  Int64?  Bool?  Float64?  Tuple…?    Float64?       Float64?       Int64?             Tuple…?     Tuple…?     Array…?
+─────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   1 │ full               1.33333    1440    1080  false       1.0  (7, 10)              4.0            1.0                  1  missing     missing     String[]
+   2 │ extr               1.33333    1440    1080  false       1.0  (7, 10)              4.0            2.0                  1  missing     missing     String[]
+   3 │ gauged             1.33333    1440    1080  false       1.0  (7, 10)              4.0            1.0                  1  (947, 532)  (950, 638)  String[]
+runs issues: Union{Missing, Vector{String}}[String[], String[], String[]]
+Fromage.VerifyRectifications.Checkerboard{Float64} full source=Fromage.VerifyRectifications.Source("/tmp/jl_j5zLbN/hdv/board.mp4", 6.0, missing, missing, 1.3333333333333333, 1440, 1080)
+Fromage.VerifyRectifications.Checkerboard{Missing} extr source=Fromage.VerifyRectifications.Source("/tmp/jl_j5zLbN/hdv/board.mp4", 6.0, missing, missing, 1.3333333333333333, 1440, 1080)
+Fromage.VerifyRectifications.Checkerboard{Float64} gauged source=Fromage.VerifyRectifications.Source("/tmp/jl_j5zLbN/hdv/board.mp4", 6.0, (947, 532), (950, 638), 1.3333333333333333, 1440, 1080)
+max |gateway − builder rung| on the extrinsic corners (cm): 0.0
+full                 Procrustes RMS residual (mm) = 8.97   det = -1.0
+extr                 Procrustes RMS residual (mm) = 9.69   det = -1.0
+gauged               Procrustes RMS residual (mm) = 8.97   det = -1.0
+direct_exact_gauge   Procrustes RMS residual (mm) = 8.97   det = -1.0
+aspect=1/sar (#275)  Procrustes RMS residual (mm) = 0.0126   det = -1.0
+gauged(csv Int)    centre→[0.0459, -0.0217] cm   north direction (deg from +axis 1)=179.805
+direct(exact)      centre→[-0.0008, 0.0132] cm   north direction (deg from +axis 1)=179.999
+csv centre/north (display, Int): [947, 532] [950, 638]   exact: [947.432, 531.562] [949.966, 637.981]
+
+=== field: stored 1920×540, sar 1//2 (render 0.3 s) ===
+3×13 DataFrame
+ Row │ rectification_id  aspect    width   height  yadif  blur      n_corners  checker_width  temporal_step  radial_parameters  center      north       issues
+     │ String?           Float64?  Int64?  Int64?  Bool?  Float64?  Tuple…?    Float64?       Float64?       Int64?             Tuple…?     Tuple…?     Array…?
+─────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   1 │ full                   0.5    1920     540  false       1.0  (7, 10)              4.0            1.0                  1  missing     missing     String[]
+   2 │ extr                   0.5    1920     540  false       1.0  (7, 10)              4.0            2.0                  1  missing     missing     String[]
+   3 │ gauged                 0.5    1920     540  false       1.0  (7, 10)              4.0            1.0                  1  (474, 266)  (475, 319)  String[]
+runs issues: Union{Missing, Vector{String}}[String[], String[], String[]]
+Fromage.VerifyRectifications.Checkerboard{Float64} full source=Fromage.VerifyRectifications.Source("/tmp/jl_j5zLbN/field/board.mp4", 6.0, missing, missing, 0.5, 1920, 540)
+Fromage.VerifyRectifications.Checkerboard{Missing} extr source=Fromage.VerifyRectifications.Source("/tmp/jl_j5zLbN/field/board.mp4", 6.0, missing, missing, 0.5, 1920, 540)
+Fromage.VerifyRectifications.Checkerboard{Float64} gauged source=Fromage.VerifyRectifications.Source("/tmp/jl_j5zLbN/field/board.mp4", 6.0, (474, 266), (475, 319), 0.5, 1920, 540)
+max |gateway − builder rung| on the extrinsic corners (cm): 0.0
+full                 Procrustes RMS residual (mm) = 6.05   det = -1.0
+extr                 Procrustes RMS residual (mm) = 1.24   det = -1.0
+gauged               Procrustes RMS residual (mm) = 6.05   det = -1.0
+direct_exact_gauge   Procrustes RMS residual (mm) = 6.05   det = -1.0
+aspect=1/sar (#275)  Procrustes RMS residual (mm) = 0.0176   det = -1.0
+gauged(csv Int)    centre→[0.0442, 0.0047] cm   north direction (deg from +axis 1)=-179.781
+direct(exact)      centre→[0.0023, -0.0394] cm   north direction (deg from +axis 1)=-179.992
+csv centre/north (display, Int): [474, 266] [475, 319]   exact: [473.716, 265.781] [474.983, 318.99]
