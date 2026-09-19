@@ -48,6 +48,8 @@ variants (−0.05, −0.15, −0.3, +0.05), a two-term lens fitted at orders 2 a
 The two-term lens uses `k = (-0.25, 0.08, 0)`, already checked by the camera's OpenCV oracle;
 its two fits share the same cached video and deliberately compare a matched and an underfit model.
 The 28 board-pose angles are never adjusted to improve a variant's detection.
+The analytic-control self-check can fail on the deliberately underfit lens because the fitted
+model cannot represent the truth; distinguish that model discrepancy from a failed renderer check.
 
 A cold full run renders 41 videos: ten baseline replicates plus 31 distinct cameras (the two-term
 lens is rendered once). Later runs read these videos from `cache_dir` and repeat the measurements

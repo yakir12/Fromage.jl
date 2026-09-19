@@ -2212,6 +2212,17 @@ two-tier rule: the `"macro"` group still cannot settle a design question, whatev
 
 ## Simulation
 
+### The two-term lens compares fit orders without changing the rig (#304)
+
+The variant spec fixed a two-term lens at fitting orders 2 and 1 but left its coefficients open.
+It uses `k = (-0.25, 0.08, 0)`, already covered by the camera's OpenCV oracle, rather than adding an
+unvalidated lens. Its radial derivative stays positive (minimum 0.6484375), so a fold cannot explain
+the difference between the matched and underfit models. Both fits use the same physical camera,
+frozen pose angles and cached video; only the requested fitting order changes, at both rungs and
+in their analytic controls. The existing baseline floors remain the reference. An analytic-control
+self-check may therefore fail on the deliberately underfit model: that is a model discrepancy to
+report, not a reason to alter the renderer or improve the poses until the check passes.
+
 ### Verdicts use the baseline's board-jitter floor (#296, #302)
 
 The ideal sensor is deterministic: rendering the same rig again cannot measure a noise floor.
