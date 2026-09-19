@@ -56,6 +56,8 @@ end
 @testset "CalibrationRigSimulation" begin
     include("verdicts.jl")
     include("floor.jl")
+    include("variants.jl")
+    include("summary.jl")
 
     @testset "camera model vs the OpenCV oracle" begin
         for k in LENSES, sar in SARS
@@ -417,7 +419,7 @@ end
         local cam = Camera(; BASELINE_CAMERA...)
         g = CRS.Gauge(cam)
         calibration = [CRS.fromage_corners(cam, p.board) for p in board_poses(cam)[1:(end - 1)]]
-        fits = CRS.builder_fits(cam, g, "no video is read", calibration, CRS.Failure("not detected"))
+        fits = CRS.builder_fits(cam, g, "no video is read", calibration, CRS.Failure("not detected"), CRS.RADIAL_PARAMETERS)
         @test fits.from_checkerboard.rect == fits.from_extrinsic.rect == fits.from_extrinsic.model == CRS.Failure("not detected")
         @test fits.from_checkerboard.model.frow ≈ BASELINE_CAMERA.f rtol = 1.0e-4
         ctx = (; rig = "r", rung = "builders", builder = "from_checkerboard", section = "fromage")
@@ -448,7 +450,7 @@ end
         results_dir, cache_dir = mktempdir(), mktempdir()
         broken = Rig("broken", (; f = -1.0))
         report = redirect_stdout(devnull) do
-            simulate(; results_dir, cache_dir, variants = [first(VARIANTS), broken])
+            simulate(; results_dir, cache_dir, variants = [broken, first(VARIANTS)])
         end
         folder = joinpath(results_dir, only(readdir(results_dir)))
         for part in ("fromage-$(pkgversion(Fromage))", "simulation-$(pkgversion(CalibrationRigSimulation))", "julia-$VERSION")
@@ -471,7 +473,7 @@ end
         value(; rung = "builders", kw...) = only(r.value for r in eachrow(baseline) if r.rung == rung && all(isequal(r[k], v) for (k, v) in kw))
         @test value(quantity = "detection", split = "all") == 28
         @test all(==(true), skipmissing(baseline.passed))
-        @test count(!ismissing, baseline.passed) == 4
+        @test all(rung -> count(!ismissing, baseline[baseline.rung .== rung, :passed]) == 4, ("builders", "csv"))
         map_rms(builder, section) = value(; builder, section, quantity = "map", split = "arena", statistic = "RMS", aggregate = section == "control" && builder == "from_extrinsic" ? "median" : missing)
         @test 0.1 < map_rms("from_checkerboard", "fromage") < 0.4
         @test 2 < map_rms("from_extrinsic", "fromage") < 4
@@ -505,5 +507,6 @@ end
         @test occursin("detection / flat / detected", flagged)
         @test occursin(CRS.fmt(rows[corners].value, "%7.3f") * "!", flagged)
         @info "Baseline acceptance: no serious rows; measured floors and replicates saved" folder cache_dir
+        test_named_subset(results_dir, cache_dir)
     end
 end
