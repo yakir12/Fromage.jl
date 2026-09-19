@@ -121,23 +121,44 @@ function separation_row(ctx, error)
 end
 
 """
-    measure_builders(rig_name, cam::Camera, poses, file) -> Vector{Row}
+    measure_builders(rig_name, cam::Camera, poses, file, inputs) -> Vector{Row}
 
 The builder rung's rows for the rig whose video `file` (from [`cached_video`](@ref)) holds its 28
 board `poses` (as [`board_poses`](@ref) returns them, or [`jittered`](@ref)), frames 0–27 with the
 flat board last, and the rig with no board as frame 28.
 """
-function measure_builders(rig_name, cam::Camera, poses, file)
+function measure_builders(rig_name, cam::Camera, poses, file, inputs)
+    return measure_rung(rig_name, "builders", cam, poses, file, inputs) do g, detected
+        builder_fits(cam, g, file, filter(is_found, detected[1:(end - 1)]), detected[end])
+    end
+end
+
+function rung_inputs(cam::Camera, poses, file)
     flat, no_board = lastindex(poses) - 1, lastindex(poses)
     g = Gauge(cam)
-    ctx = (; rig = rig_name, rung = "builders")
-    rows = self_check_rows(ctx, cam, file, poses)
     dots = detected_dots(cam, file, no_board)
-    append!(rows, dot_rows(ctx, cam, dots))
-
-    # detection and corners: the builders' own reader and detector, at the csv's blur
     vf = _vf(missing, BLUR)
     detected = tmap(k -> frame_corners(cam, file, k, vf), 0:flat)
+    errors = [corner_errors(d, fromage_corners(cam, p.board)) for (p, d) in zip(poses, detected)]
+    found = filter(!is_failure, errors)
+    all_errors, flat_errors = isempty(found) ? Failure("not detected") : reduce(vcat, found), errors[end]
+    return (; g, dots, detected, all_errors, flat_errors)
+end
+
+"""
+    measure_rung(rig_name, rung, cam::Camera, poses, file, fit_builder) -> Vector{Row}
+
+Measure one rung's shared detections, controls and Fromage fits. `fit_builder` receives the gauge
+and detected corner frames and must return the two builder fits whose maps and camera models the
+rung reports.
+"""
+function measure_rung(fit_builder, rig_name, rung, cam::Camera, poses, file, inputs)
+    (; g, dots, detected, all_errors, flat_errors) = inputs
+    flat = lastindex(poses) - 1
+    ctx = (; rig = rig_name, rung)
+    rows = self_check_rows(ctx, cam, file, poses)
+    append!(rows, dot_rows(ctx, cam, dots))
+
     measured = (; ctx..., builder = missing, section = "fromage")
     for (p, d) in zip(poses, detected)
         push!(
@@ -148,17 +169,13 @@ function measure_builders(rig_name, cam::Camera, poses, file)
         )
     end
     push!(rows, row(measured; quantity = "detection", split = "all", statistic = "detected", value = count(is_found, detected), unit = "frames"))
-    errors = [corner_errors(d, fromage_corners(cam, p.board)) for (p, d) in zip(poses, detected)]
-    found = filter(!is_failure, errors)
-    all_errors, flat_errors = isempty(found) ? Failure("not detected") : reduce(vcat, found), errors[end]
     for (split, e) in (("all frames", all_errors), ("flat board", flat_errors))
         append!(rows, stat_rows(measured, "corners", split, "stored px", distances(e, 1)))
         # an anamorphic detector error is anisotropic in stored px (#294)
         cam.sar == 1 || append!(rows, stat_rows(measured, "corners", split, "display px", distances(e, cam.sar)))
     end
 
-    # the builders, as the csv calls them
-    fits = builder_fits(cam, g, file, filter(is_found, detected[1:(end - 1)]), detected[end])
+    fits = fit_builder(g, detected)
     for (builder, fit) in pairs(fits)
         at = (; ctx..., builder = String(builder), section = "fromage")
         append!(rows, fit_rows(at, cam, g, fit))

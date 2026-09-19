@@ -100,6 +100,8 @@ The simulation's own words, kept here rather than in the root `CONTEXT.md`, whic
   called as the csv calls them (`blur = 1.0`), each intrinsic term, the map, and the dot separation;
   the analytic-corner controls; and the run-time self-checks (the round trip, the dot detector, the
   analytic control).
+- `src/csv_rung.jl` — the CSV rung: the same snapped gauge and simulated video entering through
+  `rectifications.csv` and `runs.csv`, verified and read back through the rectification gateway.
 - `src/report.jl` — the long-format report, one row per rig × rung × builder × section × quantity ×
   split × statistic, each with a `status` (`ok`, `not detected`, `threw: <message>`), and the
   printed table.

@@ -28,7 +28,7 @@ const VARIANTS = [BASELINE]
 """
     simulate(; results_dir, cache_dir, variants = VARIANTS) -> DataFrame
 
-Measure each rig of `variants` through the builder rung and return the long-format report (see
+Measure each rig of `variants` through the builder and CSV rungs and return the long-format report (see
 [`Row`](@ref)), each row with its [`Verdict`](@ref), after writing it as `report.csv` into a new
 folder of `results_dir` and printing its primary quantities. `variants` holds [`Rig`](@ref)s, or the
 names of rigs of [`VARIANTS`](@ref).
@@ -45,12 +45,12 @@ fails is recorded as a row with its exception, and the run goes on.
 function simulate(; results_dir, cache_dir, variants = VARIANTS)
     rigs = select_rigs(variants)
     folder = mkpath(joinpath(results_dir, stamp()))
-    replicates = replicate_rows(cache_dir)
+    replicates = replicate_rows(cache_dir, joinpath(folder, "replicates"))
     rows = Row[]
     for rig in rigs
-        append!(rows, measure(rig, cache_dir))
+        append!(rows, measure(rig, cache_dir, joinpath(folder, "rigs")))
     end
-    baseline = BASELINE in rigs ? filter(r -> r.rig == BASELINE.name, rows) : measure(BASELINE, cache_dir)
+    baseline = BASELINE in rigs ? filter(r -> r.rig == BASELINE.name, rows) : measure(BASELINE, cache_dir, joinpath(folder, "baseline"))
     floors = Floors(replicates, baseline)
     report = judged(rows, floors)
     CSV.write(joinpath(folder, "report.csv"), DataFrame(report))
@@ -69,20 +69,23 @@ function select_rigs(names::AbstractVector{<:AbstractString})
 end
 
 # one rig's rows, or the one row saying why it failed
-function measure(rig::Rig, cache_dir)
+function measure(rig::Rig, cache_dir, results_dir)
     rows = attempt() do
         cam = Camera(rig)
-        measure_poses(rig.name, cam, board_poses(cam), cache_dir)
+        measure_poses(rig.name, cam, board_poses(cam), cache_dir, results_dir)
     end
     rows isa Failure || return rows
     ctx = (; rig = rig.name, rung = "—", builder = missing, section = "rig")
     return [row(ctx; quantity = "rig", statistic = "status", value = missing, unit = "", status = rows.status)]
 end
 
-# the builder rung's rows of `cam` with its boards at `poses`, their video rendered or from the cache
-function measure_poses(name, cam::Camera, poses, cache_dir)
+# both rungs' rows of `cam` with its boards at `poses`, their video rendered or from the cache
+function measure_poses(name, cam::Camera, poses, cache_dir, results_dir; include_csv = true)
     file = cached_video(cache_dir, cam, [[p.board for p in poses]; nothing])
-    return measure_builders(name, cam, poses, file)
+    inputs = rung_inputs(cam, poses, file)
+    rows = measure_builders(name, cam, poses, file, inputs)
+    include_csv && append!(rows, measure_csv(name, cam, poses, file, results_dir, inputs))
+    return rows
 end
 
 # the run's folder name: when it started, and what ran it

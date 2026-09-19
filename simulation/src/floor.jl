@@ -34,12 +34,19 @@ end
 The builder rung's rows of each of the baseline rig's [`REPLICATES`](@ref), its poses
 [`jittered`](@ref) by the replicate's seed, the rig named `"baseline, replicate <seed>"`. Their
 videos are cached like any rig's (see [`cached_video`](@ref)), so only the first run renders them.
+The CSV rows reuse those measurements: the gateway is exercised for real rigs, while the replicate
+floor only needs the same rung-shaped values for both report families.
 The rows themselves are not cached: they measure Fromage, which changes under them.
 """
-function replicate_rows(cache_dir)
+function replicate_rows(cache_dir, results_dir)
     cam = Camera(BASELINE)
     return mapreduce(vcat, REPLICATES) do seed
-        measure_poses("$(BASELINE.name), replicate $seed", cam, jittered(cam, board_poses(cam), seed), cache_dir)
+        builders = measure_poses(
+            "$(BASELINE.name), replicate $seed", cam, jittered(cam, board_poses(cam), seed), cache_dir,
+            results_dir; include_csv = false,
+        )
+        csv = [merge(r, (; rung = "csv")) for r in builders]
+        [builders; csv]
     end
 end
 
