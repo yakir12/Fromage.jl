@@ -465,9 +465,10 @@ end
         @test allunique(eachrow(coalesce.(report[:, key], "")))
 
         baseline = report[report.rig .== "baseline", :]
+        @test sort(unique(baseline.rung)) == ["builders", "csv"]
         @test all(==("ok"), baseline.status)
         @test !any(==("serious"), baseline.verdict)
-        value(; kw...) = only(r.value for r in eachrow(baseline) if all(isequal(r[k], v) for (k, v) in kw))
+        value(; rung = "builders", kw...) = only(r.value for r in eachrow(baseline) if r.rung == rung && all(isequal(r[k], v) for (k, v) in kw))
         @test value(quantity = "detection", split = "all") == 28
         @test all(==(true), skipmissing(baseline.passed))
         @test count(!ismissing, baseline.passed) == 4
@@ -477,6 +478,15 @@ end
         @test map_rms("from_checkerboard", "control") < CRS.CONTROL_TOLERANCE
         @test 1 < map_rms("from_extrinsic", "control") < 5
         @test value(quantity = "corners", split = "all frames", statistic = "RMS", unit = "stored px") < 0.15
+
+        builders = baseline[baseline.rung .== "builders", :]
+        csv = baseline[baseline.rung .== "csv", :]
+        comparison_key = [:builder, :section, :quantity, :split, :statistic, :aggregate, :unit]
+        for builder_row in eachrow(builders)
+            csv_row = only(r for r in eachrow(csv) if all(isequal(r[k], builder_row[k]) for k in comparison_key))
+            @test csv_row.status == builder_row.status
+            @test isequal(csv_row.value, builder_row.value)
+        end
 
         failed = only(eachrow(report[report.rig .== "broken", :]))
         @test failed.status == "threw: ArgumentError: f must be positive, got -1.0"
