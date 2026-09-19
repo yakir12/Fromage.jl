@@ -57,6 +57,7 @@ end
     include("verdicts.jl")
     include("floor.jl")
     include("variants.jl")
+    include("summary.jl")
 
     @testset "camera model vs the OpenCV oracle" begin
         for k in LENSES, sar in SARS
