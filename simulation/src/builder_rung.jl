@@ -21,7 +21,7 @@ const BLUR = 1.0
 "The board's inner corners as Fromage counts them: `(short, long)`."
 const N_CORNERS = reverse(SQUARES .- 1)
 
-"The radial coefficients `from_checkerboard` fits (#289)."
+"The default number of radial coefficients `from_checkerboard` fits (#289)."
 const RADIAL_PARAMETERS = 1
 
 "The seeds of the noisy `from_extrinsic` control (#294)."
@@ -121,15 +121,15 @@ function separation_row(ctx, error)
 end
 
 """
-    measure_builders(rig_name, cam::Camera, poses, file, inputs) -> Vector{Row}
+    measure_builders(rig_name, cam::Camera, poses, file, inputs, radial_parameters) -> Vector{Row}
 
 The builder rung's rows for the rig whose video `file` (from [`cached_video`](@ref)) holds its 28
 board `poses` (as [`board_poses`](@ref) returns them, or [`jittered`](@ref)), frames 0–27 with the
 flat board last, and the rig with no board as frame 28.
 """
-function measure_builders(rig_name, cam::Camera, poses, file, inputs)
-    return measure_rung(rig_name, "builders", cam, poses, file, inputs) do g, detected
-        builder_fits(cam, g, file, filter(is_found, detected[1:(end - 1)]), detected[end])
+function measure_builders(rig_name, cam::Camera, poses, file, inputs, radial_parameters)
+    return measure_rung(rig_name, "builders", cam, poses, file, inputs, radial_parameters) do g, detected
+        builder_fits(cam, g, file, filter(is_found, detected[1:(end - 1)]), detected[end], radial_parameters)
     end
 end
 
@@ -146,13 +146,13 @@ function rung_inputs(cam::Camera, poses, file)
 end
 
 """
-    measure_rung(rig_name, rung, cam::Camera, poses, file, fit_builder) -> Vector{Row}
+    measure_rung(fit_builder, rig_name, rung, cam::Camera, poses, file, inputs, radial_parameters) -> Vector{Row}
 
 Measure one rung's shared detections, controls and Fromage fits. `fit_builder` receives the gauge
 and detected corner frames and must return the two builder fits whose maps and camera models the
 rung reports.
 """
-function measure_rung(fit_builder, rig_name, rung, cam::Camera, poses, file, inputs)
+function measure_rung(fit_builder, rig_name, rung, cam::Camera, poses, file, inputs, radial_parameters)
     (; g, dots, detected, all_errors, flat_errors) = inputs
     flat = lastindex(poses) - 1
     ctx = (; rig = rig_name, rung)
@@ -184,7 +184,7 @@ function measure_rung(fit_builder, rig_name, rung, cam::Camera, poses, file, inp
 
     # the controls: the same fits on analytic corners
     truth = [fromage_corners(cam, p.board) for p in poses]
-    checkerboard = analytic_fit(cam, g, truth, RADIAL_PARAMETERS)
+    checkerboard = analytic_fit(cam, g, truth, radial_parameters)
     control = (; ctx..., section = "control")
     append!(rows, fit_rows((; control..., builder = "from_checkerboard"), cam, g, checkerboard))
     append!(rows, analytic_control_rows(ctx, checkerboard.rect, cam, g))
@@ -214,13 +214,13 @@ camera_model(cam::Camera, views, radial_parameters) =
 # extrinsic frame, the one after them): the builder fits the calibration frames it finds and drops
 # the rest. Without the flat board neither builder is called, as both would throw; the calibration
 # frames still have intrinsics.
-function builder_fits(cam::Camera, g::Gauge, file, calibration, flat::Failure)
+function builder_fits(cam::Camera, g::Gauge, file, calibration, flat::Failure, radial_parameters)
     return (
-        from_checkerboard = (rect = flat, model = attempt(() -> camera_model(cam, calibration, RADIAL_PARAMETERS))),
+        from_checkerboard = (rect = flat, model = attempt(() -> camera_model(cam, calibration, radial_parameters))),
         from_extrinsic = (rect = flat, model = flat),
     )
 end
-function builder_fits(cam::Camera, g::Gauge, file, calibration, flat_corners)
+function builder_fits(cam::Camera, g::Gauge, file, calibration, flat_corners, radial_parameters)
     flat = length(board_poses(cam)) - 1
     call = (; file, extrinsic = float(flat), yadif = missing, blur = BLUR, rig_keywords(cam, g)...)
     return (
@@ -228,10 +228,10 @@ function builder_fits(cam::Camera, g::Gauge, file, calibration, flat_corners)
             rect = attempt() do
                 from_checkerboard(;
                     call..., intrinsic_start = 0.0, intrinsic_stop = float(flat - 1), temporal_step = 1.0,
-                    radial_parameters = RADIAL_PARAMETERS,
+                    radial_parameters,
                 )
             end,
-            model = attempt(() -> camera_model(cam, [calibration; [flat_corners]], RADIAL_PARAMETERS)),
+            model = attempt(() -> camera_model(cam, [calibration; [flat_corners]], radial_parameters)),
         ),
         from_extrinsic = (rect = attempt(() -> from_extrinsic(; call...)), model = attempt(() -> camera_model(cam, [flat_corners], 0))),
     )

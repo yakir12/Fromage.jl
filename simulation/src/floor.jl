@@ -41,9 +41,10 @@ The rows themselves are not cached: they measure Fromage, which changes under th
 function replicate_rows(cache_dir, results_dir)
     cam = Camera(BASELINE)
     return mapreduce(vcat, REPLICATES) do seed
+        @info "Measuring baseline replicate" seed
         builders = measure_poses(
             "$(BASELINE.name), replicate $seed", cam, jittered(cam, board_poses(cam), seed), cache_dir,
-            results_dir; include_csv = false,
+            results_dir, BASELINE.radial_parameters; include_csv = false,
         )
         csv = [merge(r, (; rung = "csv")) for r in builders]
         [builders; csv]

@@ -2,55 +2,56 @@
 # Fromage through rectifications.csv → verify → load_rectifications → build_rectification.
 
 """
-    measure_csv(rig_name, cam::Camera, poses, file, results_dir, inputs) -> Vector{Row}
+    measure_csv(rig_name, cam::Camera, poses, file, results_dir, inputs, radial_parameters) -> Vector{Row}
 
 Measure the rig through the CSV gateway. The input files and gateway issue output live below the
 simulation run's `results_dir`; the built maps are obtained from the verified CSV methods, while
 the fitted camera models are retained only to report the same intrinsic quantities as the builder
 rung.
 """
-function measure_csv(rig_name, cam::Camera, poses, file, results_dir, inputs)
-    return measure_rung(rig_name, "csv", cam, poses, file, inputs) do g, detected
-        csv_fits(cam, g, poses, file, detected, results_dir)
+function measure_csv(rig_name, cam::Camera, poses, file, results_dir, inputs, radial_parameters)
+    return measure_rung(rig_name, "csv", cam, poses, file, inputs, radial_parameters) do g, detected
+        csv_fits(cam, g, poses, file, detected, results_dir, radial_parameters)
     end
 end
 
-function csv_fits(cam::Camera, g::Gauge, poses, file, detected, results_dir)
-    inputs_dir = joinpath(results_dir, "inputs")
-    mkpath(inputs_dir)
-    data_path = mktempdir(inputs_dir)
-    gateway_results = joinpath(results_dir, "gateway")
-    video = joinpath(data_path, "board.mp4")
-    symlink(realpath(file), video)
-    write_csv_inputs(data_path, poses, g)
-
-    # `verify` is the public gateway invocation; `load_rectifications` is the internal route whose
-    # verified methods are then built so the report measures exactly what the CSV path produced.
-    Fromage.verify(data_path; results_dir = gateway_results)
-    methods = Fromage.VerifyRectifications.load_rectifications(
-        data_path, joinpath(data_path, "rectifications.csv");
-        defaults = (;), results_dir = gateway_results, progress = false,
-    )
-    built = Dict(c.rectification_id => attempt(() -> Fromage.build_rectification(c)) for c in methods)
-
+function csv_fits(cam::Camera, g::Gauge, poses, file, detected, results_dir, radial_parameters)
     calibration = filter(is_found, detected[1:(end - 1)])
-    direct = builder_fits(cam, g, file, calibration, detected[end])
+    direct = builder_fits(cam, g, file, calibration, detected[end], radial_parameters)
+    # A gateway rejection (notably an undetected flat board) prevents maps, not measurements of
+    # the calibration frames. Keep its exception on those maps without losing the rung's rows.
+    built = attempt() do
+        inputs_dir = mkpath(joinpath(results_dir, "inputs"))
+        data_path = mktempdir(inputs_dir)
+        gateway_results = joinpath(results_dir, "gateway")
+        symlink(realpath(file), joinpath(data_path, "board.mp4"))
+        write_csv_inputs(data_path, poses, g, radial_parameters)
+
+        # `verify` is the public invocation; the internal loader supplies the methods to build.
+        Fromage.verify(data_path; results_dir = gateway_results)
+        methods = Fromage.VerifyRectifications.load_rectifications(
+            data_path, joinpath(data_path, "rectifications.csv");
+            defaults = (;), results_dir = gateway_results, progress = false,
+        )
+        rects = Dict(c.rectification_id => attempt(() -> Fromage.build_rectification(c)) for c in methods)
+        (from_checkerboard = rects["checkerboard"], from_extrinsic = rects["extrinsic"])
+    end
     return (
-        from_checkerboard = (rect = built["checkerboard"], model = direct.from_checkerboard.model),
-        from_extrinsic = (rect = built["extrinsic"], model = direct.from_extrinsic.model),
+        from_checkerboard = (rect = built isa Failure ? built : built.from_checkerboard, model = direct.from_checkerboard.model),
+        from_extrinsic = (rect = built isa Failure ? built : built.from_extrinsic, model = direct.from_extrinsic.model),
     )
 end
 
-function write_csv_inputs(data_path, poses, g::Gauge)
+function write_csv_inputs(data_path, poses, g::Gauge, radial_parameters)
     extrinsic = lastindex(poses) - 1
     intrinsic_stop = extrinsic - 1
     center = Tuple(round.(Int, g.center))
     north = Tuple(round.(Int, g.north))
     point(p) = "\"($(p[1]), $(p[2]))\""
     open(joinpath(data_path, "rectifications.csv"), "w") do io
-        println(io, "rectification_id,file,extrinsic,intrinsic_start,intrinsic_stop,temporal_step,n_corners,checker_width,center,north")
-        println(io, "checkerboard,board.mp4,$extrinsic,0,$intrinsic_stop,1,,,$(point(center)),$(point(north))")
-        println(io, "extrinsic,board.mp4,$extrinsic,,,,,,$(point(center)),$(point(north))")
+        println(io, "rectification_id,file,extrinsic,intrinsic_start,intrinsic_stop,temporal_step,n_corners,checker_width,center,north,radial_parameters")
+        println(io, "checkerboard,board.mp4,$extrinsic,0,$intrinsic_stop,1,,,$(point(center)),$(point(north)),$radial_parameters")
+        println(io, "extrinsic,board.mp4,$extrinsic,,,,,,$(point(center)),$(point(north)),")
     end
     open(joinpath(data_path, "runs.csv"), "w") do io
         println(io, "run_id,rectification_id,file")

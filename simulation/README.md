@@ -12,9 +12,21 @@ release (`DECISIONS.md`, "The simulation runs no CI and cuts no release").
 
 ## Running it
 
+From the repository root, a full run measures all 32 named rigs:
+
+```sh
+JULIA_NUM_THREADS=auto julia --project=simulation -e '
+    using CalibrationRigSimulation: simulate
+    simulate(; results_dir = "/somewhere/results", cache_dir = "/somewhere/cache")'
+```
+
+For a named subset, use the same environment and add `variants`:
+
 ```julia
-using CalibrationRigSimulation
-simulate(; results_dir = "/somewhere/results", cache_dir = "/somewhere/cache")
+using CalibrationRigSimulation: simulate, VARIANTS
+[r.name for r in VARIANTS] # the available names, in execution order
+simulate(; results_dir = "/somewhere/results", cache_dir = "/somewhere/cache",
+    variants = ["baseline", "sar_64_45", "k1_k2_fit2", "k1_k2_fit1"])
 ```
 
 Neither folder has a default, and both belong outside the repository. `variants` picks rigs by name
@@ -23,8 +35,24 @@ Neither folder has a default, and both belong outside the repository. `variants`
 Julia's; it prints a table of the primary quantities and returns the report as a `DataFrame`.
 It first measures ten seeded replicates of the baseline, each board shifted in its own plane by up
 to half a stored pixel at its depth. Their rows are saved alongside the report in `replicates.csv`.
-The first run renders eleven videos (the ten replicates and the baseline), about a minute each on
-32 threads; later runs read them from `cache_dir` and repeat the measurements against Fromage.
+Rigs run sequentially, with each render threaded over pixel rows. A failure is recorded with its
+exception text and the next rig still runs. A missed flat board leaves the map unavailable while
+the report retains the detected frames and fitted intrinsics. Unknown names error before any work
+or output is produced. Named subsets run in catalogue order and return only those rigs' rows;
+baseline measurements still supply their reference floor.
+
+The catalogue contains baseline, five `sar` variants (1/2, 10/11, 16/15, 64/45, 2), four `k1`
+variants (−0.05, −0.15, −0.3, +0.05), a two-term lens fitted at orders 2 and 1, and the full
+20-cell `sar` × `k1` grid. Names are `sar_1_2`, `k1_-0.15`, `sar_1_2_k1_-0.15`, and
+`k1_k2_fit2` / `k1_k2_fit1`. Single-term lenses use `k2 = k3 = 0` and fit one radial coefficient.
+The two-term lens uses `k = (-0.25, 0.08, 0)`, already checked by the camera's OpenCV oracle;
+its two fits share the same cached video and deliberately compare a matched and an underfit model.
+The 28 board-pose angles are never adjusted to improve a variant's detection.
+
+A cold full run renders 41 videos: ten baseline replicates plus 31 distinct cameras (the two-term
+lens is rendered once). Later runs read these videos from `cache_dir` and repeat the measurements
+against Fromage. The 45-minute estimate in #294 was unmeasured; duration depends on the machine,
+lens and cache state.
 
 Every rig is judged against the **baseline's floor**, even when `variants` leaves out the baseline:
 the largest error magnitude across its ten replicates for the `total` family, and the baseline's
@@ -107,5 +135,4 @@ The simulation's own words, kept here rather than in the root `CONTEXT.md`, whic
   printed table.
 - `src/floor.jl` — seeded board jitter and the baseline's replicate and control floors.
 - `src/verdicts.jl` — the two verdict families, thresholds and the columns they add to each row.
-- `src/simulate.jl` — `simulate`, `Rig` and `VARIANTS`, the rigs a run can measure (the baseline
-  only, for now).
+- `src/simulate.jl` — `simulate`, `Rig` and `VARIANTS`, the named rigs and their fitting orders.
