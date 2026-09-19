@@ -473,7 +473,7 @@ end
         value(; rung = "builders", kw...) = only(r.value for r in eachrow(baseline) if r.rung == rung && all(isequal(r[k], v) for (k, v) in kw))
         @test value(quantity = "detection", split = "all") == 28
         @test all(==(true), skipmissing(baseline.passed))
-        @test count(!ismissing, baseline.passed) == 4
+        @test all(rung -> count(!ismissing, baseline[baseline.rung .== rung, :passed]) == 4, ("builders", "csv"))
         map_rms(builder, section) = value(; builder, section, quantity = "map", split = "arena", statistic = "RMS", aggregate = section == "control" && builder == "from_extrinsic" ? "median" : missing)
         @test 0.1 < map_rms("from_checkerboard", "fromage") < 0.4
         @test 2 < map_rms("from_extrinsic", "fromage") < 4
