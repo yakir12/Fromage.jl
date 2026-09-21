@@ -265,12 +265,12 @@ pose_apply(H, p) = (v = H * SVector(Float64(p[1]), Float64(p[2]), 1.0); SVector(
 const TAG_CELL = 8
 const TAG_BLOCKS = [(150, 150), (150, 370), (370, 150), (370, 370)]   # (row, col) of each block
 
-"The static ground plane: white, with tag36h11 ids 0:3 burned in at `TAG_BLOCKS`."
-function apriltag_ground(GH = 600, GW = 600)
+"The static ground plane: white, with tag36h11 ids 0:3 at `tag_blocks` (ground row, col)."
+function apriltag_ground(GH = 600, GW = 600; tag_blocks = TAG_BLOCKS)
     upscale(t) = UInt8.(kron(Int.(t), ones(Int, TAG_CELL, TAG_CELL)))
     tagu8(id) = UInt8.(255 .* (Float64.(getAprilTagImage(id, tag36h11)) .> 0.5))
     ground = fill(0xff, GH, GW)
-    for ((r, c), id) in zip(TAG_BLOCKS, 0:3)
+    for ((r, c), id) in zip(tag_blocks, 0:3)
         ground[(r + 1):(r + 10TAG_CELL), (c + 1):(c + 10TAG_CELL)] .= upscale(tagu8(id))
     end
     return ground
@@ -361,6 +361,9 @@ composed onto the fixed crop that places the `height` x `width` frame in the mid
 translation, and bit-identical to the crop it used to be implemented as. Frames listed in
 `occlude` get the first tag painted over, so that frame cannot register.
 
+`tag_blocks` places the tags in ground-canvas `(row, col)` pixels. The disc moves linearly from
+`ground_start` to `ground_stop`, also in ground-canvas pixels (1-based array indices).
+
 Returns a NamedTuple; its first four fields are positional-destructuring compatible with the
 older `(file, groundpath, start_location, nframes)` form.
 
@@ -377,7 +380,8 @@ older `(file, groundpath, start_location, nframes)` form.
 function make_apriltag_video(
         dir, name; H = 480, W = 480, GH = 600, GW = 600,
         nframes = 60, fps = 25, tw = 12, amp = 40, pose = nothing,
-        occlude = Int[]
+        occlude = Int[], tag_blocks = TAG_BLOCKS,
+        ground_start = (260.0, 260.0), ground_stop = (300.0, 320.0)
     )
     ox0, oy0 = (GW - W) ÷ 2, (GH - H) ÷ 2                   # the fixed crop: ground -> frame
     turn(k) = 2π * (k - 1) / nframes
@@ -396,13 +400,13 @@ function make_apriltag_video(
         [pose(k) * base for k in 1:nframes]                 # `pose` moves the drone about the frame
     end
 
-    gr(k) = 260.0 + 40 * (k - 1) / (nframes - 1)           # disc ground path (row, col): a line
-    gc(k) = 260.0 + 60 * (k - 1) / (nframes - 1)
+    gr(k) = ground_start[1] + (ground_stop[1] - ground_start[1]) * (k - 1) / (nframes - 1)
+    gc(k) = ground_start[2] + (ground_stop[2] - ground_start[2]) * (k - 1) / (nframes - 1)
     ground_xy(k) = SVector(gc(k), gr(k))                    # the same point as (x, y)
 
-    ground = apriltag_ground(GH, GW)
+    ground = apriltag_ground(GH, GW; tag_blocks)
     occluded = copy(ground)
-    r, c = TAG_BLOCKS[1]
+    r, c = first(tag_blocks)
     occluded[(r + 1):(r + 10TAG_CELL), (c + 1):(c + 10TAG_CELL)] .= 0xff    # the first tag painted out
     raw = joinpath(dir, "$name.raw")
     open(raw, "w") do io

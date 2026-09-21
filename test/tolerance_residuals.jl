@@ -271,8 +271,8 @@ end
 fixed properties of the reference space rather than of the track, so the prediction stays
 independent of the thing it measures.
 """
-function track_residual(name, file, rect, v; start_location = v.start_location)
-    _, xy = track1(file; rectification = rect, start_location, target_width = AT_TARGET_WIDTH)
+function track_residual(name, file, rect, v; start_location = v.start_location, downscale = 1.0)
+    _, xy = track1(file; rectification = rect, start_location, target_width = AT_TARGET_WIDTH, downscale)
     any(ismissing, xy) && error("apriltag flight '$name': the track has gaps, so it has no residual")
     return maximum(
         norm(xy[k] - rect.image2real(PT.apply_h(rect.reference.M, v.expected_ref(k))))
@@ -321,31 +321,20 @@ function apriltag_residuals(dir)
     # (a) the two pipeline bounds, over every site that asserts them
     fs = [flight_residuals(dir, name, pose) for (name, pose) in AT_FLIGHTS]
 
-    # the non-square reference (400x480, so the viewport axis order is discriminating) and the
-    # unseeded centre search: test/apriltag_pipeline.jl's last two testsets, which assert
-    # TRACK_TOL but not REG_TOL
+    # The shared wide, unseeded fixture in test/apriltag_pipeline.jl, at both tracking scales.
     wide = make_apriltag_video(
-        dir, "tol_wideref"; H = 400, W = 480, nframes = AT_NFRAMES,
-        tw = AT_TARGET_WIDTH
-    )
-    wide_file = joinpath(dir, wide.file)
-    wide_track = track_residual(
-        "wideref", wide_file,
-        at_rectify(wide_file; width = 480, height = 400), wide
-    )
-
-    seedless = make_apriltag_video(
-        dir, "tol_noseed"; nframes = AT_NFRAMES, tw = AT_TARGET_WIDTH,
+        dir, "tol_wideref"; H = 240, W = 600, nframes = AT_NFRAMES, tw = AT_TARGET_WIDTH,
+        tag_blocks = [(200, 100), (200, 420), (320, 100), (320, 420)],
+        ground_start = (300.0, 310.0), ground_stop = (320.0, 350.0),
         pose = k -> drone_pose(
-            dx = 30sin(2π * (k - 1) / 12),
-            dy = 24cos(2π * (k - 1) / 12)
+            dx = 12sin(2π * (k - 1) / 12), dy = 8sin(2π * (k - 1) / 12)
         )
     )
-    seedless_file = joinpath(dir, seedless.file)
-    # `start_location = missing` is the point: the tracker has to find the disc unaided
-    seedless_track = track_residual(
-        "noseed", seedless_file, at_rectify(seedless_file), seedless;
-        start_location = missing
+    wide_file = joinpath(dir, wide.file)
+    wide_rect = at_rectify(wide_file; width = 600, height = 240)
+    wide_track = maximum(
+        track_residual("wideref", wide_file, wide_rect, wide; start_location = missing, downscale)
+            for downscale in (1.0, 0.5)
     )
 
     row(
@@ -354,7 +343,7 @@ function apriltag_residuals(dir)
     )
     row(
         "apriltag_pipeline: track (worst site)",
-        max(maximum(f.track for f in fs), wide_track, seedless_track), AT_TRACK_TOL
+        max(maximum(f.track for f in fs), wide_track), AT_TRACK_TOL
     )
 
     # (b) the two end-to-end bounds, over both flights that assert them: the 60-frame default
