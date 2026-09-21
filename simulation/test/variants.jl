@@ -44,14 +44,16 @@ function test_named_subset(results_dir, cache_dir)
             partial = report[(report.rig .== "sar_64_45") .& (report.rung .== rung), :]
             detected = partial[partial.quantity .== "detection", :]
             @test nrow(detected) == 29 # 28 frames and their total
-            @test only(detected[detected.split .== "flat", :value]) == 0
+            # this rig lost its flat board, and so its map, to `CALIB_CB_FAST_CHECK` until #288; a
+            # missed flat board is exercised without a video in the two-term lens testset below
+            @test all(==(1), detected[detected.split .!= "all", :value])
             intrinsics = partial[(partial.quantity .== "intrinsics") .& coalesce.(partial.builder .== "from_checkerboard", false), :]
             @test all(==("ok"), intrinsics.status)
             @test all(!ismissing, intrinsics.value)
             maps = partial[(partial.quantity .== "map") .& (partial.section .== "fromage"), :]
             @test nrow(maps) == 24
-            @test all(ismissing, maps.value)
-            @test all(!=("ok"), maps.status)
+            @test all(!ismissing, maps.value)
+            @test all(==("ok"), maps.status)
 
             k2(name) = only(
                 r.value for r in eachrow(report) if r.rig == name && r.rung == rung &&
