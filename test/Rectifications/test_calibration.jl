@@ -121,7 +121,7 @@
     @testset "single radial coefficient round-trip" begin
         ktrue = (0.05, 0.0, 0.0)
         views = make_views(fx, ktrue)                            # aspect = 1 ⇒ fy = fx
-        res = R.fit_model((W, H), objpoints, views, n_corners, 1, 1.0)
+        res = @inferred R.fit_model((W, H), objpoints, views, n_corners, 1, 1.0)
         # 1.0, not 3.0: measured 0.313 px on the focal lengths and 0.472 px on the centre, on
         # linux, Intel macOS and windows. The only cross-platform variation anywhere in these
         # numbers is ~2e-10 on the focal lengths — OpenCV's iterative fit landing on a different
@@ -133,6 +133,7 @@
         @test res.k[1] ≈ ktrue[1] atol = 0.01
         @test res.k[2] == 0.0 && res.k[3] == 0.0                 # higher coeffs fixed, not garbage
         @test reproj_rms(res, views) < 0.2                       # sub-pixel fit
+        @test res.rms ≈ reproj_rms(res, views) rtol = 1.0e-3     # the residual it reports is this one
         @test length(res.Rs) == length(views) && length(res.ts) == length(views)
     end
 
@@ -152,6 +153,25 @@
         @test res.ccol ≈ cy / sar atol = 3.0
         @test res.k[1] ≈ ktrue[1] atol = 0.01
         @test reproj_rms(res, views) < 0.2
+    end
+
+    # The fit's residual is the one sign that its model does not fit the corners (#326). Here the
+    # distortion is strong enough that a fit without a radial term misses by 2.45 px, and one with a
+    # radial term fits to 1e-5 px. Coordinate 1 of these views spans `W`, so it is the `height`
+    # that `_rectification` hands `fit_model` first.
+    @testset "reprojection RMS above 1 px warns" begin
+        views = [reshape([R.RowCol(p...) for p in v], n_corners) for v in make_views(fx, (1.0, 0.0, 0.0))]
+        rect(radial_parameters, imgpointss = views) = R._rectification(;
+            file = "board.mp4", extrinsic = 12.5, imgpointss, width = H, height = W,
+            n_corners, checker_width = 1.0, aspect = 1.0, radial_parameters,
+            center = missing, north = missing
+        )
+        @test_logs (:warn, r"board\.mp4 at 12\.5 s.* 2\.45 px") rect(0)
+        @test_logs rect(1)
+        # The same warning must cover the zero-distortion single-view fit selected when the
+        # intrinsic window is absent, and building the map must still succeed.
+        single = @test_logs (:warn, r"board\.mp4 at 12\.5 s.*reprojection RMS.*add one to fit lens distortion") rect(0, [last(views)])
+        @test single isa R.StaticRectification
     end
 
     # --- the transposed-frame convention, and the single-view fit that depends on it (#92) -----
@@ -206,7 +226,7 @@
         # Keyword-only since the argument-list change: the tail used to read `1.0, 0, missing,
         # missing, false` with nothing at the call site to say which was which.
         rect = R._rectification(;
-            imgpointss = [corners], width = Wf, height = Hf, n_corners = ncr,
+            file = "unused.mp4", extrinsic = 0.0, imgpointss = [corners], width = Wf, height = Hf, n_corners = ncr,
             checker_width = checker, aspect = 1.0, radial_parameters = 0,
             center = missing, north = missing
         )

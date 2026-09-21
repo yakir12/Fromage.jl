@@ -29,6 +29,10 @@ reflected across the frame diagonal.
 
 `aspect` is the video's sample aspect ratio, as the gateway imputes it. The fit holds the returned
 focal lengths at `fcol / frow = 1 / aspect` exactly, which at `aspect = 1` makes them equal.
+
+The returned `rms` is the root mean squared Euclidean reprojection error per corner, over all
+views, in stored pixels. It measures agreement with the observed corners, not real-world map
+accuracy; a small residual alone does not establish that the camera model is correct.
 """
 function fit_model(sz, objpoints, imgpointss, n_corners, radial_parameters, aspect)
     cammat = convert(Matrix{Float64}, I(3))
@@ -50,7 +54,7 @@ function fit_model(sz, objpoints, imgpointss, n_corners, radial_parameters, aspe
     # the single-frame fit well-posed
     nfiles == 1 && (flags += OpenCV.CALIB_FIX_PRINCIPAL_POINT)
 
-    OpenCV.calibrateCamera(
+    rms, _ = OpenCV.calibrateCamera(
         OpenCV.InputArray[Float32.(reshape(stack(objpoints), 3, 1, :)) for _ in 1:nfiles],
         OpenCV.InputArray[Float32.(reshape(stack(imgpoints), 2, 1, :)) for imgpoints in imgpointss],
         OpenCV.Size{Int32}(sz...),
@@ -63,5 +67,6 @@ function fit_model(sz, objpoints, imgpointss, n_corners, radial_parameters, aspe
     # is what lets `lens_distortion_factor`'s `evalpoly` unroll without allocating. `dist` always
     # holds all three radial slots — `radial_parameters < 3` fixes the unfitted ones at zero rather
     # than omitting them (see CALIB_FIX_K above).
-    return (k = (dist[1], dist[2], dist[5]), Rs = r, ts = t, frow = cammat[1, 1], fcol = cammat[2, 2], crow = cammat[3, 1], ccol = cammat[3, 2])
+    # OpenCV returns a Float64 RMS through a wrapper inferred as Any; assert it at the boundary.
+    return (k = (dist[1], dist[2], dist[5]), rms = rms::Float64, Rs = r, ts = t, frow = cammat[1, 1], fcol = cammat[2, 2], crow = cammat[3, 1], ccol = cammat[3, 2])
 end

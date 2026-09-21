@@ -239,8 +239,11 @@ end
 
 # the rectification Fromage's builders would build on the views' corners, and the model they fit
 function analytic_fit(cam::Camera, g::Gauge, views, radial_parameters)
+    # No file is read here. Name the synthetic control in fit warnings, with the flat board's
+    # timestamp on the same one-pose-per-second timeline as the rendered video.
+    extrinsic = Float64(length(board_poses(cam)) - 1)
     return (
-        rect = attempt(() -> _rectification(; imgpointss = views, radial_parameters, rig_keywords(cam, g)...)),
+        rect = attempt(() -> _rectification(; file = "analytic control", extrinsic, imgpointss = views, radial_parameters, rig_keywords(cam, g)...)),
         model = attempt(() -> camera_model(cam, views, radial_parameters)),
     )
 end
