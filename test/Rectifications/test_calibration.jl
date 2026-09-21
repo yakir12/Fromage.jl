@@ -121,7 +121,7 @@
     @testset "single radial coefficient round-trip" begin
         ktrue = (0.05, 0.0, 0.0)
         views = make_views(fx, ktrue)                            # aspect = 1 ⇒ fy = fx
-        res = R.fit_model((W, H), objpoints, views, n_corners, 1, 1.0)
+        res = @inferred R.fit_model((W, H), objpoints, views, n_corners, 1, 1.0)
         # 1.0, not 3.0: measured 0.313 px on the focal lengths and 0.472 px on the centre, on
         # linux, Intel macOS and windows. The only cross-platform variation anywhere in these
         # numbers is ~2e-10 on the focal lengths — OpenCV's iterative fit landing on a different

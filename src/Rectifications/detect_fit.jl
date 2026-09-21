@@ -67,5 +67,6 @@ function fit_model(sz, objpoints, imgpointss, n_corners, radial_parameters, aspe
     # is what lets `lens_distortion_factor`'s `evalpoly` unroll without allocating. `dist` always
     # holds all three radial slots — `radial_parameters < 3` fixes the unfitted ones at zero rather
     # than omitting them (see CALIB_FIX_K above).
-    return (k = (dist[1], dist[2], dist[5]), rms, Rs = r, ts = t, frow = cammat[1, 1], fcol = cammat[2, 2], crow = cammat[3, 1], ccol = cammat[3, 2])
+    # OpenCV returns a Float64 RMS through a wrapper inferred as Any; assert it at the boundary.
+    return (k = (dist[1], dist[2], dist[5]), rms = rms::Float64, Rs = r, ts = t, frow = cammat[1, 1], fcol = cammat[2, 2], crow = cammat[3, 1], ccol = cammat[3, 2])
 end
