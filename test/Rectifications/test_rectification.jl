@@ -48,7 +48,7 @@
         vid = joinpath(dir, "board.mp4")
         run(`$(R.FFMPEG.ffmpeg()) -y -hide_banner -loglevel error -framerate 10 -f rawvideo -pix_fmt gray -s $(Wimg)x$(Himg) -i $raw -c:v libx264 -crf 0 -pix_fmt yuv420p $vid`)
 
-        # frames 1..11 (t = 0.05..1.05) drive the intrinsics; frame 12 (t = 1.15) is the extrinsic
+        # 0-based frames 1..11 (t = 0.05..1.05) drive the intrinsics; frame 12 (t = 1.15) is the extrinsic
         extrinsic_t, intrinsic_start, intrinsic_stop, step = 1.15, 0.05, 1.05, 0.1
         # The two `missing`s used to be positional here, and nothing said which was `yadif` and
         # which was `blur`.

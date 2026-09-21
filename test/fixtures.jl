@@ -120,11 +120,13 @@ stored frames — the footage `from_checkerboard` meets when `sar ≠ 1`. Return
 
 The camera lives in display space: `width`×`height` square pixels, focal length `f` px, principal
 point at the display centre, and OpenCV's pixel convention (0-based, pixel centres on integers). The
-board's inner corners sit at the integer points of `0:n_corners[1]-1` × `0:n_corners[2]-1`, with one
-square of margin all round.
+board's inner corners sit at the integer points of `0:n_corners[1]-1` × `0:n_corners[2]-1`, and it
+extends one square beyond them on every side, on a white background.
 
 The squeeze is an area integral, not a resample: stored column `j` covers the display span
-`[j·sar − ½, (j + 1)·sar − ½]`, so a display `x` lands at stored column `(x + ½)/sar − ½`.
+`[j·sar − ½, (j + 1)·sar − ½]`, so a display `x` lands at stored column `(x + ½)/sar − ½`. That is
+the area-exact mapping, not `Spaces.stored_x`'s `x / sar`: the two differ by a constant `½/sar − ½`
+columns, which a fitted principal point absorbs but a `center` put through `to_stored` would not.
 Every stored pixel averages `supersample`² samples across that footprint, which keeps the corners
 sub-pixel. The encode is lossless and carries `setsar=sar`.
 
@@ -138,17 +140,17 @@ function make_squeezed_checkerboard_video(
     isinteger(width / sar) && iseven(Int(width / sar)) && iseven(height) ||
         throw(ArgumentError("a $(width)×$(height) display at sar $sar has no even stored frame size"))
     stored_width = Int(width / sar)
-    cx, cy = (width - 1) / 2, (height - 1) / 2
+    K = SMatrix{3, 3, Float64}(f, 0, 0, 0, f, 0, (width - 1) / 2, (height - 1) / 2, 1)
     # board (X, Y) → display (x, y): the homography of the board plane, K·[r1 r2 t]
-    homography(rv, t) = (
-        Rm = SMatrix{3, 3, Float64}(RotationVec(rv...));
-        SMatrix{3, 3, Float64}(f, 0, 0, 0, f, 0, cx, cy, 1) * hcat(Rm[:, 1], Rm[:, 2], SVector{3, Float64}(t))
-    )
+    function homography(rv, t)
+        Rm = SMatrix{3, 3, Float64}(RotationVec(rv...))
+        return K * hcat(Rm[:, 1], Rm[:, 2], SVector{3, Float64}(t))
+    end
     Hs = [homography(rv, t) for (rv, t) in poses]
     nx, ny = n_corners
     black(X, Y) = -1 ≤ X ≤ nx && -1 ≤ Y ≤ ny && isodd(floor(Int, X) + floor(Int, Y))
     offsets = ((1:supersample) .- 0.5) ./ supersample .- 0.5
-    s = Float64(sar)
+    sar_f = Float64(sar)
     raw = path * ".gray"
     open(raw, "w") do io
         frame = Matrix{UInt8}(undef, stored_width, height)     # column-major = ffmpeg's row-major
@@ -157,7 +159,7 @@ function make_squeezed_checkerboard_video(
             for r in 0:(height - 1), j in 0:(stored_width - 1)
                 dark = 0
                 for dr in offsets, dj in offsets
-                    x = (j + dj + 0.5) * s - 0.5
+                    x = (j + dj + 0.5) * sar_f - 0.5
                     w = Hinv * SVector(x, r + dr, 1.0)
                     dark += black(w[1] / w[3], w[2] / w[3])
                 end
@@ -169,10 +171,10 @@ function make_squeezed_checkerboard_video(
     sarg = "$(numerator(sar))/$(denominator(sar))"
     FFMPEG.ffmpeg_exe(`-y -loglevel error -f rawvideo -pix_fmt gray -s $(stored_width)x$(height) -r $fps -i $raw -vf setsar=$sarg -c:v libx264 -qp 0 -pix_fmt yuv420p $path`)
     rm(raw)
-    stored = (k, X, Y) -> begin
+    function stored(k, X, Y)
         v = Hs[k] * SVector(Float64(X), Float64(Y), 1.0)
         x, y = v[1] / v[3], v[2] / v[3]
-        (y, (x + 0.5) / s - 0.5)
+        return (y, (x + 0.5) / sar_f - 0.5)
     end
     return (; file = path, stored_width, stored)
 end

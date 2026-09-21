@@ -16,7 +16,7 @@
     # 0-based frames 1..11 are the intrinsic views and frame 12 the extrinsic one (pose 13); see
     # `CHECKERBOARD_POSES` for why t = (k − ½)/10 reads frame k.
     extrinsic_pose = 13
-    window = (; intrinsic_start = 0.05, intrinsic_stop = 1.05, temporal_step = 0.1, radial_parameters = 1)
+    intrinsic_window = (; intrinsic_start = 0.05, intrinsic_stop = 1.05, temporal_step = 0.1, radial_parameters = 1)
     # A 13×11 grid of board points at half-square spacing, in checker units: the inner corners and
     # the centres of the squares between them.
     board = vec([(X, Y) for X in 0:0.5:(n_corners[1] - 1), Y in 0:0.5:(n_corners[2] - 1)])
@@ -55,7 +55,7 @@
             # anamorphic cases read 0.74 / 0.33 and 0.77 / 0.28. The bound is the one #275 and #277
             # set, on 25 mm squares.
             @testset "$name" for (name, build) in (
-                    ("from_checkerboard", () -> R.from_checkerboard(; common..., window...)),
+                    ("from_checkerboard", () -> R.from_checkerboard(; common..., intrinsic_window...)),
                     ("from_extrinsic", () -> R.from_extrinsic(; common...)),
                 )
                 rect = build()
