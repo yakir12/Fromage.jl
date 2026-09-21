@@ -224,7 +224,6 @@ struct Video
     # shape of #140/#141: a run verified against one rate would then be sampled at another, and a
     # declared rate would be silently ignored by the only code that matters.
     #
-    #
     # Nor is `sar`, and there the second definition site was real (#295). It used to come from
     # `VideoIO.aspect_ratio`, which reads the codec context, while both gateways take ffprobe's
     # stream value — and the two disagree when the ratio is stored in the container alone (FFV1 in

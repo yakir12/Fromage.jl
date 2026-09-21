@@ -26,10 +26,12 @@ end
 # one too large for an `Int` ratio is a wrong format; the sign is left for the caller's range check.
 function mytryparse(::Type{Rational{Int}}, x)
     s = strip(string(x))
-    m = match(r"^(-?\d+)\s*[/:]\s*(\d+)$", s)
-    if !isnothing(m)
-        num = tryparse(Int, m.captures[1])
-        den = tryparse(Int, m.captures[2])
+    # `split` rather than a regex: a match's captures are `Union{Nothing, SubString}`, which JET
+    # rightly reports as a `tryparse(Int, nothing)` waiting to happen
+    parts = split(s, ('/', ':'))
+    if length(parts) == 2
+        num = tryparse(Int, parts[1])
+        den = tryparse(Int, parts[2])
         (isnothing(num) || isnothing(den) || iszero(den)) && return nothing
         return num // den
     end
