@@ -117,7 +117,7 @@
             measurement(; builder = "from_extrinsic", value = 18.0),
             measurement(; statistic = "max", value = 8.0),
             measurement(; split = "off board", value = 4.0),
-            measurement(; builder = missing, quantity = "corners", value = 0.4, unit = "display px"),
+            measurement(; builder = missing, quantity = "corners", value = 0.4, unit = "stored px"),
             measurement(; section = "control", value = 0.12),
             measurement(; builder = "from_extrinsic", section = "control", aggregate = "median", value = 0.8),
         ]
@@ -125,5 +125,18 @@
         @test getproperty.(got, :floor) == [1.0, 9.0, 4.0, 2.0, 0.1, 0.003, 0.1]
         @test getproperty.(got, :ratio) ≈ [4.0, 2.0, 2.0, 2.0, 4.0, 40.0, 8.0]
         @test getproperty.(got, :verdict) == ["serious", "ok", "ok", "ok", "diagnostic", "serious", "ok"]
+    end
+
+    # #313: the replicates are at `sar` 1 and emit no display-px row, so a display-px row has no
+    # floor, rather than borrowing the stored-px one beside it
+    @testset "a floor is shared only by rows of one unit" begin
+        stored = measurement(; rig = "sar_2_1", builder = missing, quantity = "corners", split = "all frames", value = 0.12, unit = "stored px")
+        display = merge(stored, (; value = 0.24, unit = "display px"))
+        @test !isequal(CRS.floor_key(stored), CRS.floor_key(display))
+        floors = CRS.Floors([merge(stored, (; rig = "baseline, replicate 1", value = 0.1))], CRS.Row[])
+        s, d = CRS.judged([stored, display], floors)
+        @test s.floor == 0.1 && s.ratio ≈ 1.2 && s.verdict == "ok"
+        @test ismissing(d.floor) && ismissing(d.ratio) && d.verdict == "n/a"
+        @test d.value == 0.24 && d.unit == "display px"
     end
 end
