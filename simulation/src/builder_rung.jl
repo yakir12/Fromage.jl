@@ -1,5 +1,5 @@
 # The builder rung (#294, #301): Fromage's `from_checkerboard` and `from_extrinsic` called directly on
-# a rig's video, as the csv would call them (`blur = 1.0`, `CALIB_CB_FAST_CHECK` included, #288), and
+# a rig's video, as the csv would call them (`blur = 1.0`, and the detector flags Fromage ships), and
 # measured against the rig's truth; beside them the analytic-corner controls, and the simulation's
 # own self-checks. Ported from `main` in `prototype/baseline-rig:prototype/baseline_rig.jl` and from
 # `prototype/baseline-rig:prototype/probe_extrinsic.jl` (#291).

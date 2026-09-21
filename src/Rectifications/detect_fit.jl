@@ -5,7 +5,9 @@ Wraps OpenCV function to auto-detect corners in an image.
 function _detect_corners(img, n_corners)
     gry = OpenCV.Mat(img)
     corners = Matrix{RowCol}(undef, n_corners)
-    flags = OpenCV.CALIB_CB_ADAPTIVE_THRESH + OpenCV.CALIB_CB_NORMALIZE_IMAGE + OpenCV.CALIB_CB_FAST_CHECK
+    # No `CALIB_CB_FAST_CHECK`: it rejected small or anamorphic boards the full search finds (#288),
+    # and on lab footage it saved no time — see DECISIONS, "Corner detection runs without FAST_CHECK".
+    flags = OpenCV.CALIB_CB_ADAPTIVE_THRESH + OpenCV.CALIB_CB_NORMALIZE_IMAGE
     ret, _ = OpenCV.findChessboardCorners(
         gry, OpenCV.Size{Int32}(n_corners...),
         OpenCV.Mat(reshape(reinterpret(Float32, corners), 2, 1, prod(n_corners))),

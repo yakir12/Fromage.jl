@@ -23,6 +23,16 @@
         img
     end
 
+    # Area-average each run of `sar` columns into one, as an anamorphic stored frame holds them
+    # (trailing columns that do not fill a run are dropped).
+    function squeeze_columns(img, sar)
+        w = size(img, 3) ÷ sar
+        [
+            round(UInt8, sum(Int, @view(img[1, row, ((col - 1) * sar + 1):(col * sar)])) / sar)
+                for _ in 1:1, row in axes(img, 2), col in 1:w
+        ]
+    end
+
     # Standard OpenCV pinhole + radial distortion (zero tangential), matching what `fit_model` fits.
     function project(Xo, Rmat, t, fx, fy, cx, cy, k)
         Xc = Rmat * SVector{3, Float64}(Xo) + t
@@ -85,6 +95,25 @@
 
         # a flat (cornerless) image yields no detection
         @test R._detect_corners(fill(0x7f, 1, 120, 160), n_corners) === missing
+    end
+
+    # `CALIB_CB_FAST_CHECK` rejected both of these boards, though they are plainly visible and the
+    # full search finds them (#288). The second is squeezed as an anamorphic stored frame is: its
+    # columns area-averaged `sar` to one, which is where the flag failed on the simulation's rigs.
+    @testset "small or squeezed board, sq = $sq, sar = $sar" for (sq, sar) in ((10, 1), (20, 3))
+        m = 40
+        board = squeeze_columns(checkerboard(n_corners; sq, m), sar)
+        detected = R._detect_corners(board, n_corners)
+        @test detected !== missing
+        # Every corner sits on a distinct rendered one, 0-based with pixel centres on integers. A
+        # squeezed edge at wide column `e` lands at stored column `e / sar` — derived here from the
+        # rendering, deliberately not through `Spaces`, so the expectation is independent of it.
+        truth = [(m + j * sq - 0.5, (m + i * sq) / sar - 0.5) for i in 1:n_corners[1], j in 1:n_corners[2]]
+        nearest(p) = argmin(t -> hypot(p[1] - t[1], p[2] - t[2]), truth)
+        if detected !== missing
+            @test all(p -> hypot(p[1] - nearest(p)[1], p[2] - nearest(p)[2]) < 0.1, detected)
+            @test allunique(map(nearest, vec(detected)))
+        end
     end
 
     # --- fit_model ----------------------------------------------------------------------------
