@@ -63,7 +63,7 @@ Timestamps (`start`, `stop`, `intrinsic_start`, `intrinsic_stop`, `extrinsic`) a
 
 ### Writing pixel coordinates
 
-Pixel coordinates (`start_location`, `center`, `north`) are written `"(x, y)"` — **including the quotes**, since the cell contains a comma. `x` is the distance in pixels from the *left* edge of the frame and `y` from the *top* edge, exactly as an image viewer (GIMP, Photoshop, etc.) reports them when you hover over a paused frame.
+Pixel coordinates (`start_location`, `center`, `north`) are written `"(x, y)"` — **including the quotes**, since the cell contains a comma. `x` is the distance in pixels from the *left* edge of the frame and `y` from the *top* edge, exactly as an image viewer (GIMP, Photoshop, etc.) reports them when you hover over a paused frame. Counting starts at 0: the top-left pixel is `(0, 0)`.
 
 !!! tip "How to find a pixel coordinate"
     Pause the video on a good frame, take a screenshot (or export the frame), open it in an image viewer, and hover the mouse over the point you want — the viewer shows the `(x, y)` position of the cursor.
