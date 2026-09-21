@@ -22,8 +22,9 @@ If the user expects Kaimon, tell them the server looks down rather than silently
 else
   msg="Kaimon MCP: up on localhost:${PORT} (HTTP ${code} at session start).
 Ground rule 6 applies: search_code(query=..., collection=\"fromage\") to find, grep_code to confirm.
-Always pass collection=\"fromage\" — claude_dir_fromage also exists and is empty, so a domain query
-against it returns nothing and looks like 'no such code'.
+Always pass collection=\"fromage\" — without it search_code falls back to the last-used session's
+project, which may be another repo's collection, and a miss there looks like 'no such code'.
+KaimonGate.stash takes a String key; the Kaimon quiz's stash(:key, v) throws a MethodError.
 Start your own session (start_session, CLAUDE.md §2 step 2). If it dies with 'KaimonGate failed to
 precompile … ZMQ … not installed', the juliaup release channel has moved to a Julia whose global
 environment lacks KaimonGate: julia --project=@v1.X -e 'using Pkg; Pkg.add(\"KaimonGate\")' — never

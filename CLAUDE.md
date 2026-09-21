@@ -84,6 +84,10 @@ follow this file. Rule 6 below exists because that has actually gone wrong.
    single tool. Then take the quiz: `usage_quiz`, answer everything, `usage_quiz(show_sols=true)`
    to self-grade. **Score ≥ 75 before doing real work**; below that, re-read
    `usage_instructions` and retake. Ask the user if anything stays unclear.
+   **One thing the quiz teaches is wrong: `KaimonGate.stash` takes a `String` key, not a
+   `Symbol`.** Both `usage_instructions` and the quiz's model answer show `stash(:completed, i)`,
+   and it throws a `MethodError` (see "Running Julia" below). Write `stash("completed", i)`,
+   and don't copy the quiz's cooperative loop verbatim.
 1. `ping()` — is the server up, and which Julia sessions are connected? The user usually has
    other projects' sessions connected too (e.g. `tracking-ground-truth`, the codex project), so
    **pass `ses=`/`session=` on every session-bound call** once more than one is listed.
@@ -131,11 +135,13 @@ follow this file. Rule 6 below exists because that has actually gone wrong.
    `"retry reading a video frame from the network share when it fails with EAGAIN"` should rank
    `DECISIONS.md` and `src/shareio.jl` (L1–50) at the top — and confirm a hit's line with
    `grep_code` (`src/shareio.jl:1` is `# Every retry in this package…`). Matching lines mean the
-   index is live and not stale for that file. Always pass `collection="fromage"` —
-   `claude_dir_fromage` also exists and is empty, so a domain query against it returns nothing and
-   looks like "no such code". The collection list also shows `codex`, `kaimon_all`,
-   `verifycalibrations` and `verifyruns`; the last two index the separate pre-merge repos under
-   `~/Sync/evri/`, not this one — never search them for current Fromage code.
+   index is live and not stale for that file. Always pass `collection="fromage"`: without it,
+   `search_code` falls back to the *last-used* session's project, which may be another repo's
+   collection when other sessions are connected — a domain query there returns unrelated hits or
+   nothing, and looks like "no such code". On 2026-09-21 the list was exactly `codex`, `fromage`,
+   `kaimon_all`, `verifycalibrations` and `verifyruns` (an empty `claude_dir_fromage` that older
+   notes warn about is gone). `verifycalibrations` and `verifyruns` index the separate pre-merge
+   repos under `~/Sync/evri/`, not this one — never search them for current Fromage code.
 
 ### Finding code
 
@@ -192,7 +198,9 @@ qdrant_index_project(collection="fromage",
   cooperative (`KaimonGate.is_cancelled()`, `KaimonGate.progress(…)`, `KaimonGate.stash("key", v)`).
   **`stash` takes a `String` key.** Kaimon's own `usage_instructions` and quiz show
   `stash(:key, v)`, which throws `MethodError: no method matching stash(::Symbol, …)` on
-  KaimonGate 1.4.0 — the session log records that killing two long evals mid-run.
+  KaimonGate 1.4.0 — the session log records that killing two long evals mid-run. Retested
+  2026-09-21, still 1.4.0: the only methods are `stash(key::String, value)` and
+  `stash(pairs::Pair{String}...)`. Retest with `methods(KaimonGate.stash)` when KaimonGate moves.
 
 If you cannot get a session of your own (step 2 above), run Julia through Bash against the
 package environment explicitly:
