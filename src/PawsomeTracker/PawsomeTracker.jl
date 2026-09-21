@@ -649,7 +649,7 @@ function track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnos
     # 0-based, the index 1-based (`Spaces.from_index`). Every map was fitted to 0-based pixels, so
     # skipping this puts each rectified point one stored pixel down and right of the target (#276).
     # The chaining above stays in indices, because `get_guess` takes an index back.
-    ij = map(from_index, vcat(ijs...))
+    ij = map(from_index, reduce(vcat, ijs))
 
     # Real-world coordinates when a rectification is given, else pixels. This stays `map`, not
     # `_apply_image2real`: no coordinate here can be `missing`, and routing it through the

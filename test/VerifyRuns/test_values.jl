@@ -17,12 +17,15 @@
     end
 
     @testset "start_location bounds" begin
-        @test flagged(check([runrow(start_location = "(0, 100)")]), 1, "start_location must be at least 1")
+        @test flagged(check([runrow(start_location = "(-1, 100)")]), 1, "start_location must not be negative")
         @test flagged(check([runrow(start_location = "(700, 100)")]), 1, "start_location must not be larger than the dimensions of the frame")
         # only one coordinate out of bounds still trips it
         @test flagged(check([runrow(start_location = "(100, 700)")]), 1, "start_location must not be larger than the dimensions of the frame")
-        # on the boundary is allowed (checks are strict < 1 and > dimension)
-        @test clean(check([runrow(start_location = "(640, 480)")]))
+        # pixels count from 0 (#276): the first and last pixels are in, one past the last is out
+        @test clean(check([runrow(start_location = "(0, 0)")]))
+        @test clean(check([runrow(start_location = "(639, 479)")]))
+        @test flagged(check([runrow(start_location = "(640, 479)")]), 1, "start_location must not be larger than the dimensions of the frame")
+        @test flagged(check([runrow(start_location = "(639, 480)")]), 1, "start_location must not be larger than the dimensions of the frame")
     end
 
     @testset "scalar field ranges" begin

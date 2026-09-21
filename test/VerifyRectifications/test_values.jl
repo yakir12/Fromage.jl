@@ -2,16 +2,18 @@
     # baseline board.mp4 has dimension (500, 376); each row overrides one field.
 
     @testset "center bounds" begin
-        @test flagged(check([checkerboardrow(center = (0, 0))]), 1, "center must be at least 1")
+        @test flagged(check([checkerboardrow(center = (-1, 0))]), 1, "center must not be negative")
         @test flagged(check([checkerboardrow(center = (600, 600))]), 1, "center must not be larger than the dimensions")
         # only one coordinate out of bounds still trips any(.>)
         @test flagged(check([checkerboardrow(center = (600, 100))]), 1, "center must not be larger than the dimensions")
-        # center == dimension is allowed (the check is strict >)
-        @test clean(check([checkerboardrow(center = (500, 376))]))
+        # pixels count from 0 (#276): the first and last pixels are in, the dimension itself is out
+        @test clean(check([checkerboardrow(center = (0, 0))]))
+        @test clean(check([checkerboardrow(center = (499, 375))]))
+        @test flagged(check([checkerboardrow(center = (500, 375))]), 1, "center must not be larger than the dimensions")
     end
 
     @testset "north bounds" begin
-        @test flagged(check([checkerboardrow(north = (0, 0))]), 1, "north must be at least 1")
+        @test flagged(check([checkerboardrow(north = (0, -1))]), 1, "north must not be negative")
         @test flagged(check([checkerboardrow(north = (600, 600))]), 1, "north must not be larger than the dimensions")
     end
 

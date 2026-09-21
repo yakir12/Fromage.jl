@@ -379,6 +379,11 @@ unchanged, because a user reads them 0-based already. `from_uniform` is linear, 
 only from `center`. The raw diagnostic scene scales the tracker's index into a Julia array, so it
 stays in indices end to end.
 
+**The gateways' bounds moved with the origin.** `start_location`, `center` and `north` used to be
+refused below 1 and accepted up to the frame's dimension, both 1-based bounds. They now accept
+`0 … dimension − 1`, so the top-left pixel an image viewer reports as `(0, 0)` is valid, and one
+past the last pixel is not.
+
 **Two outside conventions are converted where they enter.**
 - `from_matlab`: MATLAB puts the centre of the top-left pixel at `(1, 1)`, so the `.mat`'s principal
   point moves by one. Before this change the MATLAB path matched the tracker, and was right only by
