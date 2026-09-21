@@ -14,7 +14,7 @@ using Fromage.PawsomeTracker: PawsomeTracker, Segment, Tuning, get_window, track
 using Fromage.VerifyRuns: probe_video
 
 export make_video, make_checkerboard_video, make_corrupt_video, make_target_video,
-    make_squeezed_checkerboard_video, CHECKERBOARD_POSES,
+    make_squeezed_checkerboard_video, make_squeezed_disc_video, CHECKERBOARD_POSES,
     tracking_rmse, probe_stream, probe_frames, read_labels, label_differences,
     LABEL_CHANGED, ENCODING_NOISE,
     make_apriltag_video, drone_pose, apriltag_ground, render_pose, pose_apply,
@@ -56,8 +56,9 @@ end
 # forced keyframes (a segmented run). `pause = (t1, t2)` freezes the trajectory between those
 # seconds — a long-stationary target, which the background model must not absorb. Writes into
 # `dir`; returns the basename(s) and the ground-truth closure `expected(i; skip, offset)`: the
-# stored-frame 1-based (row, col) of the disc center at sample i, where sample i reads global frame
-# `offset + (i − 1)·skip` (skip = video fps ÷ requested fps).
+# stored-frame 0-based (row, col) of the disc center at sample i — the convention `track`
+# returns (#276) — where sample i reads global frame `offset + (i − 1)·skip` (skip = video fps ÷
+# requested fps).
 #
 # `container_sar = true` writes lossless FFV1 into Matroska instead of x264 into mp4. FFV1 has no
 # field for the sample aspect ratio, so `sar` then lives in the container alone — where ffprobe
@@ -96,7 +97,7 @@ function make_target_video(
     end
     expected = (i; skip = 1, offset = 0) -> begin
         N = freeze(offset + (i - 1) * skip)
-        (row + 1.0, (col - A * sin(0.5π * N / fps)) / sar + 1)
+        (Float64(row), (col - A * sin(0.5π * N / fps)) / sar)
     end
     return files, expected
 end
@@ -150,33 +151,80 @@ sub-pixel. The encode is lossless and carries `setsar=sar`.
 function make_squeezed_checkerboard_video(
         path, poses; sar::Rational, n_corners, f, width, height, fps = 10, supersample = 4
     )
-    isinteger(width / sar) && iseven(Int(width / sar)) && iseven(height) ||
-        throw(ArgumentError("a $(width)×$(height) display at sar $sar has no even stored frame size"))
-    stored_width = Int(width / sar)
-    K = SMatrix{3, 3, Float64}(f, 0, 0, 0, f, 0, (width - 1) / 2, (height - 1) / 2, 1)
-    # board (X, Y) → display (x, y): the homography of the board plane, K·[r1 r2 t]
-    function homography(rv, t)
-        Rm = SMatrix{3, 3, Float64}(RotationVec(rv...))
-        return K * hcat(Rm[:, 1], Rm[:, 2], SVector{3, Float64}(t))
-    end
-    Hs = [homography(rv, t) for (rv, t) in poses]
+    stored_width = _squeezed_width(width, height, sar)
+    Hs = [board_homography(f, width, height, rv, t) for (rv, t) in poses]
     nx, ny = n_corners
     black(X, Y) = -1 ≤ X ≤ nx && -1 ≤ Y ≤ ny && isodd(floor(Int, X) + floor(Int, Y))
+    _render_squeezed(path, Hs, (_, X, Y) -> black(X, Y); sar, stored_width, height, fps, supersample)
+    stored(k, X, Y) = _board_to_stored(Hs[k], X, Y, sar)
+    return (; file = path, stored_width, stored)
+end
+
+"""
+    make_squeezed_disc_video(path, pose; board_path, nframes, diameter, sar, f, width, height, fps = 10, supersample = 4)
+
+A dark disc of `diameter` checker units sliding over a white plane at the board pose `pose`, filmed
+by the same camera, and squeezed the same way, as [`make_squeezed_checkerboard_video`](@ref). Its
+centre is at board point `board_path(k)` in frame `k` (1-based). Pass the calibration clip's
+extrinsic pose, and a rectification built from that clip maps this clip's pixels onto the disc's
+own board coordinates. Returns `(; file, stored_width, stored, board)`.
+
+`stored(X, Y)` is board point `(X, Y)` in 0-based stored `(row, col)`. `board(x, y)` goes the other
+way, from 0-based display `(x, y)` to the board point seen there. It is what a `center` read off
+the screen names. Both come from the camera alone, never from the package's maps or `Spaces`, so
+they can check them (#276).
+"""
+function make_squeezed_disc_video(
+        path, pose; board_path, nframes, diameter, sar::Rational, f, width, height, fps = 10, supersample = 4
+    )
+    stored_width = _squeezed_width(width, height, sar)
+    H = board_homography(f, width, height, pose...)
+    dark(k, X, Y) = hypot(X - board_path(k)[1], Y - board_path(k)[2]) ≤ diameter / 2
+    _render_squeezed(path, fill(H, nframes), dark; sar, stored_width, height, fps, supersample)
+    stored(X, Y) = _board_to_stored(H, X, Y, sar)
+    board(x, y) = (w = inv(H) * SVector(Float64(x), Float64(y), 1.0); (w[1] / w[3], w[2] / w[3]))
+    return (; file = path, stored_width, stored, board)
+end
+
+# Board (X, Y) → 0-based display (x, y), for the square-pixel `width`×`height` camera of focal length
+# `f` with its principal point at the display centre: the plane's homography K·[r1 r2 t].
+function board_homography(f, width, height, rv, t)
+    K = SMatrix{3, 3, Float64}(f, 0, 0, 0, f, 0, (width - 1) / 2, (height - 1) / 2, 1)
+    Rm = SMatrix{3, 3, Float64}(RotationVec(rv...))
+    return K * hcat(Rm[:, 1], Rm[:, 2], SVector{3, Float64}(t))
+end
+
+function _squeezed_width(width, height, sar)
+    isinteger(width / sar) && iseven(Int(width / sar)) && iseven(height) ||
+        throw(ArgumentError("a $(width)×$(height) display at sar $sar has no even stored frame size"))
+    return Int(width / sar)
+end
+
+# The board point seen at pose `H`, in 0-based stored (row, col): the area-exact squeeze.
+function _board_to_stored(H, X, Y, sar)
+    v = H * SVector(Float64(X), Float64(Y), 1.0)
+    x, y = v[1] / v[3], v[2] / v[3]
+    return (y, (x + 0.5) / Float64(sar) - 0.5)
+end
+
+# Render frame `k` through `Hs[k]`, a pixel dark where `dark(k, X, Y)` holds at the board point it
+# sees, squeezing into stored columns by area, and encode it losslessly with `setsar`.
+function _render_squeezed(path, Hs, dark; sar, stored_width, height, fps, supersample)
     offsets = ((1:supersample) .- 0.5) ./ supersample .- 0.5
     sar_f = Float64(sar)
     raw = path * ".gray"
     open(raw, "w") do io
         frame = Matrix{UInt8}(undef, stored_width, height)     # column-major = ffmpeg's row-major
-        for H in Hs
+        for (k, H) in enumerate(Hs)
             Hinv = inv(H)
             for r in 0:(height - 1), j in 0:(stored_width - 1)
-                dark = 0
+                n = 0
                 for dr in offsets, dj in offsets
                     x = (j + dj + 0.5) * sar_f - 0.5
                     w = Hinv * SVector(x, r + dr, 1.0)
-                    dark += black(w[1] / w[3], w[2] / w[3])
+                    n += dark(k, w[1] / w[3], w[2] / w[3])
                 end
-                frame[j + 1, r + 1] = round(UInt8, 255 * (1 - dark / supersample^2))
+                frame[j + 1, r + 1] = round(UInt8, 255 * (1 - n / supersample^2))
             end
             write(io, frame)
         end
@@ -184,12 +232,7 @@ function make_squeezed_checkerboard_video(
     sarg = "$(numerator(sar))/$(denominator(sar))"
     FFMPEG.ffmpeg_exe(`-y -loglevel error -f rawvideo -pix_fmt gray -s $(stored_width)x$(height) -r $fps -i $raw -vf setsar=$sarg -c:v libx264 -qp 0 -pix_fmt yuv420p $path`)
     rm(raw)
-    function stored(k, X, Y)
-        v = Hs[k] * SVector(Float64(X), Float64(Y), 1.0)
-        x, y = v[1] / v[3], v[2] / v[3]
-        return (y, (x + 0.5) / sar_f - 0.5)
-    end
-    return (; file = path, stored_width, stored)
+    return path
 end
 
 "RMSE (in stored-frame pixels) between tracked coordinates and the ground-truth closure."
@@ -371,8 +414,10 @@ function make_apriltag_video(
     FFMPEG.ffmpeg_exe(`-y -loglevel error -f rawvideo -pix_fmt gray -s $(W)x$(H) -r $fps -i $raw -pix_fmt yuv420p -qp 0 $(joinpath(dir, "$name.mp4"))`)
     rm(raw)
 
-    expected_ref = k -> pose_apply(poses[1], ground_xy(k))
-    image_xy = k -> pose_apply(poses[k], ground_xy(k))
+    # `render_pose` samples at Julia indices, so the poses map 1-based pixels. Take one off to reach
+    # the 0-based pixels `track`, the tag corners and `start_location` all use (#276).
+    expected_ref = k -> pose_apply(poses[1], ground_xy(k)) .- 1
+    image_xy = k -> pose_apply(poses[k], ground_xy(k)) .- 1
     return (;
         file = "$name.mp4",
         groundpath = [(gr(k), gc(k)) for k in 1:nframes],

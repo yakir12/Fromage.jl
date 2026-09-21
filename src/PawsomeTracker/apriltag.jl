@@ -388,7 +388,9 @@ register(ref::ReferenceSpace, corners) = homography_dlt(corners, ref.corners)
 # `Hinvs[k]` maps reference (x, y) px → frame-k (x, y) px (i.e. `inv(register(...))`) and is mutated
 # in place as the rolling window replaces slices; the WarpedView holds this same vector, so updates
 # are visible immediately. Coordinate bridge: the stack works in scaled (row, col) ("canvas"), the
-# homographies in (x, y) = (col, row) stored px — hence the flips.
+# homographies in (x, y) = (col, row) stored px — hence the flips. The canvas and the frame are
+# indexed from 1, the homographies fitted to 0-based pixels, hence `from_index`/`to_index` (#276).
+# The pair cancels on a pure translation, and matters under rotation, scale or perspective.
 struct RegisteredWarp <: Transformation
     downscale::Float64
     # NB the length parameter: the abstract `SMatrix{3, 3, Float64}` boxes every per-lookup load,
@@ -396,13 +398,13 @@ struct RegisteredWarp <: Transformation
     Hinvs::Vector{SMatrix{3, 3, Float64, 9}}
 end
 function (w::RegisteredWarp)(x::SVector{3})
-    p = apply_h(w.Hinvs[Int(x[3])], SVector(x[2], x[1]) / w.downscale)
+    p = to_index(apply_h(w.Hinvs[Int(x[3])], from_index(SVector(x[2], x[1]) / w.downscale)))
     return SVector(p[2], p[1], x[3])
 end
 
 # the per-slice canvas → raw-frame (row, col) mapping (RegisteredWarp's 2D core), as a closure
 # for the registered protect_target
-canvas2raw(Hinv, downscale) = rc -> (p = apply_h(Hinv, SVector(rc[2], rc[1]) ./ downscale); (p[2], p[1]))
+canvas2raw(Hinv, downscale) = rc -> (p = to_index(apply_h(Hinv, from_index(SVector(rc[2], rc[1]) ./ downscale))); (p[2], p[1]))
 
 # raw px padded around the protected target region, absorbing the one frame of drone motion the
 # registered protect_target approximates over (see its docstring in PawsomeTracker.jl)
@@ -431,16 +433,19 @@ detect_locked(det, img) = lock(() -> det(img), APRILTAG_LOCK)
 
 # Detect and return the 16 corners grouped per tag, aligned to `ids` order (each tag's `.p` corners
 # as [col, row]); `nothing` if any expected id is absent. `SVector`-typed so the geometry consumes
-# them directly.
+# them directly. The detector's pixel centres sit at `n + ½`; `from_pixel_edges` moves them onto the
+# integers, the stored-space convention every other map and index here is converted against (#276).
 function detect_tags(det, img, ids)
     tags = detect_locked(det, collect(img))
     byid = Dict(t.id => t for t in tags)
     all(haskey(byid, i) for i in ids) || return nothing
-    return [SVector{2, Float64}[SVector(p[1], p[2]) for p in byid[i].p] for i in ids]
+    return [SVector{2, Float64}[from_pixel_edges(SVector(p[1], p[2])) for p in byid[i].p] for i in ids]
 end
 
 # tag geometry is (x, y) = (col, row); the DoG tracker works in (row, col). This bridges the two.
-img_to_ground(H, rc) = apply_h(H, SVector(rc[2], rc[1]))                       # (row,col) px → ground
+# `rc` is the tracker's reference-canvas INDEX, so `from_index` makes it the 0-based pixel `H` was
+# fitted to.
+img_to_ground(H, rc) = apply_h(H, from_index(SVector(rc[2], rc[1])))           # (row,col) index → ground
 
 # Resolve the initial guess in CANVAS coordinates. `start_location` is the target's (x, y)
 # display-pixel position in the run's first frame — NATIVE space — while the stack lives in
@@ -455,7 +460,7 @@ function apriltag_guess(start_xy::NTuple{2, Int}, _, vid, _, _, _, _, seedR)
     # `stored_x` and no swap: `seedR` is a homography over (x, y), so the display correction
     # applies but the axes stay put until after `apply_h` — which is why this is the primitive and
     # not `to_stored`.
-    p = apply_h(seedR, SVector(stored_x(x, vid.sar), Float64(y)))
+    p = to_index(apply_h(seedR, SVector(stored_x(x, vid.sar), Float64(y))))   # a reference-canvas index
     return round.(Int, vid.downscale .* (p[2], p[1]))
 end
 
@@ -468,10 +473,11 @@ end
 const ROI_MARGIN = 40      # px padded around a tag's corners to form its search box
 const ROI_GROW = 250       # px the box expands on each side when the tag isn't found
 
-# search box (r1, c1, r2, c2) around a tag's `corners` ([col,row]), padded and clamped to the frame
+# search box (r1, c1, r2, c2) of array indices around a tag's 0-based `corners` ([col,row]), padded
+# and clamped to the frame
 function tag_box(corners, sz)
-    cols = first.(corners)
-    rows = last.(corners)
+    cols = to_index.(first.(corners))
+    rows = to_index.(last.(corners))
     return (
         clamp(floor(Int, minimum(rows)) - ROI_MARGIN, 1, sz[1]), clamp(floor(Int, minimum(cols)) - ROI_MARGIN, 1, sz[2]),
         clamp(ceil(Int, maximum(rows)) + ROI_MARGIN, 1, sz[1]), clamp(ceil(Int, maximum(cols)) + ROI_MARGIN, 1, sz[2]),
@@ -486,7 +492,8 @@ function find_tag_roi(det, img, id, box, sz)
         tags = detect_locked(det, collect(@view img[r1:r2, c1:c2]))
         k = findfirst(t -> t.id == id, tags)
         if k !== nothing
-            corners = SVector{2, Float64}[SVector(p[1] + c1 - 1, p[2] + r1 - 1) for p in tags[k].p]
+            # the crop starts at index (r1, c1), i.e. 0-based pixel (r1 - 1, c1 - 1)
+            corners = SVector{2, Float64}[from_pixel_edges(SVector(p[1] + c1 - 1, p[2] + r1 - 1)) for p in tags[k].p]
             return corners, tag_box(corners, sz)
         end
         (r1 == 1 && c1 == 1 && r2 == sz[1] && c2 == sz[2]) && return nothing, box
@@ -566,7 +573,7 @@ function (s::ApriltagScene)(frame, beetle, H)
     tf = idx -> begin
         isnothing(Hinv) && return SVector(-1.0, -1.0)           # no map → fill (out of bounds)
         c = s.ungauge(_canvas_to_real(s, idx[1], idx[2])); v = Hinv * SVector(c[1], c[2], 1.0)
-        SVector(v[2] / v[3], v[1] / v[3])                           # (row, col) = (img_y, img_x)
+        to_index(SVector(v[2] / v[3], v[1] / v[3]))                 # (row, col) = (img_y, img_x), as an index
     end
     # `convert` rather than a broadcast, for the reason given at RectifiedScene: `frame` is a stack
     # slice in the prefill loop and `vid.img` in the rolling one, both `Gray{N0f8}` already.

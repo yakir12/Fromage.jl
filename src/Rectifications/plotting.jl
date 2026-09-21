@@ -2,9 +2,10 @@
 # and the save. `save_diagnostic` used to sit at the bottom of from_checkerboard.jl even though
 # every builder called it and both its helpers live here; since #209 no builder calls it at all.
 
+# `to_index`: `real2image` gives a 0-based stored pixel, and `warp` indexes a Julia array (#276).
 function get_warp(ratio, real2image)
     D = LinearMap(SDiagonal{2}(ratio * I))
-    return real2image ∘ D
+    return to_index ∘ real2image ∘ D
 end
 
 function warp_extrinsic(file, extrinsic, width, height, warp_trans)

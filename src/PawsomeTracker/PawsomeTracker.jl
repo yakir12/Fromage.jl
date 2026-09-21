@@ -18,7 +18,7 @@ using OpenCV: OpenCV
 using CoordinateTransformations: LinearMap, Transformation
 using LinearAlgebra: I
 using ..Memo: APRILTAG_DETECTIONS, remember
-using ..Spaces: GroundXY, RowCol, stored_x, to_stored
+using ..Spaces: GroundXY, RowCol, from_index, from_pixel_edges, stored_x, to_index, to_stored
 
 # Confidence gate for `detect`: when the window's peak DoG response falls below GATE_FRACTION of
 # the running response level, the frame is treated as "target not seen" (occlusion, glare,
@@ -184,8 +184,9 @@ function get_guess(start_index::RowCol, _, vid, _, _, _, _)
     return guess
 end
 
+# `start_xy` is a display coordinate, 0-based like every coordinate, and the guess an array index.
 function get_guess(start_xy::NTuple{2, Int}, _, vid, _, _, _, _)
-    guess = round.(Int, vid.downscale .* to_stored(start_xy, vid.sar))
+    guess = round.(Int, vid.downscale .* to_index(to_stored(start_xy, vid.sar)))
     return guess
 end
 
@@ -573,7 +574,8 @@ Returns `(ts, coords)`: timestamps and the target's per-frame position. `ts` is 
 `start` (a time in its own file) does not appear in it, and time left out between segments is closed
 up. With a `rectification`,
 `coords` are **real-world** coordinates (the rectification's `image2real` applied); with `nothing`,
-they are raw `(row, col)` pixels in the original frame — `tuning.downscale` trades precision for
+they are raw stored `(row, col)` pixels in the original frame, 0-based with pixel centres on the
+integers (CONTEXT.md) — `tuning.downscale` trades precision for
 speed, and coordinates are always reported unscaled.
 
 An `ApriltagRectification` selects AprilTag mode (drone footage): every background-stack slice is
@@ -643,7 +645,11 @@ function track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnos
         end
     end
     ts = _concat_timestamps(tss)
-    ij = vcat(ijs...)
+    # The tracker works in array indices, and this is where they leave it: a stored coordinate is
+    # 0-based, the index 1-based (`Spaces.from_index`). Every map was fitted to 0-based pixels, so
+    # skipping this puts each rectified point one stored pixel down and right of the target (#276).
+    # The chaining above stays in indices, because `get_guess` takes an index back.
+    ij = map(from_index, reduce(vcat, ijs))
 
     # Real-world coordinates when a rectification is given, else pixels. This stays `map`, not
     # `_apply_image2real`: no coordinate here can be `missing`, and routing it through the

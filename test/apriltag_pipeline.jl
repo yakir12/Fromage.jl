@@ -132,7 +132,7 @@ end
                     Fixtures.draw_disc(ground, v.groundpath[k]..., TARGET_WIDTH),
                     v.poses[k], FRAME, FRAME
                 )
-                p = v.image_xy(k)
+                p = v.image_xy(k) .+ 1          # 0-based pixel → the array index `img` is read at (#276)
                 box = CartesianIndices(
                     (
                         (round(Int, p[2]) - 20):(round(Int, p[2]) + 20),
@@ -145,7 +145,7 @@ end
             end
         end
         # and the reference-space position really is pose-independent
-        @test v.expected_ref(3) ≈ pose_apply(v.poses[1], v.ground_xy(3))
+        @test v.expected_ref(3) ≈ pose_apply(v.poses[1], v.ground_xy(3)) .- 1   # 1-based render → 0-based
     end
 
     dir = mktempdir()

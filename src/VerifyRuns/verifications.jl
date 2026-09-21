@@ -245,9 +245,10 @@ function verifications!(df::AbstractDataFrame, data_path; progress)
     # start_location is optional (missing rows skipped). It is (x, y) = (horizontal, vertical) in
     # *display* pixels, like a rectification's center/north, while ffprobe's width is in stored
     # pixels — so x is bounds-checked against the display width, width × aspect, and y against
-    # height, which aspect does not affect.
-    verify!(df, x -> any(<(1), x), "start_location must be at least 1", :start_location)
-    verify!(df, (sl, dim, aspect) -> sl[1] > dim[1] * aspect || sl[2] > dim[2], "start_location must not be larger than the dimensions of the frame", :start_location, :dimension, :aspect)
+    # height, which aspect does not affect. Pixels count from 0 (CONTEXT.md, #276), so a frame
+    # `width` wide holds x in 0 … width − 1: the bounds are `< 0` and `≥ dimension`.
+    verify!(df, x -> any(<(0), x), "start_location must not be negative", :start_location)
+    verify!(df, (sl, dim, aspect) -> sl[1] ≥ dim[1] * aspect || sl[2] ≥ dim[2], "start_location must not be larger than the dimensions of the frame", :start_location, :dimension, :aspect)
 
     # Value ranges. Only what would make `track` error or misbehave nonsensically is flagged.
     verify!(df, ≤(0), "target_width must be larger than zero", :target_width)

@@ -606,12 +606,13 @@ function verifications!(df::AbstractDataFrame, data_path, results_dir; progress)
     # center/north are optional and left missing when omitted (no imputation). verify! skips missing
     # rows, so a missing center or north is simply not bounds-checked.
     for point in (:center, :north)
-        verify!(df, x -> any(<(1), x), "$point must be at least 1", point)
+        verify!(df, x -> any(<(0), x), "$point must not be negative", point)
         # Display space, like start_location's bounds in the runs gateway: `center`/`north` are
         # (x, y) as read off a screen, so x is checked against the display width (stored × aspect)
-        # while y, which aspect does not affect, is checked against the height (#130).
+        # while y, which aspect does not affect, is checked against the height (#130). Pixels count
+        # from 0 (#276), so the last one is `dimension − 1`.
         verify!(
-            df, (poi, dim, asp) -> poi[1] > dim[1] * asp || poi[2] > dim[2],
+            df, (poi, dim, asp) -> poi[1] ≥ dim[1] * asp || poi[2] ≥ dim[2],
             "$point must not be larger than the dimensions of the frame", point, :dimension, :aspect
         )
     end
