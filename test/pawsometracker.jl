@@ -75,11 +75,14 @@ const DATADIR = mktempdir()
     # col 120 cannot be confused — a transposed guess names row 120 of a 90-row frame.
     wide, wide_exp = make_target_video(DATADIR, "pt_wide"; width = 160, height = 90, row = 30, col = 120)
     wide_file = joinpath(DATADIR, only(wide))
+    # A modest aspect also exposes a transposed frame size through wrong coordinates, before
+    # the more extreme fixtures throw: the disc fits the real frame but crosses column 100.
+    edge, edge_exp = make_target_video(DATADIR, "pt_edge"; width = 120, height = 100, row = 50, col = 110)
     # Encode each shape once, then reuse it across seeding and background-model assertions.
     # The wider discs in the squeezed clips discriminate a DoG stretched along the wrong axis.
     shapes = [
         (; name = "square", file = base_file, expected = base_exp, start = (55, 50), width = 10),
-        (; name = "wide off-centre", file = wide_file, expected = wide_exp, start = (120, 30), width = 10),
+        (; name = "wide near edge", file = joinpath(DATADIR, only(edge)), expected = edge_exp, start = (110, 50), width = 10),
     ]
     for sar in (2 // 3, 2 // 1)
         files, expected = make_target_video(

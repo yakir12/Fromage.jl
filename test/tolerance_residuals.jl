@@ -91,6 +91,25 @@ function tracking_residuals(dir)
     _, ij = track1(f; start_location = (55, 50), target_width = 10, background_length = 30)
     row("pawsometracker: background_length = 30", tracking_rmse(ij, base_exp), 0.5)
 
+    # The asymmetric shapes reused by the seeded, unseeded and background testsets (#279).
+    for (name, width, height, col, r, sar, tw) in (
+            ("edge", 120, 100, 110, 50, 1 // 1, 10),
+            ("sar_low", 160, 90, 120, 30, 2 // 3, 18),
+            ("sar_high", 160, 90, 120, 30, 2 // 1, 18),
+        )
+        files, expected = make_target_video(dir, "tol_$name"; width, height, col, row = r, sar, target_width = tw)
+        file = joinpath(dir, only(files))
+        for (label, opts) in (
+                ("seeded", (; start_location = (col, r))),
+                ("unseeded", (; start_location = missing, initial_search_factor = 1.0)),
+                ("background 0", (; start_location = (col, r), background_length = 0)),
+                ("background 30", (; start_location = (col, r), background_length = 30)),
+            )
+            _, ij = track1(file; target_width = tw, opts...)
+            row("pawsometracker: $name $label", tracking_rmse(ij, expected), 0.5)
+        end
+    end
+
     # the long-stationary target (30 s, an 8-25 s pause): the protect_target path, and the slowest
     # site here by far -- 750 frames against everything else's 50.
     paused, paused_exp = make_target_video(dir, "tol_pause"; duration = 30, pause = (8, 25))
