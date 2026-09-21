@@ -63,15 +63,19 @@ end
 # field for the sample aspect ratio, so `sar` then lives in the container alone — where ffprobe
 # reports it and VideoIO's codec context does not (#295). With x264 it is in the bitstream, where
 # the two agree.
+#
+# `reported_sar` is the ratio the file is TAGGED with, when it should lie about the squeeze `sar`
+# actually applied — the footage a declared `aspect` in runs.csv exists for. The ground truth
+# follows `sar`, the squeeze, whatever the tag says.
 function make_target_video(
         dir, name; width = 100, height = 100, sar = 1 // 1, fps = 25, duration = 2,
         target_width = 10, darker_target = true, row = 50, col = 55, nsegments = 1, pause = nothing,
-        container_sar = false
+        container_sar = false, reported_sar = sar
     )
     A = width / 2.5
     target_c, bkgd_c = darker_target ? (0, 255) : (255, 0)
     w2 = round(Int, width / sar)
-    sarg = "$(numerator(sar))/$(denominator(sar))"
+    sarg = "$(numerator(reported_sar))/$(denominator(reported_sar))"
     # the frame index driving the trajectory: identity, or frozen at p1 for the pause's span
     p1, p2 = isnothing(pause) ? (0, 0) : round.(Int, pause .* fps)
     Nexpr = isnothing(pause) ? "N" : "if(lt(N,$p1),N,if(lt(N,$p2),$p1,N-($p2-$p1)))"
@@ -524,7 +528,7 @@ end
 function tuning(
         file; target_width = 25.0, window_size = missing, darker_target = true,
         native_fps = missing, sample_fps = missing, initial_search_factor = 4.0, downscale = 1.0,
-        background_length = PawsomeTracker.DEFAULT_BACKGROUND_LENGTH,
+        background_length = PawsomeTracker.DEFAULT_BACKGROUND_LENGTH, aspect = missing,
         duration = missing
     )
     m = probe_stream(file)
@@ -539,9 +543,11 @@ function tuning(
             coalesce(duration, m.nframes / m.fps)
         )
     )
+    # the ratio the gateway's own probe reads — ffprobe's, not VideoIO's (#295)
+    asp = coalesce(aspect, probe_video(file).sar)
     return Tuning(
         target_width, ws, darker_target, sfps, nfps, initial_search_factor, downscale,
-        background_length
+        background_length, asp
     )
 end
 
@@ -570,8 +576,7 @@ end
 
 Track `files` as one run, building the `Segment`s and `Tuning` from keywords — the spelling
 `track` itself used to have, kept for the tests that exercise the tracker directly. The `Tuning` is
-built from the first file, as the gateway builds it from a run's first segment, and the `sar` is
-the one the gateway's own probe reads from that file.
+built from the first file, as the gateway builds it from a run's first segment.
 """
 function track1(
         files; rectification = nothing, diagnostic_file = nothing,
@@ -580,7 +585,7 @@ function track1(
     segs = segments(files; start, stop, start_location)
     return track(
         segs, tuning(first(segs).file; duration = sum(s -> s.stop - s.start, segs), kw...),
-        probe_video(first(segs).file).sar, rectification, diagnostic_file
+        rectification, diagnostic_file
     )
 end
 

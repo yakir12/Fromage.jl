@@ -955,14 +955,21 @@ the same inverted convention, so it asserted the bug.
 The tracker also had a `sar` of its own (#295). It read `VideoIO.aspect_ratio`, the codec context,
 while both gateways read ffprobe's stream value. These disagree when the ratio lives in the container
 alone: FFV1 in Matroska, or an mp4 remuxed with `-aspect`. There ffprobe reports it and the codec
-context reports 1:1. So a run was bounds-checked and rectified at one `sar` and tracked at another.
-Now `track` takes the gateway's `FrameFormat.sar` as its own argument and opens no ratio from the
-file. A `runs.csv` `sar` column, which would have made it a `Tuning` field like `native_fps`, was
-considered and not taken. `sar` is a fact about the video, not a tracking choice. And
-`rectifications.csv` has no matching override, so a declared `sar` would split runs from
-rectifications again. No lab file on this machine has probed as anything but 1:1, so how often
-footage hit this is unknown. On the synthetic `sar = 2` fixture, the first tracked sample landed
-7.7 px off.
+context reports 1:1. So a run was bounds-checked and rectified at one `sar` and tracked at another;
+on a synthetic `sar = 2` clip the first tracked sample landed 7.7 px off. `sar` is now
+`Tuning.aspect`, handled exactly like `native_fps`: ffprobe's value when the `runs.csv` `aspect`
+cell is blank, the cell's when it is not, spread across a run's rows, and never read from the file
+by the tracker.
+
+The first version of the fix passed the probed ratio to `track` as its own argument and added no
+column, on the grounds that a `runs.csv` override would split runs from rectifications. That had
+the premise backwards: `rectifications.csv` has had an `aspect` override all along, so it was
+`runs.csv` that could not follow a correction the user had already made — a start location checked,
+and a target tracked, at a ratio the rectification had been told was wrong. Like the rectifications
+column, and unlike `native_fps`, `aspect` is not a global default: it corrects one camera's
+misreported footage, and a global value would re-squeeze every correctly-probed video beside it.
+Nothing yet checks that a run's `aspect` agrees with its rectification's. No lab file on this machine
+has probed as anything but 1:1, so how often footage hit either case is unknown.
 
 All of it was invisible at `sar = 1`, which is why it stood as long as it did — and that is the
 lasting point of this entry rather than the specific bug. #36 closed as "aspect ratio works across

@@ -113,6 +113,19 @@
         end
     end
 
+    @testset "a declared aspect corrects a video that misreports its own" begin
+        # Squeezed 2:1 exactly like `sar2`, but tagged 1:1, so every reader — ffprobe included —
+        # believes it square. Believed, the display frame is 50 wide and (55, 50) lies outside it.
+        # Declared, the run is the `sar2` run: the same encoder on the same frames, so the track is
+        # the same to the last bit, from an explicit start and from the frame centre alike.
+        liar = only(first(make_target_video("t_sar2_tagged1"; sar = 2 // 1, reported_sar = 1 // 1)))
+        @test flagged(check([runrow(file = liar, start_location = "(55, 50)")]), 1, "start_location must not be larger than the dimensions of the frame")
+        for sl in ("(55, 50)", missing)
+            ij = tracked([runrow(file = liar, start_location = sl, aspect = "2")])
+            @test ij == tracked([runrow(file = only(sar2), start_location = sl)])
+        end
+    end
+
     @testset "segmented runs" begin
         # rows share a run_id; only the first segment gets a start_location, the rest continue
         # from where the previous segment ended (keyframe-aligned 17 + 17 + 16 frames)

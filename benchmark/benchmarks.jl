@@ -174,14 +174,13 @@ gates["check_rectifications, 5 rows"] =
 # the same way `track1` builds them, so a benchmark and a test still track the same run.
 const SEGS = segments(TARGET; start_location = (55, 50))
 const TUNING = tuning(TARGET; target_width = 10, duration = sum(s -> s.stop - s.start, SEGS))
-const SAR = Fromage.VerifyRuns.probe_video(TARGET).sar   # the gateway's probe, as `track1` takes it (#295)
 
 pipe = SUITE["macro"] = BenchmarkGroup()
 pipe["track, 50 frames"] =
-    @benchmarkable(track($SEGS, $TUNING, $SAR, nothing, nothing), samples = 1, evals = 1)
+    @benchmarkable(track($SEGS, $TUNING, nothing, nothing), samples = 1, evals = 1)
 pipe["track + diagnostic video"] =
     @benchmarkable(
-    track($SEGS, $TUNING, $SAR, nothing, joinpath(mktempdir(), "d.mp4")),
+    track($SEGS, $TUNING, nothing, joinpath(mktempdir(), "d.mp4")),
     samples = 1, evals = 1
 )
 pipe["main, one calibration + one run"] = @benchmarkable(run_main(), samples = 1, evals = 1)

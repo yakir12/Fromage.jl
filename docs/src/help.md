@@ -147,7 +147,7 @@ main("path/to/data";
 - `rectification_defaults` may set: `checker_width`, `n_corners`, `temporal_step`, `radial_parameters`, `blur`, `yadif`, and — for `type = apriltag` rows — `apriltags`, `family`, `tag_cell_width`.
 - `tracking_defaults` may set: `target_width`, `window_size`, `darker_target`, `native_fps`, `sample_fps`, `initial_search_factor`, `downscale`, `background_length`.
 
-Anything else (identities, file names, timestamps, `start_location`/`center`/`north`) is per-row only, and an unrecognized, unconvertible or non-finite (`NaN`, `Inf`) entry is rejected with an error before anything runs. Global values pass through the same validation as csv cells — e.g. a global `sample_fps` must still not exceed each run's `native_fps`.
+Anything else (identities, file names, timestamps, `start_location`/`center`/`north`, `aspect`) is per-row only, and an unrecognized, unconvertible or non-finite (`NaN`, `Inf`) entry is rejected with an error before anything runs. Global values pass through the same validation as csv cells — e.g. a global `sample_fps` must still not exceed each run's `native_fps`.
 
 ## Macs
 

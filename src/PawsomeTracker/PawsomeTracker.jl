@@ -210,8 +210,8 @@ struct Video
     height::Int
     sample_fps::Float64
     # `Rational{Int}`, not a bare `Rational`: the unparameterised spelling is abstract, so the field
-    # would be boxed and every read of it untyped. It is `VerifyRuns.FrameFormat.sar`, handed down
-    # through `track` — see the constructor for why it is not read from the file here.
+    # would be boxed and every read of it untyped. It is `Tuning.aspect`, handed down through
+    # `video` — see the constructor for why it is not read from the file here.
     sar::Rational{Int}
 
     # `sample_fps` arrives as a request and is stored as a promise: the sampler advances whole
@@ -224,14 +224,15 @@ struct Video
     # shape of #140/#141: a run verified against one rate would then be sampled at another, and a
     # declared rate would be silently ignored by the only code that matters.
     #
+    #
     # Nor is `sar`, and there the second definition site was real (#295). It used to come from
     # `VideoIO.aspect_ratio`, which reads the codec context, while both gateways take ffprobe's
     # stream value — and the two disagree when the ratio is stored in the container alone (FFV1 in
     # Matroska, an mp4 remuxed with `-aspect`): ffprobe reports it, the codec context says 1:1. The
     # gateway then checked `start_location` against one display width and built the rectification
     # with one aspect, while the tracker placed the guess, sized the search window and shaped the
-    # DoG with another. `sar` is a probed fact about the video rather than a tracking parameter, so
-    # it travels beside `Tuning` rather than in it: `track` takes it as its own argument.
+    # DoG with another. It is `Tuning.aspect` now, probed or declared exactly like `native_fps`.
+    #
     # The reader is opened first and every step below it can throw, so the open is guarded rather
     # than moved: unlike the diagnostic writer's constructor (#160), the fallible work here IS the
     # reader — `read`, `gettime`, `seek_exactly!`, and the `WarpedView` extent measured on
@@ -505,12 +506,12 @@ end
 
 # `dia` is a `Diagnostic`/`Dont` created and closed by the caller, shared across a run's segments.
 #
-# Five arguments, all of different types, rather than the thirteen this used to unpack out of the
+# Four arguments, all of different types, rather than the thirteen this used to unpack out of the
 # caller's `ResolvedSegment`/`Tuning` and repack here. Six of those thirteen were bare `Float64`s
 # and a transposition among them compiled and returned a wrong track: swapping `target_width` with
 # `initial_search_factor` at the call site passed the entire tracker suite (#201 follow-up).
-function track_one(rseg::ResolvedSegment, tuning::Tuning, scaled::ScaledTuning, sar::Rational{Int}, dia)
-    return video(rseg.file, tuning.native_fps, tuning.sample_fps, rseg.start, rseg.stop, tuning.downscale, sar) do vid
+function track_one(rseg::ResolvedSegment, tuning::Tuning, scaled::ScaledTuning, dia)
+    return video(rseg.file, tuning.native_fps, tuning.sample_fps, rseg.start, rseg.stop, tuning.downscale, tuning.aspect) do vid
         update_ratio!(dia, size(vid.img))
         subtract = tuning.background_length != 0
         tr = Tracker(vid, tuning.darker_target, scaled.width, scaled.window, (vid.height, vid.width), subtract)
@@ -560,7 +561,7 @@ _apply_image2real(f, coords) = map(c -> ismissing(c) ? missing : f(c), coords)
 _concat_timestamps(tss) = range(tss[1][1], step = step(tss[1]), length = sum(length, tss))
 
 """
-    track(segments::Vector{Segment}, tuning::Tuning, sar::Rational{Int}, rectification, diagnostic_file)
+    track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnostic_file)
 
 Use a Difference of Gaussian (DoG) filter to track a target across the `segments` of one run,
 sampling `tuning.sample_fps` frames per second (which the gateway has capped at
@@ -595,15 +596,10 @@ Given a `diagnostic_file` (an `.mp4` path — that container selects the H.264 e
 time; a `rectification` also renders it top-down instead of as the raw frame. One diagnostic covers
 every segment of the run.
 
-`sar` is the video's sample aspect ratio (display width = stored width × `sar`), as the runs
-gateway probed it: it converts a display-space `start_location` to stored columns and stretches the
-search window and the DoG filter along the squeezed axis. It is taken here rather than read from the
-file, so the tracker and the gateways cannot disagree about it (#295).
-
-There are no keyword arguments by design: everything else this needs is a field of `Segment` or
+There are no keyword arguments by design: everything this needs is a field of `Segment` or
 `Tuning`, both of which the runs gateway fills from verified values. See `Tuning`.
 """
-function track(segments::Vector{Segment}, tuning::Tuning, sar::Rational{Int}, rectification, diagnostic_file)
+function track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnostic_file)
     # As before (#55). The segments of a run are pieces of one recording and share their specs
     # (see runs.md), so the run's single `native_fps` describes every one of them.
     dia_fps = effective_fps(tuning.native_fps, tuning.sample_fps)
@@ -628,7 +624,7 @@ function track(segments::Vector{Segment}, tuning::Tuning, sar::Rational{Int}, re
                 begin_segment!(dia, i)
                 # The `Segment` itself, unresolved: nothing chains here, so its start_location
                 # is already final — what the csv said, or `missing` for a centre search.
-                tss[i], segs[i] = track_apriltag(s, tuning, scaled, sar, dia, rectification)
+                tss[i], segs[i] = track_apriltag(s, tuning, scaled, dia, rectification)
             end
         end
         return (_concat_timestamps(tss), _apply_image2real(rectification.image2real, reduce(vcat, segs)))
@@ -643,7 +639,7 @@ function track(segments::Vector{Segment}, tuning::Tuning, sar::Rational{Int}, re
             # hold (#18) — hence `ResolvedSegment`, whose union names exactly what `get_guess` takes.
             rseg = ResolvedSegment(s.file, s.start, s.stop, coalesce(s.start_location, end_location))
             begin_segment!(dia, i)
-            tss[i], ijs[i] = track_one(rseg, tuning, scaled, sar, dia)
+            tss[i], ijs[i] = track_one(rseg, tuning, scaled, dia)
             end_location = ijs[i][end]
         end
     end

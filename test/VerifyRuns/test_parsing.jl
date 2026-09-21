@@ -77,6 +77,10 @@
         @test flagged(check([runrow(initial_search_factor = "x")]), 1, "wrong initial_search_factor format")
         @test flagged(check([runrow(downscale = "big")]), 1, "wrong downscale format")
         @test flagged(check([runrow(darker_target = "maybe")]), 1, "wrong darker_target format")
+        @test flagged(check([runrow(aspect = "wide")]), 1, "wrong aspect format")
+        @test flagged(check([runrow(aspect = "4/0")]), 1, "wrong aspect format")   # no ratio at all
+        @test flagged(check([runrow(aspect = "Inf")]), 1, "wrong aspect format")
+        @test flagged(check([runrow(aspect = "1e30")]), 1, "wrong aspect format")   # would be 1//0
     end
 
     # "NaN"/"Inf" parse as floats, so they used to pass here and surface as an `InexactError` when

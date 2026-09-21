@@ -186,7 +186,7 @@ const DATADIR = mktempdir()
     @testset "ScaledTuning scales exactly the three values track derives" begin
         # Asymmetric on purpose: the three fields differ from each other, the window is non-square,
         # and downscale != 1, so any transposition among them changes at least one field.
-        t = PT.Tuning(10.0, (31, 21), true, 25.0, 25.0, 4.0, 0.5, 250)
+        t = PT.Tuning(10.0, (31, 21), true, 25.0, 25.0, 4.0, 0.5, 250, 1 // 1)
         s = PT.ScaledTuning(t)
         @test s.width == 5.0                      # downscale * target_width
         @test s.search == 2.0                      # downscale * initial_search_factor

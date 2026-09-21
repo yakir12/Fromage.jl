@@ -12,8 +12,10 @@ function mytryparse(::Type{MyWindow}, s)
     return mytryparse(NTuple{2, Int}, s)
 end
 
-# The globally overridable defaults: exactly the eight `Tuning` fields. Identities and the
-# temporal window are inherently per-row. The caller replaces any of these via `load_runs`'
+# The globally overridable defaults: every `Tuning` field but `aspect`. Identities and the
+# temporal window are inherently per-row, and so is `aspect`, as it is in rectifications.csv: it
+# corrects one camera's misreported footage, where a global value would silently re-squeeze every
+# correctly-probed video beside it. The caller replaces any of these via `load_runs`'
 # `defaults` kwarg (in Fromage: `main`'s `tracking_defaults`), and a csv cell always wins over the
 # replaced default (see parseto!).
 #
@@ -67,7 +69,8 @@ function parse_run!(dict, row, defaults)
     parseto!(dict, row, :sample_fps, Float64, defaults.sample_fps)   # imputed from :native_fps when missing
     parseto!(dict, row, :initial_search_factor, Float64, defaults.initial_search_factor)
     parseto!(dict, row, :downscale, Float64, defaults.downscale)
-    return parseto!(dict, row, :background_length, Int, defaults.background_length)
+    parseto!(dict, row, :background_length, Int, defaults.background_length)
+    return parseto!(dict, row, :aspect, Rational{Int}, missing)   # imputed from the video's own sample aspect ratio when missing
 end
 
 function parse_row(row, defaults)
