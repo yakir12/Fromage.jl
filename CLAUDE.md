@@ -79,11 +79,17 @@ follow this file. Rule 6 below exists because that has actually gone wrong.
 
 ### Startup checklist
 
-0. **New to Kaimon? Learn it before using it.** `usage_instructions` explains the tool model
-   (shared REPL, quiet mode, session routing); `tool_help(:name, extended=true)` documents any
-   single tool. Then take the quiz: `usage_quiz`, answer everything, `usage_quiz(show_sols=true)`
-   to self-grade. **Score ≥ 75 before doing real work**; below that, re-read
-   `usage_instructions` and retake. Ask the user if anything stays unclear.
+**Run the `kaimon-up` skill** (`.claude/skills/kaimon-up/`) before the first `ex`, `run_tests`
+or `search_code` of a session: it runs steps 1–5 below as one fan-out with a completion
+criterion per step. The steps here are the reference behind it — why each exists, and what to do
+when one fails.
+
+0. **Read `usage_instructions` once per session** before the first Kaimon call that runs code: it
+   explains the tool model (shared REPL, quiet mode, session routing), and
+   `tool_help(:name, extended=true)` documents any single tool. **Take the quiz** —
+   `usage_quiz`, answer everything, then `usage_quiz(show_sols=true)` to self-grade, aiming for
+   ≥ 75 — when you have not worked with Kaimon before, or when the user asks. Below 75, re-read
+   `usage_instructions` and retake; ask the user if anything stays unclear.
    **One thing the quiz teaches is wrong: `KaimonGate.stash` takes a `String` key, not a
    `Symbol`.** Both `usage_instructions` and the quiz's model answer show `stash(:completed, i)`,
    and it throws a `MethodError` (see "Running Julia" below). Write `stash("completed", i)`,
