@@ -177,7 +177,7 @@ function from_checkerboard(;
     ismissing(extrinsic_corners) && error("no corners detected at extrinsic time stamp")
     push!(imgpointss, extrinsic_corners)
     return _rectification(;
-        imgpointss, width, height, n_corners, checker_width, aspect,
+        file, extrinsic, imgpointss, width, height, n_corners, checker_width, aspect,
         radial_parameters, center, north
     )
 end
@@ -203,7 +203,7 @@ function from_extrinsic(;
     extrinsic_corners = get_corners(file, extrinsic, vf, width, height, n_corners)
     ismissing(extrinsic_corners) && error("no corners detected at extrinsic time stamp")
     return _rectification(;
-        imgpointss = [extrinsic_corners], width, height, n_corners, checker_width,
+        file, extrinsic, imgpointss = [extrinsic_corners], width, height, n_corners, checker_width,
         aspect, radial_parameters = 0, center, north
     )
 end
@@ -211,7 +211,7 @@ end
 # Shared tail of both constructors above: fit the camera model to the collected views (the
 # extrinsic frame is always the LAST view) and compose the transform pipeline off its pose.
 function _rectification(;
-        imgpointss, width, height, n_corners, checker_width, aspect,
+        file, extrinsic, imgpointss, width, height, n_corners, checker_width, aspect,
         radial_parameters, center, north
     )
     objpoints = XYZ.(Tuple.(CartesianIndices((0:(n_corners[1] - 1), 0:(n_corners[2] - 1), 0:0))))
@@ -220,6 +220,12 @@ function _rectification(;
     # axes are `(channels, cols, rows)`), so coordinate 1 of a corner is its row and spans `height`.
     # `fit_model`'s `sz` is the extent of those two coordinates, in their own order.
     m = fit_model((height, width), objpoints, imgpointss, n_corners, radial_parameters, aspect)
+    # Stored-pixel residual, before any aspect correction or metric map. This warns on a poor
+    # fit, whether the model is inadequate or the optimizer found a wrong minimum (#326).
+    # The build memo suppresses this on cache hits; clearing it or changing the row fits anew.
+    if m.rms > 1
+        @warn "Calibration of $file at $extrinsic s has reprojection RMS $(round(m.rms; digits = 2)) px (stored pixels), above 1 px. Check the detected corners and calibration coverage; if no intrinsic window was supplied, add one to fit lens distortion."
+    end
     extrinsic_index = length(imgpointss)
     extrinsic_corners = imgpointss[extrinsic_index]
     # `fit_model` fits ONE set of intrinsics across every view and a pose per view; the model this

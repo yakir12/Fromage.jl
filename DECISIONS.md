@@ -612,6 +612,25 @@ freedom. `fit_model` therefore adds `CALIB_FIX_PRINCIPAL_POINT` when there is ex
 pinning it at the image centre (OpenCV's default without an intrinsic guess), which makes the
 single-frame fit well-posed.
 
+### Poor calibration fits warn, without changing the optimizer (#326)
+
+The simulation's `k1 = -0.3` rig converges to a wrong local minimum even on exact corners:
+2.25 stored pixels reprojection RMS and 1.74 mm arena RMS. Tightening the termination criteria
+does not help; starting at the true intrinsics or dropping the four corner poses does (#314, E3).
+Lab lenses have mild distortion at most, so the maintainer deferred the solver research and chose
+to surface the residual that `fit_model` used to discard.
+
+The warning threshold is **strictly above 1 stored pixel**, for both the multi-view checkerboard
+fit and the single-view, zero-distortion fit. The handoff survey measured 0.43 px on a lab clip's
+134-view fit, with its single-view fits spanning 0.17–1.45 px (median 0.28); the maintainer chose
+to warn on those poor single-view fits too, suggesting an intrinsic window. The threshold is a
+diagnostic heuristic, not a guarantee of real-world accuracy, and the warning cannot distinguish
+an inadequate model from a wrong optimization basin. It does not reject a rectification or change
+the fitted model. A cached build does not repeat it; that session-level tradeoff was accepted.
+
+Recording per-fit residuals in the simulation report, adding a true-intrinsics control, and
+evaluating alternative initializations remain deferred under #326.
+
 ### Lens distortion is inverted by bisection on the monotone branch
 
 The forward radial map `g(r) = r·f(r)` is invertible only up to its first critical point — beyond

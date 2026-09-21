@@ -22,6 +22,14 @@ For the usual `checkerboard` type:
 - Then lay the board flat on the arena floor and note that timestamp — that's your `extrinsic`.
 - Keep the full board visible and unobstructed; avoid motion blur (move slowly) and glare.
 
+Fromage warns when a checkerboard calibration's **reprojection RMS exceeds 1 stored pixel**.
+The warning names the video and `extrinsic` timestamp. This measures how closely the fitted
+camera model reproduces the detected corners, averaged over all fitted views; it is not a
+real-world distance error. Check the detected corners and the variety of board poses. If you
+omitted the intrinsic window, add one so the fit can account for lens distortion. A warning
+does not stop processing, and a low RMS alone does not guarantee an accurate rectification.
+Reusing an unchanged, cached rectification in the same Julia session does not repeat the warning.
+
 ## Columns for `type = checkerboard`
 
 Required:
