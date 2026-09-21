@@ -616,15 +616,21 @@ The flag did not pay for itself in time either. It was measured on a real lab cl
 50 fps, `n_corners = (7, 10)`, 198 frames at 4 fps, detection only, one frame at a time, with the
 call order swapped between two runs, which moved nothing by more than 2%):
 
-- **Frames without a board.** 31 frames had no board in view. The flag rejected them no faster:
+- **Frames without a board.** 31 frames had no board in view. Neither search reported a board on
+  any of them, so dropping the flag adds no false positives. The flag rejected them no faster:
   816 ms per frame with it, 772 ms without.
 - **Frames where detection fails.** These cost about 0.7 s either way.
 - **Frames with a board.** The flag made them about three times slower: a median of 25 ms with it,
   8 ms without.
 - **Totals.** Detection took 52.3 s with the flag and 47.5 s without. Without it, 132 frames were
   found against 130. The flag found no frame that the full search missed.
-- **Corners.** Where both found the board, the corners were identical: the largest difference was
-  0.0 px. Dropping the flag changes no existing result.
+- **Corners.** Where both found the board, the corners were bit-identical: the largest absolute
+  difference was exactly zero. Dropping the flag changes no existing result.
+
+The 4.8 s saving in total time and the 44 ms gap on frames without a board are inside this machine's
+run-to-run spread (see "Wall-clock benchmarks on this machine are noise; read the allocations").
+They support only the claim that the flag saves nothing, not that dropping it is faster. The threefold difference on
+frames with a board, and the doubling for retry-on-miss below, are well outside that spread.
 
 Two alternatives were measured and not kept:
 
