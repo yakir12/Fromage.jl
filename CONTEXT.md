@@ -207,12 +207,22 @@ because it is always compounded, never bare.
 | **metric** | AprilTag ground units from the tag fit, before the centre/north gauge | **`(x, y)`** |
 | **real** | the output: metric after the gauge, or `image2real` for the fixed maps | `(y, x)` |
 
+**Pixel origin: stored and display space are 0-based, with pixel centres on the integers.** The
+top-left pixel's centre is `(0, 0)`. That is what OpenCV's corners use, what GIMP or Photoshop
+report for `center`, `north` and `start_location`, and what `track` returns. A Julia array index is
+one more (`Spaces.to_index`, `Spaces.from_index`), and the only code that works in indices is the
+code that indexes, warps or draws into an array. Two outside conventions are converted where they
+enter: a MATLAB `.mat`'s principal point is 1-based, and the AprilTag detector puts pixel centres
+at `n + ½` (`Spaces.from_pixel_edges`). Before #276 the tracker's 1-based indices went into 0-based
+maps unconverted.
+
 `display` → `stored` is `sar` **and a swap** — `(x, y) → (y, x / sar)`, which is `Spaces.to_stored`.
 `scaled` is `downscale`. `metric` → `real` is `XY_SWAP` composed with centering and northing.
 
 The conversions between these spaces live in **`src/spaces.jl`**, and only there: `stored_x` (the
 `sar` correction on the x axis alone, which is all a homography-facing site needs), `to_stored` (that
-plus the swap) and `display_center_x`. This table says what the spaces *are*; that module is how you
+plus the swap), `display_center_x`, and the origin conversions `from_index`, `to_index` and
+`from_pixel_edges`. This table says what the spaces *are*; that module is how you
 get from one to another.
 
 **`aspect` is the csv spelling of `sar`.** One quantity, two representations, deliberately: both

@@ -62,8 +62,10 @@ function from_matlab(; matlab_file, extrinsic_index, aspect, center, north, widt
     K = findfirstkey(dict, "K")
     fcol = K[1, 1]
     frow = K[2, 2]
-    ccol = K[1, 3]
-    crow = K[2, 3]
+    # MATLAB puts the centre of the top-left pixel at (1, 1). The maps work in 0-based pixels, like
+    # the checkerboard builders' and the tracker's, so the principal point moves by one (#276).
+    ccol = from_index(K[1, 3])
+    crow = from_index(K[2, 3])
 
     # both of these have their x and y the other way around, due to some matlab convention
     R = -Vector{Float64}(findfirstkey(dict, "RotationVectors")[extrinsic_index, [2, 1, 3]])   # negative due to some matlab angle convention...

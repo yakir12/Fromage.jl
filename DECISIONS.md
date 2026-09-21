@@ -348,6 +348,57 @@ They also never meet: `main` hands `track` the csv value `c.source.center` (`mai
 builder's defaulted one, so no code path compares or combines the two. Each rounds for its own
 consumer, and that is the end of it — no fix, and no reason to unify them.
 
+### Stored space is 0-based, with pixel centres on the integers (#276)
+
+**The bug.** A tracked `(row, col)` is a Julia array index, so it is 1-based. A checkerboard
+`image2real` is fitted to OpenCV's corners, which are 0-based. `track` passed the first to the second
+unchanged, so every rectified point was evaluated one stored pixel down and right of the target.
+#276 measured this on a synthetic disc at `sar = 1`: 0.58–0.64 mm RMS on 25 mm squares, falling to
+0.06–0.09 mm once the index was shifted. That is ten times the tracking error. No test saw it. Each
+built its expectation by pushing the fixture's pixel path through the package's own maps, so the
+expectation shared the error, and the end-to-end tolerance was wide enough to absorb it.
+
+**The decision (the maintainer's call, 2026-09-21).** Stored and display space are 0-based, with
+the top-left pixel's centre at `(0, 0)`. That matches OpenCV, the image viewers the docs send users
+to for `center`, `north` and `start_location`, and the simulation. The alternative was to make
+stored space 1-based and shift everything else. It would have left the tracker's raw output alone,
+but it needed a `+1` on the OpenCV corners, a `+1` on every user coordinate, and the simulation's
+analytic controls and the squeezed-board fixture moved to match. The 0-based choice moves fewer
+things, and the one that moves is internal: `track` without a rectification now returns 0-based
+pixels, but `main` always passes one (`track_run`), so no user ever saw the raw form.
+
+**Where the conversion lives.** The convention is in `Spaces`. `from_index` and `to_index` are the
+only crossings between a coordinate and an array index. They are applied where code indexes, warps
+or draws into an array: `track`'s return, `get_guess`, the rectified diagnostic scene, the
+rectification diagnostic warp, and on the AprilTag path the stack warp, `canvas2raw`,
+`img_to_ground`, the seeded guess, the search boxes and the diagnostic scene. Tracking itself, and
+the chaining of one segment's end into the next segment's guess, stay in indices.
+
+**Two outside conventions are converted where they enter.**
+- `from_matlab`: MATLAB puts the centre of the top-left pixel at `(1, 1)`, so the `.mat`'s principal
+  point moves by one. Before this change the MATLAB path matched the tracker, and was right only by
+  accident.
+- AprilTag: the C detector puts pixel centres at `n + ½`. Measured on `Fixtures.apriltag_ground`,
+  its corners sat 0.58–0.66 px below the analytic 1-based positions. `from_pixel_edges` subtracts
+  the half pixel of convention and leaves the rest, which is detector bias. Before this change the
+  tag fit, the registration warp and the tracked index each used a different origin, which cost
+  about half a reference pixel.
+
+**Deliberately unchanged.**
+- The frame-centre defaults, `default_center`, `frame_center` and the AprilTag `width / 2`, stay
+  half a pixel right of and below the geometric centre `((w − 1)/2, (h − 1)/2)`. They are origins
+  used only when no `center` is given, and the entry above explains why half a pixel there changes
+  no relative quantity.
+- `Spaces.stored_x` stays `x / sar`. An area-exact squeeze puts display `x` at stored
+  `(x + ½)/sar − ½`. The two differ by `½/sar − ½` columns (−0.25 at `sar = 2`, +0.5 at `sar = ½`),
+  and only `center`, `north` and `start_location` on anamorphic footage feel it. The maintainer
+  chose to leave it.
+
+**The test.** `test/pixel_origin.jl` compares rectified tracks with coordinates taken from the
+fixtures' cameras alone. Before → after: checkerboard 0.553 → 0.028 mm at `sar = 1` and
+0.714 → 0.225 mm at `sar = 2` (the remainder is the `x / sar` term above, moving `center`),
+AprilTag 1.41 → 0.077 ground px.
+
 ---
 
 ## Rectifications

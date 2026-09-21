@@ -55,6 +55,7 @@ const RUN_STATIC = get(ENV, "FROMAGE_RUN_STATIC", "true") != "false"
     include("pawsometracker.jl")
     include("apriltag.jl")
     include("apriltag_pipeline.jl")
+    include("pixel_origin.jl")
     include("verifyrectifications.jl")
     include("verifyruns.jl")
     include("memo.jl")

@@ -223,7 +223,12 @@ end
 function RectifiedScene(rect)
     m = DIAGNOSTIC_SIZE
     D = LinearMap(SDiagonal{2}((min(rect.width, rect.height) / m) * rect.ratio * I))
-    return RectifiedScene(((-m ÷ 2):(m ÷ 2 - 1), (-m ÷ 2):(m ÷ 2 - 1)), inv(D) ∘ rect.image2real, rect.real2image ∘ D)
+    # `from_index`/`to_index`: the scene takes the tracker's array index and warps a Julia array,
+    # while the maps work in 0-based stored pixels (#276).
+    return RectifiedScene(
+        ((-m ÷ 2):(m ÷ 2 - 1), (-m ÷ 2):(m ÷ 2 - 1)),
+        inv(D) ∘ rect.image2real ∘ from_index, to_index ∘ rect.real2image ∘ D
+    )
 end
 
 canvas_prototype(s::RectifiedScene) = Matrix{Gray{N0f8}}(undef, length.(s.indices)...)

@@ -55,6 +55,18 @@
         end
     end
 
+    @testset "the principal point is MATLAB's, moved to 0-based pixels (#276)" begin
+        # MATLAB's `K` puts the top-left pixel's centre at (1, 1), so its (W/2, H/2) is 0-based
+        # (row, col) = (H/2 − 1, W/2 − 1). Distortion is radial about that point, so two pixels
+        # mirrored through it must map to real points mirrored through its image. Undistorted, the
+        # fronto-parallel geometry cancels the principal point from every map, which is why this
+        # needs a distorted file. Off by one pixel, the mirror is broken by about 0.01 world units.
+        rect = rectify(matlab_file = writemat(joinpath(matdir, "centred.mat"); k = [0.1, 0.0]))
+        pp = SVector(H / 2 - 1, W / 2 - 1)
+        d = SVector(150.0, 200.0)
+        @test rect.image2real(pp + d) + rect.image2real(pp - d) ≈ 2rect.image2real(pp) atol = 1.0e-6
+    end
+
     @testset "center/north define a rigid reference space" begin
         rect = rectify(center = SVector(320.0, 240.0), north = SVector(320.0, 100.0))
         p0 = SVector(100.0, 120.0)
