@@ -231,60 +231,39 @@ end
     end
 
     @testset "a non-square reference: viewport axis order, and the pipeline end to end" begin
-        # Every other AprilTag fixture is 480x480, so nothing else here runs the pipeline on a
-        # non-square reference at all. 400x480 rather than anything squarer: the four tag blocks
-        # span ground rows 150..450 and the +/-40 px pan has to keep them all in frame, which a
-        # 360-row crop does not.
-        #
-        # `reference_size` is asserted DIRECTLY, and that is the part that pins the axis order.
-        # The end-to-end assertion below does not: a transposed viewport of comparable size still
-        # contains the disc, which sits near the middle of the ground plane, so tracking succeeds
-        # either way — verified by transposing `reference_size` and watching this whole file stay
-        # green. Making the tracked path itself discriminate would need an aspect ratio extreme
-        # enough to push the disc outside the transposed viewport while all four tags stay in
-        # frame at every pose, which the fixture's fixed layout cannot currently do.
-        v = make_apriltag_video(dir, "wideref"; H = 400, W = 480, nframes = NFRAMES, tw = TARGET_WIDTH)
+        # Compact tag rows leave room for a wide viewport and its pan. The disc starts at
+        # reference (x, y) = (309, 119): inside the correct centre search, beyond the transposed
+        # viewport's 240 columns. A seed would hide that error, so both tracks are unseeded.
+        tag_blocks = [(200, 100), (200, 420), (320, 100), (320, 420)]
+        v = make_apriltag_video(
+            dir, "wideref"; H = 240, W = 600, nframes = NFRAMES, tw = TARGET_WIDTH,
+            tag_blocks, ground_start = (300.0, 310.0), ground_stop = (320.0, 350.0),
+            pose = k -> drone_pose(
+                dx = 12sin(2π * (k - 1) / 12), dy = 8sin(2π * (k - 1) / 12)
+            )
+        )
         file = joinpath(dir, v.file)
         rect = ApriltagRectification(;
             aspect = 1.0, file, extrinsic = 0, ntags = 4,
             family = "tag36h11", tag_cell_width = Fixtures.TAG_CELL,
-            center = missing, north = missing, width = 480, height = 400
+            center = missing, north = missing, width = 600, height = 240
         )
         @test rect.height != rect.width          # what makes the next assertion discriminating
-        # (rows, cols) from a struct that stores (width, height): exact, asymmetric, and the only
-        # assertion here that a transposition cannot survive.
-        @test PT.reference_size(rect) == (400, 480)
-        # Seeded, not a centre search: this is about the reference viewport's axis order, and the
-        # default circular pan puts the disc ~89 px off the canvas centre, which would make this a
-        # test of the centre-search box instead.
-        _, xy = track1(
-            file; rectification = rect, target_width = TARGET_WIDTH,
-            start_location = v.start_location
+        @test PT.reference_size(rect) == (240, 600)
+        # Every tag's full block, including its quiet zone, remains inside every rendered frame.
+        @test all(
+            all(1 .<= pose_apply(pose, (c + dc, r + dr)) .<= (600, 240))
+                for pose in v.poses, (r, c) in tag_blocks,
+                dr in (1, 10Fixtures.TAG_CELL), dc in (1, 10Fixtures.TAG_CELL)
         )
-        @test !any(ismissing, xy)
         expected(k) = rect.image2real(apply_h(rect.reference.M, v.expected_ref(k)))
-        @test maximum(norm(xy[k] - expected(k)) for k in 1:NFRAMES) < TRACK_TOL
-    end
-
-    @testset "no start_location: the centre search finds the target by itself" begin
-        # The `start_location::Missing` branch of `apriltag_guess` — the only line of
-        # src/PawsomeTracker/apriltag.jl the rest of the suite never reaches. It searches a box of
-        # `min(canvas)/initial_search_factor` around the canvas centre, which here holds the disc
-        # and none of the four tag blocks, so the tracker has to find the target unaided and the
-        # run must still land on the same closed-form path as when it is handed a seed.
-        v = make_apriltag_video(
-            dir, "noseed"; nframes = NFRAMES, tw = TARGET_WIDTH,
-            pose = k -> drone_pose(
-                dx = 30sin(2π * (k - 1) / 12),
-                dy = 24cos(2π * (k - 1) / 12)
-            )
-        )
-        file = joinpath(dir, v.file)
-        rect = rectify(file)
-        _, xy = track1(file; rectification = rect, target_width = TARGET_WIDTH)  # no start_location
-        @test !any(ismissing, xy)
-        expected(k) = rect.image2real(apply_h(rect.reference.M, v.expected_ref(k)))
-        @test maximum(norm(xy[k] - expected(k)) for k in 1:NFRAMES) < TRACK_TOL
+        # Reuse the same media and rectification; scaling must preserve the recovered ground path.
+        @testset "unseeded trajectory, downscale = $downscale" for downscale in (1.0, 0.5)
+            _, xy = track1(file; rectification = rect, target_width = TARGET_WIDTH, downscale)
+            @test length(xy) == NFRAMES
+            @test !any(ismissing, xy)
+            @test maximum(norm(xy[k] - expected(k)) for k in 1:NFRAMES) < TRACK_TOL
+        end
     end
 end
 

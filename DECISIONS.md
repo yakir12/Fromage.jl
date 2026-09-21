@@ -914,6 +914,11 @@ must not be collapsed into one.
 
 ### What the tracker's argument lists still do not pin
 
+**Update (#279):** the viewport gap below is now covered. A 600×240 unseeded fixture uses compact
+tag rows and a disc beyond the transposed viewport's width. Its tracked path fails the existing
+1.5-pixel bound at both full and half scale when `reference_size` is transposed. The original
+attempt below explains why a merely non-square fixture was not enough.
+
 The `ref_sz` assertion is on `reference_size` directly, not on a tracked path. A behavioural test
 was attempted and does not discriminate: a transposed reference viewport of comparable size still
 *contains* the disc, because the fixture's disc sits near the middle of the ground plane, so

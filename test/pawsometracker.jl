@@ -66,24 +66,40 @@ const DATADIR = mktempdir()
     light, light_exp = make_target_video(DATADIR, "pt_light"; darker_target = false)
     seg, seg_exp = make_target_video(DATADIR, "pt_seg"; nsegments = 3)
     base_file = joinpath(DATADIR, only(base))
-    # Anamorphic, both directions: sar 1/2 stores 200x100, sar 2 stores 50x100. Every other fixture
-    # in this file is square at sar 1, where the two axes are interchangeable and a transposition
-    # cannot show (#36).
+    # Anamorphic, both directions, for the decoded-disc/kernel comparison below (#36).
     sar05, _ = make_target_video(DATADIR, "pt_sar05"; sar = 1 // 2)
     sar2, _ = make_target_video(DATADIR, "pt_sar2"; sar = 2 // 1)
-    # Non-square, with the disc well off the diagonal. Every other trajectory fixture is 100x100
-    # with the disc at (row 50, col 55): there a transposed start location lands 7 px away, a third
+    # Non-square, with the disc well off the diagonal. On the original 100x100 fixture
+    # with the disc at (row 50, col 55), a transposed start location lands 7 px away, a third
     # of the default search radius, so it still tracks and no assertion notices. Here row 30 and
     # col 120 cannot be confused — a transposed guess names row 120 of a 90-row frame.
     wide, wide_exp = make_target_video(DATADIR, "pt_wide"; width = 160, height = 90, row = 30, col = 120)
     wide_file = joinpath(DATADIR, only(wide))
+    # A modest aspect also exposes a transposed frame size through wrong coordinates, before
+    # the more extreme fixtures throw: the disc fits the real frame but crosses column 100.
+    edge, edge_exp = make_target_video(DATADIR, "pt_edge"; width = 120, height = 100, row = 50, col = 110)
+    # Encode each shape once, then reuse it across seeding and background-model assertions.
+    # The wider discs in the squeezed clips discriminate a DoG stretched along the wrong axis.
+    shapes = [
+        (; name = "square", file = base_file, expected = base_exp, start = (55, 50), width = 10),
+        (; name = "wide near edge", file = joinpath(DATADIR, only(edge)), expected = edge_exp, start = (110, 50), width = 10),
+    ]
+    for sar in (2 // 3, 2 // 1)
+        files, expected = make_target_video(
+            DATADIR, "pt_wide_sar$(Float64(sar))"; width = 160, height = 90,
+            row = 30, col = 120, sar, target_width = 18
+        )
+        push!(shapes, (; name = "wide sar $sar", file = joinpath(DATADIR, only(files)), expected, start = (120, 30), width = 18))
+    end
 
     @testset "single video, explicit start_location" begin
         # window_size left unnamed takes `get_window`'s value, as a blank csv cell does — there is
         # no second fallback inside `track` any more for it to disagree with
-        _, ij = track1(base_file; start_location = (55, 50), target_width = 10)
-        @test length(ij) == 50                       # the full 2 s at 25 fps
-        @test tracking_rmse(ij, base_exp) < 0.5      # 0.139 px on every platform measured
+        @testset "$(v.name)" for v in shapes
+            _, ij = track1(v.file; start_location = v.start, target_width = v.width)
+            @test length(ij) == 50                       # the full 2 s at 25 fps
+            @test tracking_rmse(ij, v.expected) < 0.5
+        end
     end
 
     @testset "tracking is deterministic" begin
@@ -207,11 +223,13 @@ const DATADIR = mktempdir()
         # wide, columns 76..84 — the disc is not in it, and the tracker never finds the target.
         # That is the swap the square fixtures cannot see, because there the disc sits at the
         # centre and any box contains it.
-        _, ij = track1(
-            wide_file; start_location = missing, target_width = 10,
-            initial_search_factor = 1.0
-        )
-        @test tracking_rmse(ij, wide_exp) < 0.5
+        @testset "$(v.name)" for v in shapes
+            _, ij = track1(
+                v.file; start_location = missing, target_width = v.width,
+                initial_search_factor = 1.0
+            )
+            @test tracking_rmse(ij, v.expected) < 0.5
+        end
     end
 
     @testset "get_guess maps display (x, y) to scaled (row, col)" begin
@@ -322,12 +340,14 @@ const DATADIR = mktempdir()
     @testset "background_length: no subtraction (0) and a short window (30) both track" begin
         # 0 ⇒ the DoG runs on the raw frame (the 2-slice stack only feeds detect the current
         # frame); the clean synthetic scene must track just as well without a background model
-        _, ij = track1(base_file; start_location = (55, 50), target_width = 10, background_length = 0)
-        @test length(ij) == 50
-        @test tracking_rmse(ij, base_exp) < 0.5      # 0.202 px on every platform measured
-        # a short window exercises the rolling phase (50 frames > 30-slice stack) with subtraction on
-        _, ij = track1(base_file; start_location = (55, 50), target_width = 10, background_length = 30)
-        @test tracking_rmse(ij, base_exp) < 0.5      # 0.139 px on linux/windows/macOS
+        @testset "$(v.name)" for v in shapes
+            _, ij = track1(v.file; start_location = v.start, target_width = v.width, background_length = 0)
+            @test length(ij) == 50
+            @test tracking_rmse(ij, v.expected) < 0.5
+            # A short window exercises the rolling phase (50 frames > 30 slices) with subtraction.
+            _, ij = track1(v.file; start_location = v.start, target_width = v.width, background_length = 30)
+            @test tracking_rmse(ij, v.expected) < 0.5
+        end
     end
 
     @testset "a long-stationary target is not absorbed into the background" begin
