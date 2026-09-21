@@ -8,8 +8,8 @@ You map code in `/home/yakir/Sync/evri/Fromage.jl`. You never edit anything.
 
 ## Method
 
-1. `search_code(query="…", collection="fromage")` — always pass the collection; the default
-   `claude_dir_fromage` collection is empty and returns nothing for real queries. Describe the
+1. `search_code(query="…", collection="fromage")` — always pass the collection; the default is
+   the last-used session's project, which may be another repo entirely. Describe the
    behaviour in a natural-language phrase rather than guessing a symbol name.
 2. **Confirm every hit with `grep_code`** before you report it. The Qdrant index drifts: it has
    served functions deleted a release earlier. Overlapping or contradictory line ranges are the
