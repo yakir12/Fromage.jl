@@ -25,14 +25,9 @@ Ground rule 6 applies: search_code(query=..., collection=\"fromage\") to find, g
 Always pass collection=\"fromage\" — without it search_code falls back to the last-used session's
 project, which may be another repo's collection, and a miss there looks like 'no such code'.
 KaimonGate.stash takes a String key; the Kaimon quiz's stash(:key, v) throws a MethodError.
-Start your own session (start_session, CLAUDE.md §2 step 2). If it dies with 'KaimonGate failed to
-precompile … ZMQ … not installed', the juliaup release channel has moved to a Julia whose global
-environment lacks KaimonGate: julia --project=@v1.X -e 'using Pkg; Pkg.add(\"KaimonGate\")' — never
-into Fromage's Project.toml.
-Still run investigate_environment() before any 'ex' call: a REPL whose pwd is this repo may have a
-global environment active, and 'ex' is only correct when the active project is Fromage.jl.
-Fire one cheap grep_code at src/ early — Kaimon's access prompt errors after ~50s unanswered, so it
-is better triggered in the first minute than an hour in."
+A new conversation has no Julia session of its own. Run the kaimon-up skill before the first ex, run_tests
+or search_code: it starts your own session, checks the active project and Revise, fires the
+access-prompt canary and proves the Qdrant index is live — in the first minute, not mid-task."
 fi
 
 jq -nc --arg m "$msg" \
