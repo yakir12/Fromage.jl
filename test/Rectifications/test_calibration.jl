@@ -87,6 +87,22 @@
         @test R._detect_corners(fill(0x7f, 1, 120, 160), n_corners) === missing
     end
 
+    # `CALIB_CB_FAST_CHECK` rejected both of these boards, though they are plainly visible and the
+    # full search finds them (#288). The second is squeezed as an anamorphic stored frame is: its
+    # columns area-averaged `sar` to one, which is where the flag failed on the simulation's rigs.
+    @testset "small or squeezed board, sq = $sq, sar = $sar" for (sq, sar) in ((10, 1), (20, 3))
+        m = 40
+        wide = checkerboard(n_corners; sq, m)
+        w = size(wide, 3) ÷ sar
+        board = [round(UInt8, sum(Int, wide[1, row, ((col - 1) * sar + 1):(col * sar)]) / sar) for _ in 1:1, row in axes(wide, 2), col in 1:w]
+        detected = R._detect_corners(board, n_corners)
+        @test detected !== missing
+        # every corner sits on a rendered one, 0-based with pixel centres on integers; a squeezed
+        # edge at wide column `e` lands at stored column `e / sar`
+        truth = [(m + j * sq - 0.5, (m + i * sq) / sar - 0.5) for i in 1:n_corners[1], j in 1:n_corners[2]]
+        @test !ismissing(detected) && all(p -> minimum(t -> hypot(p[1] - t[1], p[2] - t[2]), truth) < 0.1, detected)
+    end
+
     # --- fit_model ----------------------------------------------------------------------------
 
     @testset "single radial coefficient round-trip" begin

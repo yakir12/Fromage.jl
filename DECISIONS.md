@@ -604,6 +604,39 @@ detector. Checking the precondition in the gateway beats catching the failure in
 It also subsumes a degenerate case of its own: `checker_width_pixel`'s `2·prod(n) − sum(n)` divisor
 is zero at `(1, 1)`.
 
+### Corner detection runs without FAST_CHECK (#288)
+
+`_detect_corners` used to pass `CALIB_CB_FAST_CHECK`. OpenCV describes that flag as a quick
+rejection of frames that hold no board. In practice it also rejected small or anamorphic boards
+that the full search finds. Across the simulation's five `sar` rigs it lost 23 frames, three of
+them the flat board, and without the flat board no rectification can be built (#314, E2). Without
+the flag, all 23 were found.
+
+The flag did not pay for itself in time either. It was measured on a real lab clip (1920×1080,
+50 fps, `n_corners = (7, 10)`, 198 frames at 4 fps, detection only, one frame at a time, with the
+call order swapped between two runs, which moved nothing by more than 2%):
+
+- **Frames without a board.** 31 frames had no board in view. The flag rejected them no faster:
+  816 ms per frame with it, 772 ms without.
+- **Frames where detection fails.** These cost about 0.7 s either way.
+- **Frames with a board.** The flag made them about three times slower: a median of 25 ms with it,
+  8 ms without.
+- **Totals.** Detection took 52.3 s with the flag and 47.5 s without. Without it, 132 frames were
+  found against 130. The flag found no frame that the full search missed.
+- **Corners.** Where both found the board, the corners were identical: the largest difference was
+  0.0 px. Dropping the flag changes no existing result.
+
+Two alternatives were measured and not kept:
+
+- **Retry without the flag only when a frame misses.** It finds the same 132 frames, but doubles the
+  detection time to 97.8 s, because every miss pays for the full search twice.
+- **Drop the flag on the extrinsic frame only (#288's first suggestion).** It keeps the slower scan
+  for the intrinsic window, still loses intrinsic frames, and needs `get_corners` to take a flag.
+
+The clip had square pixels and a large board, so it measured the flag's cost, not the frames it
+misses. The misses are covered by the simulation's rigs and by `test_calibration.jl`, whose small and
+squeezed boards failed with the flag and are found without it.
+
 ---
 
 ## Tracking
