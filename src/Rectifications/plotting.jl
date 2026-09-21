@@ -21,9 +21,9 @@ end
 # Called by `build_rectifications`, never by a builder (#209). Everything the warp needs —
 # `width`, `height`, `ratio`, `real2image` — is a field of the `StaticRectification` the builder has
 # already returned, so nothing has to be threaded down for it. That spares `from_matlab`,
-# `from_uniform` and `_rectification` the three arguments only this image ever wanted (`file`,
-# `extrinsic`, `rectification_id`); `from_checkerboard`/`from_extrinsic` still take `file` and
-# `extrinsic`, which they read the video with. Whether to render at all is the caller's decision, so
+# `from_uniform` the image's identifying arguments (`file`, `extrinsic`, `rectification_id`).
+# `from_checkerboard`/`from_extrinsic` read the video with `file` and `extrinsic`, and pass them
+# to `_rectification` for fit warnings (#326). Whether to render is the caller's decision, so
 # this function no longer takes `rectification_diagnostics`: there is nothing here to switch off.
 #
 # Dispatch, not a branch: the other method is the AprilTag no-op, which cannot be written here
