@@ -457,7 +457,7 @@ end
             @test occursin(part, basename(folder))
         end
         @test nrow(CSV.read(joinpath(folder, "report.csv"), DataFrame)) == nrow(report)
-        @test all(c -> c in names(report), ["floor", "ratio", "tolerance", "family", "verdict"])
+        @test all(c -> c in names(report), ["level", "floor", "ratio", "tolerance", "family", "verdict"])
         replicates = CSV.read(joinpath(folder, "replicates.csv"), DataFrame)
         @test length(unique(replicates.rig)) == 10
         @test all(==("ok"), replicates.status)

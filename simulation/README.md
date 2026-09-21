@@ -39,7 +39,7 @@ Rigs run sequentially, with each render threaded over pixel rows. A failure is r
 exception text and the next rig still runs. A missed flat board leaves the map unavailable while
 the report retains the detected frames and fitted intrinsics. Unknown names error before any work
 or output is produced. Named subsets run in catalogue order and return only those rigs' rows;
-baseline measurements still supply their reference floor.
+baseline measurements still supply the level and floor every rig is judged against.
 
 The catalogue contains baseline, five `sar` variants (1/2, 10/11, 16/15, 64/45, 2), four `k1`
 variants (−0.05, −0.15, −0.3, +0.05), a two-term lens fitted at orders 2 and 1, and the full
@@ -56,18 +56,27 @@ lens is rendered once). Later runs read these videos from `cache_dir` and repeat
 against Fromage. The 45-minute estimate in #294 was unmeasured; duration depends on the machine,
 lens and cache state.
 
-Every rig is judged against the **baseline's floor**, even when `variants` leaves out the baseline:
-the largest error magnitude across its ten replicates for the `total` family, and the baseline's
-analytic-corner controls for the `model` family (the largest across the ten seeds for
-`from_extrinsic`). A variant with a higher noise floor is therefore judged against a floor too low.
-The csv adds `floor`, `ratio`, `tolerance`, `family` and `verdict`:
+Every rig is judged against the **baseline's level and floor**, even when `variants` leaves out the
+baseline. For each quantity, the level is the median of its magnitudes and the floor their range
+(max − min): over the ten replicates for the `total` family, and over the replicates' and the
+baseline's analytic-corner controls for the `model` family (every seed of `from_extrinsic`'s). A row
+is judged by how far its magnitude lies above the level, in floors (#312). A variant with a higher
+noise floor is therefore judged against a floor too low.
+The csv adds `level`, `floor`, `ratio`, `tolerance`, `family` and `verdict`:
 
 - Missed frames are `serious`; absent map values are `n/a`.
-- Total map errors are `serious` above both 3× the floor and 1 mm RMS / 3 mm max; dot separation
-  uses 3× and 1 mm. Corners and intrinsic errors are only `diagnostic`, above 3×.
-- Model map errors are `serious` above both 10× the control floor and 0.1 mm.
-- RMS and max are judged; p95 and the other unjudged rows are `n/a`. Ratios use magnitudes;
-  zero over zero is 0, and a nonzero error over a zero floor has an infinite ratio.
+- Total map errors are `serious` more than 3 floors above the level and above 1 mm RMS / 3 mm max;
+  dot separation uses 3 floors and 1 mm. Corners and intrinsic errors are only `diagnostic`, more
+  than 3 floors above the level.
+- Model map errors are `serious` more than 10 floors above the control level and above 0.1 mm.
+- RMS and max are judged; p95 and the other unjudged rows are `n/a`. `ratio` is
+  `(|value| − level) / floor`: negative below the level, never flagged; 0 at the level, even over a
+  zero floor; infinite above the level over a zero floor.
+
+`from_extrinsic`'s level is not noise. The builder fixes the principal point at the frame centre and
+every distortion coefficient at zero, so its map is ~2.7 mm off at the baseline, and more on any
+distorted lens. Its `ratio` says how much worse a rig is than Fromage's own extrinsic-only baseline,
+in units of how much that baseline moves; it is not a distance from measurement noise.
 
 The printed table marks serious values `!!` and diagnostic values `!`, states whose floor is used,
 and ends with the serious rows. These are aids for exploring, not pass/fail gates
@@ -135,6 +144,6 @@ The simulation's own words, kept here rather than in the root `CONTEXT.md`, whic
 - `src/report.jl` — the long-format report, one row per rig × rung × builder × section × quantity ×
   split × statistic, each with a `status` (`ok`, `not detected`, `threw: <message>`), and the
   printed table.
-- `src/floor.jl` — seeded board jitter and the baseline's replicate and control floors.
+- `src/floor.jl` — seeded board jitter and the baseline's levels and floors.
 - `src/verdicts.jl` — the two verdict families, thresholds and the columns they add to each row.
 - `src/simulate.jl` — `simulate`, `Rig` and `VARIANTS`, the named rigs and their fitting orders.
