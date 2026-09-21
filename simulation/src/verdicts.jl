@@ -63,7 +63,7 @@ function level_of(floors::Floors, r)
 end
 
 """
-The columns a row's verdict adds to the report (#296):
+The columns a row's verdict adds to the report (#296, #312):
 
 - `level`: the baseline's typical magnitude of it (see [`Floors`](@ref)), `missing` where there is none;
 - `floor`: how far that magnitude moves across the baseline's replicates;

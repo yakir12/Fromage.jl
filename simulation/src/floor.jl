@@ -83,7 +83,7 @@ function levels(rows)
         ismissing(r.value) && continue
         push!(get!(magnitudes, floor_key(r), Float64[]), abs(r.value))
     end
-    return Dict(k => Level((median(v), maximum(v) - minimum(v))) for (k, v) in magnitudes)
+    return Dict{FloorKey, Level}(k => Level((median(v), maximum(v) - minimum(v))) for (k, v) in magnitudes)
 end
 
 """
