@@ -51,16 +51,19 @@ function replicate_rows(cache_dir, results_dir)
     end
 end
 
-# which rows a floor is shared by: all but the value, and the unit, because at `sar` 1, the only
-# rig replicates are made of, a display px is a stored px; and all but the seeds' aggregate, so the
-# largest over a control's seeds is its floor
-const FloorKey = Tuple{String, Union{Missing, String}, String, String, Union{Missing, String}, String}
-floor_key(r) = FloorKey((r.rung, r.builder, r.section, r.quantity, r.split, r.statistic))
+# which rows a floor is shared by: all but the value, and the seeds' aggregate, so the largest over a
+# control's seeds is its floor. The unit is in the key (#313), and that costs the display-px
+# `corners` rows a `sar ≠ 1` rig adds their floor: the replicates are at `sar` 1 and emit none, so
+# those rows keep their value but are judged `n/a`. Borrowing the stored-px floor instead would be
+# off by a factor up to `sar`, and scaling it by `sar` would assume the isotropic detector error that
+# the display-px row is there to question (#294).
+const FloorKey = Tuple{String, Union{Missing, String}, String, String, Union{Missing, String}, String, String}
+floor_key(r) = FloorKey((r.rung, r.builder, r.section, r.quantity, r.split, r.statistic, r.unit))
 
 """
     largest_values(rows) -> Dict{FloorKey, Float64}
 
-The largest magnitude of each quantity × split × statistic over `rows` (all rigs, seeds and
+The largest magnitude of each quantity × split × statistic × unit over `rows` (all rigs, seeds and
 aggregates), skipping rows with no value.
 """
 function largest_values(rows)
