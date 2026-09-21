@@ -171,7 +171,7 @@ const TARGET1 = target("memo_target1")
 const TARGET2 = target("memo_target2")
 const UNTRACKABLE = make_corrupt_video(joinpath(DIR, "memo_untrackable.mp4"))
 const RUN = VRuns.Run(
-    "memo_run", "u", tuning(TARGET1; target_width = 10.0), VRuns.FrameFormat(100, 100, 1 // 1),
+    "memo_run", "u", tuning(TARGET1; target_width = 10.0), VRuns.FrameFormat(100, 100),
     [PT.Segment(TARGET1, 0.0, 1.0, (55, 50))]
 )
 

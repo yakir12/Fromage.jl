@@ -75,6 +75,20 @@
         @test clean(check([runrow(stop = "0.2", sample_fps = "5")]))
     end
 
+    @testset "aspect must be larger than zero" begin
+        @test flagged(check([runrow(aspect = "0")]), 1, "aspect must be larger than zero")
+        @test flagged(check([runrow(aspect = "-1/2")]), 1, "aspect must be larger than zero")
+        # reported once, as itself — not a second time as an out-of-frame start it was multiplied into
+        df = check([runrow(aspect = "0", start_location = "(10, 10)")])
+        @test df.issues[1] == ["aspect must be larger than zero"]
+    end
+
+    @testset "start_location is bounded by the declared aspect, not the probed one" begin
+        # a.mp4 is 640 stored columns at a probed 1:1; declared 2, it displays 1280 wide
+        @test flagged(check([runrow(start_location = "(1000, 50)")]), 1, "start_location must not be larger than the dimensions of the frame")
+        @test clean(check([runrow(start_location = "(1000, 50)", aspect = "2")]))
+    end
+
     @testset "both rates must be larger than zero" begin
         @test flagged(check([runrow(sample_fps = "0")]), 1, "sample_fps must be larger than zero")
         @test flagged(check([runrow(native_fps = "0")]), 1, "native_fps must be larger than zero")

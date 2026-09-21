@@ -215,10 +215,11 @@ The conversions between these spaces live in **`src/spaces.jl`**, and only there
 plus the swap) and `display_center_x`. This table says what the spaces *are*; that module is how you
 get from one to another.
 
-**`aspect` is the csv spelling of `sar`.** One quantity, two representations, deliberately:
-`rectifications.csv` has an `aspect` column and `VerifyRectifications` carries it as the `Float64`
-that mirrors `VideoIO.aspect_ratio`, while `sar` is internal-only and `VerifyRuns` holds the exact
-`Rational{Int}` because it bounds-checks a pixel against `width × sar`. `Spaces` takes either — its
+**`aspect` is the csv spelling of `sar`.** One quantity, two representations, deliberately: both
+csv files have an `aspect` column, blank meaning "what ffprobe reports". `VerifyRectifications`
+carries it as a `Float64`, while `VerifyRuns` holds the exact `Rational{Int}` (`Tuning.aspect`)
+because it bounds-checks a pixel against `width × aspect`. `sar` is the internal name — the probe's
+field, `Video.sar`, the `Spaces` parameter. `Spaces` takes either — its
 parameter is a bare `Real`, so neither caller's arithmetic is changed by passing through it.
 
 **Three of the seven use `(x, y)`, and `stored` uses both orders.** Everything a user writes —
@@ -265,16 +266,17 @@ a value belongs to the whole run or varies between its segments — and that div
 separates the two types carrying them:
 
 - `Segment` holds what varies within a run — `file`, `start`, `stop`, `start_location`.
-- `Tuning` holds what one run shares. The name is narrower than the contents: three of its eight
-  fields are observations rather than choices — `native_fps` (the rate the video runs at),
-  `darker_target` (a property of the footage) and `target_width` (a measurement of the animal).
+- `Tuning` holds what one run shares. The name is narrower than the contents: four of its nine
+  fields are observations rather than choices — `native_fps` (the rate the video runs at), `aspect`
+  (its pixel aspect ratio), `darker_target` (a property of the footage) and `target_width` (a
+  measurement of the animal).
   Membership is not "knobs": it is *run-level, and an argument of `track`*.
 
 `verify_run_consistency!` is that scope rule enforced — segments of one run must agree on every
 run-level column.
 
 Run-level alone does not make a tracking parameter. `frame_format` (the frame's stored `width` and
-`height`, and its `sar`) is run-level and is checked for agreement, but it sits beside `Tuning` on
+`height`) is run-level and is checked for agreement, but it sits beside `Tuning` on
 `Run` rather than on it: the gateway consumes it, to place a start location, and `track` never
 receives it.
 

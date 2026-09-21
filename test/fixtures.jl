@@ -11,6 +11,7 @@ using AprilTags: getAprilTagImage, tag36h11
 using StaticArrays: SVector, SMatrix
 using Rotations: RotationVec
 using Fromage.PawsomeTracker: PawsomeTracker, Segment, Tuning, get_window, track
+using Fromage.VerifyRuns: probe_video
 
 export make_video, make_checkerboard_video, make_corrupt_video, make_target_video,
     make_squeezed_checkerboard_video, CHECKERBOARD_POSES,
@@ -57,29 +58,41 @@ end
 # `dir`; returns the basename(s) and the ground-truth closure `expected(i; skip, offset)`: the
 # stored-frame 1-based (row, col) of the disc center at sample i, where sample i reads global frame
 # `offset + (i − 1)·skip` (skip = video fps ÷ requested fps).
+#
+# `container_sar = true` writes lossless FFV1 into Matroska instead of x264 into mp4. FFV1 has no
+# field for the sample aspect ratio, so `sar` then lives in the container alone — where ffprobe
+# reports it and VideoIO's codec context does not (#295). With x264 it is in the bitstream, where
+# the two agree.
+#
+# `reported_sar` is the ratio the file is TAGGED with, when it should lie about the squeeze `sar`
+# actually applied — the footage a declared `aspect` in runs.csv exists for. The ground truth
+# follows `sar`, the squeeze, whatever the tag says.
 function make_target_video(
         dir, name; width = 100, height = 100, sar = 1 // 1, fps = 25, duration = 2,
-        target_width = 10, darker_target = true, row = 50, col = 55, nsegments = 1, pause = nothing
+        target_width = 10, darker_target = true, row = 50, col = 55, nsegments = 1, pause = nothing,
+        container_sar = false, reported_sar = sar
     )
     A = width / 2.5
     target_c, bkgd_c = darker_target ? (0, 255) : (255, 0)
     w2 = round(Int, width / sar)
-    sarg = "$(numerator(sar))/$(denominator(sar))"
+    sarg = "$(numerator(reported_sar))/$(denominator(reported_sar))"
     # the frame index driving the trajectory: identity, or frozen at p1 for the pause's span
     p1, p2 = isnothing(pause) ? (0, 0) : round.(Int, pause .* fps)
     Nexpr = isnothing(pause) ? "N" : "if(lt(N,$p1),N,if(lt(N,$p2),$p1,N-($p2-$p1)))"
     freeze(N) = isnothing(pause) ? N : (N < p1 ? N : (N < p2 ? p1 : N - (p2 - p1)))
     vf = "geq=lum='if(lt(sqrt((X-$col+$A*sin(0.5*PI*($Nexpr)/$fps))^2+(Y-$row)^2),$(target_width / 2)),$target_c,$bkgd_c)':cb=128:cr=128,scale=$w2:$height,setsar=$sarg"
-    # -qp 0: lossless — the analytic ground truth stays exact, with no encoder noise around the disc
-    src = `-y -loglevel error -f lavfi -i color=white:s=$(width)x$(height):d=$duration:r=$fps -vf $vf -pix_fmt yuv420p -qp 0`
+    # lossless either way (x264 at -qp 0, FFV1 always) — the analytic ground truth stays exact, with
+    # no encoder noise around the disc
+    codec, ext = container_sar ? (`-c:v ffv1`, "mkv") : (`-qp 0`, "mp4")
+    src = `-y -loglevel error -f lavfi -i color=white:s=$(width)x$(height):d=$duration:r=$fps -vf $vf -pix_fmt yuv420p $codec`
     files = if nsegments == 1
-        FFMPEG.ffmpeg_exe(`$src $(joinpath(dir, "$name.mp4"))`)
-        ["$name.mp4"]
+        FFMPEG.ffmpeg_exe(`$src $(joinpath(dir, "$name.$ext"))`)
+        ["$name.$ext"]
     else
         T = duration / nsegments
         kf = "expr:gte(t,n_forced*$T)"
-        FFMPEG.ffmpeg_exe(`$src -force_key_frames $kf -f segment -segment_time $T $(joinpath(dir, name * "_%02d.mp4"))`)
-        [string(name, "_", lpad(k, 2, '0'), ".mp4") for k in 0:(nsegments - 1)]
+        FFMPEG.ffmpeg_exe(`$src -force_key_frames $kf -f segment -segment_time $T $(joinpath(dir, name * "_%02d.$ext"))`)
+        [string(name, "_", lpad(k, 2, '0'), ".$ext") for k in 0:(nsegments - 1)]
     end
     expected = (i; skip = 1, offset = 0) -> begin
         N = freeze(offset + (i - 1) * skip)
@@ -515,7 +528,7 @@ end
 function tuning(
         file; target_width = 25.0, window_size = missing, darker_target = true,
         native_fps = missing, sample_fps = missing, initial_search_factor = 4.0, downscale = 1.0,
-        background_length = PawsomeTracker.DEFAULT_BACKGROUND_LENGTH,
+        background_length = PawsomeTracker.DEFAULT_BACKGROUND_LENGTH, aspect = missing,
         duration = missing
     )
     m = probe_stream(file)
@@ -530,9 +543,11 @@ function tuning(
             coalesce(duration, m.nframes / m.fps)
         )
     )
+    # the ratio the gateway's own probe reads — ffprobe's, not VideoIO's (#295)
+    asp = coalesce(aspect, probe_video(file).sar)
     return Tuning(
         target_width, ws, darker_target, sfps, nfps, initial_search_factor, downscale,
-        background_length
+        background_length, asp
     )
 end
 

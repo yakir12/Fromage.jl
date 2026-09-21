@@ -10,7 +10,7 @@
         r = only(check([runrow()]))
         @test r.frame_format.width == 640                    # ← probed from the video itself
         @test r.frame_format.height == 480
-        @test r.frame_format.sar == 1                      # square pixels; anamorphic: test_tracking.jl
+        @test r.tuning.aspect == 1                          # square pixels; anamorphic: test_tracking.jl
     end
 
     @testset "the video's own frame rate is carried onto the run's Tuning" begin
@@ -33,6 +33,13 @@
         # unless sample_fps says otherwise, which is the whole point of them being independent
         r2 = only(check([runrow(native_fps = "25", sample_fps = "5")]))
         @test r2.tuning.native_fps == 25.0 && r2.tuning.sample_fps == 5.0
+    end
+
+    @testset "a declared aspect replaces the probe, in any of its spellings" begin
+        # a.mp4 probes as 1:1. The ratio is held exact, so a decimal is the decimal written.
+        for (cell, aspect) in (("2", 2 // 1), ("0.5", 1 // 2), ("4/3", 4 // 3), ("4:3", 4 // 3), (" 16/15 ", 16 // 15), ("1.333", 1333 // 1000))
+            @test only(check([runrow(aspect = cell)])).tuning.aspect === aspect
+        end
     end
 
     @testset "CSV values win over imputation" begin

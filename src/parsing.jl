@@ -20,6 +20,28 @@ function mytryparse(::Type{NTuple{2, Int}}, s)
     return (a, b)
 end
 
+# An exact ratio: "4/3", ffprobe's own "4:3", or a plain number ("2", "0.5", "1.333"). A decimal is
+# taken as exactly the decimal written (`rationalize` returns the simplest ratio within `eps` of it,
+# so "0.5" is 1//2 and "1.333" is 1333//1000, not 4//3). A zero denominator, a non-finite decimal, or
+# one too large for an `Int` ratio is a wrong format; the sign is left for the caller's range check.
+function mytryparse(::Type{Rational{Int}}, x)
+    s = strip(string(x))
+    # `split` rather than a regex: a match's captures are `Union{Nothing, SubString}`, which JET
+    # rightly reports as a `tryparse(Int, nothing)` waiting to happen
+    parts = split(s, ('/', ':'))
+    if length(parts) == 2
+        num = tryparse(Int, parts[1])
+        den = tryparse(Int, parts[2])
+        (isnothing(num) || isnothing(den) || iszero(den)) && return nothing
+        return num // den
+    end
+    d = tryparse(Float64, s)
+    (isnothing(d) || !isfinite(d)) && return nothing
+    r = rationalize(Int, d)
+    # past `typemax(Int)` there is no nearer ratio than `1//0`, which would pass a `> 0` check
+    return iszero(denominator(r)) ? nothing : r
+end
+
 tosecond(x::T) where {T <: TimePeriod} = Float64(x / convert(T, Second(1)))
 tosecond(x::Time) = tosecond(x - Time(0))
 

@@ -129,7 +129,7 @@ const DATADIR = mktempdir()
         # 250 is ~494 MB as N0f8 against ~1978 MB as Float32 — and its values come from an N0f8
         # decode, so the wider type buys no precision. Nothing else in the suite catches a
         # regression here: tracking accuracy is identical either way, which is the whole point.
-        vid = PT.Video(base_file, 25, 25, 0, 2, 1.0)   # (native_fps, sample_fps): the file's own rate, sampled whole
+        vid = PT.Video(base_file, 25, 25, 0, 2, 1.0, 1 // 1)   # (native_fps, sample_fps): the file's own rate, sampled whole
         try
             stack = PT.get_stack(vid, (vid.height, vid.width), (10, 10), 10)
             @test eltype(stack) == Gray{N0f8}
@@ -153,8 +153,8 @@ const DATADIR = mktempdir()
     # against a formula, so the assertion cannot drift with the one it is checking. Invisible at
     # sar = 1, which is why every other fixture here misses it.
     @testset "the DoG is stretched along the same axis as the target (sar ≠ 1)" begin
-        for files in (sar05, sar2)
-            vid = PT.Video(joinpath(DATADIR, only(files)), 25, 25, 0, 2, 1.0)
+        for (files, sar) in ((sar05, 1 // 2), (sar2, 2 // 1))
+            vid = PT.Video(joinpath(DATADIR, only(files)), 25, 25, 0, 2, 1.0, sar)
             try
                 dark = Float64.(vid.img) .< 0.5               # the target is the dark disc
                 taller = count(any(dark, dims = 2)[:]) > count(any(dark, dims = 1)[:])
@@ -186,7 +186,7 @@ const DATADIR = mktempdir()
     @testset "ScaledTuning scales exactly the three values track derives" begin
         # Asymmetric on purpose: the three fields differ from each other, the window is non-square,
         # and downscale != 1, so any transposition among them changes at least one field.
-        t = PT.Tuning(10.0, (31, 21), true, 25.0, 25.0, 4.0, 0.5, 250)
+        t = PT.Tuning(10.0, (31, 21), true, 25.0, 25.0, 4.0, 0.5, 250, 1 // 1)
         s = PT.ScaledTuning(t)
         @test s.width == 5.0                      # downscale * target_width
         @test s.search == 2.0                      # downscale * initial_search_factor
@@ -217,7 +217,7 @@ const DATADIR = mktempdir()
     @testset "get_guess maps display (x, y) to scaled (row, col)" begin
         # Exact equality, and the two components differ, so a transposition cannot slip through on
         # tolerance the way the RMSE assertions do.
-        vid = PT.Video(wide_file, 25, 25, 0, 2, 1.0)      # sar 1, downscale 1
+        vid = PT.Video(wide_file, 25, 25, 0, 2, 1.0, 1 // 1)      # sar 1, downscale 1
         try
             @test PT.get_guess((120, 30), nothing, vid, false, 0, 0, false) == (30, 120)
         finally
@@ -225,9 +225,8 @@ const DATADIR = mktempdir()
         end
 
         # ...and at sar 1/2 the x is converted to stored columns on the way, y untouched.
-        anam = PT.Video(joinpath(DATADIR, only(sar05)), 25, 25, 0, 2, 1.0)
+        anam = PT.Video(joinpath(DATADIR, only(sar05)), 25, 25, 0, 2, 1.0, 1 // 2)
         try
-            @test anam.sar == 1 // 2
             @test PT.get_guess((10, 90), nothing, anam, false, 0, 0, false) == (90, 20)
         finally
             close(anam.vid)
@@ -416,7 +415,7 @@ const DATADIR = mktempdir()
 
     # #149: the reader is closed on every path out of `Video`'s construction. Unlike the diagnostic
     # writer of #160, the fallible steps here CANNOT be reordered before the open — `read`,
-    # `gettime`, `seek` and `aspect_ratio` are reads of the reader itself, and on the share they are
+    # `gettime` and `seek` are reads of the reader itself, and on the share they are
     # exactly the calls that fail (WHY-FRAMES-FAIL.md). The guard is the whole mechanism.
     @testset "a failed Video construction closes its reader" begin
         # `downscale = NaN` fails at the `WarpedView` extent — `ImageTransformations._autorange`
@@ -425,7 +424,7 @@ const DATADIR = mktempdir()
         # earlier would mean moving the decode earlier, which needs the reader anyway. (The
         # arithmetic steps throw too, but they sit at the top and a later edit could lift them above
         # the open, turning this green for the wrong reason.)
-        @test_throws InexactError PT.Video(base_file, 25, 25, 0, 2, NaN)
+        @test_throws InexactError PT.Video(base_file, 25, 25, 0, 2, NaN, 1 // 1)
 
         # …and the reader really is gone. An unclosed `VideoReader` holds exactly one descriptor,
         # so leaks count: before the fix, 15 failures leaked 15 descriptors — "exhaust OS
@@ -445,7 +444,7 @@ const DATADIR = mktempdir()
             try
                 for _ in 1:15
                     try
-                        PT.Video(base_file, 25, 25, 0, 2, NaN)
+                        PT.Video(base_file, 25, 25, 0, 2, NaN, 1 // 1)
                     catch e
                         e isa InexactError || rethrow()
                     end
@@ -476,7 +475,7 @@ const DATADIR = mktempdir()
 
         # The successful path is unchanged: the reader is left OPEN for the caller, which is what
         # `video` and the tests above rely on when they close `vid.vid` themselves.
-        vid = PT.Video(base_file, 25, 25, 0, 2, 1.0)
+        vid = PT.Video(base_file, 25, 25, 0, 2, 1.0, 1 // 1)
         @test isopen(vid.vid)
         close(vid.vid)
         @test !isopen(vid.vid)

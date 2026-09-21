@@ -4,7 +4,7 @@ using ImageFiltering: Kernel, imfilter!, Algorithm, NoPad
 using OffsetArrays: OffsetMatrix
 using PaddedViews: PaddedView
 using ..ShareIO: ShareIO
-using VideoIO: openvideo, AV_PIX_FMT_GRAY8, aspect_ratio, open_video_out, VideoWriter, VideoReader, close_video_out!, skipframes, gettime
+using VideoIO: openvideo, AV_PIX_FMT_GRAY8, open_video_out, VideoWriter, VideoReader, close_video_out!, skipframes, gettime
 using ImageDraw: draw!, CirclePointRadius, Path
 using FreeTypeAbstraction: renderstring!, FTFont
 using ColorTypes: Gray
@@ -210,9 +210,8 @@ struct Video
     height::Int
     sample_fps::Float64
     # `Rational{Int}`, not a bare `Rational`: the unparameterised spelling is abstract, so the field
-    # would be boxed and every read of it untyped. `VideoIO.aspect_ratio` returns
-    # `Union{Rational{Int32}, Rational{Int64}}` and either converts on construction. Matches
-    # `VerifyRuns.FrameFormat.sar`, which holds the same quantity read from ffprobe instead.
+    # would be boxed and every read of it untyped. It is `Tuning.aspect`, handed down through
+    # `video` — see the constructor for why it is not read from the file here.
     sar::Rational{Int}
 
     # `sample_fps` arrives as a request and is stored as a promise: the sampler advances whole
@@ -224,16 +223,25 @@ struct Video
     # and asking the file again would give the native rate a second definition site, the exact
     # shape of #140/#141: a run verified against one rate would then be sampled at another, and a
     # declared rate would be silently ignored by the only code that matters.
+    #
+    # Nor is `sar`, and there the second definition site was real (#295). It used to come from
+    # `VideoIO.aspect_ratio`, which reads the codec context, while both gateways take ffprobe's
+    # stream value — and the two disagree when the ratio is stored in the container alone (FFV1 in
+    # Matroska, an mp4 remuxed with `-aspect`): ffprobe reports it, the codec context says 1:1. The
+    # gateway then checked `start_location` against one display width and built the rectification
+    # with one aspect, while the tracker placed the guess, sized the search window and shaped the
+    # DoG with another. It is `Tuning.aspect` now, probed or declared exactly like `native_fps`.
+    #
     # The reader is opened first and every step below it can throw, so the open is guarded rather
     # than moved: unlike the diagnostic writer's constructor (#160), the fallible work here IS the
-    # reader — `read`, `gettime`, `seek_exactly!`, `aspect_ratio`, and the `WarpedView` extent measured on
+    # reader — `read`, `gettime`, `seek_exactly!`, and the `WarpedView` extent measured on
     # the frame `read` returned — and those are exactly the calls the share fails
     # (WHY-FRAMES-FAIL.md). Without the guard each failure leaked a descriptor and a decoder
     # context, and tracking opens one reader per segment under `tmap` (#149).
     #
     # A successfully built `Video` still hands its reader to the caller to close — see `video`,
     # which is the only thing that should be constructing one.
-    function Video(file, native_fps, sample_fps, start, stop, downscale)
+    function Video(file, native_fps, sample_fps, start, stop, downscale, sar::Rational{Int})
         vid = open_gray_video(file)          # serialized open (openvideo isn't thread-safe); see OPENVIDEO_LOCK
         built = false
         return try
@@ -254,7 +262,6 @@ struct Video
             # makes a window shorter than one frame period yield the single frame `seek_exactly!` lands on.
             navailable = max(1, floor(Int, (stop - start) * native_fps + 1.0e-9))
             nframes = cld(navailable, skip)
-            sar = aspect_ratio(vid)
             v = new(vid, img, skip, nframes, downscale, width, height, sample_fps, sar)
             built = true
             v
@@ -268,8 +275,8 @@ end
 
 # Guarded like the constructor's own close, and over a wider window: `f` here is the whole tracking
 # run, so a close that threw on top of a failed run would replace the exception explaining the run.
-function video(f, file, native_fps, sample_fps, start, stop, downscale)
-    vid = Video(file, native_fps, sample_fps, start, stop, downscale)
+function video(f, file, native_fps, sample_fps, start, stop, downscale, sar)
+    vid = Video(file, native_fps, sample_fps, start, stop, downscale, sar)
     return try
         f(vid)
     finally
@@ -503,7 +510,7 @@ end
 # and a transposition among them compiled and returned a wrong track: swapping `target_width` with
 # `initial_search_factor` at the call site passed the entire tracker suite (#201 follow-up).
 function track_one(rseg::ResolvedSegment, tuning::Tuning, scaled::ScaledTuning, dia)
-    return video(rseg.file, tuning.native_fps, tuning.sample_fps, rseg.start, rseg.stop, tuning.downscale) do vid
+    return video(rseg.file, tuning.native_fps, tuning.sample_fps, rseg.start, rseg.stop, tuning.downscale, tuning.aspect) do vid
         update_ratio!(dia, size(vid.img))
         subtract = tuning.background_length != 0
         tr = Tracker(vid, tuning.darker_target, scaled.width, scaled.window, (vid.height, vid.width), subtract)

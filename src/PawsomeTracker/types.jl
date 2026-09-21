@@ -72,7 +72,7 @@ end
 
 """
     Tuning(target_width, window_size, darker_target, sample_fps, native_fps,
-           initial_search_factor, downscale, background_length)
+           initial_search_factor, downscale, background_length, aspect)
 
 The run-level tracking parameters, every one of them concrete.
 
@@ -92,6 +92,13 @@ the rate the video itself runs at — probed once by the gateway, or declared in
 container reports it wrongly — and `sample_fps` the rate to sample it at, which the gateway has
 verified does not exceed it. Both arrive concrete: tracking never opens a video merely to ask what
 rate it runs at (see WHY-FRAMES-FAIL.md), and never re-derives a rate it was given.
+
+`aspect` is the video's sample aspect ratio (display width = stored width × `aspect`): what a
+display-space `start_location` and `window_size` are converted to stored columns by, and what the
+DoG filter is stretched by. It follows `native_fps` exactly — probed by the gateway, or declared in
+`runs.csv` when the video misreports it — and for the same reason is never read from the file here:
+VideoIO and ffprobe disagree about it when the ratio is stored in the container alone (#295). An
+exact `Rational{Int}`, since the gateway bounds-checks a display pixel against `width × aspect`.
 """
 struct Tuning
     target_width::Float64
@@ -102,6 +109,7 @@ struct Tuning
     initial_search_factor::Float64
     downscale::Float64
     background_length::Int
+    aspect::Rational{Int}
 end
 
 """

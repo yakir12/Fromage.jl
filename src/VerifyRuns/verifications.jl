@@ -4,7 +4,8 @@
 # are shared with VerifyRectifications in ..Probing; what stays here is which entries this gateway
 # asks for and which of them it cannot proceed without. The frame rate is one of those — it imputes
 # the run's `native_fps` when the csv leaves it blank, and through it the `sample_fps` as well. `sar`
-# has a documented square-pixel fallback, so a missing one is not an error.
+# imputes a blank `aspect`, and has a documented square-pixel fallback, so a missing one is not an
+# error.
 #
 # `avg_frame_rate` and `field_order` are asked for on the same spawn (no extra probe) purely so
 # `native_framerate` can recognise field-coded interlaced footage, whose `r_frame_rate` is the field
@@ -20,11 +21,11 @@ function probe_video(file)
     return (; geometry..., fps, sar = parse_sar(get(fields, "sample_aspect_ratio", "1:1")))
 end
 
-# One ffprobe per physical video file fills the intermediate :dimension/:duration/:sar columns and
-# imputes the three blank-able run parameters: :stop (← duration), :native_fps (← the video's own
-# frame rate) and :sample_fps (← :native_fps).
+# One ffprobe per physical video file fills the intermediate :dimension/:duration columns and
+# imputes the four blank-able run parameters: :stop (← duration), :native_fps (← the video's own
+# frame rate), :sample_fps (← :native_fps) and :aspect (← the video's sample aspect ratio).
 function read_video_metadata!(df::AbstractDataFrame; progress)
-    blank!(df, :dimension, :duration, :sar, :probed_fps)
+    blank!(df, :dimension, :duration, :probed_fps)
     return read_per_file!(df, :file, [:file], "Reading runs videos...", probe_video, apply_video_metadata!; progress)
 end
 
@@ -33,39 +34,41 @@ apply_video_metadata!(g, issue::String) = push!.(g.issues, issue)
 function apply_video_metadata!(g, m::NamedTuple)
     g.dimension .= Ref((m.width, m.height))  # Ref, or the tuple broadcasts one element per row
     g.duration .= m.duration
-    g.sar .= m.sar
     # kept, though :native_fps may now say otherwise: it is what bounds a declared rate below (a
     # declaration cannot conjure frames the file does not hold), and nothing else reads it
     g.probed_fps .= m.fps
     # impute the blank-able parameters from the video itself (a CSV-supplied value wins via coalesce)
     g.stop .= coalesce.(g.stop, m.duration)
     # The rate cascade, in order: what the file reports is only a fallback for :native_fps (a
-    # declared one has already been spread across the run by resolve_native_fps!), and :sample_fps
+    # declared one has already been spread across the run by resolve_declared!), and :sample_fps
     # falls back to whichever of the two :native_fps ended up being — never to the probe directly.
     # That is what makes `native_fps = 25` on its own also track at 25.
     g.native_fps .= coalesce.(g.native_fps, m.fps)
     g.sample_fps .= coalesce.(g.sample_fps, g.native_fps)
+    # Like :native_fps, and spread across the run the same way beforehand: what ffprobe reports is
+    # the fallback, a declared ratio wins. Not VideoIO's — see `Tuning` (#295).
+    g.aspect .= coalesce.(g.aspect, m.sar)
     return
 end
 
-# A declared `native_fps` describes the RUN, not the one video whose row it was written on: the
-# segments of a run are pieces of one recording and share their specs — segments that do not are
-# outside what this program tracks (see runs.md) — so one row naming the rate names it for all of
-# them. Spreading it here, before the probe imputes anything, is what makes that true: a blank row
-# would otherwise fall back to its own file's probed rate and end up disagreeing with the row that
+# A declared `native_fps` or `aspect` describes the RUN, not the one video whose row it was written
+# on: the segments of a run are pieces of one recording and share their specs — segments that do not
+# are outside what this program tracks (see runs.md) — so one row naming the value names it for all
+# of them. Spreading it here, before the probe imputes anything, is what makes that true: a blank row
+# would otherwise fall back to its own file's probed value and end up disagreeing with the row that
 # named one.
 #
-# Two rows naming DIFFERENT rates is the one case that cannot be honoured, since both claims are
+# Two rows naming DIFFERENT values is the one case that cannot be honoured, since both claims are
 # about the same recording; it is reported rather than silently resolved in favour of a row.
-function resolve_native_fps!(df::AbstractDataFrame)
+function resolve_declared!(df::AbstractDataFrame, col::Symbol)
     for g in groupby(df, :run_id)
         (!ismissing(g.run_id[1]) && all(isempty, g.issues)) || continue
-        declared = unique(skipmissing(g.native_fps))
+        declared = unique(skipmissing(g[!, col]))
         isempty(declared) && continue
         if length(declared) > 1
-            push!.(g.issues, "run segments disagree on native_fps")
+            push!.(g.issues, "run segments disagree on $col")
         else
-            g.native_fps .= only(declared)
+            g[!, col] .= only(declared)
         end
     end
     return df
@@ -80,13 +83,13 @@ window_nonpositive(x) = x ≤ 0
 # Run-level fields, as opposed to the per-segment file/start/stop/start_location: the whole run
 # shares one value (they end up in the run's `Tuning`), so segments of one run must agree on them —
 # checked by verify_run_consistency! via `allequal`, which treats all-missing as agreeing. All but
-# `dimension`/`sar` (ffprobe-read, not CSV columns) feed `track`.
+# `dimension` (ffprobe-read, not a CSV column) feed `track`.
 #
 # `rectification_id` is deliberately absent: it is an identity, so `verify_ids!` compares it in the
 # first tier, before any video is opened (#121). Re-comparing it here would report the same
 # disagreement twice.
 #
-# Both rates are here. A DECLARED `native_fps` cannot trip this — resolve_native_fps! has already
+# Both rates are here. A DECLARED `native_fps` cannot trip this — resolve_declared! has already
 # made it uniform, or reported the contradiction — so what it catches is the imputed case: segments
 # whose files genuinely report different rates. #95 left the probed rate out of this list to avoid
 # rejecting one recording whose containers spell the same rate differently (`30000/1001` versus
@@ -95,7 +98,7 @@ window_nonpositive(x) = x ≤ 0
 # now say what its rate is and be believed, which is the way out of such a rejection.
 const SHARED_PARAMS = (
     :target_width, :window_size, :darker_target, :native_fps, :sample_fps,
-    :initial_search_factor, :downscale, :background_length, :dimension, :sar,
+    :initial_search_factor, :downscale, :background_length, :dimension, :aspect,
 )
 
 # ---- first tier: identity ---------------------------------------------------------------------
@@ -226,20 +229,25 @@ function verifications!(df::AbstractDataFrame, data_path; progress)
     # grouping.
     resolve_paths!(df, data_path, :file)
 
-    # A rate declared on any row of a run is a statement about the whole run, so it is spread
-    # across its rows BEFORE the probe fills the blanks — otherwise the probe would win on the rows
-    # that were left blank.
-    resolve_native_fps!(df)
+    # A rate or aspect declared on any row of a run is a statement about the whole run, so it is
+    # spread across its rows BEFORE the probe fills the blanks — otherwise the probe would win on the
+    # rows that were left blank.
+    resolve_declared!(df, :native_fps)
+    resolve_declared!(df, :aspect)
 
-    # One ffprobe per file: fills :dimension/:duration/:sar and imputes :stop/:native_fps/:sample_fps.
+    # One ffprobe per file: fills :dimension/:duration and imputes :stop/:native_fps/:sample_fps/:aspect.
     read_video_metadata!(df; progress)
+
+    # Before the start_location bound below, which multiplies by it: a failed check nulls the cell,
+    # so a non-positive aspect is reported once, here, rather than again as an out-of-frame start.
+    verify!(df, ≤(0), "aspect must be larger than zero", :aspect)
 
     # start_location is optional (missing rows skipped). It is (x, y) = (horizontal, vertical) in
     # *display* pixels, like a rectification's center/north, while ffprobe's width is in stored
-    # pixels — so x is bounds-checked against the display width, width × sar, and y against height,
-    # which sar does not affect.
+    # pixels — so x is bounds-checked against the display width, width × aspect, and y against
+    # height, which aspect does not affect.
     verify!(df, x -> any(<(1), x), "start_location must be at least 1", :start_location)
-    verify!(df, (sl, dim, sar) -> sl[1] > dim[1] * sar || sl[2] > dim[2], "start_location must not be larger than the dimensions of the frame", :start_location, :dimension, :sar)
+    verify!(df, (sl, dim, aspect) -> sl[1] > dim[1] * aspect || sl[2] > dim[2], "start_location must not be larger than the dimensions of the frame", :start_location, :dimension, :aspect)
 
     # Value ranges. Only what would make `track` error or misbehave nonsensically is flagged.
     verify!(df, ≤(0), "target_width must be larger than zero", :target_width)

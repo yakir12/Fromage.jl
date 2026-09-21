@@ -30,9 +30,9 @@
 # run's duration. `track` itself imputes nothing and defaults nothing.
 #
 # `frame_format` holds what the video reports and the tracker does not take: the stored-pixel
-# `width`/`height` and the sample aspect ratio `sar` (display width = `width × sar`), which the
-# segments of a multi-segment run are verified to agree on. It is used to place a start location,
-# not to track.
+# `width`/`height`, which the segments of a multi-segment run are verified to agree on. It is used
+# to place a start location, not to track. The sample aspect ratio used to sit here too, as a probed
+# fact beside `Tuning`; it is `tuning.aspect` now, declarable in `runs.csv` like `native_fps` (#295).
 #
 # One concrete type, not an abstract `Run` over `SingleRun`/`MultiRun`: a run's segment count is
 # data, not a kind of thing. See DECISIONS.md for what the split cost and what it turned out not to
@@ -41,7 +41,6 @@
 struct FrameFormat
     width::Int
     height::Int
-    sar::Rational{Int}
 end
 
 struct Run
@@ -56,7 +55,7 @@ end
 run_duration(segments) = sum(s -> s.stop - s.start, segments)
 
 # The run-level values are read off the group's first row (verify_run_consistency! guaranteed the
-# segments agree on them — :dimension/:sar included). :dimension is the ffprobe-filled
+# segments agree on them — :dimension included). :dimension is the ffprobe-filled
 # (width, height) in stored pixels.
 #
 # There is no exception left: `native_fps` is a run-level parameter like any other here, spread
@@ -75,7 +74,7 @@ function _tuning(g::AbstractDataFrame, frame_format::FrameFormat, segments::Vect
     )
     return Tuning(
         target_width, window_size, g.darker_target[1], sample_fps, g.native_fps[1],
-        g.initial_search_factor[1], g.downscale[1], g.background_length[1]
+        g.initial_search_factor[1], g.downscale[1], g.background_length[1], g.aspect[1]
     )
 end
 
@@ -85,7 +84,7 @@ end
 # and are narrowed by `Segment`'s own field types — safe because only issue-free rows reach here.
 function Run(g::AbstractDataFrame)
     width, height = g.dimension[1]
-    frame_format = FrameFormat(width, height, g.sar[1])
+    frame_format = FrameFormat(width, height)
     segments = Segment[
         Segment(f, a, o, sl)
             for (f, a, o, sl) in zip(g.file, g.start, g.stop, g.start_location)
@@ -96,13 +95,13 @@ end
 # The run's (or first segment's) start_location falls back to `center` (e.g. the rectification's
 # scene centre) and then to the frame's centre, so `track` always gets a concrete starting point.
 # Both are (x, y) in *display* pixels, matching start_location's convention, so x is half of
-# width × sar (`Spaces.display_center_x`) and `track` maps it back to stored columns.
+# width × aspect (`Spaces.display_center_x`) and `track` maps it back to stored columns.
 #
 # The rounding is deliberately spelled here rather than shared: a start location is an Int pixel, so
 # the x rounds and the y truncates, where `Rectifications.default_center` — the other caller of
 # `display_center_x`, computing the same centre — keeps exact Float64 halves. The two differ by up
 # to half a pixel on an odd height, which is not obviously right and is not this function's to fix.
-frame_center(f::FrameFormat) = (round(Int, display_center_x(f.width, f.sar)), f.height ÷ 2)
+frame_center(f::FrameFormat, aspect) = (round(Int, display_center_x(f.width, aspect)), f.height ÷ 2)
 
 # The run's segments with the first one's start-location fallbacks applied, ready for `track`.
 #
@@ -127,7 +126,7 @@ function resolved_segments(r::Run, center, rectification)
     s = out[1]
     out[1] = Segment(
         s.file, s.start, s.stop,
-        @coalesce s.start_location center frame_center(r.frame_format)
+        @coalesce s.start_location center frame_center(r.frame_format, r.tuning.aspect)
     )
     return out
 end
@@ -139,6 +138,6 @@ end
 # With a rectification the returned coordinates are real-world (see `PawsomeTracker.track`) — the only
 # way `main` calls this. With `nothing`, which since #256 only tests and benchmarks pass, they are
 # (row, col) in *stored* pixels of the original (unscaled) video; for an anamorphic video the
-# display-space x is col × sar.
+# display-space x is col × aspect.
 track(r::Run, center, rectification, diagnostic_file) =
     track(resolved_segments(r, center, rectification), r.tuning, rectification, diagnostic_file)

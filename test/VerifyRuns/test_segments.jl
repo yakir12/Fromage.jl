@@ -83,6 +83,30 @@
         @test flagged(df, 2, "run segments disagree on native_fps")
     end
 
+    @testset "an aspect declared on one segment governs the whole run" begin
+        # The same rule as native_fps, for the same reason: left to the probe, the blank row would
+        # take its own file's 1:1 and the two would then read as disagreeing.
+        runs = check(
+            [
+                runrow(run_id = "q", file = ART.a, start = "0", stop = "4", aspect = "4/3"),
+                runrow(run_id = "q", file = ART.a, start = "4", stop = "5"),
+            ]
+        )
+        @test clean(runs)
+        @test only(runs).tuning.aspect == 4 // 3
+    end
+
+    @testset "segments cannot declare different aspects" begin
+        df = check(
+            [
+                runrow(run_id = "p", file = ART.a, stop = "2", aspect = "4/3"),
+                runrow(run_id = "p", file = ART.a, start = "2", aspect = "2"),
+            ]
+        )
+        @test flagged(df, 1, "run segments disagree on aspect")
+        @test flagged(df, 2, "run segments disagree on aspect")
+    end
+
     @testset "segments must agree on the video's pixel dimensions" begin
         # width/height live on the run-level Source, so mixed-dimension segments are rejected
         df = check(
@@ -254,7 +278,7 @@
         # whichever order it returns, and (320, 240) is distinguishable from its transpose. a.mp4 is
         # 640x480 at sar 1, and the fallback is display (x, y), so the x comes first.
         @test sls3[1].start_location == (320, 240)
-        @test sls3[1].start_location == VR.frame_center(r.frame_format)
+        @test sls3[1].start_location == VR.frame_center(r.frame_format, r.tuning.aspect)
         @test isequal([s.start_location for s in r.segments], before)
     end
 
