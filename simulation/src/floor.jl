@@ -1,11 +1,17 @@
-# The replicate floor (#296): how much the report's quantities move when nothing about the rig
-# changes but where, to within a pixel, each board is held. The ideal sensor is deterministic, so
-# re-rendering a rig gives no replicates; jittering the board poses does. The camera stays fixed,
+# The replicate floor (#296, #312): how much the report's quantities move when nothing about the
+# rig changes but where, to within a pixel, each board is held. The ideal sensor is deterministic,
+# so re-rendering a rig gives no replicates; jittering the board poses does. The camera stays fixed,
 # because moving it would move the truth, and the supersampling offsets too: at 16×16 they have
 # converged (#292), and would understate the floor.
+#
+# A quantity's floor is that movement, its spread; the value it moves about is the baseline's level.
+# The two differ most where the baseline is systematically wrong: `from_extrinsic` fixes the
+# principal point and every distortion coefficient, so its map is ~2.7 mm off at the baseline and
+# moves by ~0.23 mm. A verdict asks how far a row is above the level, in floors (see `judge`).
 
 using LinearAlgebra: dot
 using Random: Xoshiro
+using Statistics: median
 
 "The seeds of the baseline rig's jittered replicates, one replicate each (#296)."
 const REPLICATES = 1:10
@@ -51,42 +57,49 @@ function replicate_rows(cache_dir, results_dir)
     end
 end
 
-# which rows a floor is shared by: all but the value, and the seeds' aggregate, so the largest over a
-# control's seeds is its floor. The unit is in the key (#313), and that costs the display-px
-# `corners` rows a `sar ≠ 1` rig adds their floor: the replicates are at `sar` 1 and emit none, so
-# those rows keep their value but are judged `n/a`. Borrowing the stored-px floor instead would be
-# off by a factor up to `sar`, and scaling it by `sar` would assume the isotropic detector error that
-# the display-px row is there to question (#294).
+# which rows a level and floor are shared by: all but the value, and the seeds' aggregate, so a
+# control's floor spans its seeds as well as the jitter. The unit is in the key (#313), and that
+# costs the display-px `corners` rows a `sar ≠ 1` rig adds their floor: the replicates are at `sar` 1
+# and emit none, so those rows keep their value but are judged `n/a`. Borrowing the stored-px floor
+# instead would be off by a factor up to `sar`, and scaling it by `sar` would assume the isotropic
+# detector error that the display-px row is there to question (#294).
 const FloorKey = Tuple{String, Union{Missing, String}, String, String, Union{Missing, String}, String, String}
 floor_key(r) = FloorKey((r.rung, r.builder, r.section, r.quantity, r.split, r.statistic, r.unit))
 
-"""
-    largest_values(rows) -> Dict{FloorKey, Float64}
+"A quantity's baseline `level`, the median of its magnitudes, and its `floor`, their range."
+const Level = @NamedTuple{level::Float64, floor::Float64}
 
-The largest magnitude of each quantity × split × statistic × unit over `rows` (all rigs, seeds and
-aggregates), skipping rows with no value.
 """
-function largest_values(rows)
-    out = Dict{FloorKey, Float64}()
+    levels(rows) -> Dict{FloorKey, Level}
+
+The [`Level`](@ref) of each quantity × split × statistic × unit over `rows` (all rigs, seeds and
+aggregates), skipping rows with no value. Magnitudes, so a signed error cannot hide a large one
+behind a small median; the range, rather than a standard deviation, assumes no distribution of ten
+samples (#296).
+"""
+function levels(rows)
+    magnitudes = Dict{FloorKey, Vector{Float64}}()
     for r in rows
         ismissing(r.value) && continue
-        k = floor_key(r)
-        out[k] = max(get(out, k, 0.0), abs(r.value))
+        push!(get!(magnitudes, floor_key(r), Float64[]), abs(r.value))
     end
-    return out
+    return Dict{FloorKey, Level}(k => Level((median(v), maximum(v) - minimum(v))) for (k, v) in magnitudes)
 end
 
 """
     Floors(replicates, baseline)
 
-What each verdict family is judged against (#296): the `total` family's floor is the largest value
-across the replicates' rows (see [`replicate_rows`](@ref)); the `model` family's is the baseline
-rig's own control row, the largest of its seeds for the noisy `from_extrinsic` control. Both are the
-baseline's: a variant whose own floor is higher is judged against a floor too low.
+What each verdict family is judged against (#296, #312), as a [`Level`](@ref) per quantity: the
+`total` family's over the replicates' rows (see [`replicate_rows`](@ref)); the `model` family's over
+the analytic-corner controls of the replicates and of the baseline rig, every seed of the noisy
+`from_extrinsic` control included. Both are the baseline's: a variant whose own floor is higher is
+judged against a floor too low.
 """
 struct Floors
-    total::Dict{FloorKey, Float64}
-    model::Dict{FloorKey, Float64}
+    total::Dict{FloorKey, Level}
+    model::Dict{FloorKey, Level}
 end
-Floors(replicates::AbstractVector, baseline::AbstractVector) =
-    Floors(largest_values(replicates), largest_values(filter(r -> r.section == "control", baseline)))
+function Floors(replicates::AbstractVector, baseline::AbstractVector)
+    controls = filter(r -> r.section == "control", [replicates; baseline])
+    return Floors(levels(replicates), levels(controls))
+end

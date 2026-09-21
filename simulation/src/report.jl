@@ -101,8 +101,8 @@ end
 
 The printed table of the judged `rows` (see [`judged`](@ref)): per rig and rung, the frames detected, the
 self-checks, the corners, the map error per builder and section, the dot separation and the
-intrinsics. A serious value is marked `!!` and a diagnostic one `!`. It ends by stating the floor,
-and with the list of serious rows.
+intrinsics. A serious value is marked `!!` and a diagnostic one `!`. It ends by stating the level
+and floor, and with the list of serious rows.
 """
 function print_summary(io::IO, rows)
     for (rig, rung) in unique((r.rig, r.rung) for r in rows)
@@ -150,12 +150,12 @@ function print_summary(io::IO, rows)
         end
     end
 
-    println(io, "\nevery rig is judged against the baseline rig's floor: the largest value of $(length(REPLICATES)) jittered replicates, and the baseline's own controls (#296)")
+    println(io, "\nevery rig is judged against the baseline rig's level and floor: the median and range of $(length(REPLICATES)) jittered replicates, and of their and the baseline's own controls (#296, #312)")
     serious = filter(r -> r.verdict == "serious", rows)
     println(io, "serious rows: ", isempty(serious) ? "none" : length(serious))
     for r in serious
         where = join(skipmissing((r.rig, r.rung, r.builder, r.section, r.quantity, r.split, r.statistic, r.aggregate)), " / ")
-        println(io, "  !! ", where, ": ", fmt(r.value, "%.4g"), " ", r.unit, ", floor ", fmt(r.floor, "%.4g"), ", ratio ", fmt(r.ratio, "%.3g"))
+        println(io, "  !! ", where, ": ", fmt(r.value, "%.4g"), " ", r.unit, ", level ", fmt(r.level, "%.4g"), ", floor ", fmt(r.floor, "%.4g"), ", ratio ", fmt(r.ratio, "%.3g"))
     end
     return
 end

@@ -54,7 +54,7 @@ Measure each rig of `variants` through the builder and CSV rungs and return the 
 folder of `results_dir` and printing its primary quantities. `variants` holds [`Rig`](@ref)s, or the
 names of rigs of [`VARIANTS`](@ref).
 
-Every rig is judged against the baseline's floor (see [`Floors`](@ref)): its jittered
+Every rig is judged against the baseline's level and floor (see [`Floors`](@ref)): its jittered
 [`REPLICATES`](@ref), measured first and written beside the report as `replicates.csv`, and its own
 controls, for which the baseline rig is measured even when `variants` leaves it out.
 
