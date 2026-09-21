@@ -56,8 +56,9 @@ end
 # forced keyframes (a segmented run). `pause = (t1, t2)` freezes the trajectory between those
 # seconds — a long-stationary target, which the background model must not absorb. Writes into
 # `dir`; returns the basename(s) and the ground-truth closure `expected(i; skip, offset)`: the
-# stored-frame 0-based (row, col) of the disc center at sample i, the convention `track` returns (#276), where sample i reads global frame
-# `offset + (i − 1)·skip` (skip = video fps ÷ requested fps).
+# stored-frame 0-based (row, col) of the disc center at sample i — the convention `track`
+# returns (#276) — where sample i reads global frame `offset + (i − 1)·skip` (skip = video fps ÷
+# requested fps).
 #
 # `container_sar = true` writes lossless FFV1 into Matroska instead of x264 into mp4. FFV1 has no
 # field for the sample aspect ratio, so `sar` then lives in the container alone — where ffprobe

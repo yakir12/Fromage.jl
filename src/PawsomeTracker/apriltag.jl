@@ -390,7 +390,7 @@ register(ref::ReferenceSpace, corners) = homography_dlt(corners, ref.corners)
 # are visible immediately. Coordinate bridge: the stack works in scaled (row, col) ("canvas"), the
 # homographies in (x, y) = (col, row) stored px — hence the flips. The canvas and the frame are
 # indexed from 1, the homographies fitted to 0-based pixels, hence `from_index`/`to_index` (#276).
-# Neither matters to a pure translation, which is why the warp's own unit tests could not see it.
+# The pair cancels on a pure translation, and matters under rotation, scale or perspective.
 struct RegisteredWarp <: Transformation
     downscale::Float64
     # NB the length parameter: the abstract `SMatrix{3, 3, Float64}` boxes every per-lookup load,

@@ -374,6 +374,11 @@ rectification diagnostic warp, and on the AprilTag path the stack warp, `canvas2
 `img_to_ground`, the seeded guess, the search boxes and the diagnostic scene. Tracking itself, and
 the chaining of one segment's end into the next segment's guess, stay in indices.
 
+**Already consistent, so not converted.** `center` and `north` reach the maps through `to_stored`
+unchanged, because a user reads them 0-based already. `from_uniform` is linear, and its origin comes
+only from `center`. The raw diagnostic scene scales the tracker's index into a Julia array, so it
+stays in indices end to end.
+
 **Two outside conventions are converted where they enter.**
 - `from_matlab`: MATLAB puts the centre of the top-left pixel at `(1, 1)`, so the `.mat`'s principal
   point moves by one. Before this change the MATLAB path matched the tracker, and was right only by

@@ -216,10 +216,11 @@ const DATADIR = mktempdir()
 
     @testset "get_guess maps display (x, y) to scaled (row, col)" begin
         # Exact equality, and the two components differ, so a transposition cannot slip through on
-        # tolerance the way the RMSE assertions do.
+        # tolerance the way the RMSE assertions do. The guess is an array index, one more than the
+        # 0-based display pixel on each axis (#276).
         vid = PT.Video(wide_file, 25, 25, 0, 2, 1.0, 1 // 1)      # sar 1, downscale 1
         try
-            @test PT.get_guess((120, 30), nothing, vid, false, 0, 0, false) == (30, 120)
+            @test PT.get_guess((120, 30), nothing, vid, false, 0, 0, false) == (31, 121)
         finally
             close(vid.vid)
         end
@@ -227,7 +228,7 @@ const DATADIR = mktempdir()
         # ...and at sar 1/2 the x is converted to stored columns on the way, y untouched.
         anam = PT.Video(joinpath(DATADIR, only(sar05)), 25, 25, 0, 2, 1.0, 1 // 2)
         try
-            @test PT.get_guess((10, 90), nothing, anam, false, 0, 0, false) == (90, 20)
+            @test PT.get_guess((10, 90), nothing, anam, false, 0, 0, false) == (91, 21)
         finally
             close(anam.vid)
         end

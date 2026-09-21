@@ -87,11 +87,9 @@ A Julia array index to the stored or display coordinate of the same pixel: one l
 spaces are 0-based with pixel centres on the integers (CONTEXT.md). Arrays start at 1, so the
 tracker, the warps and the diagnostics find a pixel at `p + 1`; everything a coordinate is compared
 with or mapped through starts at 0. That includes OpenCV's corners, the maps fitted to them, and what
-an image viewer reports for `center`, `north` and `start_location`.
-
-Before #276 the tracker handed its 1-based indices to 0-based maps unconverted. Every rectified
-track was evaluated one stored pixel down and right of the target, about 0.6 mm on 25 mm squares.
-Works on a number, a tuple or a static vector alike.
+an image viewer reports for `center`, `north` and `start_location`. Skipping it puts a rectified
+point one stored pixel down and right of the target (DECISIONS, #276). Works on a number, a tuple
+or a static vector alike.
 """
 from_index(i) = i .- 1
 
@@ -108,8 +106,7 @@ to_index(p) = p .+ 1
 
 A coordinate whose origin is the top-left pixel's outer *corner*, so pixel centres sit at `n + ½`,
 to one whose centres sit on the integers: `p − ½`. The AprilTag C detector reports tag corners
-that way. Measured on `Fixtures.apriltag_ground`, its corners came out 0.58–0.66 px below the
-analytic 1-based positions, where half a pixel is the convention and the rest is detector bias.
+that way (measured in DECISIONS, #276).
 """
 from_pixel_edges(p) = p .- 0.5
 

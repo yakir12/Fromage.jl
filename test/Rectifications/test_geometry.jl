@@ -111,11 +111,12 @@
     end
 
     @testset "get_warp" begin
-        # get_warp prepends a ratio·I scaling before real2image
+        # get_warp prepends a ratio·I scaling before real2image, and turns the 0-based pixel
+        # real2image gives into the array index `warp` samples at (+1, #276)
         warp = R.get_warp(2.0, IdentityTransformation())
-        @test warp(SVector(1.0, 1.0)) ≈ SVector(2.0, 2.0)
+        @test warp(SVector(1.0, 1.0)) ≈ SVector(3.0, 3.0)
         warp2 = R.get_warp(3.0, LinearMap(SDiagonal(SVector(0.5, 0.5))))
-        @test warp2(SVector(1.0, 2.0)) ≈ SVector(1.5, 3.0)   # 3·0.5 = 1.5 per axis
+        @test warp2(SVector(1.0, 2.0)) ≈ SVector(2.5, 4.0)   # 3·0.5 = 1.5 per axis, plus one
     end
 
     @testset "default_center" begin

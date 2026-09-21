@@ -213,8 +213,7 @@ report for `center`, `north` and `start_location`, and what `track` returns. A J
 one more (`Spaces.to_index`, `Spaces.from_index`), and the only code that works in indices is the
 code that indexes, warps or draws into an array. Two outside conventions are converted where they
 enter: a MATLAB `.mat`'s principal point is 1-based, and the AprilTag detector puts pixel centres
-at `n + ½` (`Spaces.from_pixel_edges`). Before #276 the tracker's 1-based indices went into 0-based
-maps unconverted.
+at `n + ½` (`Spaces.from_pixel_edges`).
 
 `display` → `stored` is `sar` **and a swap** — `(x, y) → (y, x / sar)`, which is `Spaces.to_stored`.
 `scaled` is `downscale`. `metric` → `real` is `XY_SWAP` composed with centering and northing.
