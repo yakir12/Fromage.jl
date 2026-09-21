@@ -895,6 +895,24 @@ aspect to get the display width to check against. The two halves agree, and
 `test/Rectifications/test_geometry.jl` and `test/Rectifications/test_from_uniform.jl` pin the
 direction with asymmetric values.
 
+The checkerboard fit had the same inversion, and kept it longer (#275). `fit_model` holds its two
+focal lengths at a fixed ratio (`CALIB_FIX_ASPECT_RATIO`), and it seeded that ratio as
+`fcol / frow = aspect`. One stored column spans `sar` display pixels, so a focal length counted in
+columns is the one counted in rows divided by `sar`: the physics is `fcol / frow = 1 / sar`, and the
+old ratio was wrong by `sar²`. The fit then lands in a different basin, not slightly off: `frow`
+several times too large, and a principal point hundreds of pixels away. Planar geometry lets the pose
+absorb most of that, which is why the map came out only millimetres wrong and nobody noticed. On a
+squeezed 640×480 synthetic clip with 25 mm squares, `from_checkerboard` and `from_extrinsic` mapped
+the board 0.3–0.8 mm RMS wrong at `sar = 1/2` and `2`, against 0.005 mm at `sar = 1`. The triage
+measurement over nine values of `sar` found 1–2 mm on the same squares. Seeding `1 / aspect` brings
+every `sar` to the `sar = 1` level (0.003–0.009 mm). The calibration-rig simulation agrees (#314,
+E2): on exact corners, where corner detection plays no part, its five `sar` rigs fitted a map 27–148 mm
+RMS wrong across the arena before the fix and at most 0.006 mm after. **So a checkerboard rectification
+of anamorphic footage built before this fix is wrong by millimetres per 25 mm square — 1–2 mm in the
+triage geometry — and tracks converted through one carry that error until `main` is run again.** `from_matlab` and `from_uniform` fit nothing and were never
+affected. The unit test for the fixed ratio could not see any of this: it generated its views with
+the same inverted convention, so it asserted the bug.
+
 All of it was invisible at `sar = 1`, which is why it stood as long as it did — and that is the
 lasting point of this entry rather than the specific bug. #36 closed as "aspect ratio works across
 the whole system", but every fixture that exercises tracking is square in display space, so a

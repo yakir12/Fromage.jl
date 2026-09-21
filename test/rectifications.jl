@@ -7,6 +7,7 @@ using LinearAlgebra
 using CoordinateTransformations
 using Rotations
 using MAT
+using ..Fixtures: CHECKERBOARD_POSES, make_squeezed_checkerboard_video
 
 # Most of the submodule's functions are internal (not exported); reach them through the module.
 const R = Rectifications
@@ -30,6 +31,7 @@ const S = Fromage.Spaces
 
     # Tier 4 — full pipeline over a synthesized checkerboard video (bundled ffmpeg + OpenCV).
     include("Rectifications/test_rectification.jl")
+    include("Rectifications/test_anamorphic.jl")
 end
 
 end

@@ -32,24 +32,9 @@
         img
     end
 
-    # 12 varied poses for a well-posed calibration, + 2 trailing padding frames so the extrinsic
-    # timestamp (frame 11) is never at end-of-stream (ffmpeg input-seek at EOF is unreliable).
-    poses = [
-        (SVector(0.0, 0.0, 0.0), SVector(-3.0, -2.5, 16.0)),
-        (SVector(0.22, -0.12, 0.0), SVector(-3.2, -2.0, 15.0)),
-        (SVector(-0.16, 0.2, 0.05), SVector(-2.5, -2.8, 17.0)),
-        (SVector(0.12, 0.26, -0.1), SVector(-3.5, -2.5, 16.5)),
-        (SVector(-0.26, -0.12, 0.0), SVector(-2.8, -2.2, 15.5)),
-        (SVector(0.06, -0.22, 0.16), SVector(-3.0, -3.0, 18.0)),
-        (SVector(0.3, 0.0, 0.1), SVector(-3.3, -2.4, 16.0)),
-        (SVector(-0.12, -0.26, -0.05), SVector(-2.6, -2.6, 15.0)),
-        (SVector(0.19, 0.19, 0.0), SVector(-3.1, -2.3, 17.5)),
-        (SVector(-0.2, 0.1, 0.08), SVector(-2.9, -2.7, 16.2)),
-        (SVector(0.1, -0.18, -0.06), SVector(-3.2, -2.6, 16.8)),
-        (SVector(-0.08, 0.22, 0.0), SVector(-2.7, -2.4, 15.8)),
-        (SVector(0.05, -0.05, 0.0), SVector(-3.0, -2.5, 16.0)),
-        (SVector(-0.1, 0.1, 0.0), SVector(-3.0, -2.5, 16.0)),
-    ]
+    # The shared calibration poses. The extrinsic time below reads frame 12 (pose 13), not frame 11:
+    # ffmpeg's input seek returns the first frame at or after `t` (see `CHECKERBOARD_POSES`).
+    poses = CHECKERBOARD_POSES
 
     mktempdir() do dir
         # write frames as concatenated raw gray bytes (row-major, matching _frame_at), then encode
@@ -63,7 +48,7 @@
         vid = joinpath(dir, "board.mp4")
         run(`$(R.FFMPEG.ffmpeg()) -y -hide_banner -loglevel error -framerate 10 -f rawvideo -pix_fmt gray -s $(Wimg)x$(Himg) -i $raw -c:v libx264 -crf 0 -pix_fmt yuv420p $vid`)
 
-        # frames 0..10 (t = 0.05..1.05) drive the intrinsics; frame 11 (t = 1.15) is the extrinsic
+        # 0-based frames 1..11 (t = 0.05..1.05) drive the intrinsics; frame 12 (t = 1.15) is the extrinsic
         extrinsic_t, intrinsic_start, intrinsic_stop, step = 1.15, 0.05, 1.05, 0.1
         # The two `missing`s used to be positional here, and nothing said which was `yadif` and
         # which was `blur`.

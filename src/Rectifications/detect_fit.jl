@@ -24,10 +24,17 @@ reaches OpenCV as `imageSize`, which seeds the principal point at its centre; wi
 that seed is also the answer, since `CALIB_FIX_PRINCIPAL_POINT` pins it there. Passing it the
 other way round therefore fits the extrinsics-only rectification around a principal point
 reflected across the frame diagonal.
+
+`aspect` is the video's sample aspect ratio, as the gateway imputes it. The fit holds the returned
+focal lengths at `fcol / frow = 1 / aspect` exactly, which at `aspect = 1` makes them equal.
 """
 function fit_model(sz, objpoints, imgpointss, n_corners, radial_parameters, aspect)
     cammat = convert(Matrix{Float64}, I(3))
-    cammat[2, 2] = aspect
+    # `CALIB_FIX_ASPECT_RATIO` holds OpenCV's `fy / fx` at this seed's ratio. In the transposed view
+    # that is `fcol / frow`, and one stored column spans `aspect` display pixels
+    # (`Spaces.stored_x`), so a focal length counted in columns is the one in rows divided by
+    # `aspect`. Seeding `aspect` itself held the ratio inverted, wrong by `aspect²` (#275).
+    cammat[2, 2] = 1 / aspect
     dist = Vector{Float64}(undef, 5)
     nfiles = length(imgpointss)
     r = [Vector{Float64}(undef, 3) for _ in 1:nfiles]
