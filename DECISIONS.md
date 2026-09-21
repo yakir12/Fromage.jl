@@ -2318,7 +2318,7 @@ baseline, a builder limitation, so its 10× bar sat at ~28 mm while its replicat
 and `k1 = -0.3`'s 26 mm error read `ok`. Re-judging the 2026-09-19 full run (v0.6.2) under three
 rules decided it. Keeping the magnitude and renaming it left those rows `ok`. Judging against
 `max(k × range, tolerance)` alone flagged the baseline itself, since 2.7 mm is above the 1 mm
-tolerance: every `from_extrinsic` map row became serious. Excess over the level in ranges flags the
+tolerance: every `from_extrinsic` map row became serious. Excess over the level, in floors, flags the
 controls from 5 mm up and leaves the baseline `ok`; `from_checkerboard`'s verdicts came out the same
 under all three. The level and the floor are both report columns, so which bound decided a verdict
 stays visible. Only the baseline gets replicates:
@@ -2327,13 +2327,15 @@ variant discrepancies visible. A variant with a higher noise floor is consequent
 a floor too low; the report states that the floor belongs to the baseline. Videos are cached,
 while measurements are repeated because the Fromage code they exercise may change.
 
-The `total` family compares detected-corner results with the replicates. The `model` family compares
-analytic-corner maps with the replicates' and the baseline's controls, every one of the ten noisy
-control seeds for `from_extrinsic` included, so its floor spans the seeds as well as the jitter. Relative thresholds also need absolute map/distance tolerances so
-tiny numerical differences do not become serious discrepancies. The model family's 0.1 mm
-tolerance was proposed in #296, unlike the user-set total tolerances, and should be revisited when
-variant measurements exist. RMS and max are judged; p95 remains available for reading. Verdicts
-mark rows worth investigating and are not pass/fail gates.
+The `total` family compares detected-corner results with the replicates. The `model` family
+compares analytic-corner maps with the replicates' and the baseline's controls, every one of the ten
+noisy control seeds for `from_extrinsic` included, so its floor spans the seeds as well as the
+jitter. Relative thresholds also need absolute map/distance tolerances so tiny numerical differences
+do not become serious discrepancies; the diagnostic rows (corners, intrinsics) have none, so over a
+zero floor any value above the level is flagged. The model family's 0.1 mm tolerance was proposed
+in #296, unlike the user-set total tolerances, and should be revisited when variant measurements
+exist. RMS and max are judged; p95 remains available for reading. Verdicts mark rows worth
+investigating and are not pass/fail gates.
 
 ### The simulation runs no CI and cuts no release (#289, #297)
 

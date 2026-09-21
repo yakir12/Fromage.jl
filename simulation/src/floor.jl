@@ -7,7 +7,7 @@
 # A quantity's floor is that movement, its spread; the value it moves about is the baseline's level.
 # The two differ most where the baseline is systematically wrong: `from_extrinsic` fixes the
 # principal point and every distortion coefficient, so its map is ~2.7 mm off at the baseline and
-# moves by ~0.2 mm. A verdict asks how far a row is above the level, in floors (see `judge`).
+# moves by ~0.23 mm. A verdict asks how far a row is above the level, in floors (see `judge`).
 
 using LinearAlgebra: dot
 using Random: Xoshiro

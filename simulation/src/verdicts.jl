@@ -13,8 +13,8 @@
     Rule(over, tolerance, flag)
 
 A row is flagged `flag` (`"serious"` or `"diagnostic"`) when its magnitude exceeds its baseline
-level by more than `over` floors, and exceeds `tolerance`; `tolerance` is `missing` for a quantity with no physical
-scale, which the ratio alone decides.
+level by more than `over` floors, and exceeds `tolerance`; `tolerance` is `missing` for a quantity
+with no physical scale, which the ratio alone decides.
 """
 struct Rule
     over::Float64
@@ -54,9 +54,9 @@ function rule(r)
     return get(RULES, (r.section, r.quantity, r.statistic), nothing)
 end
 
-# the level and floor row `r` is judged against, in its family's floors; `missing` outside both
+# the baseline `Level` row `r` is judged against, in its family's floors; `missing` outside both
 # families, and for a quantity the baseline has no value of
-function floor_of(floors::Floors, r)
+function level_of(floors::Floors, r)
     r.section == "fromage" && return get(floors.total, floor_key(r), missing)
     r.section == "control" && return get(floors.model, floor_key(r), missing)
     return missing
@@ -84,24 +84,24 @@ const Verdict = @NamedTuple{
 Row `r`'s [`Verdict`](@ref) under [`RULES`](@ref), against `floors`.
 """
 function judge(r, floors::Floors)
-    return verdict(rule(r), r.value, floor_of(floors, r), get(FAMILIES, r.section, missing))
+    return verdict(rule(r), r.value, level_of(floors, r), get(FAMILIES, r.section, missing))
 end
 
-verdict(::Nothing, value, level, family) = Verdict((level_fields(value, level)..., missing, family, "n/a"))
-verdict(::Missed, value, level, family) = Verdict((missing, missing, missing, missing, family, value < 1 ? "serious" : "ok"))
-function verdict(rule::Rule, value, level, family)
-    fields = level_fields(value, level)
-    q = last(fields)
-    ismissing(q) && return Verdict((fields..., rule.tolerance, family, "n/a"))
-    flagged = q > rule.over && (ismissing(rule.tolerance) || abs(value) > rule.tolerance)
+verdict(::Nothing, value, baseline, family) = Verdict((level_fields(value, baseline)..., missing, family, "n/a"))
+verdict(::Missed, value, baseline, family) = Verdict((missing, missing, missing, missing, family, value < 1 ? "serious" : "ok"))
+function verdict(rule::Rule, value, baseline, family)
+    fields = level_fields(value, baseline)
+    ismissing(fields.ratio) && return Verdict((fields..., rule.tolerance, family, "n/a"))
+    flagged = fields.ratio > rule.over && (ismissing(rule.tolerance) || abs(value) > rule.tolerance)
     return Verdict((fields..., rule.tolerance, family, flagged ? rule.flag : "ok"))
 end
 
 # the `level`, `floor` and `ratio` columns of a value judged against a baseline `Level`
-level_fields(value, ::Missing) = (missing, missing, missing)
-level_fields(value, l::Level) = (l.level, l.floor, ratio(value, l))
+level_fields(value, ::Missing) = (; level = missing, floor = missing, ratio = missing)
+level_fields(value, l::Level) = (; l.level, l.floor, ratio = ratio(value, l))
 
-# how far a value's magnitude is above the level, in floors: zero at the level, even over a zero floor
+# how far a value's magnitude is above the level, in floors: zero at the level, even over a zero
+# floor, and ±Inf off it over a zero floor
 ratio(::Missing, ::Level) = missing
 function ratio(value, l::Level)
     excess = abs(value) - l.level

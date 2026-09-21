@@ -101,8 +101,8 @@ end
 
 The printed table of the judged `rows` (see [`judged`](@ref)): per rig and rung, the frames detected, the
 self-checks, the corners, the map error per builder and section, the dot separation and the
-intrinsics. A serious value is marked `!!` and a diagnostic one `!`. It ends by stating the level and floor,
-and with the list of serious rows.
+intrinsics. A serious value is marked `!!` and a diagnostic one `!`. It ends by stating the level
+and floor, and with the list of serious rows.
 """
 function print_summary(io::IO, rows)
     for (rig, rung) in unique((r.rig, r.rung) for r in rows)

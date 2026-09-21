@@ -126,6 +126,11 @@
             replicates, [
                 measurement(; value = missing),
                 measurement(; statistic = "max", value = 4.0),
+                measurement(; builder = "from_extrinsic", value = 9.0),
+                measurement(; builder = "from_extrinsic", value = 8.0),
+                measurement(; split = "off board", value = 2.0),
+                measurement(; builder = missing, quantity = "corners", value = 0.1, unit = "stored px"),
+                measurement(; builder = missing, quantity = "corners", value = 0.2, unit = "stored px"),
                 # the replicates' own controls join the baseline's
                 measurement(; section = "control", value = 0.004),
             ]
@@ -138,15 +143,21 @@
             measurement(; value = 3.0),
             measurement(; statistic = "max", value = 4.0),
             measurement(; statistic = "max", value = 8.0),
+            measurement(; builder = "from_extrinsic", value = 11.0),
+            measurement(; builder = "from_extrinsic", value = 13.0),
+            measurement(; split = "off board", value = 4.0),
+            measurement(; builder = missing, quantity = "corners", value = 0.4, unit = "stored px"),
+            measurement(; builder = missing, quantity = "corners", value = 0.5, unit = "stored px"),
             measurement(; section = "control", value = 0.12),
             measurement(; builder = "from_extrinsic", section = "control", aggregate = "median", value = 0.8),
             measurement(; builder = "from_extrinsic", section = "control", aggregate = "median", value = 1.0),
         ]
         got = CRS.judged(cases, floors)
-        # magnitudes 0.1…1.0; a single value; 0.003 and 0.004; the seeds' min, median and max
-        @test getproperty.(got, :level) ≈ [0.55, 0.55, 4.0, 4.0, 0.0035, 0.055, 0.055]
-        @test getproperty.(got, :floor) ≈ [0.9, 0.9, 0.0, 0.0, 0.001, 0.09, 0.09]
-        @test getproperty.(got, :verdict) == ["serious", "ok", "ok", "serious", "serious", "ok", "serious"]
+        # magnitudes 0.1…1.0; a single value; each builder, split and unit its own; 0.003 and
+        # 0.004; the seeds' min, median and max
+        @test getproperty.(got, :level) ≈ [0.55, 0.55, 4.0, 4.0, 8.5, 8.5, 2.0, 0.15, 0.15, 0.0035, 0.055, 0.055]
+        @test getproperty.(got, :floor) ≈ [0.9, 0.9, 0.0, 0.0, 1.0, 1.0, 0.0, 0.1, 0.1, 0.001, 0.09, 0.09]
+        @test getproperty.(got, :verdict) == ["serious", "ok", "ok", "serious", "ok", "serious", "serious", "ok", "diagnostic", "serious", "ok", "serious"]
     end
 
     # #313: the replicates are at `sar` 1 and emit no display-px row, so a display-px row has no
