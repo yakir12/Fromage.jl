@@ -497,7 +497,7 @@ end
         # Exercise the printed markers and closing list using the real report's layout.
         rows = NamedTuple.(eachrow(baseline))
         plain = sprint(CRS.print_summary, rows)
-        @test occursin("baseline rig's floor", plain) && occursin("serious rows: none", plain)
+        @test occursin("baseline rig's level and floor", plain) && occursin("serious rows: none", plain)
         missed = findfirst(r -> r.quantity == "detection" && r.split == "flat", rows)
         corners = findfirst(r -> r.quantity == "corners" && r.statistic == "RMS" && r.split == "all frames", rows)
         rows[missed] = merge(rows[missed], (; value = 0.0, verdict = "serious"))
