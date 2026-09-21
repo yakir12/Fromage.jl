@@ -93,6 +93,26 @@
         @test tracking_rmse(ij, sar2_exp) < 1
     end
 
+    @testset "sar stored only in the container is the one the gateway verified (#295)" begin
+        # The same trajectory as `sar2`, but in FFV1/Matroska, whose `sar` lives in the container
+        # alone: ffprobe reads 2, VideoIO's codec context reads 1. The tracker used to take
+        # VideoIO's, so it placed the display start_location at stored column 55 instead of 27.5 —
+        # the first sample landed 7.7 px off (4.5 px from the frame centre), and the track only
+        # caught up a few samples later. It also sized the search window and the DoG for the wrong
+        # squeeze, which on this clean fixture happens to cost almost nothing.
+        #
+        # Compared against the `sar2` track sample by sample rather than for equality: the two
+        # encodings decode ~30 disc-edge pixels a frame differently (by 16 grey levels), which moves
+        # a sample by ~0.006 px. The bug moved them by up to 7.7.
+        mkv = only(first(make_target_video("t_sar2_ffv1"; sar = 2 // 1, container_sar = true)))
+        for sl in ("(55, 50)", missing)
+            ij = tracked([runrow(file = mkv, start_location = sl)])
+            mp4 = tracked([runrow(file = only(sar2), start_location = sl)])
+            @test maximum(splat(hypot), ij .- mp4) < 0.1
+            @test hypot((ij[1] .- sar2_exp(1))...) < 1
+        end
+    end
+
     @testset "segmented runs" begin
         # rows share a run_id; only the first segment gets a start_location, the rest continue
         # from where the previous segment ended (keyframe-aligned 17 + 17 + 16 frames)

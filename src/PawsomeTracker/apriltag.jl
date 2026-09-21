@@ -627,7 +627,7 @@ reference_size(r::ApriltagRectification) = (r.height, r.width)
 # the run's own resolution may differ from. `dia` is an AprilTag `Diagnostic`/`Dont` created and
 # closed by the caller, shared across a run's segments.
 function track_apriltag(
-        segment::Segment, tuning::Tuning, scaled::ScaledTuning, dia,
+        segment::Segment, tuning::Tuning, scaled::ScaledTuning, sar::Rational{Int}, dia,
         rectification::ApriltagRectification
     )
     ref = rectification.reference
@@ -635,7 +635,7 @@ function track_apriltag(
     ref_sz = reference_size(rectification)
     ids = ref.ids
     ntags = length(ids)
-    return video(segment.file, tuning.native_fps, tuning.sample_fps, segment.start, segment.stop, tuning.downscale) do vid
+    return video(segment.file, tuning.native_fps, tuning.sample_fps, segment.start, segment.stop, tuning.downscale, sar) do vid
         dets = [set_detector!(AprilTagDetector(family)) for _ in 1:ntags]   # one per tag
         try
             canvas = round.(Int, vid.downscale .* ref_sz)      # the reference viewport, tracker-scaled

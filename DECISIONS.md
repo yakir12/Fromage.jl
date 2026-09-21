@@ -952,6 +952,18 @@ triage geometry — and tracks converted through one carry that error until `mai
 affected. The unit test for the fixed ratio could not see any of this: it generated its views with
 the same inverted convention, so it asserted the bug.
 
+The tracker also had a `sar` of its own (#295). It read `VideoIO.aspect_ratio`, the codec context,
+while both gateways read ffprobe's stream value. These disagree when the ratio lives in the container
+alone: FFV1 in Matroska, or an mp4 remuxed with `-aspect`. There ffprobe reports it and the codec
+context reports 1:1. So a run was bounds-checked and rectified at one `sar` and tracked at another.
+Now `track` takes the gateway's `FrameFormat.sar` as its own argument and opens no ratio from the
+file. A `runs.csv` `sar` column, which would have made it a `Tuning` field like `native_fps`, was
+considered and not taken. `sar` is a fact about the video, not a tracking choice. And
+`rectifications.csv` has no matching override, so a declared `sar` would split runs from
+rectifications again. No lab file on this machine has probed as anything but 1:1, so how often
+footage hit this is unknown. On the synthetic `sar = 2` fixture, the first tracked sample landed
+7.7 px off.
+
 All of it was invisible at `sar = 1`, which is why it stood as long as it did — and that is the
 lasting point of this entry rather than the specific bug. #36 closed as "aspect ratio works across
 the whole system", but every fixture that exercises tracking is square in display space, so a

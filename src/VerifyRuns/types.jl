@@ -29,10 +29,10 @@
 # `native_fps`); `window_size` is imputed here, from `target_width`/`sample_fps`/the frame size/the
 # run's duration. `track` itself imputes nothing and defaults nothing.
 #
-# `frame_format` holds what the video reports and the tracker does not take: the stored-pixel
+# `frame_format` holds what the video reports rather than what the csv chose: the stored-pixel
 # `width`/`height` and the sample aspect ratio `sar` (display width = `width × sar`), which the
-# segments of a multi-segment run are verified to agree on. It is used to place a start location,
-# not to track.
+# segments of a multi-segment run are verified to agree on. It places a start location, and its
+# `sar` is the one `track` is handed — the tracker reads no ratio of its own from the file (#295).
 #
 # One concrete type, not an abstract `Run` over `SingleRun`/`MultiRun`: a run's segment count is
 # data, not a kind of thing. See DECISIONS.md for what the split cost and what it turned out not to
@@ -141,4 +141,4 @@ end
 # (row, col) in *stored* pixels of the original (unscaled) video; for an anamorphic video the
 # display-space x is col × sar.
 track(r::Run, center, rectification, diagnostic_file) =
-    track(resolved_segments(r, center, rectification), r.tuning, rectification, diagnostic_file)
+    track(resolved_segments(r, center, rectification), r.tuning, r.frame_format.sar, rectification, diagnostic_file)

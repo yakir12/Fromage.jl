@@ -115,8 +115,8 @@ The simulation's own words, kept here rather than in the root `CONTEXT.md`, whic
   the centroid of the dot's projected area, 0.04 px from the projection of its centre (#292).
 - `src/encode.jl` — `encode`: frames to a lossless video, gray x264 at `-qp 0` with the `sar` set by
   `setsar`, one frame per second so frame `k` is at `t = k` s. On it Fromage's frame reader returns
-  the rendered pixels exactly, and both gateways' ffprobe and the tracker's VideoIO read the `sar`
-  (#293).
+  the rendered pixels exactly, and both gateways' ffprobe and VideoIO read the `sar` (#293). The
+  tracker no longer reads its own; it is handed the runs gateway's (#295).
 - `src/cache.jl` — `cached_video`: a rig's video, rendered once into a `cache_dir` (no default: keep
   it outside the repository) under a hash of the camera, the boards, the sampling and
   `RENDERER_VERSION`. **Bump `RENDERER_VERSION` by hand whenever rendering changes**, or the cache
