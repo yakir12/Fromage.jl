@@ -107,16 +107,21 @@
         @test length(res.Rs) == length(views) && length(res.ts) == length(views)
     end
 
-    @testset "fixed aspect ratio" begin
-        aspect = 1.2
+    # An anamorphic camera built physically, not from the convention under test (#275): the
+    # square-pixel views above, with their column coordinate squeezed as a stored frame's is
+    # (`stored x = display x / sar`). Coordinate 2 is the column (the transposed frame — see below),
+    # so the stored camera has `fcol = fx / sar`, its principal column at `cy / sar`, and a frame
+    # `H / sar` columns wide. This testset used to generate its views with `fy = aspect · fx`, the
+    # same inverted ratio `fit_model` imposed, so it checked the code against itself.
+    @testset "fixed aspect ratio, sar = $sar" for sar in (1 // 2, 2 // 1)
         ktrue = (0.05, 0.0, 0.0)
-        views = make_views(aspect * fx, ktrue)                   # fy = aspect·fx
-        res = R.fit_model((W, H), objpoints, views, n_corners, 1, aspect)
+        views = [[SVector{2, Float32}(p[1], p[2] / sar) for p in v] for v in make_views(fx, ktrue)]
+        res = R.fit_model((W, Int(H / sar)), objpoints, views, n_corners, 1, Float64(sar))
+        @test res.fcol / res.frow ≈ 1 / sar rtol = 1.0e-6         # CALIB_FIX_ASPECT_RATIO holds it exactly
         @test res.frow ≈ fx atol = 3.0
-        @test res.fcol ≈ aspect * fx atol = 4.0
-        @test res.fcol / res.frow ≈ aspect atol = 1.0e-6           # CALIB_FIX_ASPECT_RATIO holds it exactly
         @test res.crow ≈ cx atol = 3.0
-        @test res.ccol ≈ cy atol = 3.0
+        @test res.ccol ≈ cy / sar atol = 3.0
+        @test res.k[1] ≈ ktrue[1] atol = 0.01
         @test reproj_rms(res, views) < 0.2
     end
 

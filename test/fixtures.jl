@@ -9,9 +9,11 @@ using FFMPEG: FFMPEG
 using Statistics: mean
 using AprilTags: getAprilTagImage, tag36h11
 using StaticArrays: SVector, SMatrix
+using Rotations: RotationVec
 using Fromage.PawsomeTracker: PawsomeTracker, Segment, Tuning, get_window, track
 
 export make_video, make_checkerboard_video, make_corrupt_video, make_target_video,
+    make_squeezed_checkerboard_video, CHECKERBOARD_POSES,
     tracking_rmse, probe_stream, probe_frames, read_labels, label_differences,
     LABEL_CHANGED, ENCODING_NOISE,
     make_apriltag_video, drone_pose, apriltag_ground, render_pose, pose_apply,
@@ -84,6 +86,95 @@ function make_target_video(
         (row + 1.0, (col - A * sin(0.5π * N / fps)) / sar + 1)
     end
     return files, expected
+end
+
+# A calibration clip's worth of checkerboard poses, `(rotation vector, translation)` in checker
+# units, for a 7×6 board in front of a 640×480, f = 1000 camera: twelve varied poses for a well-posed
+# calibration, then two more so the extrinsic frame is never the last (ffmpeg's input seek at end of
+# stream is unreliable). Read at 10 fps, `t = (k − ½)/10` lands on 0-based frame `k` — ffmpeg's
+# input seek returns the first frame at or after `t` — which is pose `k + 1`.
+const CHECKERBOARD_POSES = [
+    (SVector(0.0, 0.0, 0.0), SVector(-3.0, -2.5, 16.0)),
+    (SVector(0.22, -0.12, 0.0), SVector(-3.2, -2.0, 15.0)),
+    (SVector(-0.16, 0.2, 0.05), SVector(-2.5, -2.8, 17.0)),
+    (SVector(0.12, 0.26, -0.1), SVector(-3.5, -2.5, 16.5)),
+    (SVector(-0.26, -0.12, 0.0), SVector(-2.8, -2.2, 15.5)),
+    (SVector(0.06, -0.22, 0.16), SVector(-3.0, -3.0, 18.0)),
+    (SVector(0.3, 0.0, 0.1), SVector(-3.3, -2.4, 16.0)),
+    (SVector(-0.12, -0.26, -0.05), SVector(-2.6, -2.6, 15.0)),
+    (SVector(0.19, 0.19, 0.0), SVector(-3.1, -2.3, 17.5)),
+    (SVector(-0.2, 0.1, 0.08), SVector(-2.9, -2.7, 16.2)),
+    (SVector(0.1, -0.18, -0.06), SVector(-3.2, -2.6, 16.8)),
+    (SVector(-0.08, 0.22, 0.0), SVector(-2.7, -2.4, 15.8)),
+    (SVector(0.05, -0.05, 0.0), SVector(-3.0, -2.5, 16.0)),
+    (SVector(-0.1, 0.1, 0.0), SVector(-3.0, -2.5, 16.0)),
+]
+
+"""
+    make_squeezed_checkerboard_video(path, poses; sar, n_corners, f, width, height, fps = 10, supersample = 4)
+
+A planar checkerboard filmed at each of `poses` (one frame per pose, a `(rotation vector, translation)`
+pair in checker units) by a square-pixel pinhole camera, then squeezed physically into anamorphic
+stored frames — the footage `from_checkerboard` meets when `sar ≠ 1`. Returns
+`(; file, stored_width, stored)`.
+
+The camera lives in display space: `width`×`height` square pixels, focal length `f` px, principal
+point at the display centre, and OpenCV's pixel convention (0-based, pixel centres on integers). The
+board's inner corners sit at the integer points of `0:n_corners[1]-1` × `0:n_corners[2]-1`, with one
+square of margin all round.
+
+The squeeze is an area integral, not a resample: stored column `j` covers the display span
+`[j·sar − ½, (j + 1)·sar − ½]`, so a display `x` lands at stored column `(x + ½)/sar − ½`.
+Every stored pixel averages `supersample`² samples across that footprint, which keeps the corners
+sub-pixel. The encode is lossless and carries `setsar=sar`.
+
+`stored(k, X, Y)` is the ground truth: board point `(X, Y)`, seen at pose `k`, in 0-based stored
+`(row, col)`. It is computed here from the camera alone, never through the package's own maps or
+`Spaces` conversions, so it can check them.
+"""
+function make_squeezed_checkerboard_video(
+        path, poses; sar::Rational, n_corners, f, width, height, fps = 10, supersample = 4
+    )
+    isinteger(width / sar) && iseven(Int(width / sar)) && iseven(height) ||
+        throw(ArgumentError("a $(width)×$(height) display at sar $sar has no even stored frame size"))
+    stored_width = Int(width / sar)
+    cx, cy = (width - 1) / 2, (height - 1) / 2
+    # board (X, Y) → display (x, y): the homography of the board plane, K·[r1 r2 t]
+    homography(rv, t) = (
+        Rm = SMatrix{3, 3, Float64}(RotationVec(rv...));
+        SMatrix{3, 3, Float64}(f, 0, 0, 0, f, 0, cx, cy, 1) * hcat(Rm[:, 1], Rm[:, 2], SVector{3, Float64}(t))
+    )
+    Hs = [homography(rv, t) for (rv, t) in poses]
+    nx, ny = n_corners
+    black(X, Y) = -1 ≤ X ≤ nx && -1 ≤ Y ≤ ny && isodd(floor(Int, X) + floor(Int, Y))
+    offsets = ((1:supersample) .- 0.5) ./ supersample .- 0.5
+    s = Float64(sar)
+    raw = path * ".gray"
+    open(raw, "w") do io
+        frame = Matrix{UInt8}(undef, stored_width, height)     # column-major = ffmpeg's row-major
+        for H in Hs
+            Hinv = inv(H)
+            for r in 0:(height - 1), j in 0:(stored_width - 1)
+                dark = 0
+                for dr in offsets, dj in offsets
+                    x = (j + dj + 0.5) * s - 0.5
+                    w = Hinv * SVector(x, r + dr, 1.0)
+                    dark += black(w[1] / w[3], w[2] / w[3])
+                end
+                frame[j + 1, r + 1] = round(UInt8, 255 * (1 - dark / supersample^2))
+            end
+            write(io, frame)
+        end
+    end
+    sarg = "$(numerator(sar))/$(denominator(sar))"
+    FFMPEG.ffmpeg_exe(`-y -loglevel error -f rawvideo -pix_fmt gray -s $(stored_width)x$(height) -r $fps -i $raw -vf setsar=$sarg -c:v libx264 -qp 0 -pix_fmt yuv420p $path`)
+    rm(raw)
+    stored = (k, X, Y) -> begin
+        v = Hs[k] * SVector(Float64(X), Float64(Y), 1.0)
+        x, y = v[1] / v[3], v[2] / v[3]
+        (y, (x + 0.5) / s - 0.5)
+    end
+    return (; file = path, stored_width, stored)
 end
 
 "RMSE (in stored-frame pixels) between tracked coordinates and the ground-truth closure."
