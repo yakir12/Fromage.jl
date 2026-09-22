@@ -42,19 +42,19 @@ default_tools_approval_mode = "prompt"
 
 # Match the existing Claude read-only allowlist. New tools prompt by default.
 [mcp_servers.kaimon.tools.ping]
-approval_mode = "auto"
+approval_mode = "approve"
 [mcp_servers.kaimon.tools.investigate_environment]
 approval_mode = "auto"
 [mcp_servers.kaimon.tools.usage_instructions]
-approval_mode = "auto"
+approval_mode = "approve"
 [mcp_servers.kaimon.tools.usage_quiz]
-approval_mode = "auto"
+approval_mode = "approve"
 [mcp_servers.kaimon.tools.tool_help]
 approval_mode = "auto"
 [mcp_servers.kaimon.tools.search_code]
-approval_mode = "auto"
+approval_mode = "approve"
 [mcp_servers.kaimon.tools.grep_code]
-approval_mode = "auto"
+approval_mode = "approve"
 [mcp_servers.kaimon.tools.type_info]
 approval_mode = "auto"
 [mcp_servers.kaimon.tools.search_methods]
@@ -68,7 +68,7 @@ approval_mode = "auto"
 [mcp_servers.kaimon.tools.list_names]
 approval_mode = "auto"
 [mcp_servers.kaimon.tools.qdrant_list_collections]
-approval_mode = "auto"
+approval_mode = "approve"
 [mcp_servers.kaimon.tools.check_eval]
 approval_mode = "auto"
 [mcp_servers.kaimon.tools.check_tests]

@@ -15,8 +15,5 @@ with grep_code. Return file:line evidence, severity and explicit uncertainties.
 The parent owns all edits and verifies your findings.
 """
 
-[agents]
-enabled = false
-
 [mcp_servers.kaimon]
 enabled_tools = ["ping", "investigate_environment", "usage_instructions", "usage_quiz", "tool_help", "search_code", "grep_code", "type_info", "search_methods", "document_symbols", "workspace_symbols", "goto_definition", "list_names", "qdrant_list_collections", "check_eval", "check_tests", "list_jobs", "server_log"]
