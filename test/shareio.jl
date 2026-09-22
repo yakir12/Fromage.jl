@@ -205,7 +205,7 @@ const S = ShareIO
         # readers. Supervise from another process: a blocked native read may stop Julia timers.
         project = dirname(@__DIR__)
         worker = joinpath(@__DIR__, "capture_worker.jl")
-        proc = run(`$(Base.julia_cmd()) --startup-file=no --project=$project $worker`; wait = false)
+        proc = run(pipeline(`$(Base.julia_cmd()) --startup-file=no --project=$project $worker`; stdout, stderr); wait = false)
         status = timedwait(() -> process_exited(proc), 120)
         if status === :timed_out
             kill(proc, Base.SIGKILL)
