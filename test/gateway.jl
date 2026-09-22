@@ -21,6 +21,33 @@ frame() = DataFrame(
 )
 
 @testset "Gateway" begin
+    @testset "unknown header warning policy" begin
+        renamed = Dict(:scale => "pixel_width")
+        # One edit in five characters is exactly the inclusive 0.8 boundary.
+        @test_logs (:warn, r"scalz.*retired column 'scale'.*pixel_width") G.warn_unknown_columns(
+            [:scalz], (:file,), renamed, "rectifications.csv"
+        )
+        @test_logs G.warn_unknown_columns([:scazz], (:file,), renamed, "rectifications.csv")
+        @test_logs G.warn_unknown_columns([:animal_id, :custom_feature], (:file,), renamed, "rectifications.csv")
+        # Current names win equal scores; retired ties use spelling order, independent of the map.
+        @test_logs (:warn, r"very similar to 'scald'") G.warn_unknown_columns(
+            [:scalz], (:scald,), renamed, "rectifications.csv"
+        )
+        for names in ((:scald, :scale), (:scale, :scald))
+            retired = Dict(name => "replacement for $name" for name in names)
+            @test_logs (:warn, r"retired column 'scald'") G.warn_unknown_columns(
+                [:scalz], (:file,), retired, "rectifications.csv"
+            )
+        end
+        mktempdir() do dir
+            file = joinpath(dir, "rectifications.csv")
+            write(file, "file,checker_widths\na.mp4,4\n")
+            @test_logs (:warn, r"in rectifications\.csv\.") G.read_rows(
+                file, (:file, :checker_width), "rectification"; renamed = Dict{Symbol, String}()
+            )
+        end
+    end
+
     @testset "detect_per_group!" begin
         @testset "one detect per group, and the key reaches both callbacks" begin
             df = frame()

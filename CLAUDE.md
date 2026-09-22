@@ -436,8 +436,10 @@ branch starts from `main`, and if `main` has moved, rebase onto it rather than s
    confident progress. Only the second case is worth interrupting the user for.
 5. **Write the PR description** — the PR itself went up at the start of step 3, so this is the
    point where it stops being a placeholder. State the problem, the solution, and the tradeoffs
-   or limitations. Report the actual line delta against the estimate honestly: extracting shared
-   code costs lines here, deleting a structure saves them.
+   or limitations. Include `Closes #<issue-number>` for the originating issue so GitHub links
+   the PR and closes the issue when the PR merges into `main`. Report the actual line delta
+   against the estimate honestly: extracting shared code costs lines here, deleting a structure
+   saves them.
 6. **Watch the PR's CI** — by polling `gh pr checks <n>` in a loop, *not* with `--watch` (see the
    `gh` notes below). Poll on the **exit code**, not on the table: 8 means checks are still pending,
    0 that every one passed. **`TestOnPRs` triggers only on `src/**`, `test/**`, `*.toml` and
@@ -461,7 +463,8 @@ branch starts from `main`, and if `main` has moved, rebase onto it rather than s
    job started was 3–5 seconds on every platform — and macOS is not reliably the long pole; the
    three legs now land within ~80 s of each other. A run that takes *far* longer is usually a cold
    depot cache, which doubles the matrix. `Lint` and `Format` are deliberately *not*
-   gating, so neither a dead link nor a misplaced space can block a release.
+   gating, so neither a dead link nor a misplaced space can block a release. Confirm that the
+   originating issue is closed by the merged PR before reporting completion.
 10. **A red post-merge workflow is an approval gate**, on the same terms as step 7.
 11. **Clean up.** `git checkout main && git pull` — the bot's bump commit leaves local `main` one
     behind after every release, and the pull brings the new tag too — then delete the **local** fix

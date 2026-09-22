@@ -10,25 +10,55 @@
         @test_throws "csv file is empty" load_csv(csv)
     end
 
-    @testset "unrecognized column" begin
+    @testset "unknown column is accepted" begin
         csv = write_rows(joinpath(DATADIR, "badcol.csv"), [["x", "y"]]; header = ["rectification_id", "foo"])
-        @test_throws "unrecognized column" load_csv(csv)
+        @test_logs check_csv(csv)
     end
 
-    # A retired column is the one unrecognized name a user cannot debug from the generic message:
-    # their file was correct when they wrote it. checker_size split into checker_width (video) and
-    # tag_cell_width (apriltag) in v0.1.58, so the error has to name both.
+    @testset "user-defined columns are ignored, with typo warnings" begin
+        baseline = check_csv(write_rows(joinpath(DATADIR, "without_metadata.csv"), [checkerboardrow()]))
+        csv = write_rows(
+            joinpath(DATADIR, "custom_columns.csv"),
+            [vcat(checkerboardrow(), ["metadata", "metadata"])];
+            header = vcat(HEADER, ["checker_widths", "animal_id"]),
+        )
+        parsed = @test_logs (:warn, r"checker_widths.*checker_width.*custom_columns\.csv") check_csv(csv)
+        @test isequal(parsed, baseline)
+
+        csv = write_rows(
+            joinpath(DATADIR, "transposed_column.csv"),
+            [vcat(checkerboardrow(), ["metadata"])];
+            header = vcat(HEADER, ["checker_widht"]),
+        )
+        @test_logs (:warn, r"checker_widht.*checker_width") load_csv(csv)
+
+        csv = write_rows(
+            joinpath(DATADIR, "custom_feature.csv"),
+            [vcat(checkerboardrow(), ["metadata"])];
+            header = vcat(HEADER, ["custom_feature"]),
+        )
+        @test_logs load_csv(csv)
+
+        csv = write_rows(
+            joinpath(DATADIR, "retired_typo.csv"), [vcat(checkerboardrow(), ["metadata"])];
+            header = vcat(HEADER, ["checker_szie"]),
+        )
+        @test_logs (:warn, r"checker_szie.*retired column 'checker_size'.*tag_cell_width") load_csv(csv)
+    end
+
+    # A retired column is the one metadata name that benefits from a migration hint: checker_size
+    # split into checker_width (video) and tag_cell_width (apriltag) in v0.1.58.
     @testset "a renamed column says where it went" begin
         csv = write_rows(
             joinpath(DATADIR, "renamedcol.csv"), [["c", "4"]];
             header = ["rectification_id", "checker_size"]
         )
-        @test_throws "checker_size was renamed to checker_width" load_csv(csv)
-        @test_throws "tag_cell_width" load_csv(csv)
+        @test_logs (:warn, r"checker_size.*checker_width") check_csv(csv)
+        @test_logs (:warn, r"checker_size.*tag_cell_width") check_csv(csv)
     end
 
-    # The v0.2.23 and v0.2.24 vocabulary migrations. Each old name is rejected at the file level, before any row
-    # parses, and has to name its replacement — the user's file was correct when they wrote it.
+    # The v0.2.23 and v0.2.24 vocabulary migrations. Each old name is accepted as ignored metadata,
+    # with a warning naming its replacement — the user's file was correct when they wrote it.
     @testset "renamed columns say where they went" begin
         for (old, new) in (
                 (:scale, "pixel_width"), (:start, "intrinsic_start"), (:stop, "intrinsic_stop"),
@@ -39,8 +69,7 @@
                     joinpath(DATADIR, "renamed_$old.csv"), [["c", "1"]];
                     header = ["rectification_id", string(old)]
                 )
-                @test_throws "unrecognized column" load_csv(csv)
-                @test_throws "$old was renamed to $new" load_csv(csv)
+                @test_logs (:warn, Regex("$old.*$new")) check_csv(csv)
             end
         end
         # rectifications.csv's `scale` and runs.csv's `scale` went to different places; this file must never
@@ -49,12 +78,7 @@
             joinpath(DATADIR, "renamed_scale_only.csv"), [["c", "1"]];
             header = ["rectification_id", "scale"]
         )
-        err = try
-            load_csv(csv)
-        catch e
-            sprint(showerror, e)
-        end
-        @test !occursin("downscale", err)
+        @test_logs (:warn, r"scale.*pixel_width") check_csv(csv)
     end
 
     # A retired `type` VALUE cannot be caught by RENAMED_COLUMNS: the column name is still valid, so

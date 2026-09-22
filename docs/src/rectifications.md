@@ -61,14 +61,14 @@ Optional:
 | `type` | `checkerboard` | see above. |
 
 !!! warning "Renamed in v0.1.58"
-    `checker_width` used to be called `checker_size`. That name also served `type = apriltag` rows, where it meant a different quantity — a tag cell rather than a checkerboard square — so it has split in two: checkerboard rows use `checker_width`, apriltag rows use [`tag_cell_width`](#Columns-for-type-apriltag). A csv that still names `checker_size` is rejected up front with `unrecognized column/s in rectification file: [:checker_size]` and a note naming both replacements; rename the column and the file loads exactly as before. Nothing about the rectification changes.
+    `checker_width` used to be called `checker_size`. That name also served `type = apriltag` rows, where it meant a different quantity — a tag cell rather than a checkerboard square — so it has split in two: checkerboard rows use `checker_width`, apriltag rows use [`tag_cell_width`](#Columns-for-type-apriltag). A csv that still names `checker_size` is accepted as ignored metadata and warns with both replacements; rename the column and the file loads exactly as before. Nothing about the rectification changes.
 
 !!! warning "Renamed in v0.2.24: the file and the id"
     `calibs.csv` is now **`rectifications.csv`**, and its `calibration_id` column is now **`rectification_id`** — including in `runs.csv`, which references it. Rename the file, and rename that column in **both** files.
 
     The reason is that only two of the four `type`s involve a camera calibration at all: `checkerboard` fits a lens model and `matlab` imports one, while `uniform` just declares a scale and `apriltag` fits a homography. What every row describes is a **rectification** — how pixels in one camera view become real-world coordinates — so that is what the file and the id are now called. Where a camera calibration genuinely happens the word stays: the [intrinsic window](#Columns-for-type-checkerboard), `checker_width`, `n_corners`, `radial_parameters`, and everything about the MATLAB Camera Calibrator.
 
-    An old column name is rejected up front: `unrecognized column/s in rectification file: [:calibration_id] (calibration_id was renamed to rectification_id (and calibs.csv is now rectifications.csv))`. If you keep your csv files under other names, the keyword is now `rectifications_file` (was `calibs_file`).
+    An old `calibration_id` column is accepted as ignored metadata and warns that it was renamed to `rectification_id` (and that `calibs.csv` is now `rectifications.csv`). If you keep your csv files under other names, the keyword is now `rectifications_file` (was `calibs_file`).
 
 !!! warning "Renamed in v0.2.23"
     Four names in this file changed, all so that each one says what it means. Every replacement is a plain find-and-replace in your spreadsheet; nothing about any calibration changes.
@@ -80,7 +80,7 @@ Optional:
     | `scale` | `pixel_width` | `runs.csv` also has a `scale`, meaning something unrelated (a downsampling factor, now `downscale`). `pixel_width` also matches how `checker_width` and `tag_cell_width` are named: the real-world width of the thing that sets your unit. |
     | `start`, `stop` | `intrinsic_start`, `intrinsic_stop` | `runs.csv` uses `start`/`stop` for the span of a run to *track*, which is a different thing from the window in which you wave the board. |
 
-    An old column name is rejected up front, naming its replacement — e.g. `unrecognized column/s in rectification file: [:scale] (scale was renamed to pixel_width (and type = only_scale is now type = uniform))`. An old `type` value is reported per row, as `wrong type (video was renamed to checkerboard)`. Rows that left `type` blank are unaffected: the default was `video` and is now `checkerboard`, which is the same kind of calibration.
+    An old column name is accepted as ignored metadata and warns with its replacement — e.g. `scale` warns that it was renamed to `pixel_width` (and that `type = only_scale` is now `type = uniform`). An old `type` value is reported per row, as `wrong type (video was renamed to checkerboard)`. Rows that left `type` blank are unaffected: the default was `video` and is now `checkerboard`, which is the same kind of calibration.
 
 !!! tip "Count the *internal* corners"
     `n_corners` counts where four squares meet, not the squares themselves. A board of 8 × 11 squares has 7 × 10 internal corners.
@@ -120,7 +120,7 @@ Required: `rectification_id`, `file` (the drone footage — a video where the ta
 | `path` | `.` | the **folder** containing `file`, relative to the csv file. Just the folder — the file name belongs in `file`, not here. |
 
 !!! warning "Renamed in v0.1.58"
-    This column used to be called `checker_size`, a name it shared with the checkerboard square size of `type = checkerboard` rows. The two are different quantities, and one column could not carry both defaults — a global `checker_size` applied to checkerboard rows and silently did nothing to apriltag ones. The column has therefore split in two: checkerboard rows now use [`checker_width`](#Columns-for-type-checkerboard), apriltag rows use `tag_cell_width`. If you have already renamed it to `checker_width` but left it filled on an apriltag row, that is reported as `checker_width is not used by type apriltag (it was renamed to tag_cell_width)`.
+    This column used to be called `checker_size`, a name it shared with the checkerboard square size of `type = checkerboard` rows. The two are different quantities, and one column could not carry both defaults — a global `checker_size` applied to checkerboard rows and silently did nothing to apriltag ones. The column has therefore split in two: checkerboard rows now use [`checker_width`](#Columns-for-type-checkerboard), apriltag rows use `tag_cell_width`. A `checker_size` header is accepted as ignored metadata and warns with both replacements. If you have already renamed it to `checker_width` but left it filled on an apriltag row, that is reported as `checker_width is not used by type apriltag (it was renamed to tag_cell_width)`.
 
 The tags are stationary across the whole experiment, so the reference is established once here and shared by every run — `runs.csv` therefore has no `apriltags` column (and, for an apriltag run, a run's own `start` frame is where its target search begins, not the calibration's `center`).
 

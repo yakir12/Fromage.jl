@@ -17,11 +17,36 @@ using DataFrames: AbstractDataFrame, ByRow, Cols, Not, dropmissing, groupby, pas
     select!, subset
 using OhMyThreads: OhMyThreads, tmap
 using ProgressMeter: ProgressMeter, @showprogress
+using StringDistances: OptimalStringAlignment, similarity
 using Tables: Tables
 
-# Read the CSV and screen it before a single cell is parsed: the file must exist, hold at least one
-# row, and name only columns the gateway recognizes. `what` names the file in the two messages that
-# mention it ("runs"/"rectification"), which are the gateway's own words for its input.
+const COLUMN_NAME_SIMILARITY_THRESHOLD = 0.8
+const COLUMN_NAME_DISTANCE = OptimalStringAlignment()
+
+# Unknown headers are user metadata: the pipeline ignores them, but a close match to a current
+# or retired name is more likely a typo than intentional metadata. Keep the candidate order stable
+# so equal scores produce the same warning, and compare the spelling against the retired name itself
+# before explaining where that name moved.
+function warn_unknown_columns(names, columns, renamed, file)
+    isempty(names) && return nothing
+    candidates = unique(vcat(collect(string.(columns)), sort!(collect(string.(keys(renamed))))))
+    for input in names
+        # Only a few dozen candidates: keep this serial rather than spawning findnearest's tasks.
+        candidate = argmax(name -> similarity(String(input), name, COLUMN_NAME_DISTANCE), candidates)
+        similarity(String(input), candidate, COLUMN_NAME_DISTANCE) < COLUMN_NAME_SIMILARITY_THRESHOLD && continue
+        replacement = get(renamed, Symbol(candidate), nothing)
+        if isnothing(replacement)
+            @warn "Column name '$input' is very similar to '$candidate' in $file. Did you mean '$candidate'?"
+        else
+            @warn "Column name '$input' is very similar to retired column '$candidate' in $file. Did you mean '$replacement'?"
+        end
+    end
+    return nothing
+end
+
+# Read the CSV and screen it before a single cell is parsed: the file must exist and hold at least
+# one row. Unknown headers are metadata and are warned about when they resemble a current or retired
+# gateway name. Warnings name the actual input file; `what` labels missing-file errors.
 #
 # CSV gets the bytes, not the path: a path source is memory-mapped, and the mapping outlives this
 # call — `CSV.Rows` is lazy and holds it until the object is collected. On Windows a mapped file
@@ -30,25 +55,20 @@ using Tables: Tables
 # whole costs nothing.
 # `stripwhitespace = true` trims surrounding whitespace off every unquoted cell AND off the header
 # names. The header half is the part only CSV can do: a column written `start ` used to arrive as
-# `Symbol("start ")` and be rejected as an unrecognized column, which is an invisible cause for a
-# loud message. The cell half overlaps with what the parsers already do — deliberately, because it
+# `Symbol("start ")` and be treated as a separate metadata name, which made a likely typo easy to
+# miss. The cell half overlaps with what the parsers already do — deliberately, because it
 # does NOT cover quoted cells. CSV treats quoting as "this is literal", so `" 00:01:30 "` written
 # with quotes still arrives padded, and the cell parsers keep their own `strip` for exactly that.
 # Two layers, neither redundant: this one reaches the header, that one reaches quoted cells.
 #
-# `renamed` maps a retired column name to a description of where its value went. A rename is the
-# one unrecognized column a user cannot debug from the message alone: their file was correct when
-# they wrote it, and "unrecognized column/s: [:checker_size]" tells them it is gone without telling
-# them what replaced it. A gateway that has retired no column passes an empty map.
+# `renamed` maps a retired column name to a description of where its value went. A close match to a
+# retired name gets a migration warning; a gateway that has retired no column passes an empty map.
 function read_rows(file, columns, what; renamed)
     isfile(file) || error("$what `.csv` file missing")
     rows = CSV.Rows(read(file); stripwhitespace = true)
     isempty(Tables.rows(rows)) && error("csv file is empty")
     unrecognized = setdiff(Tables.schema(rows).names, columns)
-    if !isempty(unrecognized)
-        hints = [" ($k was renamed to $(renamed[k]))" for k in unrecognized if haskey(renamed, k)]
-        error("unrecognized column/s in $what file: $unrecognized" * join(hints))
-    end
+    warn_unknown_columns(unrecognized, columns, renamed, basename(file))
     return rows
 end
 

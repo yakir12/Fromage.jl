@@ -52,7 +52,7 @@ A csv file is just a table saved as plain text — you can edit it in Excel, Goo
 
 - Column **order doesn't matter**, and optional columns may be left out entirely.
 - A **blank cell** in an optional column means "use the default" — so a column can be filled in for some rows and left blank for others.
-- **Unrecognized column names are an error.** This protects you from typos (a misspelled column would otherwise be silently ignored). Both files accept a free-text `comment` column, which is ignored — put your notes there.
+- **User-defined columns are accepted and ignored.** They are useful for keeping metadata beside the Fromage fields, but they are not parsed or copied into track output. Names reserved by Fromage retain their documented meanings; a close spelling match (such as `checker_widths` for `checker_width`) produces a warning so likely typos are not silently ignored. Retired names also warn with their migration target.
 
 ### Writing timestamps
 
