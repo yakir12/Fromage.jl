@@ -1,7 +1,7 @@
 # Checkerboard rectifications of anamorphic video, asserted against the real world (#275, #277).
 #
-# Every other rectification test runs at sar = 1, where the fit's two focal lengths are equal and a
-# ratio held in the wrong direction, or a swapped pair, is invisible. Here the clip is squeezed
+# At sar = 1 the fit's two focal lengths are equal, so a ratio held in the wrong direction, or a
+# swapped pair, is invisible. Here the clip is squeezed
 # physically (`make_squeezed_checkerboard_video`), the builders are handed `aspect = sar` exactly as
 # the gateway imputes it, and board points whose stored pixels come from the true camera are mapped
 # through `image2real` and compared with where they really are on the board. Nothing on the truth

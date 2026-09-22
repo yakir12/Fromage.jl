@@ -14,6 +14,7 @@ using Fromage.PawsomeTracker: PawsomeTracker, Segment, Tuning, get_window, track
 using Fromage.VerifyRuns: probe_video
 
 export make_video, make_checkerboard_video, make_corrupt_video, make_target_video,
+    matlab_camera,
     make_squeezed_checkerboard_video, make_squeezed_disc_video, CHECKERBOARD_POSES,
     tracking_rmse, probe_stream, probe_frames, read_labels, label_differences,
     LABEL_CHANGED, ENCODING_NOISE,
@@ -34,6 +35,34 @@ function make_checkerboard_video(path, png; duration = 5)
     pad = "pad=ceil(iw/2)*2:ceil(ih/2)*2"   # libx264/yuv420p needs even dimensions
     FFMPEG.ffmpeg_exe(`-y -loglevel error -framerate 10 -loop 1 -i $png -t $duration -vf $pad -pix_fmt yuv420p $path`)
     return path
+end
+
+"""
+    matlab_camera(; sar)
+
+A fronto-parallel camera 100 mm above a plane, with display focal length 500 px and mild radial
+distortion. Returns MATLAB calibration fields (1-based principal point), a `stored(X, Y)`
+projection from millimetres to 0-based `(row, col)`, and display `center`/`north` anchoring the
+plane's origin and negative Y direction. Y increases downward, so rectified truth is `(Y, X)`.
+The column focal length is `500 / sar`; no package maps or coordinate conversions define truth.
+This is an analytic camera, not area-resampled media: display x is stored column times `sar`.
+"""
+function matlab_camera(; sar)
+    width, height = Int(640 / sar), 480
+    f, Z, k1 = 500.0, 100.0, 0.1
+    cx, cy = 287.0, 213.0                       # deliberately off-centre and unequal
+    fields = Dict(
+        "ImageSize" => [height, width] .* 1.0,
+        "K" => [f / sar 0.0 cx / sar + 1; 0.0 f cy + 1; 0.0 0.0 1.0],
+        "RotationVectors" => zeros(1, 3),
+        "TranslationVectors" => [0.0 0.0 Z],
+        "RadialDistortion" => [k1, 0.0]
+    )
+    stored = (X, Y) -> begin
+        d = 1 + k1 * (X^2 + Y^2) / Z^2
+        SVector(cy + f * Y / Z * d, (cx + f * X / Z * d) / sar)
+    end
+    return (; fields, stored, center = (cx, cy), north = (cx, cy - 100), width, height)
 end
 
 # A file ffprobe reliably refuses: the leading bytes of a real mp4, with the moov atom and all the
