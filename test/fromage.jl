@@ -8,6 +8,7 @@ using Test
 using Random: Xoshiro
 using Fromage
 using DataFrames: DataFrame
+using Statistics: mean
 using StaticArrays: SVector
 using MAT: matwrite
 using ..Fixtures
@@ -121,6 +122,67 @@ end
     gy, gx = rectification.image2real(SVector(expected(1)...))
     @test x0 ≈ gx atol = 0.2
     @test y0 ≈ gy atol = 0.2
+end
+
+@testset "Fromage end-to-end (main): anamorphic calibration and tracking (#278)" begin
+    dir = mktempdir()
+    sar = 2 // 1
+    n_corners = (7, 6)
+    checker_width = 25.0
+    f = 1000.0
+    width, height = 640, 480
+    extrinsic_pose = 13
+    poses = CHECKERBOARD_POSES
+
+    board_path(k) = SVector(
+        2.0 + 0.8 * sin(0.4π * (k - 1) / 30),
+        4.0 + 0.3 * cos(0.4π * (k - 1) / 30),
+    )
+    make_squeezed_checkerboard_video(
+        joinpath(dir, "board.mp4"), poses;
+        sar, n_corners, f, width, height
+    )
+    target_clip = make_squeezed_disc_video(
+        joinpath(dir, "target.mp4"), poses[extrinsic_pose];
+        board_path, nframes = 30, diameter = 0.4, sar, f, width, height
+    )
+
+    open(joinpath(dir, "rectifications.csv"), "w") do io
+        println(io, "rectification_id,file,type,extrinsic,intrinsic_start,intrinsic_stop,center,north,checker_width,temporal_step,radial_parameters")
+        println(io, "c1,board.mp4,checkerboard,1.15,0.05,1.05,\"(320,240)\",\"(320,140)\",$checker_width,0.1,1")
+    end
+    open(joinpath(dir, "runs.csv"), "w") do io
+        println(io, "run_id,rectification_id,file,start_location,window_size")
+        row, col = target_clip.stored(board_path(1)...)
+        start_x = round(Int, (col + 0.5) * sar - 0.5)
+        start_y = round(Int, row)
+        println(io, "anamorphic,c1,target.mp4,\"($start_x,$start_y)\",\"(80,40)\"")
+    end
+
+    outdir = mktempdir()
+    cd(
+        () -> main(
+            dir;
+            rectification_defaults = (; n_corners),
+            tracking_defaults = (; target_width = 20),
+        ), outdir
+    )
+
+    t, xy = read_track(joinpath(outdir, "results_dir", "anamorphic.csv"))
+    @test length(t) == 30
+    @test all(!ismissing, xy)
+
+    # The expected track is built from the fixture's independent board inverse. The declared
+    # center/north gauge makes real coordinates board (Y, X), centred at the independently
+    # projected display point (320, 240), then scaled to millimetres.
+    center_board = target_clip.board(320, 240)
+    expected(k) = begin
+        point = board_path(k)
+        SVector(point[2] - center_board[2], point[1] - center_board[1]) * checker_width
+    end
+    rmse = sqrt(mean(sum(abs2, Tuple(xy[k]) .- Tuple(expected(k))) for k in eachindex(xy)))
+    @test rmse < 0.3
+    @test probe_stream(joinpath(outdir, "results_dir", "diagnostic.mp4")).width == 540
 end
 
 @testset "an id filter that matches nothing is reported, not obeyed silently (#21)" begin
