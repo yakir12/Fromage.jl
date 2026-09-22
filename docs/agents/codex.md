@@ -186,13 +186,22 @@ task forbids mutating service resources.
 ## Permissions and hooks
 
 Project defaults are `workspace-write`, network disabled in shell sandbox,
-`on-request` approvals routed to the user. No writable roots or interpreter/Git/
+and `on-request` approvals routed to Codex's automatic reviewer through
+`approvals_reviewer = "auto_review"`. Eligible shell escalations and MCP approvals
+are reviewed automatically, so routine local work does not require a human
+approval for each operation. This matches the user's preferred auto mode; the
+previous project setting `user` overrode the global `auto_review` preference.
+Start a new Codex session to load the changed default. Automatic review can still
+deny a request or fail; this setting is not unconditional approval, and AGENTS.md's
+explicit authorization requirements for delivery operations still apply.
+No writable roots or interpreter/Git/
 GitHub allow rules are added. Native `.git`, `.codex` and `.agents` protections
 remain in place. User/system policy and explicit CLI overrides can change the
 effective configuration; the validator tests the repository defaults in isolation.
 
-All 18 existing read-only Kaimon allowlist entries are mapped to per-tool `auto`;
-every other Kaimon tool defaults to `prompt`, including eval, tests, session
+All 18 existing read-only Kaimon allowlist entries use per-tool `auto` or `approve`;
+every other Kaimon tool defaults to `prompt`, routed through automatic review,
+including eval, tests, session
 management, editing, indexing and package mutation. Server-side Kaimon permissions
 remain independent. MCP executes outside the shell filesystem/network sandbox:
 read-only specialist roles also restrict Kaimon to the explicit read-only list.
@@ -291,6 +300,13 @@ or raw prompt/config dumps are printed.
 
 Native agent registration is explicit in `[agents.<name>]` as well as using the
 supported `.codex/agents/*.toml` files, making roles inspectable in config/read.
+Each role's `[mcp_servers.kaimon]` table must include `url` alongside
+`enabled_tools`: Codex 0.155.1 deserializes the role before merging configuration
+layers, so an allowlist alone produces `invalid transport`. Keep the role URLs
+in sync with `.codex/config.toml` when changing the configured endpoint; credentials
+remain in user configuration. The validator checks URL parity and captures
+app-server stderr, where malformed-role errors are reported even when metadata
+requests succeed.
 There is no custom-agent-list CLI/RPC in this installed version. The validator
 checks declarations, resolved file references and malformed-role startup warnings;
 actual delegated model execution remains a

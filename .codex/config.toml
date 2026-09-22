@@ -1,6 +1,7 @@
 # Codex 0.155.1. Project trust is required; credentials belong in user config.
 approval_policy = "on-request"
-approvals_reviewer = "user"
+# Route eligible shell and MCP approvals through Codex's automatic reviewer.
+approvals_reviewer = "auto_review"
 sandbox_mode = "workspace-write"
 
 [sandbox_workspace_write]

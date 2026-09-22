@@ -69,10 +69,12 @@ def structural():
     }
     server = config["mcp_servers"]["kaimon"]
     assert server["default_tools_approval_mode"] == "prompt"
-    assert {k for k, v in server["tools"].items() if v["approval_mode"] == "auto"} == readonly
+    assert {k for k, v in server["tools"].items()
+            if v["approval_mode"] in {"auto", "approve"}} == readonly
     assert config["sandbox_mode"] == "workspace-write"
     assert config["sandbox_workspace_write"]["network_access"] is False
     assert config["approval_policy"] == "on-request"
+    assert config["approvals_reviewer"] == "auto_review"
 
     agents = {}
     for path in (ROOT / ".codex/agents").glob("*.toml"):
@@ -85,6 +87,7 @@ def structural():
         assert (ROOT / ".codex" / config["agents"][path.stem]["config_file"]).resolve() == path.resolve()
         assert str(original.relative_to(ROOT)) in role["developer_instructions"]
         assert role["sandbox_mode"] == "read-only"
+        assert role["mcp_servers"]["kaimon"]["url"] == server["url"], path.name
         assert set(role["mcp_servers"]["kaimon"]["enabled_tools"]) == readonly
         agents[role["name"]] = path
     assert set(agents) == {p.stem for p in (ROOT / ".claude/agents").glob("*.md")}
@@ -144,13 +147,15 @@ def native_discovery(agents, skills):
     with tempfile.TemporaryDirectory(prefix="fromage-codex-validation-") as state:
         env = os.environ.copy()
         env["CODEX_HOME"] = state
+        env["RUST_LOG"] = "warn"
         flags = ["-c", "projects={" + json.dumps(str(ROOT)) + '={trust_level="trusted"}}',
                  "-c", "sqlite_home=" + json.dumps(state),
                  "-c", "log_dir=" + json.dumps(state)]
         # Metadata endpoints do not start threads, run hooks, or initialize MCP.
+        diagnostics = tempfile.TemporaryFile(mode="w+t")
         proc = subprocess.Popen(["codex", "app-server", "--stdio", "--strict-config", *flags],
                                 cwd=ROOT, env=env, stdin=subprocess.PIPE,
-                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+                                stdout=subprocess.PIPE, stderr=diagnostics, text=True)
         messages = queue.Queue()
 
         def receive():
@@ -180,6 +185,8 @@ def native_discovery(agents, skills):
             assert any(l["name"]["type"] == "project" and not l.get("disabledReason")
                        for l in config["layers"])
             assert config["origins"]["sandbox_mode"]["name"]["type"] == "project"
+            assert config["config"]["approvals_reviewer"] == "auto_review"
+            assert config["origins"]["approvals_reviewer"]["name"]["type"] == "project"
             assert "kaimon" in config["config"]["mcp_servers"]
             assert set(agents) <= set(config["config"]["agents"])
             discovered = request(3, "skills/list", {"cwds": [str(ROOT)], "forceReload": True})
@@ -203,6 +210,12 @@ def native_discovery(agents, skills):
                 proc.wait()
             proc.stdin.close()
             proc.stdout.close()
+            diagnostics.seek(0)
+            startup_diagnostics = diagnostics.read()
+            diagnostics.close()
+
+        assert "Ignoring malformed agent role definition" not in startup_diagnostics, \
+            "Codex rejected an agent role during app-server startup"
 
         # Constructs a prompt locally; never sends it to a model. Disable all hooks
         # and the configured MCP server because this command creates a session.
