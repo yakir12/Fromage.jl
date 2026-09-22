@@ -16,12 +16,14 @@
     end
 
     @testset "user-defined columns are ignored, with typo warnings" begin
+        baseline = check_csv(write_rows(joinpath(DATADIR, "without_metadata.csv"), [runrow()]))
         csv = write_rows(
             joinpath(DATADIR, "custom_columns.csv"),
             [vcat(runrow(), ["metadata", "metadata"])];
             header = vcat(HEADER, ["sample_fp", "animal_id"]),
         )
-        @test_logs (:warn, r"sample_fp.*sample_fps") load_csv(csv)
+        parsed = @test_logs (:warn, r"sample_fp.*sample_fps.*custom_columns\.csv") check_csv(csv)
+        @test isequal(parsed, baseline)
 
         csv = write_rows(
             joinpath(DATADIR, "custom_feature.csv"),

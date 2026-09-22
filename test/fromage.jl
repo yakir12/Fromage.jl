@@ -62,12 +62,12 @@ end
     # defaults (the hardcoded n_corners (7, 10) would fail detection on the 5×8 board, so a clean
     # run proves the kwargs propagated into both gateways)
     open(joinpath(dir, "rectifications.csv"), "w") do io
-        println(io, "rectification_id,file,type,extrinsic,intrinsic_start,intrinsic_stop,checker_width")
-        println(io, "c1,board.mp4,checkerboard,1,0,4,4")
+        println(io, "rectification_id,file,type,extrinsic,intrinsic_start,intrinsic_stop,checker_width,custom_feature")
+        println(io, "c1,board.mp4,checkerboard,1,0,4,4,metadata")
     end
     open(joinpath(dir, "runs.csv"), "w") do io
-        println(io, "rectification_id,file,start_location")
-        println(io, "c1,$(only(target)),\"(55, 50)\"")
+        println(io, "rectification_id,file,start_location,animal_id")
+        println(io, "c1,$(only(target)),\"(55, 50)\",beetle-1")
     end
 
     # with no `results_dir`, main writes results_dir/diagnostic.mp4 relative to the current directory

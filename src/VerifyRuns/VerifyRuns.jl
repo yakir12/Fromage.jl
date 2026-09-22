@@ -18,12 +18,12 @@ export load_runs, check_runs
 
 # Every column maps onto a field of `PawsomeTracker.Segment` or `PawsomeTracker.Tuning`, plus
 # `run_id` (identity / segment grouping) and `path` (path resolution). This is the full set of
-# recognized CSV columns; anything else is rejected as unrecognized.
+# recognized CSV columns; anything else is ignored metadata, with warnings for close spellings.
 const COLUMNS = (:rectification_id, :comment, :run_id, :path, :file, :start, :stop, :target_width, :start_location, :window_size, :darker_target, :native_fps, :sample_fps, :initial_search_factor, :downscale, :background_length, :aspect)
 
 # `fps` meant two different rates at once — the video's own and the one to sample it at — which is
 # why it is gone rather than kept as a synonym for either. A file that still has the column is
-# rejected with the hint below, since neither reading of it can be assumed (see runs.md).
+# ignored with the hint below, since neither reading of it can be assumed (see runs.md).
 #
 # `scale` named a spatial downsampling factor here and a real-world units-per-pixel in rectifications.csv —
 # one word, two unrelated quantities, one of them the reciprocal-ish of the other in spirit. Each

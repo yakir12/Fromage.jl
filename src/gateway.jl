@@ -17,7 +17,7 @@ using DataFrames: AbstractDataFrame, ByRow, Cols, Not, dropmissing, groupby, pas
     select!, subset
 using OhMyThreads: OhMyThreads, tmap
 using ProgressMeter: ProgressMeter, @showprogress
-using StringDistances: OptimalStringAlignment, findnearest, similarity
+using StringDistances: OptimalStringAlignment, similarity
 using Tables: Tables
 
 const COLUMN_NAME_SIMILARITY_THRESHOLD = 0.8
@@ -27,16 +27,18 @@ const COLUMN_NAME_DISTANCE = OptimalStringAlignment()
 # or retired name is more likely a typo than intentional metadata. Keep the candidate order stable
 # so equal scores produce the same warning, and compare the spelling against the retired name itself
 # before explaining where that name moved.
-function warn_unknown_columns(names, columns, renamed, what)
-    candidates = unique(vcat(collect(string.(columns)), collect(string.(keys(renamed)))))
+function warn_unknown_columns(names, columns, renamed, file)
+    isempty(names) && return nothing
+    candidates = unique(vcat(collect(string.(columns)), sort!(collect(string.(keys(renamed))))))
     for input in names
-        candidate, = findnearest(String(input), candidates, COLUMN_NAME_DISTANCE; min_score = 0.0)
+        # Only a few dozen candidates: keep this serial rather than spawning findnearest's tasks.
+        candidate = argmax(name -> similarity(String(input), name, COLUMN_NAME_DISTANCE), candidates)
         similarity(String(input), candidate, COLUMN_NAME_DISTANCE) < COLUMN_NAME_SIMILARITY_THRESHOLD && continue
         replacement = get(renamed, Symbol(candidate), nothing)
         if isnothing(replacement)
-            @warn "Column name '$input' is very similar to '$candidate' in $what.csv. Did you mean '$candidate'?"
+            @warn "Column name '$input' is very similar to '$candidate' in $file. Did you mean '$candidate'?"
         else
-            @warn "Column name '$input' is very similar to retired column '$candidate' in $what.csv. Did you mean '$replacement'?"
+            @warn "Column name '$input' is very similar to retired column '$candidate' in $file. Did you mean '$replacement'?"
         end
     end
     return nothing
@@ -44,7 +46,7 @@ end
 
 # Read the CSV and screen it before a single cell is parsed: the file must exist and hold at least
 # one row. Unknown headers are metadata and are warned about when they resemble a current or retired
-# gateway name. `what` names the file in the warning ("runs"/"rectification").
+# gateway name. Warnings name the actual input file; `what` labels missing-file errors.
 #
 # CSV gets the bytes, not the path: a path source is memory-mapped, and the mapping outlives this
 # call — `CSV.Rows` is lazy and holds it until the object is collected. On Windows a mapped file
@@ -66,7 +68,7 @@ function read_rows(file, columns, what; renamed)
     rows = CSV.Rows(read(file); stripwhitespace = true)
     isempty(Tables.rows(rows)) && error("csv file is empty")
     unrecognized = setdiff(Tables.schema(rows).names, columns)
-    warn_unknown_columns(unrecognized, columns, renamed, what)
+    warn_unknown_columns(unrecognized, columns, renamed, basename(file))
     return rows
 end
 

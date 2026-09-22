@@ -141,7 +141,7 @@ end
 # column to its new name `checker_width` but not yet noticed that apriltag rows went somewhere else
 # entirely is not making a type error — they are holding a value that moved. "not used by type
 # apriltag" would send them looking for the wrong thing. (A file still naming the old
-# `checker_size` never reaches here: `read_rows` rejects it, with RENAMED_COLUMNS' hint.)
+# `checker_size` is ignored metadata: `read_rows` warns with RENAMED_COLUMNS' hint.)
 const RENAMED = Dict(("apriltag", :checker_width) => :tag_cell_width)
 
 # Retired `type` VALUES, and what each became. The sibling of RENAMED_COLUMNS one level down: that

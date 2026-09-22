@@ -16,12 +16,14 @@
     end
 
     @testset "user-defined columns are ignored, with typo warnings" begin
+        baseline = check_csv(write_rows(joinpath(DATADIR, "without_metadata.csv"), [checkerboardrow()]))
         csv = write_rows(
             joinpath(DATADIR, "custom_columns.csv"),
             [vcat(checkerboardrow(), ["metadata", "metadata"])];
             header = vcat(HEADER, ["checker_widths", "animal_id"]),
         )
-        @test_logs (:warn, r"checker_widths.*checker_width") load_csv(csv)
+        parsed = @test_logs (:warn, r"checker_widths.*checker_width.*custom_columns\.csv") check_csv(csv)
+        @test isequal(parsed, baseline)
 
         csv = write_rows(
             joinpath(DATADIR, "transposed_column.csv"),
@@ -36,6 +38,12 @@
             header = vcat(HEADER, ["custom_feature"]),
         )
         @test_logs load_csv(csv)
+
+        csv = write_rows(
+            joinpath(DATADIR, "retired_typo.csv"), [vcat(checkerboardrow(), ["metadata"])];
+            header = vcat(HEADER, ["checker_szie"]),
+        )
+        @test_logs (:warn, r"checker_szie.*retired column 'checker_size'.*tag_cell_width") load_csv(csv)
     end
 
     # A retired column is the one metadata name that benefits from a migration hint: checker_size

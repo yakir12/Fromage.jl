@@ -200,6 +200,21 @@ const S = ShareIO
         @test length(S.capture(`sh -c "head -c $n /dev/zero"`, "it failed"; tries = S.TRIES)) == n
     end
 
+    @testset "concurrent stdout and stderr capture completes" begin
+        # Both streams exceed pipe capacity, with several captures in flight as in the frame
+        # readers. Supervise from another process: a blocked native read may stop Julia timers.
+        project = dirname(@__DIR__)
+        worker = joinpath(@__DIR__, "capture_worker.jl")
+        proc = run(`$(Base.julia_cmd()) --startup-file=no --project=$project $worker`; wait = false)
+        status = timedwait(() -> process_exited(proc), 120)
+        if status === :timed_out
+            kill(proc, Base.SIGKILL)
+        end
+        wait(proc)
+        @test status === :ok
+        @test success(proc)
+    end
+
 end
 
 end

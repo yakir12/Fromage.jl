@@ -146,7 +146,7 @@ end
 
 # ---------------------------------------------------------------------------
 # CSV building. One canonical header; `row(; ...)` fills absent cells with missing.
-# Only names from VerifyRectifications.COLUMNS are allowed (others => "unrecognized column").
+# These helpers use sanctioned names; metadata tests extend the header explicitly.
 # ---------------------------------------------------------------------------
 
 const HEADER = [

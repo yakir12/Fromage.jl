@@ -26,8 +26,7 @@ export load_rectifications, check_rectifications
 const COLUMNS = (:comment, :rectification_id, :path, :file, :matlab_file, :intrinsic_start, :intrinsic_stop, :extrinsic, :checker_width, :center, :north, :n_corners, :pixel_width, :type, :temporal_step, :radial_parameters, :blur, :extrinsic_index, :aspect, :yadif, :apriltags, :family, :tag_cell_width)
 
 # Columns retired by a rename, and where each one's value went. Surfaced by `read_rows` when an
-# old csv still names them — the file-level error fires before any row is parsed, so this is the
-# only place such a user is reachable.
+# old csv still names them — warn before parsing rows, whose parsers ignore these metadata fields.
 #
 # The v0.2.23 three. `scale` is the one to be careful with: runs.csv has a `scale` column too, and
 # it meant something else entirely (a downsampling factor, now `downscale`). The two gateways keep
