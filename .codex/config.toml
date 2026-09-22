@@ -4,12 +4,16 @@ approval_policy = "on-request"
 approvals_reviewer = "auto_review"
 sandbox_mode = "workspace-write"
 
+model = "gpt-6-astra"
+model_reasoning_effort = "high"
+
 [sandbox_workspace_write]
 network_access = false
 
 [agents]
 enabled = true
 max_concurrent_threads_per_session = 3
+default_subagent_model = "gpt-6-astra"
 
 [agents.implementation-scout]
 description = "Map implementation, callers, types and dispatch before planning changes."
