@@ -1,0 +1,79 @@
+# Codex 0.155.1. Project trust is required; credentials belong in user config.
+approval_policy = "on-request"
+approvals_reviewer = "user"
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = false
+
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 3
+
+[agents.implementation-scout]
+description = "Map implementation, callers, types and dispatch before planning changes."
+config_file = "agents/implementation-scout.toml"
+
+[agents.test-auditor]
+description = "Find coverage, regression risks and missing behavioral tests before a change; do not run the full suite."
+config_file = "agents/test-auditor.toml"
+
+[agents.docs-auditor]
+description = "Audit documentation impact of changes to behavior, CSV fields, defaults or outputs."
+config_file = "agents/docs-auditor.toml"
+
+[agents.numerics-auditor]
+description = "Review geometry, numerical assumptions, units, conditioning and test tolerances."
+config_file = "agents/numerics-auditor.toml"
+
+[agents.performance-auditor]
+description = "Investigate hot paths, allocations, inference, threading and scaling with measured evidence."
+config_file = "agents/performance-auditor.toml"
+
+[agents.julia-idiom-reviewer]
+description = "Review changed Julia for dispatch, imports, type stability and Fromage structural invariants."
+config_file = "agents/julia-idiom-reviewer.toml"
+
+[mcp_servers.kaimon]
+url = "http://localhost:2828/mcp"
+startup_timeout_sec = 20
+tool_timeout_sec = 600
+default_tools_approval_mode = "prompt"
+
+# Match the existing Claude read-only allowlist. New tools prompt by default.
+[mcp_servers.kaimon.tools.ping]
+approval_mode = "auto"
+[mcp_servers.kaimon.tools.investigate_environment]
+approval_mode = "auto"
+[mcp_servers.kaimon.tools.usage_instructions]
+approval_mode = "auto"
+[mcp_servers.kaimon.tools.usage_quiz]
+approval_mode = "auto"
+[mcp_servers.kaimon.tools.tool_help]
+approval_mode = "auto"
+[mcp_servers.kaimon.tools.search_code]
+approval_mode = "auto"
+[mcp_servers.kaimon.tools.grep_code]
+approval_mode = "auto"
+[mcp_servers.kaimon.tools.type_info]
+approval_mode = "auto"
+[mcp_servers.kaimon.tools.search_methods]
+approval_mode = "auto"
+[mcp_servers.kaimon.tools.document_symbols]
+approval_mode = "auto"
+[mcp_servers.kaimon.tools.workspace_symbols]
+approval_mode = "auto"
+[mcp_servers.kaimon.tools.goto_definition]
+approval_mode = "auto"
+[mcp_servers.kaimon.tools.list_names]
+approval_mode = "auto"
+[mcp_servers.kaimon.tools.qdrant_list_collections]
+approval_mode = "auto"
+[mcp_servers.kaimon.tools.check_eval]
+approval_mode = "auto"
+[mcp_servers.kaimon.tools.check_tests]
+approval_mode = "auto"
+[mcp_servers.kaimon.tools.list_jobs]
+approval_mode = "auto"
+[mcp_servers.kaimon.tools.server_log]
+approval_mode = "auto"

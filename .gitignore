@@ -18,3 +18,15 @@ env
 node_modules
 /benchmark/Manifest.toml
 /simulation/Manifest.toml
+
+# Local assistant state and credentials; keep native integration files visible.
+/.claude/settings.local.json
+/.codex/*.local.toml
+/.codex/.env
+/.codex/.env.*
+!/.codex/.env.example
+/.codex/auth.json
+/.codex/sessions/
+/.codex/logs/
+/.codex/cache/
+/.codex/*.sqlite*

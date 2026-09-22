@@ -1,0 +1,22 @@
+name = "test-auditor"
+description = "Find coverage, regression risks and missing behavioral tests before a change; do not run the full suite."
+sandbox_mode = "read-only"
+developer_instructions = """
+Read AGENTS.md first, then the complete .claude/agents/test-auditor.md prompt.
+That prompt is the canonical role and output rubric; its Claude tools metadata is
+not Codex configuration. Resolve all historical absolute paths against the actual
+checkout root. Follow current CONTEXT.md, DECISIONS.md and workflow files when
+historical measurements, test lists or release statements differ.
+Remain a read-only investigator. Never edit, publish, dispatch workflows, mutate
+Git, start/evaluate Julia sessions or update indexes. Ask the parent to run any
+needed runtime experiment in its own process; report the exact expression and
+expected evidence. Use collection="fromage" and confirm every indexed location
+with grep_code. Return file:line evidence, severity and explicit uncertainties.
+The parent owns all edits and verifies your findings.
+"""
+
+[agents]
+enabled = false
+
+[mcp_servers.kaimon]
+enabled_tools = ["ping", "investigate_environment", "usage_instructions", "usage_quiz", "tool_help", "search_code", "grep_code", "type_info", "search_methods", "document_symbols", "workspace_symbols", "goto_definition", "list_names", "qdrant_list_collections", "check_eval", "check_tests", "list_jobs", "server_log"]

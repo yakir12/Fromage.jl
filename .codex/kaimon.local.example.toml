@@ -1,0 +1,6 @@
+# Example only: Codex does NOT auto-load this filename or *.local.toml.
+# Merge this table into your USER config, never put the token value in a file.
+# Supply KAIMON_API_KEY through your local secret manager/environment.
+# Keep an existing http_headers_helper instead if it already provides auth.
+[mcp_servers.kaimon]
+bearer_token_env_var = "KAIMON_API_KEY"

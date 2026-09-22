@@ -1,0 +1,10 @@
+# These guard escalation. They are not a universal shell/API firewall.
+prefix_rule(pattern = ["git", "push"], decision = "prompt", justification = "Remote writes require explicit task authorization; main can release.", match = ["git push origin main"])
+prefix_rule(pattern = ["git", "tag"], decision = "prompt", justification = "Tags are owned by release automation.", match = ["git tag v0.0.0"])
+prefix_rule(pattern = ["git", "remote"], decision = "prompt", justification = "Review remote configuration changes.")
+prefix_rule(pattern = ["git", "reset"], decision = "prompt", justification = "Preserve user changes and history.")
+prefix_rule(pattern = ["git", "clean"], decision = "prompt", justification = "Review exact deletion targets.")
+prefix_rule(pattern = ["gh", "pr", "merge"], decision = "prompt", justification = "Merging can release; explicit user instruction required.")
+prefix_rule(pattern = ["gh", "release"], decision = "prompt", justification = "Release operations require explicit authorization.")
+prefix_rule(pattern = ["gh", "workflow", "run"], decision = "prompt", justification = "Workflow dispatch can publish or mutate remote resources.")
+prefix_rule(pattern = ["gh", "api"], decision = "prompt", justification = "Review API method and target; flags may imply a write.")
