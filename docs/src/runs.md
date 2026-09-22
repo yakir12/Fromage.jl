@@ -48,13 +48,13 @@ beetle03.mp4,afternoon
     AprilTag drone tracking is configured entirely from `rectifications.csv` — see [`type = apriltag`](rectifications.md#Columns-for-type-apriltag) — so `runs.csv` has no `apriltags` column.
 
 !!! warning "Renamed in v0.2.0"
-    The `fps` column has been **split in two**. It used to mean both "the rate this video runs at" and "the rate to track it at" — the same number by default, and impossible to separate when they differed. Track at a lower rate with [`sample_fps`](#Optional-columns), which is what a plain `fps` always meant; use [`native_fps`](#Optional-columns) to correct a video that misreports its own rate. A csv that still names `fps` is rejected up front with `unrecognized column/s in runs file: [:fps] (fps was renamed to sample_fps — the video's own rate is native_fps)`. Renaming the column to `sample_fps` reproduces exactly what you had.
+    The `fps` column has been **split in two**. It used to mean both "the rate this video runs at" and "the rate to track it at" — the same number by default, and impossible to separate when they differed. Track at a lower rate with [`sample_fps`](#Optional-columns), which is what a plain `fps` always meant; use [`native_fps`](#Optional-columns) to correct a video that misreports its own rate. A csv that still names `fps` is accepted as ignored metadata and warns that it was renamed to `sample_fps` (the video's own rate is `native_fps`). Renaming the column to `sample_fps` reproduces exactly what you had.
 
 !!! warning "Renamed in v0.2.24"
-    The `calibration_id` column is now **`rectification_id`**, and the file it points into — `calibs.csv` — is now [`rectifications.csv`](rectifications.md). Only the column name changes here; what you write in it is unchanged. A `runs.csv` that still names `calibration_id` is rejected with `unrecognized column/s in runs file: [:calibration_id] (calibration_id was renamed to rectification_id (and calibs.csv is now rectifications.csv))`.
+    The `calibration_id` column is now **`rectification_id`**, and the file it points into — `calibs.csv` — is now [`rectifications.csv`](rectifications.md). Only the column name changes here; what you write in it is unchanged. A `runs.csv` that still names `calibration_id` is accepted as ignored metadata and warns about the migration.
 
 !!! warning "Renamed in v0.2.23"
-    The `scale` column is now [`downscale`](#Optional-columns). `rectifications.csv` also had a `scale` column, meaning something entirely different — real-world units per pixel, now [`pixel_width`](rectifications.md#Columns-for-type-uniform) — and one word for two unrelated quantities in two files you edit side by side was a trap worth closing. A `runs.csv` that still names `scale` is rejected with `unrecognized column/s in runs file: [:scale] (scale was renamed to downscale)`. Renaming the column reproduces exactly what you had; nothing about tracking changes.
+    The `scale` column is now [`downscale`](#Optional-columns). `rectifications.csv` also had a `scale` column, meaning something entirely different — real-world units per pixel, now [`pixel_width`](rectifications.md#Columns-for-type-uniform) — and one word for two unrelated quantities in two files you edit side by side was a trap worth closing. A `runs.csv` that still names `scale` is accepted as ignored metadata and warns that it was renamed to `downscale`. Renaming the column reproduces exactly what you had; nothing about tracking changes.
 
 !!! note "Why `native_fps` cannot be raised"
     `start` and `stop` stay in the video file's own seconds no matter what you declare, so claiming a rate *higher* than the file reports claims that your window holds more frames than it does — and the tracker would run off the end of the video partway through the run. A file that overstates its rate is the case worth correcting; one that understates it cannot be expressed here, because the frames it would need are not in the file.
@@ -69,7 +69,7 @@ beetle03.mp4,afternoon
     yourself wins over whatever the file is imputed to have.
 
 !!! warning "Removed in v0.1.19"
-    The `white_point` column was accepted but never had any effect, so it has been removed. A `runs.csv` that still has the column is now rejected with `unrecognized column/s in runs file: [:white_point]` — delete the column and the file loads as before. Nothing about tracking changes, since the value was never read.
+    The `white_point` column was accepted but never had any effect, so it remains ignored metadata. Nothing about tracking changes, since the value was never read.
 
 !!! tip "The one parameter worth measuring: `target_width`"
     Pause a run video on a frame where the animal is clearly visible, and measure how many pixels wide it is (many image viewers let you draw a selection box and read off its size). If the tracker keeps losing your animal, a wrong `target_width` is the first thing to check.

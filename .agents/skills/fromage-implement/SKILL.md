@@ -18,5 +18,7 @@ delivery, read CLAUDE.md §6 and RELEASING.md and follow their gates. A red PR o
 post-merge workflow requires diagnosis and approval before changing it.
 
 Completion: report scope, changed files, reproduction/regression evidence,
-threaded suite result, review findings, index freshness, and any delivery steps
-not authorized or blocked. A local result is not a completed release.
+threaded suite result, review findings, index freshness, issue-closure status, and
+any delivery steps not authorized or blocked. Include `Closes #<issue-number>` in
+the PR description and verify the originating issue closed after merge. A local
+result is not a completed release.

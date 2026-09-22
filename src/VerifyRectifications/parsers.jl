@@ -160,6 +160,7 @@ const RENAMED_TYPES = Dict(
 function verify_irrelevant(dict, row)
     ismissing(dict[:type]) && return          # wrong type: already reported, no field list to check
     for k in Tables.columnnames(row)
+        k ∉ COLUMNS && continue               # arbitrary user metadata is accepted and ignored (#321)
         (haskey(dict, k) || k == :type || k == :comment) && continue
         v = row[k]
         (ismissing(v) || (v isa AbstractString && isempty(strip(v)))) && continue

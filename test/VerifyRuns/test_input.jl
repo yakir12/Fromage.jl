@@ -10,14 +10,30 @@
         @test_throws "csv file is empty" load_csv(csv)
     end
 
-    @testset "unrecognized column" begin
+    @testset "unknown column is accepted" begin
         csv = write_rows(joinpath(DATADIR, "badcol.csv"), [["x", "y"]]; header = ["run_id", "foo"])
-        @test_throws "unrecognized column" load_csv(csv)
+        @test_logs check_csv(csv)
+    end
+
+    @testset "user-defined columns are ignored, with typo warnings" begin
+        csv = write_rows(
+            joinpath(DATADIR, "custom_columns.csv"),
+            [vcat(runrow(), ["metadata", "metadata"])];
+            header = vcat(HEADER, ["sample_fp", "animal_id"]),
+        )
+        @test_logs (:warn, r"sample_fp.*sample_fps") load_csv(csv)
+
+        csv = write_rows(
+            joinpath(DATADIR, "custom_feature.csv"),
+            [vcat(runrow(), ["metadata"])];
+            header = vcat(HEADER, ["custom_feature"]),
+        )
+        @test_logs load_csv(csv)
     end
 
     @testset "a header with stray whitespace is still recognized" begin
-        # `start ` used to arrive as Symbol("start ") and be rejected as an unrecognized column —
-        # a loud message for a cause the user cannot see in their spreadsheet. CSV strips header
+        # `start ` used to arrive as Symbol("start ") and be treated as separate metadata —
+        # a likely typo that the warning policy now catches. CSV strips header
         # names now, which is the half no cell parser can reach.
         csv = write_rows(
             joinpath(DATADIR, "padded_header.csv"), [["r", "c", ART.a, "1"]];
@@ -26,16 +42,15 @@
         @test clean(load_csv(csv))
     end
 
-    @testset "the split fps column is rejected with a hint" begin
+    @testset "the split fps column warns with a hint" begin
         # `fps` named two rates at once, so it could not be kept as a synonym for either: the
         # message has to say which one the value was, or a run silently changes meaning.
         csv = write_rows(
             joinpath(DATADIR, "fps_split.csv"), [["c1", "a.mp4", "15"]];
             header = ["rectification_id", "file", "fps"]
         )
-        @test_throws "unrecognized column" load_csv(csv)
-        @test_throws "sample_fps" load_csv(csv)
-        @test_throws "native_fps" load_csv(csv)
+        @test_logs (:warn, r"fps.*sample_fps") check_csv(csv)
+        @test_logs (:warn, r"fps.*native_fps") check_csv(csv)
     end
 
     @testset "the renamed scale column points at downscale, never pixel_width" begin
@@ -46,14 +61,7 @@
             joinpath(DATADIR, "scale_renamed.csv"), [["c1", "a.mp4", "0.5"]];
             header = ["rectification_id", "file", "scale"]
         )
-        @test_throws "unrecognized column" load_csv(csv)
-        @test_throws "scale was renamed to downscale" load_csv(csv)
-        err = try
-            load_csv(csv)
-        catch e
-            sprint(showerror, e)
-        end
-        @test !occursin("pixel_width", err)
+        @test_logs (:warn, r"scale.*downscale") check_csv(csv)
     end
 
     @testset "the renamed calibration_id column says where it went" begin
@@ -63,19 +71,17 @@
             joinpath(DATADIR, "calibid_renamed.csv"), [["c1", "a.mp4"]];
             header = ["calibration_id", "file"]
         )
-        @test_throws "unrecognized column" load_csv(csv)
-        @test_throws "calibration_id was renamed to rectification_id" load_csv(csv)
+        @test_logs (:warn, r"calibration_id.*rectification_id") check_csv(csv)
     end
 
-    @testset "the removed white_point column is now rejected by name (#19)" begin
+    @testset "the removed white_point column is accepted as metadata" begin
         # It was accepted and validated but never read, so it was removed rather than implemented.
-        # A csv that still carries it is rejected up front, naming the column — the migration is
-        # deleting it, and nothing about tracking changes, since the value never reached the tracker.
+        # A csv that still carries it is accepted as ignored metadata, and nothing about tracking
+        # changes, since the value never reached the tracker.
         csv = write_rows(
             joinpath(DATADIR, "wp_removed.csv"), [["c1", "a.mp4", "1.0"]];
             header = ["rectification_id", "file", "white_point"]
         )
-        @test_throws "unrecognized column" load_csv(csv)
-        @test_throws "white_point" load_csv(csv)
+        @test_logs check_csv(csv)
     end
 end
