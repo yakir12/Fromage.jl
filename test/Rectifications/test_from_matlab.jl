@@ -74,3 +74,22 @@
         @test norm(rect.image2real(p0 + SVector(1.0, 0.0)) - rect.image2real(p0)) ≈ Z / f atol = 1.0e-6
     end
 end
+
+@testset "anamorphic MATLAB coordinates (#277)" begin
+    mktempdir() do dir
+        @testset "sar = $sar" for sar in (1 // 2, 1 // 1, 2 // 1)
+            camera = matlab_camera(; sar)
+            file = joinpath(dir, "camera_$(numerator(sar))_$(denominator(sar)).mat")
+            MAT.matwrite(file, Dict("cameraParams" => camera.fields))
+            rect = R.from_matlab(;
+                matlab_file = file, extrinsic_index = 1, aspect = Float64(sar),
+                camera.center, camera.north, camera.width, camera.height
+            )
+            # Physical points in mm, across both axes and away from the optical axis. Their
+            # stored pixels come from the analytic camera alone, including radial distortion.
+            for (X, Y) in ((-40.0, -25.0), (35.0, -20.0), (-30.0, 35.0), (45.0, 30.0))
+                @test rect.image2real(camera.stored(X, Y)) ≈ SVector(Y, X) atol = 1.0e-6
+            end
+        end
+    end
+end

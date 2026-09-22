@@ -7,7 +7,7 @@ using LinearAlgebra
 using CoordinateTransformations
 using Rotations
 using MAT
-using ..Fixtures: CHECKERBOARD_POSES, make_squeezed_checkerboard_video
+using ..Fixtures: CHECKERBOARD_POSES, make_squeezed_checkerboard_video, matlab_camera
 
 # Most of the submodule's functions are internal (not exported); reach them through the module.
 const R = Rectifications
