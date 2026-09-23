@@ -230,6 +230,39 @@ end
         )
     end
 
+    @testset "a target paused under steady drift is neither absorbed nor ghosted (#341)" begin
+        # The drone counterpart of the tripod "long-stationary target" test, and the reproduction
+        # of #341. The disc pauses for 71 frames against a 30-frame background window, so only the
+        # protection keeps it out of the model; meanwhile the drone drifts 0.7 px a frame, 21 px
+        # across the window, so the evicted frame the protection restores from was filmed from
+        # 21 px away. On the plain white ground that is invisible, hence the texture, and the disc
+        # is low-contrast against it so that ghosts can compete. Measured maxima (px): 1.36 with
+        # the registered restore, 4.56 pasting the evicted pixels at the same raw indices (as
+        # before #341), 4.06 with no restore at all.
+        nframes = 120
+        v = make_apriltag_video(
+            dir, "driftpause"; nframes, tw = TARGET_WIDTH, textured = true, disc = 0x78,
+            pause = 25:95, pose = k -> drone_pose(dx = -0.7(k - 1))
+        )
+        # every tag's block stays whole in every frame, so every frame registers
+        @test all(
+            all(1 .<= pose_apply(pose, (c + dc, r + dr)) .<= (FRAME, FRAME))
+                for pose in v.poses, (r, c) in Fixtures.TAG_BLOCKS,
+                dr in (1, 10Fixtures.TAG_CELL), dc in (1, 10Fixtures.TAG_CELL)
+        )
+        file = joinpath(dir, v.file)
+        rect = rectify(file)
+        _, xy = track1(
+            file; rectification = rect, start_location = v.start_location,
+            target_width = TARGET_WIDTH, background_length = 30
+        )
+        @test length(xy) == nframes
+        @test !any(ismissing, xy)
+        expected(k) = rect.image2real(apply_h(rect.reference.M, v.expected_ref(k)))
+        # looser than TRACK_TOL (a textured, low-contrast scene), and ~1.6x clear of both failures
+        @test maximum(norm(xy[k] - expected(k)) for k in 1:nframes) < 2.5
+    end
+
     @testset "a non-square reference: viewport axis order, and the pipeline end to end" begin
         # Compact tag rows leave room for a wide viewport and its pan. The disc starts at
         # reference (x, y) = (309, 119): inside the correct centre search, beyond the transposed

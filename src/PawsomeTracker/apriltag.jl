@@ -403,11 +403,15 @@ function (w::RegisteredWarp)(x::SVector{3})
 end
 
 # the per-slice canvas → raw-frame (row, col) mapping (RegisteredWarp's 2D core), as a closure
-# for the registered protect_target
+# for the registered protect_target. At `downscale = 1` it maps raw (row, col) to raw (row, col)
+# through any frame-to-frame homography, which is how protect_target reaches the evicted frame.
 canvas2raw(Hinv, downscale) = rc -> (p = to_index(apply_h(Hinv, from_index(SVector(rc[2], rc[1]) ./ downscale))); (p[2], p[1]))
 
-# raw px padded around the protected target region, absorbing the one frame of drone motion the
-# registered protect_target approximates over (see its docstring in PawsomeTracker.jl)
+# raw px padded around the protected target region (see the registered protect_target in
+# PawsomeTracker.jl). A plain safety margin: it once absorbed a misregistration the restore now
+# resamples away (#341), and removing it changed nothing measurable (a paused disc under drift
+# tracked to the same 2.04 px either way), so it stays for the only thing it can still do, which is
+# widen what is protected.
 const PROTECT_PAD = 5
 
 # ============================================================================================
@@ -733,8 +737,13 @@ function track_apriltag(
                 # `track!`, and for the same reason: under the `if`, both were only maybe-defined
                 # at the restore. The ternary is lazy, so `lastHinv` is still read only when
                 # `subtract`, exactly as before.
+                # `warp.Hinvs[j]` still holds the EVICTED frame's registration here: the restore
+                # resamples from that frame, through its registration, not at the same raw indices
                 protect, keep = subtract ?
-                    protect_target(stack, j, guess, tr.radii, canvas2raw(lastHinv, vid.downscale), PROTECT_PAD) :
+                    protect_target(
+                        stack, j, guess, tr.radii, canvas2raw(lastHinv, vid.downscale),
+                        canvas2raw(warp.Hinvs[j] * inv(lastHinv), 1), PROTECT_PAD
+                    ) :
                     (nothing, nothing)
                 populate_slice!(stack, j, vid)
                 warp.Hinvs[j] = lastHinv

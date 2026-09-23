@@ -11,7 +11,7 @@ using LinearAlgebra
 # the geometry is internal to the submodule; import the (non-exported) names directly
 using Fromage.PawsomeTracker: CANON, TAG_SIZE_CM, apply_h, homography_dlt, place_square, fit_metric, rigid_align,
     _worst_side, ReferenceSpace, register,
-    RegisteredWarp, build_stack, canvas2raw, Gray, N0f8, METRIC_FIT_TOLERANCE,
+    RegisteredWarp, build_stack, canvas2raw, protect_target, restore_background!, Gray, N0f8, METRIC_FIT_TOLERANCE,
     ApriltagScene, apriltag_image2real, _real_to_canvas, DIAGNOSTIC_SIZE
 
 rot(θ) = SMatrix{2, 2, Float64}(cos(θ), sin(θ), -sin(θ), cos(θ))    # proper 2D rotation
@@ -151,6 +151,47 @@ project(H) = [[apply_h(H, c) for c in tc] for tc in TAGS_CM]
         # canvas2raw is the warp's 2D core: canvas (row, col) → raw frame (row, col)
         c2r = canvas2raw(Hinv((5, 7)), 1.0)
         @test all(c2r((20, 30)) .≈ (15.0, 23.0))
+    end
+
+    @testset "the drone restore resamples the evicted frame through both registrations" begin
+        # One rolling step (#341). The evicted frame and the incoming one were filmed from different
+        # drone poses — rotation plus a translation of ~15 px, unequal in x and y so a (row, col)
+        # flip shows — and the incoming one carries a dark target in the search window. After the
+        # restore, that window read through the warp must be the ground again, which only a
+        # resample through both registrations delivers: a paste at the same raw indices shows
+        # ground from ~15 px away. The ground is smooth and closed-form (in reference canvas
+        # index coordinates), so every interpolation along the way is accurate well inside `atol`.
+        ground(rc) = 0.5 + 0.2sin(rc[2] / 6) + 0.2cos(rc[1] / 7 + rc[2] / 11)
+        pose(θ, tx, ty) = SMatrix{3, 3, Float64}(cos(θ), sin(θ), 0, -sin(θ), cos(θ), 0, tx, ty, 1)
+        Hold, Hnew = pose(0.05, 3.3, -2.1), pose(-0.04, -9.6, 7.2)        # reference → frame
+        Hc, Wc = 60, 70
+        # frame k's raw pixel shows the ground at the reference point its registration names
+        film(Hinv) = [Gray{N0f8}(ground(canvas2raw(inv(Hinv), 1.0)((r, c)))) for r in 1:Hc, c in 1:Wc]
+        w = RegisteredWarp(1.0, [Hold, Hold])
+        stack = build_stack(w, (Hc, Wc), (Hc, Wc), 2, (1:Hc, 1:Wc, 1:2))
+        raw = storage(stack)
+        raw[:, :, 1] .= film(Hold)
+        raw[:, :, 2] .= film(Hold)
+        guess, radii = (30.0, 35.0), (8, 8)
+        window = CartesianIndices(UnitRange.(round.(Int, guess .- radii), round.(Int, guess .+ radii)))
+
+        # the rolling phase's order: protect under the incoming registration, then write the frame
+        protect, keep = protect_target(
+            stack, 1, guess, radii, canvas2raw(Hnew, 1.0), canvas2raw(Hold * inv(Hnew), 1), 0
+        )
+        evicted = copy(raw[:, :, 1])
+        incoming = film(Hnew)
+        incoming[protect] .= Gray{N0f8}(0)                                 # the target
+        raw[:, :, 1] .= incoming
+        w.Hinvs[1] = Hnew
+        @test all(Float32(stack[I, 1]) == 0 for I in window)               # detect sees the target
+        restore_background!(stack, 1, protect, keep)
+        @test maximum(abs(Float32(stack[I, 1]) - ground(Tuple(I))) for I in window) < 0.01
+
+        # the paste at the same raw indices that this replaced: the right pixels, the wrong ground
+        raw[:, :, 1] .= incoming
+        raw[protect, 1] .= evicted[protect]
+        @test maximum(abs(Float32(stack[I, 1]) - ground(Tuple(I))) for I in window) > 0.1
     end
 
     @testset "the diagnostic canvas is gauged by center/north, not by the tag fit" begin

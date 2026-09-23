@@ -294,16 +294,33 @@ pose_apply(H, p) = (v = H * SVector(Float64(p[1]), Float64(p[2]), 1.0); SVector(
 const TAG_CELL = 8
 const TAG_BLOCKS = [(150, 150), (150, 370), (370, 150), (370, 370)]   # (row, col) of each block
 
-"The static ground plane: white, with tag36h11 ids 0:3 at `tag_blocks` (ground row, col)."
-function apriltag_ground(GH = 600, GW = 600; tag_blocks = TAG_BLOCKS)
+"""
+The static ground plane: white — or `ground_texture` when `textured` — with tag36h11 ids 0:3 at
+`tag_blocks` (ground row, col). Each tag block carries its own white quiet zone either way.
+"""
+function apriltag_ground(GH = 600, GW = 600; tag_blocks = TAG_BLOCKS, textured = false)
     upscale(t) = UInt8.(kron(Int.(t), ones(Int, TAG_CELL, TAG_CELL)))
     tagu8(id) = UInt8.(255 .* (Float64.(getAprilTagImage(id, tag36h11)) .> 0.5))
-    ground = fill(0xff, GH, GW)
+    ground = textured ? ground_texture(GH, GW) : fill(0xff, GH, GW)
     for ((r, c), id) in zip(tag_blocks, 0:3)
         ground[(r + 1):(r + 10TAG_CELL), (c + 1):(c + 10TAG_CELL)] .= upscale(tagu8(id))
     end
     return ground
 end
+
+# A ground with structure at the target's own scale, for the tests a plain white ground cannot see:
+# a background pixel pasted from the wrong ground position is invisible on white, and a dark ghost
+# blob on this (#341). Three plane waves on mutually incommensurate periods (in ground px), so no
+# shift the tests make maps the texture onto itself; closed-form, so it is the same on every
+# platform and Julia version, unlike a seeded RNG stream. Gray levels span 145:255.
+ground_texture(GH, GW) = [
+    round(
+        UInt8, 200 + 55 / 3 * (
+            sin(2π * (c / 17.3 + r / 41.9)) + sin(2π * (c / 29.7 - r / 13.1) + 1.3) +
+                sin(2π * (r / 21.1 + c / 53.3) + 2.9)
+        )
+    ) for r in 1:GH, c in 1:GW
+]
 
 # A drone pose, as the image-space motion it induces, composed from interpretable degrees of
 # freedom about the fixed point `(cx, cy)` — pass the frame centre for the rotations a drone
@@ -367,12 +384,12 @@ function render_pose(ground, H, height, width)
     return out
 end
 
-# The disc, burned into a copy of the ground plane at ground position `(r0, c0)`.
-function draw_disc(ground, r0, c0, tw)
+# The disc, burned into a copy of the ground plane at ground position `(r0, c0)`, at gray `value`.
+function draw_disc(ground, r0, c0, tw; value = 0x00)
     g = copy(ground)
     rad = tw / 2
     for i in floor(Int, r0 - rad):ceil(Int, r0 + rad), j in floor(Int, c0 - rad):ceil(Int, c0 + rad)
-        (i - r0)^2 + (j - c0)^2 <= rad^2 && (g[i, j] = 0x00)
+        (i - r0)^2 + (j - c0)^2 <= rad^2 && (g[i, j] = value)
     end
     return g
 end
@@ -391,7 +408,9 @@ translation, and bit-identical to the crop it used to be implemented as. Frames 
 `occlude` get the first tag painted over, so that frame cannot register.
 
 `tag_blocks` places the tags in ground-canvas `(row, col)` pixels. The disc moves linearly from
-`ground_start` to `ground_stop`, also in ground-canvas pixels (1-based array indices).
+`ground_start` to `ground_stop`, also in ground-canvas pixels (1-based array indices); `pause`, a
+range of frames, holds it still through those frames, and it still ends at `ground_stop`. `disc` is its gray level, and `textured` swaps the white ground for
+`ground_texture` — both off by default, so existing flights render bit-identically.
 
 Returns a NamedTuple; its first four fields are positional-destructuring compatible with the
 older `(file, groundpath, start_location, nframes)` form.
@@ -410,7 +429,8 @@ function make_apriltag_video(
         dir, name; H = 480, W = 480, GH = 600, GW = 600,
         nframes = 60, fps = 25, tw = 12, amp = 40, pose = nothing,
         occlude = Int[], tag_blocks = TAG_BLOCKS,
-        ground_start = (260.0, 260.0), ground_stop = (300.0, 320.0)
+        ground_start = (260.0, 260.0), ground_stop = (300.0, 320.0),
+        textured = false, disc = 0x00, pause = 1:0
     )
     ox0, oy0 = (GW - W) ÷ 2, (GH - H) ÷ 2                   # the fixed crop: ground -> frame
     turn(k) = 2π * (k - 1) / nframes
@@ -429,18 +449,21 @@ function make_apriltag_video(
         [pose(k) * base for k in 1:nframes]                 # `pose` moves the drone about the frame
     end
 
-    gr(k) = ground_start[1] + (ground_stop[1] - ground_start[1]) * (k - 1) / (nframes - 1)
-    gc(k) = ground_start[2] + (ground_stop[2] - ground_start[2]) * (k - 1) / (nframes - 1)
+    # the disc's steps along its path by frame `k`: each frame in `pause` repeats the one before it
+    moving = nframes - length(pause)
+    steps(k) = k - 1 - clamp(k - first(pause) + 1, 0, length(pause))
+    gr(k) = ground_start[1] + (ground_stop[1] - ground_start[1]) * steps(k) / (moving - 1)
+    gc(k) = ground_start[2] + (ground_stop[2] - ground_start[2]) * steps(k) / (moving - 1)
     ground_xy(k) = SVector(gc(k), gr(k))                    # the same point as (x, y)
 
-    ground = apriltag_ground(GH, GW; tag_blocks)
+    ground = apriltag_ground(GH, GW; tag_blocks, textured)
     occluded = copy(ground)
     r, c = first(tag_blocks)
     occluded[(r + 1):(r + 10TAG_CELL), (c + 1):(c + 10TAG_CELL)] .= 0xff    # the first tag painted out
     raw = joinpath(dir, "$name.raw")
     open(raw, "w") do io
         for k in 1:nframes
-            g = draw_disc(k in occlude ? occluded : ground, gr(k), gc(k), tw)
+            g = draw_disc(k in occlude ? occluded : ground, gr(k), gc(k), tw; value = disc)
             write(io, vec(permutedims(render_pose(g, poses[k], H, W))))   # row-major for ffmpeg
         end
     end
