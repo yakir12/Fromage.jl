@@ -241,7 +241,7 @@ end
         # before #341), 4.06 with no restore at all.
         nframes = 120
         v = make_apriltag_video(
-            dir, "driftpause"; nframes, tw = TARGET_WIDTH, textured = true, disc = 0x78,
+            dir, "driftpause"; nframes, tw = TARGET_WIDTH, textured = true, disc_gray = 0x78,
             pause = 25:95, pose = k -> drone_pose(dx = -0.7(k - 1))
         )
         # every tag's block stays whole in every frame, so every frame registers

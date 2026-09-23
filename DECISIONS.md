@@ -852,14 +852,12 @@ target *is* the maximum wherever it ever passed and would erase itself, leaving 
 along its own trajectory.
 
 **In drone mode the restore resamples through both registrations, and is corrected rather than
-removed (#341).** The stack holds raw, unregistered frames, so "the pre-target background the evicted
-frame held there" is not at the same raw indices: the evicted frame was filmed a whole background
-window earlier, 5–25 raw px of drift away on real footage (run 0_1, at the default 250 frames). The
-restore used to paste it at the same indices anyway. The code comments claimed the error was "up to
-one frame of drone motion", absorbed by `PROTECT_PAD`, and that was wrong. The result was a trail of
-shifted ground patches along the target's path, which under the `maximum` model shows up as dark
-ghost blobs in the search window that a faint target loses to. Tripod mode was never affected: the
-camera does not move, so the same raw index is the same ground.
+removed (#341).** The stack holds raw, unregistered frames, and the evicted frame was filmed a whole
+background window earlier: 5–25 raw px of drift on real footage (run 0_1, 250 frames). Pasting its
+pixels back at the same raw indices, as the restore used to, laid shifted ground along the target's
+path, which the `maximum` model turns into dark ghost blobs. The old comments put the error at "one
+frame of drone motion", absorbed by `PROTECT_PAD`, and they were wrong. Tripod mode was never
+affected.
 
 Removing the restore was measured and **not** kept. It rescues run 0_1 (median 2.8 px, max 12.1 px
 against hand-clicked ground truth), and moves 7_7's first miss from 955.5 s to 967.4 s (7_7 has a

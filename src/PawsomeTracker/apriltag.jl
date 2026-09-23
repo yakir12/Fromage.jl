@@ -409,9 +409,9 @@ canvas2raw(Hinv, downscale) = rc -> (p = to_index(apply_h(Hinv, from_index(SVect
 
 # raw px padded around the protected target region (see the registered protect_target in
 # PawsomeTracker.jl). A plain safety margin: it once absorbed a misregistration the restore now
-# resamples away (#341), and removing it changed nothing measurable (a paused disc under drift
-# tracked to the same 2.04 px either way), so it stays for the only thing it can still do, which is
-# widen what is protected.
+# resamples away (#341), and removing it changed nothing measurable (test/apriltag_pipeline.jl's
+# paused disc under drift tracks to the same worst error either way), so it stays for the only
+# thing it can still do, which is widen what is protected.
 const PROTECT_PAD = 5
 
 # ============================================================================================

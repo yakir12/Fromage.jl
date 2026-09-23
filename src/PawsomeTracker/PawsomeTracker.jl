@@ -408,7 +408,9 @@ end
 # the box's footprint in the evicted frame — `raw2evicted` maps an incoming raw (row, col) there, the
 # incoming registration then the evicted one's inverse — plus that map, so `restore_background!` can
 # resample the pre-target ground into the incoming frame's registration.
-function protect_target(stack, j, guess, radii, canvas2raw::Function, raw2evicted::Function, pad::Int)
+# `where {F, G}`: both maps are only passed on, and Julia does not specialize on a function argument
+# it merely passes, which would leave every use of them below a runtime dispatch, once per frame.
+function protect_target(stack, j, guess, radii, canvas2raw::F, raw2evicted::G, pad::Int) where {F, G}
     slice = selectdim(parent(parent(stack)), 3, j)
     protect = raw_box(canvas2raw, guess .- radii, guess .+ radii, pad) ∩ CartesianIndices(slice)
     # one px wider than the corners' footprint, for the bilinear stencil's far neighbours
@@ -431,7 +433,7 @@ struct EvictedPatch{F}
     pixels::OffsetMatrix{Gray{N0f8}, Matrix{Gray{N0f8}}}
 end
 
-function restore_background!(stack, j, protect, keep)
+function restore_background!(stack, j, protect, keep::AbstractMatrix)
     selectdim(parent(parent(stack)), 3, j)[protect] = keep
     return
 end
@@ -443,9 +445,9 @@ end
 # window's drift of a frame edge, and only there can the target reach the history.
 function restore_background!(stack, j, protect, keep::EvictedPatch)
     slice = selectdim(parent(parent(stack)), 3, j)
-    for I in protect
-        v = bilinear(keep.pixels, keep.raw2evicted(Tuple(I)))
-        isnothing(v) || (slice[I] = v)
+    for rc in protect
+        v = bilinear(keep.pixels, keep.raw2evicted(Tuple(rc)))
+        isnothing(v) || (slice[rc] = v)
     end
     return
 end

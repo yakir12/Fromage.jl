@@ -408,9 +408,10 @@ translation, and bit-identical to the crop it used to be implemented as. Frames 
 `occlude` get the first tag painted over, so that frame cannot register.
 
 `tag_blocks` places the tags in ground-canvas `(row, col)` pixels. The disc moves linearly from
-`ground_start` to `ground_stop`, also in ground-canvas pixels (1-based array indices); `pause`, a
-range of frames, holds it still through those frames, and it still ends at `ground_stop`. `disc` is its gray level, and `textured` swaps the white ground for
-`ground_texture` — both off by default, so existing flights render bit-identically.
+`ground_start` to `ground_stop`, also in ground-canvas pixels (1-based array indices). `pause`, a
+range of frames after the first, holds it still through those frames, and it still ends at
+`ground_stop`. `disc_gray` is its gray level, and `textured` swaps the white ground for
+`ground_texture` — all off by default, so existing flights render bit-identically.
 
 Returns a NamedTuple; its first four fields are positional-destructuring compatible with the
 older `(file, groundpath, start_location, nframes)` form.
@@ -430,7 +431,7 @@ function make_apriltag_video(
         nframes = 60, fps = 25, tw = 12, amp = 40, pose = nothing,
         occlude = Int[], tag_blocks = TAG_BLOCKS,
         ground_start = (260.0, 260.0), ground_stop = (300.0, 320.0),
-        textured = false, disc = 0x00, pause = 1:0
+        textured = false, disc_gray = 0x00, pause = 1:0
     )
     ox0, oy0 = (GW - W) ÷ 2, (GH - H) ÷ 2                   # the fixed crop: ground -> frame
     turn(k) = 2π * (k - 1) / nframes
@@ -450,6 +451,7 @@ function make_apriltag_video(
     end
 
     # the disc's steps along its path by frame `k`: each frame in `pause` repeats the one before it
+    isempty(pause) || first(pause) > 1 || throw(ArgumentError("a pause needs a frame before it to hold"))
     moving = nframes - length(pause)
     steps(k) = k - 1 - clamp(k - first(pause) + 1, 0, length(pause))
     gr(k) = ground_start[1] + (ground_stop[1] - ground_start[1]) * steps(k) / (moving - 1)
@@ -463,7 +465,7 @@ function make_apriltag_video(
     raw = joinpath(dir, "$name.raw")
     open(raw, "w") do io
         for k in 1:nframes
-            g = draw_disc(k in occlude ? occluded : ground, gr(k), gc(k), tw; value = disc)
+            g = draw_disc(k in occlude ? occluded : ground, gr(k), gc(k), tw; value = disc_gray)
             write(io, vec(permutedims(render_pose(g, poses[k], H, W))))   # row-major for ffmpeg
         end
     end
