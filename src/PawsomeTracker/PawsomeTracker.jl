@@ -7,7 +7,7 @@ using ..ShareIO: ShareIO
 using VideoIO: openvideo, AV_PIX_FMT_GRAY8, open_video_out, VideoWriter, VideoReader, close_video_out!, skipframes, gettime
 using ImageDraw: draw!, CirclePointRadius, Path
 using FreeTypeAbstraction: renderstring!, FTFont
-using ColorTypes: Gray
+using ColorTypes: Gray, gray
 using FixedPointNumbers: N0f8
 using ImageTransformations: imresize!, warp, WarpedView
 using RelocatableFolders: @path
@@ -399,28 +399,72 @@ function protect_target(stack, j, guess, radii, downscale)
     return protect, slice[protect]
 end
 
-# Registered variant (AprilTag mode): the search window lives in canvas (reference-space)
-# coordinates, so its four corners cross `canvas2raw` — the slice's registration composed with the
-# inverse scaling — before the protected region is taken as their bounding box in the raw frame.
-# `pad` (raw px) absorbs the approximation: the box is computed under the INCOMING frame's
-# registration while `keep` holds the EVICTED frame's raw values at those indices, each off by up
-# to one frame of drone motion. Padding only widens the protected area.
-function protect_target(stack, j, guess, radii, canvas2raw::Function, pad::Int)
+# Registered variant (AprilTag mode). The search window lives in canvas (reference-space)
+# coordinates, so its four corners cross `canvas2raw` — the INCOMING slice's registration composed
+# with the inverse scaling — and the protected region is their bounding box in the incoming raw
+# frame, widened by `pad` raw px. The evicted frame was filmed from wherever the drone was a whole
+# background window earlier (5-25 raw px away on real footage, #341), so its pixels at those same
+# raw indices show some other patch of ground. What `keep` holds instead is the evicted slice over
+# the box's footprint in the evicted frame — `raw2evicted` maps an incoming raw (row, col) there, the
+# incoming registration then the evicted one's inverse — plus that map, so `restore_background!` can
+# resample the pre-target ground into the incoming frame's registration.
+# `where {F, G}`: both maps are only passed on, and Julia does not specialize on a function argument
+# it merely passes, which would leave every use of them below a runtime dispatch, once per frame.
+function protect_target(stack, j, guess, radii, canvas2raw::F, raw2evicted::G, pad::Int) where {F, G}
     slice = selectdim(parent(parent(stack)), 3, j)
-    corners = (
-        canvas2raw(guess .- radii), canvas2raw(guess .+ radii),
-        canvas2raw((guess[1] - radii[1], guess[2] + radii[2])),
-        canvas2raw((guess[1] + radii[1], guess[2] - radii[2])),
-    )
-    lo = floor.(Int, min.(corners...)) .- pad
-    hi = ceil.(Int, max.(corners...)) .+ pad
-    protect = CartesianIndices(UnitRange.(lo, hi)) ∩ CartesianIndices(slice)
-    return protect, slice[protect]
+    protect = raw_box(canvas2raw, guess .- radii, guess .+ radii, pad) ∩ CartesianIndices(slice)
+    # one px wider than the corners' footprint, for the bilinear stencil's far neighbours
+    footprint = isempty(protect) ? protect :
+        raw_box(raw2evicted, Tuple(first(protect)), Tuple(last(protect)), 1) ∩ CartesianIndices(slice)
+    return protect, EvictedPatch(raw2evicted, OffsetMatrix(slice[footprint], footprint.indices))
 end
 
+# The raw-frame bounding box, widened by `pad` px, of the rectangle `lo:hi` carried through `f`.
+# A homography keeps straight lines straight, so the corners' box contains the whole image.
+function raw_box(f, lo, hi, pad)
+    corners = (f(lo), f(hi), f((lo[1], hi[2])), f((hi[1], lo[2])))
+    return CartesianIndices(UnitRange.(floor.(Int, min.(corners...)) .- pad, ceil.(Int, max.(corners...)) .+ pad))
+end
+
+# The evicted frame's pixels over a protected box's footprint, indexed by the evicted frame's own
+# raw (row, col), and the map taking the incoming frame's raw (row, col) there.
+struct EvictedPatch{F}
+    raw2evicted::F
+    pixels::OffsetMatrix{Gray{N0f8}, Matrix{Gray{N0f8}}}
+end
+
+# `keep` stays untyped: callers hold `protect` and `keep` as two unions that are `nothing` together,
+# and inference, splitting them separately, also asks for `keep::Nothing` with a real `protect`.
+# That pair never happens, but annotating `keep::AbstractMatrix` leaves it matching no method, and
+# JET reports it — measured, in both tracking loops.
 function restore_background!(stack, j, protect, keep)
     selectdim(parent(parent(stack)), 3, j)[protect] = keep
     return
+end
+
+# Registered variant: every protected pixel is resampled from the evicted frame at the ground point
+# it now shows. A pixel whose stencil leaves the evicted frame keeps its incoming value: that ground
+# was never filmed by the evicted frame, so there is no pre-target background to restore, and
+# inventing one would put ground into the model that no frame ever saw. Such pixels lie within the
+# window's drift of a frame edge, and only there can the target reach the history.
+function restore_background!(stack, j, protect, keep::EvictedPatch)
+    slice = selectdim(parent(parent(stack)), 3, j)
+    for rc in protect
+        v = bilinear(keep.pixels, keep.raw2evicted(Tuple(rc)))
+        isnothing(v) || (slice[rc] = v)
+    end
+    return
+end
+
+# `img` sampled bilinearly at the fractional index `(r, c)`, or `nothing` where the 2x2 stencil
+# leaves `img` (even on a whole index, whose far neighbours carry zero weight — a one-px rim).
+function bilinear(img, (r, c))
+    r0, c0 = floor(Int, r), floor(Int, c)
+    checkbounds(Bool, img, r0:(r0 + 1), c0:(c0 + 1)) || return nothing
+    fr, fc = r - r0, c - c0
+    v = (1 - fr) * ((1 - fc) * gray(img[r0, c0]) + fc * gray(img[r0, c0 + 1])) +
+        fr * ((1 - fc) * gray(img[r0 + 1, c0]) + fc * gray(img[r0 + 1, c0 + 1]))
+    return Gray{N0f8}(clamp(v, 0, 1))    # a convex combination, but rounding can nudge it past 1
 end
 
 # Sequential on purpose: next!(vid) decodes into the single shared vid.img buffer, so copying

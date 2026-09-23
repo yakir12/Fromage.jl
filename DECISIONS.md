@@ -851,6 +851,27 @@ never raises the per-pixel maximum over time, so `maximum` sees through it, wher
 target *is* the maximum wherever it ever passed and would erase itself, leaving a ghost swath
 along its own trajectory.
 
+**In drone mode the restore resamples through both registrations, and is corrected rather than
+removed (#341).** The stack holds raw, unregistered frames, and the evicted frame was filmed a whole
+background window earlier: 5–25 raw px of drift on real footage (run 0_1, 250 frames). Pasting its
+pixels back at the same raw indices, as the restore used to, laid shifted ground along the target's
+path, which the `maximum` model turns into dark ghost blobs. The old comments put the error at "one
+frame of drone motion", absorbed by `PROTECT_PAD`, and they were wrong. Tripod mode was never
+affected.
+
+Removing the restore was measured and **not** kept. It rescues run 0_1 (median 2.8 px, max 12.1 px
+against hand-clicked ground truth), and moves 7_7's first miss from 955.5 s to 967.4 s (7_7 has a
+second mechanism: a bright pole burned into the max background). But it **regresses 23_4**, which
+passes today: first miss at 445.2 s, max 58.6 px. That beetle walks steadily at ~4 px/s, so this is
+not the stationary-target absorption the protection exists for, and it is still undiagnosed. So the
+restore is kept and made correct instead. Each protected pixel is carried to the reference plane by
+the incoming frame's registration, then into the evicted frame by that frame's own, and sampled
+there bilinearly. A pixel whose stencil leaves the evicted frame keeps its incoming value, since no
+pre-target background exists for it. On the synthetic reproduction (a disc paused 71 frames under a
+0.7 px/frame drift, 30-frame window, textured ground) the worst error is 1.36 px corrected, 4.56 px
+with the same-index paste and 4.06 px with no restore. `PROTECT_PAD` is kept only as a margin:
+dropping it measured no difference. Re-scoring the real failing runs is a follow-up on #335.
+
 ### `background_length = 0` keeps a 2-slice stack
 
 Zero turns background subtraction off, but the stack itself stays, because it is also `detect`'s
