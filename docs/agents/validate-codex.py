@@ -131,17 +131,24 @@ def hook_and_rule_checks():
         assert context["hookEventName"] == "SessionStart"
         assert ("NOT REACHABLE" in context["additionalContext"]) == (status == "000")
     # These scripts were inspected: this hook only parses input and prints JSON.
+    # The hook denies only searches that read this repo's Julia code (CLAUDE.md §1 rule 6).
     for command, denied in [
         ("rg retry src", True), ("git grep retry", True),
+        ("grep -rn findfirstkey src/ | head", True), ("grep -n check test/harness.jl", True),
         ("sed -n '1,10p' src/shareio.jl", False),
         ("rg title README.md # kaimon-ok", False),
+        ("grep -n target_width docs/src/runs.md", False),
+        ("julia --project -e 'x' 2>&1 | grep -E 'a|b'", False),
+        ("git log | grep -v x; gh pr create --body 'see src/ and docs/'", False),
+        ("grep -rn --include='*.md' KaimonGate .", False), ("rg -t md foo", False),
+        ("find src -name '*.jl'", False),
     ]:
         output = run(["bash", ".claude/hooks/prefer-kaimon-search.sh"], input=json.dumps({
             "hook_event_name": "PreToolUse", "tool_name": "Bash",
-            "tool_input": {"command": command},
+            "tool_input": {"command": command}, "cwd": str(ROOT),
         }))
         decision = json.loads(output)["hookSpecificOutput"]["permissionDecision"] if output else None
-        assert (decision == "deny") == denied
+        assert (decision == "deny") == denied, f"search hook misjudged: {command}"
     for command in [["git", "push", "origin", "main"], ["gh", "pr", "merge", "1"],
                     ["git", "tag", "v0.0.0"], ["gh", "workflow", "run", "Docs.yml"]]:
         result = json.loads(run(["codex", "execpolicy", "check", "--rules",
