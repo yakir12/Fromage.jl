@@ -60,6 +60,13 @@ def structural():
     run(["bash", "-n", ".github/scripts/cache-cleanup.sh"])
     ast.parse(Path(__file__).read_text())
 
+    # Agent configuration is not package content: a push touching only it must not
+    # release. v0.6.15 was cut by a 4-line .codex/config.toml commit before this held.
+    test = yaml.safe_load((ROOT / ".github/workflows/Test.yml").read_text())
+    ignored = set(test[True]["push"]["paths-ignore"])  # YAML 1.1 reads the `on:` key as True
+    missing = {".claude/**", ".codex/**", ".agents/**", "docs/agents/**"} - ignored
+    assert not missing, f"Test.yml would release agent-config pushes: {sorted(missing)}"
+
     claude = json.loads((ROOT / ".claude/settings.json").read_text())
     config = tomllib.loads((ROOT / ".codex/config.toml").read_text())
     readonly = {
@@ -104,7 +111,7 @@ def structural():
             assert policy["policy"]["allow_implicit_invocation"] is False
         skills[name] = target
     assert {p.parent.name for p in (ROOT / ".agents/skills").glob("*/SKILL.md")} == set(skills)
-    print(f"PASS structured files, Claude references, {len(agents)} agents, {len(skills)} skills, approval parity")
+    print(f"PASS structured files, release filters, Claude references, {len(agents)} agents, {len(skills)} skills, approval parity")
     return agents, skills
 
 

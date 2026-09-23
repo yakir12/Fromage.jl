@@ -490,11 +490,11 @@ of those is "done" on its own, and none of them should be reported as done.
   because `AutoRelease` triggers on `Test` completing, so anything `Test` skips is never released.
   It ignores top-level `*.md` (`*` does not cross `/`, so `docs/src/*.md` still counts), `LICENSE`,
   `.gitignore`, `codecov.yml`, `.lychee.toml`, `.copier-answers.yml`, **`docs/agents/**`**,
-  **`.claude/**`** and **`simulation/**`**. Everything else under `src/` or `docs/` does release —
+  **`.claude/**`**, **`.codex/**`**, **`.agents/**`** and **`simulation/**`**. Everything else under `src/` or `docs/` does release —
   so batch a `docs/src/` correction into the PR that needs it, or it costs a second version bump.
   Two of those are easy to get wrong in the direction that *costs* you nothing and *tells* you
-  something false: `docs/agents/**` and `.claude/**` look like they release because they sit under
-  `docs/` and look like config, and they do not — neither is loaded by the package or built into the
+  something false: `docs/agents/**` and the three agent-config trees look like they release because
+  they sit under `docs/` or look like config, and they do not — none is loaded by the package or built into the
   site, so there is no `/stable/` for a tag to advance. `Docs.yml` carves `docs/agents/**` out with
   a negated pattern for the same reason, so a PR touching only those paths legitimately gets **no
   `Docs`, no `TestOnPRs` and no `Format`** — `Lint` alone, which matches `**/*.md`.

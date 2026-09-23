@@ -9,10 +9,10 @@ unchanged. The original prompts and scripts remain canonical shared resources.
 No symlinks, package dependencies, model pins or credentials are added.
 
 The migration was local only: no commit, push, PR, merge, tag, release, remote
-configuration change or publication. A future push of `.codex/**` or `.agents/**`
-to main **does trigger the existing release chain**: unlike `.claude/**`, these
-paths are not excluded by `Test.yml`. The integration deliberately does not
-change those filters. `docs/agents/**` and root Markdown remain excluded.
+configuration change or publication. `.codex/**` and `.agents/**` were at first
+not excluded by `Test.yml`, so a push touching only them cut a release (v0.6.15
+came from a 4-line `.codex/config.toml` commit). They are now ignored alongside
+`.claude/**`, `docs/agents/**` and root Markdown.
 
 ## Start and trust
 
@@ -416,8 +416,6 @@ keep these brief copies synchronized. No generator rewrites Claude files.
   (for example through Git Bash) or a WSL setup. Windows hook execution was not
   tested; without those dependencies, use the disclosed manual bootstrap/search
   fallback and do not claim deterministic enforcement.
-- Future release-filter changes should be a separately authorized decision;
-  they are not silently bundled into assistant integration.
 
 ## Sources consulted
 

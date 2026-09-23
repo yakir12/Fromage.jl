@@ -25,9 +25,11 @@ on:
     # docs/make.jl builds from docs/src (Documenter's default), so nothing in docs/agents/
     # is published and there is no /stable/ for a tag to advance. It lives under docs/
     # only because the consuming skills hardcode that path.
-    # `.claude/**` is excluded for the same reason: agents, skills, hooks and settings that
-    # shape how the assistant works in this repo. None of it is loaded by the package or
-    # built into the site, so a change there has nothing to release.
+    # `.claude/**`, `.codex/**` and `.agents/**` are excluded for the same reason: agents,
+    # skills, hooks and settings that shape how Claude and Codex work in this repo. None of it
+    # is loaded by the package or built into the site, so a change there has nothing to
+    # release. (`.codex/**` and `.agents/**` were missing until a 4-line `.codex/config.toml`
+    # commit cut v0.6.15.)
     # `simulation/**` is the CalibrationRigSimulation package (#289, #297): a research instrument
     # in development, trusted by nobody yet. It is not loaded by Fromage, and it runs no CI and
     # cuts no release until its behaviour earns one — DECISIONS.md, "The simulation runs no CI
@@ -41,6 +43,8 @@ on:
       - ".copier-answers.yml"
       - "docs/agents/**"
       - ".claude/**"
+      - ".codex/**"
+      - ".agents/**"
       - "simulation/**"
   workflow_dispatch:
 

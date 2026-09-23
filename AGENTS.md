@@ -98,9 +98,9 @@ Read `RELEASING.md` before any authorized delivery operation. Never manually edi
 the root package version or casually place release/skip-CI markers in commit
 messages or PR text. A successful `main` test run starts automatic release and
 tag documentation deployment. Recovery examples are not permission to run them.
-Read actual workflow filters: `.claude/**`, `docs/agents/**`, root Markdown and
-`simulation/**` are excluded from releases; `.codex/**` and `.agents/**` currently
-are **not**. Package source and user-site docs can release. Do not edit generated
+Read actual workflow filters: `.claude/**`, `.codex/**`, `.agents/**`,
+`docs/agents/**`, root Markdown and `simulation/**` are excluded from releases.
+Package source and user-site docs release. Do not edit generated
 manifests, docs/build, caches, coverage, transcripts or indexes as source files.
 
 When delivery is authorized: one fix/branch/PR, start from main without stacking,
