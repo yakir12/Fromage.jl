@@ -8,9 +8,11 @@ One package, version and suite; the former packages are submodules.
 ## Bootstrap and shared rules
 
 Before repository work, read `CLAUDE.md` completely as the shared operational
-reference. Preserve it and everything under `.claude/`. Its Julia, testing,
-search, troubleshooting and review guidance also applies to Codex, with the
-following explicit tool and authorization adaptations:
+reference. Claude and Codex both maintain this repo, and `CLAUDE.md` plus
+`.claude/` are the single source for both: change a shared rule, agent prompt or
+skill there, and keep this file and the `.codex/`/`.agents/` wrappers to the
+Codex-specific adaptations below. Its Julia, testing, search, troubleshooting and
+review guidance applies to Codex with these explicit adaptations:
 
 - **This entry point governs Codex authorization.** A request to implement permits
   local implementation and validation. Commit only when requested. Pushes
@@ -28,9 +30,9 @@ following explicit tool and authorization adaptations:
   examples from the original machine, never a reason to access another checkout.
 - Use `search_code(query="…", collection="fromage")` to discover code, then
   `grep_code` to confirm current paths/lines; inspect types/methods before claiming
-  behavior. Explicitly target every session-bound call. Never evaluate in a
-  borrowed session. If startup returns an already-running session you do not own,
-  use `JULIA_NUM_THREADS=auto julia --project` for runtime evidence.
+  behavior. Explicitly target every session-bound call. An already-running
+  agent-spawned Fromage session is usable once `investigate_environment` confirms
+  its project; never evaluate in another project's session or the user's own REPL.
 - If embeddings fail, use Kaimon's lexical search and `grep_code`. If Kaimon itself
   is unavailable, disclose that fact and use shell search with `# kaimon-ok`.
   Do not describe that fallback as complete semantic coverage.
@@ -43,39 +45,20 @@ following explicit tool and authorization adaptations:
 
 ## Code and validation
 
-`src/Fromage.jl` owns load-bearing include order. `src/main.jl` orchestrates the
-pipeline; `paths.jl`, `shareio.jl`, `parsing.jl`, `probing.jl`, `gateway.jl` are
-shared plumbing. `src/Rectifications/` owns geometry, `src/PawsomeTracker/`
-tracking, and `src/VerifyRuns/` / `src/VerifyRectifications/` the CSV gateways.
-`simulation/` is a separate package with its own local suite, no CI or release.
+The repo map, Julia idioms and invariants, and test, formatting and index
+procedures are CLAUDE.md §§1–3, unadapted: follow them as written. What differs
+for Codex:
 
-Follow CLAUDE.md §3: multiple dispatch, concrete parametric fields, explicit
-imports from owners, small methods, preserved error evidence, and OhMyThreads.
-Keep one definition site per parameter: every `Tuning`/`Segment` field is a CSV
-column, every builder keyword is a rectification CSV column, `track` has no kwargs.
-No open keyword forwarding, type piracy, abstract fields or unrelated refactors.
-Read coordinate conventions in CONTEXT.md; units are not necessarily SI.
-
-For targeted tests, include `test/fixtures.jl`, `test/harness.jl`, then the
-selected suite using the test environment; inspect its imports first. Run the
-full gate from the root with:
-
-```sh
-JULIA_NUM_THREADS=auto julia --project -e 'using Pkg; Pkg.test()'
-```
-
-Expect roughly 6–10 minutes with installed dependencies. Fixtures use synthetic
-ffmpeg media, not lab footage or hardware. Read `test/runtests.jl` and
-`test/quality.jl`; confirm JET actually ran on an allowed minor. Persistent-task
-testing is a separate network-dependent, non-gating check. Read
-`WHY-THE-SUITE-IS-SLOW.md` before proposing cuts. Read the CIFS investigations
-before changing share retries; local tests cannot establish live-share behavior.
-
-Use Runic in `@runic`, **not** Kaimon's `format_code`; the exact check is in
-CLAUDE.md §2. For a publication-free documentation build use
-`julia --project=docs docs/agents/build-local.jl` after installing the docs
-environment. `docs/make.jl` also deploys; do not execute it for routine validation.
-Integration checks: `python3 docs/agents/validate-codex.py`.
+- Julia runs in the `workspace-write` sandbox with networking off, so the full
+  threaded suite may need escalation for depot/cache writes; request it rather
+  than skipping the gate.
+- For a publication-free documentation build use
+  `julia --project=docs docs/agents/build-local.jl` after installing the docs
+  environment. `docs/make.jl` also deploys; do not execute it for routine
+  validation.
+- Integration checks: `python3 docs/agents/validate-codex.py` — run it after any
+  change to `CLAUDE.md`, `AGENTS.md`, `.claude/`, `.codex/`, `.agents/` or
+  `docs/agents/`; it fails when a Claude agent or skill lacks its Codex wrapper.
 
 ## Delegation and reusable workflows
 
@@ -95,15 +78,16 @@ dependencies; each wrapper specifies a fallback if they are missing.
 ## Git, release and stop conditions
 
 Read `RELEASING.md` before any authorized delivery operation. Never manually edit
-the root package version or casually place release/skip-CI markers in commit
-messages or PR text. A successful `main` test run starts automatic release and
+the root package version, and never let a skip-CI or version-bump token appear
+in a commit message or PR body, even when writing about one — paraphrase it. A successful `main` test run starts automatic release and
 tag documentation deployment. Recovery examples are not permission to run them.
 Read actual workflow filters: `.claude/**`, `.codex/**`, `.agents/**`,
 `docs/agents/**`, root Markdown and `simulation/**` are excluded from releases.
 Package source and user-site docs release. Do not edit generated
 manifests, docs/build, caches, coverage, transcripts or indexes as source files.
 
-When delivery is authorized: one fix/branch/PR, start from main without stacking,
+When delivery is authorized: one fix/branch/PR (agent-configuration changes batch
+on one branch and one PR, per CLAUDE.md §6), start from main without stacking,
 run required local and CI gates, review Standards + Spec plus Julia idioms,
 poll `gh pr checks` (plain exit 8 means pending; no `--watch`), and verify the
 post-merge release/tag/docs chain before cleanup. A red PR or post-merge workflow
