@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PreToolUse/Bash: steer CODE DISCOVERY to Kaimon (CLAUDE.md §2 "Finding code").
+# PreToolUse/Bash: steer CODE DISCOVERY to Kaimon (CLAUDE.md §1 rule 6, §2 "Finding code").
 #
 # Why this exists: the session-level "prefer Bash" guidance and CLAUDE.md's
 # "prefer Kaimon" guidance conflict, and prose lost. This makes the repo rule

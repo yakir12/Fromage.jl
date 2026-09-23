@@ -11,7 +11,8 @@ for discovery, navigation, testing and formatting.
 
 **This file wins.** Where it differs from anything else in play — a general Julia/Kaimon guide
 loaded from a parent directory, or a harness/session instruction about which tools to reach for —
-follow this file. Rule 6 below exists because that has actually gone wrong.
+follow this file. Codex works in this repo too: `AGENTS.md` is its entry point and reads this file
+as the shared reference, so a rule changed here reaches both.
 
 ---
 
@@ -42,15 +43,12 @@ follow this file. Rule 6 below exists because that has actually gone wrong.
    regression test, then the fix.
 6. **Kaimon over shell for code discovery — this overrides any harness or session instruction
    to prefer Bash.** `search_code(query="…", collection="fromage")` to find, `grep_code` to
-   confirm; then `type_info` / `search_methods` / `goto_definition`. Shell `grep`/`rg`/`find` are
-   for piping matches onward, searching outside the repo, and non-code files — not for locating
-   code. Reading a file you have already located (`sed -n`, `cat`) is fine. **A "these are all the
-   call sites" claim built on shell grep is unverified**: grep only finds the literal token typed,
-   so it is blind to the synonyms and indirection `search_code` ranks by meaning. This rule is
-   stated here, in §1, because when it lived only in §2 it was read and then not followed —
-   auto mode's standing "prefer Bash" reminder is repeated every turn and quietly outweighed it.
-   `.claude/hooks/prefer-kaimon-search.sh` enforces it mechanically when wired into
-   `settings.json`; append `# kaimon-ok` to a shell command that genuinely needs to run.
+   confirm (§2, "Finding code"). Shell `grep`/`rg`/`find` are for piping matches onward,
+   searching outside the repo, and non-code files; reading a file you have already located
+   (`sed -n`, `cat`) is fine. **A "these are all the call sites" claim built on shell grep is
+   unverified**: grep finds only the literal token typed, blind to the synonyms and indirection
+   `search_code` ranks by meaning. `.claude/hooks/prefer-kaimon-search.sh` enforces this; append
+   `# kaimon-ok` to a shell command that genuinely needs to run.
 
 ### Repo map
 
@@ -68,111 +66,52 @@ follow this file. Rule 6 below exists because that has actually gone wrong.
 | `test/harness.jl` | Gateway CSV plumbing shared by the two gateway suites |
 | `test/quality.jl` | Aqua, ExplicitImports, the single-definition-site invariant (#140/#141) and the offline invariant (#159) |
 | `test/persistent_tasks.jl` | Aqua's persistent-task check — the one network-dependent check, run by its own non-gating workflow (#159) |
-| `test/jet.jl` | JET; gated on an allowlist of Julia minors (`JET_MINORS` in `runtests.jl`, currently 1.13) |
+| `test/jet.jl` | JET; gated on an allowlist of Julia minors (`JET_MINORS` in `runtests.jl`) |
 | `benchmark/benchmarks.jl` | BenchmarkTools `SUITE`, `"micro"` + `"macro"`. Deliberately **not** in CI |
 | `simulation/` | `CalibrationRigSimulation`, a separate package: the calibration-rig simulation (#289). Its own `Pkg.test()`; **no CI, no release** |
 | `docs/src/` | The user-facing site (`get-started`, `data-folder`, `runs`, `rectifications`, `results`, `help`) |
+| `.claude/`, `AGENTS.md`, `.codex/`, `.agents/skills/`, `docs/agents/` | Agent configuration for Claude and Codex; `docs/agents/codex.md` maps one onto the other |
 
 ---
 
 ## 2. Kaimon: how to use it *in this repo*
 
-### Startup checklist
+### Startup
 
-**Run the `kaimon-up` skill** (`.claude/skills/kaimon-up/`) before the first `ex`, `run_tests`
-or `search_code` of a session: it runs steps 1–5 below as one fan-out with a completion
-criterion per step. The steps here are the reference behind it — why each exists, and what to do
-when one fails.
+**Run the `kaimon-up` skill** before the first `ex`, `run_tests` or `search_code` of a session. It
+starts a session of your own, checks the active project and Revise, fires the access-prompt
+canary and proves the Qdrant index is live, and it carries the troubleshooting for each step.
+Once more than one Julia session is connected, **pass `ses=`/`session=` on every session-bound
+call**.
 
-0. **Read `usage_instructions` once per session** before the first Kaimon call that runs code: it
-   explains the tool model (shared REPL, quiet mode, session routing), and
-   `tool_help(:name, extended=true)` documents any single tool. **Take the quiz** —
-   `usage_quiz`, answer everything, then `usage_quiz(show_sols=true)` to self-grade, aiming for
-   ≥ 75 — when you have not worked with Kaimon before, or when the user asks. Below 75, re-read
-   `usage_instructions` and retake; ask the user if anything stays unclear.
-   **One thing the quiz teaches is wrong: `KaimonGate.stash` takes a `String` key, not a
-   `Symbol`.** Both `usage_instructions` and the quiz's model answer show `stash(:completed, i)`,
-   and it throws a `MethodError` (see "Running Julia" below). Write `stash("completed", i)`,
-   and don't copy the quiz's cooperative loop verbatim.
-1. `ping()` — is the server up, and which Julia sessions are connected? The user usually has
-   other projects' sessions connected too (e.g. `tracking-ground-truth`, the codex project), so
-   **pass `ses=`/`session=` on every session-bound call** once more than one is listed.
-2. **Start your own session** rather than borrowing one:
-   `start_session(project_path="/home/yakir/Sync/evri/Fromage.jl", name="fromage")` returns an
-   8-char key. The repo is already in Kaimon's allowed projects (`~/.config/kaimon/projects.json`).
-   A healthy start takes well under a minute.
-   **If it fails with "Process died"**, read `~/.cache/kaimon/sessions/Fromage.jl.log` — it is
-   appended to across every session ever started, so read *from the last `--- Session … starting`
-   line*, not the first `ERROR`. The known failure is
-   `KaimonGate failed to precompile … Package ZMQ … is required but does not seem to be installed`.
-   Cause: the spawned REPL loads `KaimonGate` from the **global** environment of whatever Julia the
-   juliaup `release` channel points at, and Fromage.jl deliberately does not depend on it. When
-   `release` moved 1.12.7 → 1.13.0, `@v1.13` had no KaimonGate and every start died in ~4 s. Fixed
-   2026-09-16 by installing it there (never into this package's `Project.toml`):
-
-   ```sh
-   julia --project=@v1.13 --startup-file=no -e 'using Pkg; Pkg.add("KaimonGate")'
-   ```
-
-   **Repeat this for `@v1.14` (etc.) the day `release` moves again** — `juliaup status` shows the
-   current default. The codex project's session is no evidence either way: it lists KaimonGate as a
-   direct dependency, so it keeps working when ours breaks.
-3. `investigate_environment(session=<key>)` — **check the active project before evaluating
-   anything.** It must say `Project: Fromage vX.Y.Z` at this repo. A REPL whose `pwd` is this repo
-   can still have a global environment active; if the active project is not `Fromage.jl`, do not
-   use `ex` (see below). Then one cheap smoke eval:
-   `ex(e="using Fromage; (VERSION, pkgversion(Fromage), Threads.nthreads())", q=false, ses=<key>)`
-   — on 2026-09-16 that gave `(v"1.13.0", v"0.3.7", 32)`.
-4. Fire one cheap `grep_code` at `src/` early. Reading paths outside the bound project raises
-   Kaimon's own access prompt, which **errors after ~50 s** if nobody answers — better it fires
-   in the first minute than an hour in. This gate is separate from `.claude/settings.json`;
-   allowlisting the tool does not silence it. The repo is listed under `grep_paths` in
-   `~/.config/kaimon/projects.json`, and on 2026-09-16 the early `grep_code` raised no prompt —
-   keep firing it anyway, as the canary for that config having changed.
-
-   The read-only Kaimon tools are allowlisted in `.claude/settings.json`, so they no longer
-   prompt; add any new read-only tool there. These deliberately still prompt, because each runs
-   code or mutates state: `ex`, `run_tests`, `start_session`, `manage_repl`, `format_code`,
-   `qdrant_reindex_file`, `qdrant_index_project`, `qdrant_sync_index`, `cancel_eval`. Bare
-   `julia` / `python3` one-liners are **not** allowlisted and should not be — a wildcard on an
-   interpreter is arbitrary code execution.
-5. **Verify Qdrant**: `qdrant_list_collections()` must list `fromage` (vector counts show as
-   `unknown`; that is normal). Then one `search_code` with a query whose answer you know — e.g.
-   `"retry reading a video frame from the network share when it fails with EAGAIN"` should rank
-   `DECISIONS.md` and `src/shareio.jl` (L1–50) at the top — and confirm a hit's line with
-   `grep_code` (`src/shareio.jl:1` is `# Every retry in this package…`). Matching lines mean the
-   index is live and not stale for that file. Always pass `collection="fromage"`: without it,
-   `search_code` falls back to the *last-used* session's project, which may be another repo's
-   collection when other sessions are connected — a domain query there returns unrelated hits or
-   nothing, and looks like "no such code". On 2026-09-21 the list was exactly `codex`, `fromage`,
-   `kaimon_all`, `verifycalibrations` and `verifyruns` (an empty `claude_dir_fromage` that older
-   notes warn about is gone). `verifycalibrations` and `verifyruns` index the separate pre-merge
-   repos under `~/Sync/evri/`, not this one — never search them for current Fromage code.
+The read-only Kaimon tools are allowlisted in `.claude/settings.json`; tools that run code or
+mutate state (`ex`, `run_tests`, `start_session`, `manage_repl`, `format_code`, the `qdrant_*`
+writers, `cancel_eval`) deliberately still prompt. A newly added read-only tool goes in both
+`.claude/settings.json` and `.codex/config.toml` — `docs/agents/validate-codex.py` checks the two
+match. Bare `julia` / `python3` one-liners are not allowlisted and should not be: a wildcard on an
+interpreter is arbitrary code execution.
 
 ### Finding code
 
-**`search_code` to find, `grep_code` to confirm.** Both beat shell `grep`/`find`/`rg`: they are
-repo-scoped, `.gitignore`-aware, and every hit carries its enclosing function or struct. This is
-ground rule 6 — it is stated in §1 as well because §2 alone did not hold; keep the two in step.
-
 - Exploring, or you can only *describe* the behaviour → `search_code(query="…",
   collection="fromage")`. Natural-language phrases work; this is the default when you don't
-  already hold a symbol name. Guessing a name and grepping it is the trap.
+  already hold a symbol name. Guessing a name and grepping it is the trap. **Always pass
+  `collection="fromage"`**: without it the search falls back to the last-used session's project,
+  and a miss in another repo's collection looks like "no such code".
 - Holding an exact token — symbol, call site, string, TODO → `grep_code(pattern="…")`. Add
   `no_ignore=true` to reach generated/gitignored files (`*.cov`, `Manifest.toml`).
 - Then: `type_info`, `search_methods`, `document_symbols`, `workspace_symbols`,
-  `goto_definition` to pin down what you found.
-- Read whole files last, and only the parts you need.
+  `goto_definition` to pin down what you found. Read whole files last, and only the parts you need.
 
 **The index can lie.** `search_code` line ranges come from Qdrant, not the working tree, and a
-stale entry has served a function that was deleted a release earlier. Tell-tale: hits with
-overlapping or contradictory line ranges. **Never quote a line number, edit at one, or rely on
-something's existence from `search_code` alone — confirm with `grep_code` first.**
+stale entry has served a function deleted a release earlier. Tell-tale: hits with overlapping or
+contradictory line ranges. **Never quote a line number, edit at one, or rely on something's
+existence from `search_code` alone — confirm with `grep_code` first.**
 
-**Reindex every file you change, as soon as the change settles.** This is the last step of
-editing, like running the tests. `qdrant_sync_index` does *not* reliably notice edits (it has
-reported `0 files reindexed` on a demonstrably stale collection), so an edited file keeps
-serving its pre-edit text until you say otherwise:
+**Reindex every file you change, as soon as the change settles** — after an edit lands, a merge,
+or a `git pull` that moved files. `qdrant_sync_index` does *not* reliably notice edits (it has
+reported `0 files reindexed` on a demonstrably stale collection), so an edited file keeps serving
+its pre-edit text until you say otherwise:
 
 ```
 qdrant_reindex_file(collection="fromage",
@@ -180,11 +119,9 @@ qdrant_reindex_file(collection="fromage",
                     project_path="/home/yakir/Sync/evri/Fromage.jl")
 ```
 
-One call per file, parallel is fine; include `test/` and `docs/` — they are indexed too. Do it
-after an edit lands, after a merge, and after a `git pull` that moved files. `src/probing.jl`
-and `test/probing.jl` share a basename and index separately; the tool reporting by basename is
-not a duplicate. A full rebuild takes several minutes — long enough to be worth avoiding when a
-per-file reindex would do — and needs `extra_dirs` or it silently drops `test/`:
+One call per file, parallel is fine; include `test/` and `docs/` — they are indexed too.
+`src/probing.jl` and `test/probing.jl` share a basename and index separately. A full rebuild takes
+several minutes and needs `extra_dirs` or it silently drops `test/`:
 
 ```
 qdrant_index_project(collection="fromage",
@@ -203,34 +140,24 @@ qdrant_index_project(collection="fromage",
 - long evals auto-promote to background jobs — poll `check_eval`, and make long loops
   cooperative (`KaimonGate.is_cancelled()`, `KaimonGate.progress(…)`, `KaimonGate.stash("key", v)`).
   **`stash` takes a `String` key.** Kaimon's own `usage_instructions` and quiz show
-  `stash(:key, v)`, which throws `MethodError: no method matching stash(::Symbol, …)` on
-  KaimonGate 1.4.0 — the session log records that killing two long evals mid-run. Retested
-  2026-09-21, still 1.4.0: the only methods are `stash(key::String, value)` and
-  `stash(pairs::Pair{String}...)`. Retest with `methods(KaimonGate.stash)` when KaimonGate moves.
+  `stash(:key, v)`, which throws a `MethodError` on KaimonGate 1.4.0 and has killed long evals
+  mid-run. Retest with `methods(KaimonGate.stash)` when KaimonGate moves.
 
-If you cannot get a session of your own (step 2 above), run Julia through Bash against the
-package environment explicitly:
-
-```sh
-JULIA_NUM_THREADS=auto julia --project -e '…'
-```
-
+Without a session of your own, run `JULIA_NUM_THREADS=auto julia --project -e '…'` through Bash.
 Never `julia` without `--project`; the global environment does not have this package's deps.
 
 ### Tests
 
 - `run_tests(project_path="/home/yakir/Sync/evri/Fromage.jl")` spawns its own subprocess and
-  never touches the shared REPL — the preferred route. It **caps at 10 minutes**. The full suite
-  runs close enough under that cap to be at its mercy on a loaded machine, and a coverage run is
-  reliably over it, so anything with coverage must go through Bash.
+  never touches the shared REPL — the preferred route. It **caps at 10 minutes**, which the full
+  suite runs close to on a loaded machine and a coverage run reliably exceeds, so anything with
+  coverage goes through Bash.
 - Full suite: `JULIA_NUM_THREADS=auto julia --project -e 'using Pkg; Pkg.test()'`.
   `JULIA_NUM_THREADS` is not optional — it is what exercises the threaded read/detect/track
   paths, and CI sets it too.
 - The suite needs no network once the deps are installed, and `test/quality.jl` asserts that it
-  stays that way (#159). The one check whose result depends on it — Aqua's persistent-task check —
-  is not in `runtests.jl`: run `julia --project=test test/persistent_tasks.jl`, which is what the
-  `PersistentTasks` workflow does. That workflow is **not** gating, on the same terms as `Lint`, so
-  a red one blocks no release and has to be read rather than waited on.
+  stays that way (#159). Aqua's persistent-task check, the one that does, runs separately:
+  `julia --project=test test/persistent_tasks.jl`, as the non-gating `PersistentTasks` workflow does.
 - A single suite while iterating: run `test/runtests.jl` with the other `include`s commented, or
   include `test/fixtures.jl` + `test/harness.jl` and then the one file you care about.
 - The gateway helper `check` in `test/harness.jl` returns the **built objects** for a clean file — a
@@ -239,13 +166,17 @@ Never `julia` without `--project`; the global environment does not have this pac
 - Benchmarks: `julia --project=benchmark benchmark/benchmarks.jl` — local dev tool, never CI. If
   an API change rots the suite, fix it in the same PR. **Read the allocation counts, not the
   clock** — see DECISIONS, "Wall-clock benchmarks on this machine are noise".
+- Agent configuration (`.claude/`, `.codex/`, `.agents/`, `AGENTS.md`, `docs/agents/`):
+  `python3 docs/agents/validate-codex.py`. It checks that every Claude agent and skill has its
+  Codex wrapper, that the two read-only allowlists match, and that the hooks and release filters
+  behave — without calling a model or any MCP server.
 
 ### Formatting
 
 **Runic is the formatter (#238), and it is not `format_code`.** Runic has no configuration and no
 line-length rule, which is why it was chosen (DECISIONS, "Runic is the formatter, and its check
-does not gate"). It lives in its own shared environment and is deliberately absent from both the
-package's and the test environment's dependencies, so install it once:
+does not gate"). It lives in its own shared environment, absent from both the package's and the
+test environment's dependencies. Install it once:
 
 ```sh
 julia --project=@runic --startup-file=no -e 'using Pkg; Pkg.add(name = "Runic", version = "1")'
@@ -258,13 +189,9 @@ git ls-files -z -- '*.jl' | xargs -0 --no-run-if-empty \
   julia --project=@runic --startup-file=no -e 'using Runic; exit(Runic.main(ARGS))' -- --inplace
 ```
 
-Swap `--inplace` for `--check --diff --verbose` to see the drift instead of fixing it; that is
-exactly what `.github/workflows/Format.yml` runs, and it exits non-zero when anything differs.
-`--verbose` earns its place: Runic's diff headers carry the basename alone, and this repo has four
-`types.jl` and two `probing.jl`. The `Format` workflow is **not gating**, on the same terms as
-`Lint` — read it, don't wait on it.
-
-### Other Kaimon tools
+Swap `--inplace` for `--check --diff --verbose` to see the drift instead; that is exactly what the
+non-gating `Format` workflow runs. `--verbose` earns its place: Runic's diff headers carry the
+basename alone, and this repo has four `types.jl` and two `probing.jl`.
 
 `pkg_add`/`pkg_rm` operate on the bound session's environment — for this package, edit
 `Project.toml` + `[compat]` deliberately instead.
@@ -283,23 +210,20 @@ This is the axis that most often slips. New and modified code must read like the
 - **Type stability.** JET runs on the whole package in CI; a `Union{Nothing,Float64}` accumulator
   or an untyped struct field will show up there. Check with `@code_warntype` /
   `JET.@report_opt` before defending a design.
-- **Concrete, parametric struct fields** (`T<:Real`, `SVector{2,Float64}`) — never abstract
-  fields, never `Any`. `StaticArrays` for small fixed-size geometry; `OffsetArrays` where the
-  index origin carries meaning.
+- **Concrete, parametric struct fields** (`T<:Real`, `SVector{2,Float64}`). `StaticArrays` for
+  small fixed-size geometry; `OffsetArrays` where the index origin carries meaning.
 - **Explicit imports, from the owning module.** `test/quality.jl` enforces
   `check_no_implicit_imports`, `check_all_explicit_imports_via_owners`,
   `check_no_stale_explicit_imports` and `check_no_self_qualified_accesses` across every
-  submodule. So: `using DataFrames: DataFrame, select!` — never bare `using DataFrames`, never
-  a name imported from a re-exporter.
+  submodule. So: `using DataFrames: DataFrame, select!`, each name from the module that owns it.
 - **Small methods with clear boundaries**; generic argument types (`AbstractVector`,
   `AbstractDataFrame`) unless a concrete one is load-bearing.
 - **`OhMyThreads` (`tmap`, `tforeach`)** for parallelism, matching the existing layers. Be aware
   of the documented hazards: `VideoIO.openvideo` is not thread-safe, the AprilTag C detector is
   not reentrant, and the innermost parallel layer was deliberately removed after measurement.
-- **Let errors be errors.** No bare `catch`; catch the specific exception, and preserve what it
-  said (the CIFS work exists because a swallowed exception lost the one detail that identified
-  the failure). Gateway verification *reports* failures rather than throwing — respect the
-  distinction.
+- **Let errors be errors.** Catch the specific exception, and preserve what it said (the CIFS
+  work exists because a swallowed exception lost the one detail that identified the failure).
+  Gateway verification *reports* failures rather than throwing — respect the distinction.
 - **One definition site per tracking or rectification parameter.** Enforced by `test/quality.jl`
   (#140/#141): every `Tuning`/`Segment` field is a `runs.csv` column, every builder keyword is a
   `rectifications.csv` column, `track` takes **no** keyword arguments. Adding a keyword "just for
@@ -317,7 +241,8 @@ This is the axis that most often slips. New and modified code must read like the
 - Python-shaped design: config dicts of options, classes-with-methods, inheritance emulation,
   a `process()` god-function.
 - Macros where a function does the job; abstraction layers with one implementation; `@eval`.
-- `Vector{Any}`, untyped globals, mutable state threaded through kwargs.
+- `Vector{Any}`, abstract or `Any` struct fields, untyped globals, mutable state threaded
+  through kwargs, bare `catch`.
 - Type piracy, or adding methods to `Base` functions on types you don't own.
 - Splatting `kwargs...` through an intermediate function — that open channel *is* bug #140/#141.
 
@@ -331,7 +256,7 @@ rather than silently picking one.
 Agents are for **fan-out over independent questions**, not for work you can do inline. Spawn
 them when a task genuinely spans subsystems; a single-file fix does not need one.
 
-Project agents live in `.claude/agents/`:
+Project agents live in `.claude/agents/` (Codex runs the same prompts through `.codex/agents/`):
 
 | Agent | Ask it |
 |---|---|
@@ -342,17 +267,13 @@ Project agents live in `.claude/agents/`:
 | `performance-auditor` | Allocations, type instability, threading, scaling |
 | `julia-idiom-reviewer` | Is this diff idiomatic Julia, and does it satisfy this repo's invariants |
 
-Rules:
-
-- **Split by responsibility, not by role.** The count doesn't matter; coverage of *independent*
-  questions does. Run them in one batch so they go in parallel.
-- **Investigators are read-only.** Only the main session edits. Never run two agents that would
-  write the same files.
+- **Split by responsibility, not by role**, and run them in one batch so they go in parallel.
+- **Investigators are read-only.** Only the main session edits.
 - **Brief them properly**: the exact question, that they must use `collection="fromage"`, and
   that findings come back as `file:line` plus the evidence (a test output, a `type_info` result)
   — not a summary of what the code appears to do.
 - **Verify before acting** on an agent's claim, especially a line number: `grep_code` it. Agents
-  hit the same stale-index trap you do, and can be confidently wrong.
+  hit the same stale-index trap you do.
 - Relay what matters to the user; their reports aren't shown.
 
 ---
@@ -364,9 +285,7 @@ find the tests → check `DECISIONS.md` for prior art → short plan → impleme
 
 **Modify code:** understand the current implementation and *why* it is that way; identify the
 affected tests and docs; make the change; run the relevant suite; run a representative example;
-reindex the touched files; summarise validation. That is the *investigation* half — deliver the
-result through §6's workflow (branch → PR → validate ∥ CI → merge → post-merge → cleanup), which
-is where a change is actually finished.
+reindex the touched files; summarise validation. Then deliver it through §6.
 
 **Refactor:** first establish that a refactor is actually needed and whether behaviour must stay
 identical. For anything significant, fan out over implementation / tests / docs / performance in
@@ -395,6 +314,10 @@ wrong, and pushing through it is how a bad change lands anyway.
 **One fix, one branch, one PR.** Never combine unrelated fixes into a branch or PR. Never stack:
 a PR does not retarget when its parent is squash-merged, and one has been lost that way — every
 branch starts from `main`, and if `main` has moved, rebase onto it rather than stacking.
+**The exception is agent configuration** — `.claude/`, `.codex/`, `.agents/`, `AGENTS.md`,
+`CLAUDE.md`, `docs/agents/`, which no CI tests: batch a series of such changes on one branch,
+validate each locally (`validate-codex.py`, the hooks, a skill dry-run), and open one PR at the
+end. The per-fix pipeline buys nothing when CI cannot see the change.
 
 1. **Branch.** `git checkout main && git pull`, then a new branch off it, named for the fix.
 2. **Implement, test-first.** Only what the fix needs, plus what implementing it turns up as
@@ -402,74 +325,46 @@ branch starts from `main`, and if `main` has moved, rebase onto it rather than s
    is §1.5's order (reproduction, regression test, fix), and `/implement` drives
    `/mattpocock-skills:tdd` over it. Iterate against a single suite (§2), not the whole one.
 3. **Start CI, then validate locally and review the diff.** Push the branch and open the PR
-   *first*, before running anything locally. PR CI takes about 17 minutes and the local suite
-   about 6½, and they check overlapping things independently — run them in series and the local
-   time is spent twice. Nothing merges until both are green (step 8), so starting CI early risks
-   only runner minutes on a branch that may still fail locally, and runner minutes are the cheap
-   resource here; your wall clock is not. The threaded full suite is the gate:
-   `JULIA_NUM_THREADS=auto julia --project -e 'using Pkg; Pkg.test()'`. Budget most of ten
-   minutes. Kaimon's `run_tests` caps at 10 minutes, so a coverage run must go through Bash.
-   The pass count is in the low thousands and climbs with almost every release, so it is only
-   ever meaningful **as a before/after pair within one session**: note what `main` reports before
-   you start, and compare after. A count that went *down* means a test stopped running — the
-   number itself is not a target and is not worth recording here, because a figure pinned to a
-   version is stale by the next one. Also run Runic over the tracked sources (§2, "Formatting")
-   after a large edit, and reindex every file you changed (§2). **JET runs on an allowlist of
-   Julia minors — `JET_MINORS` in `test/runtests.jl`, currently `(13,)`, the same minor
-   `Test.yml` pins** — so a local run on
-   1.13 includes it and a run on anything else does not. In CI it additionally runs on the ubuntu
-   leg only (`FROMAGE_RUN_STATIC`); locally it defaults on, so **your run is the one that sees
-   JET on macOS or Windows** — CI no longer will (DECISIONS, "JET runs once, on ubuntu"). That gap used to be silent and is not
-   any more: an off-allowlist run warns and reports a `JET (SKIPPED — …)` testset, because the
-   allowlist once said `(11, 12)` while the matrix said `"1"`, and when `"1"` rolled to 1.13 the
-   analysis vanished from CI with everything still green. Read the summary, not just the exit
-   code. Worth the care, because JET has rejected a design the whole
-   suite accepted (DECISIONS, "The tracking functions take typed objects, and the two paths take
-   different ones" — #202's `apriltag_guess` union split). `test/jet.jl`'s header explains why
-   the gate is an allowlist and what adding a minor to it requires.
-   A green suite is not the whole gate: **review the diff before it leaves the branch** —
-   `/mattpocock-skills:code-review` (Standards + Spec), plus the `julia-idiom-reviewer` subagent
-   (§4), which is the axis that most often slips and the one that knows this repo's structural
-   invariants. Name the review skill in full: a bare `/code-review` resolves to the built-in
-   review skill instead. Fan out to the other §4 auditors when the change earns them.
+   *first*: PR CI takes about 17 minutes and the local suite about 6½, and nothing merges until
+   both are green, so running them in series spends the local time twice. The threaded full suite
+   is the gate: `JULIA_NUM_THREADS=auto julia --project -e 'using Pkg; Pkg.test()'`.
+   - **Compare the pass count as a before/after pair** within one session: note what `main`
+     reports before you start. A count that went *down* means a test stopped running.
+   - **Read the summary, not just the exit code, for JET.** It runs only on the Julia minors in
+     `JET_MINORS` (`test/runtests.jl`, the minor `Test.yml` pins), and in CI only on the ubuntu
+     leg — so your local run is the one that sees JET on macOS or Windows (DECISIONS, "JET runs
+     once, on ubuntu"). An off-allowlist run reports a `JET (SKIPPED — …)` testset.
+     `test/jet.jl`'s header explains the allowlist. JET has rejected a design the whole suite
+     accepted (#202's `apriltag_guess` union split).
+   - Run Runic over the tracked sources (§2) after a large edit, and reindex every changed file.
+   - **Review the diff before it leaves the branch** — `/mattpocock-skills:code-review` (Standards
+     + Spec), plus the `julia-idiom-reviewer` subagent (§4). Name the review skill in full: a bare
+     `/code-review` resolves to a different skill. Fan out to the other §4 auditors when the
+     change earns them.
 4. **Fix what fails, without asking.** Iterate until the suite is green, or until you cannot make
    confident progress. Only the second case is worth interrupting the user for.
-5. **Write the PR description** — the PR itself went up at the start of step 3, so this is the
-   point where it stops being a placeholder. State the problem, the solution, and the tradeoffs
-   or limitations. Include `Closes #<issue-number>` for the originating issue so GitHub links
-   the PR and closes the issue when the PR merges into `main`. Report the actual line delta
-   against the estimate honestly: extracting shared code costs lines here, deleting a structure
-   saves them.
-6. **Watch the PR's CI** — by polling `gh pr checks <n>` in a loop, *not* with `--watch` (see the
-   `gh` notes below). Poll on the **exit code**, not on the table: 8 means checks are still pending,
-   0 that every one passed. **`TestOnPRs` triggers only on `src/**`, `test/**`, `*.toml` and
-   `.github/workflows/**`**, and **`Format` only on `**.jl` outside `simulation/`** —
-   so a docs-only or top-level-`*.md` PR legitimately has no *`TestOnPRs`* run, while a PR touching
-   only `docs/make.jl` gets `Format`, `Lint` and `Docs` (all three match `docs/**`) but still no
-   `TestOnPRs`. Absent checks there is expected, not something to wait on. A PR touching only
-   `simulation/**` triggers **no check at all** (DECISIONS, "The simulation runs no CI and cuts no
-   release"): its gate is `julia --project=simulation -e 'using Pkg; Pkg.test()'`, run locally.
-   Watch what the *merge* triggers separately, and on the right ref: an `AutoRelease` tag build
-   (`Docs` on `v0.x.y`) does not appear in `gh run list --branch main`, so a watcher scoped to
-   `main` reports the chain complete while the tag's docs build is still running.
+5. **Write the PR description** — problem, solution, tradeoffs or limitations, and
+   `Closes #<issue-number>` for the originating issue. Report the actual line delta against the
+   estimate honestly: extracting shared code costs lines here, deleting a structure saves them.
+6. **Watch the PR's CI** by polling `gh pr checks <n>` on its exit code (see the `gh` notes
+   below). Not every PR gets every check: `TestOnPRs` triggers only on `src/**`, `test/**`,
+   `*.toml` and `.github/workflows/**`; `Format` only on `**.jl` outside `simulation/`; `Lint` and
+   `Docs` on their own `paths`. Read the workflow's filter before waiting on an absent check. A PR
+   touching only `simulation/**` triggers **no check at all** (DECISIONS, "The simulation runs no
+   CI and cuts no release"): its gate is `julia --project=simulation -e 'using Pkg; Pkg.test()'`.
 7. **A red PR CI is an approval gate.** Investigate the root cause, determine the fix, explain the
    reasoning — and **ask before changing anything to make CI pass.**
 8. **Merge only after every required check has passed.**
-9. **Watch what the merge triggers.** The task is not done at merge. The chain is
-   `push to main → Test (full matrix) → AutoRelease (bump, tag, GitHub release) → Docs on the new
-   tag → /stable/ advances`. Expect **about 12 minutes** — ~9 for the matrix, seconds for
-   AutoRelease, ~3 for the tag's docs build (measured 2026-09-11; RELEASING.md carries the table
-   and the caveats, and these drift). **It is not queue time** — median wait from job created to
-   job started was 3–5 seconds on every platform — and macOS is not reliably the long pole; the
-   three legs now land within ~80 s of each other. A run that takes *far* longer is usually a cold
-   depot cache, which doubles the matrix. `Lint` and `Format` are deliberately *not*
-   gating, so neither a dead link nor a misplaced space can block a release. Confirm that the
-   originating issue is closed by the merged PR before reporting completion.
+9. **Watch what the merge triggers.** The chain is `push to main → Test (full matrix) →
+   AutoRelease (bump, tag, GitHub release) → Docs on the new tag → /stable/ advances`, about
+   12 minutes (RELEASING.md carries the timings). A run that takes *far* longer is usually a cold
+   depot cache. The tag's `Docs` build does not appear in `gh run list --branch main`, so a watcher
+   scoped to `main` reports the chain complete early. `Lint` and `Format` are deliberately not
+   gating. Confirm the originating issue is closed by the merged PR.
 10. **A red post-merge workflow is an approval gate**, on the same terms as step 7.
 11. **Clean up.** `git checkout main && git pull` — the bot's bump commit leaves local `main` one
-    behind after every release, and the pull brings the new tag too — then delete the **local** fix
-    branch. Only the local one: the repository deletes merged branches on the remote by itself, so
-    `git push origin --delete <branch>` just fails with "remote ref does not exist". Don't run it.
+    behind after every release — then delete the **local** fix branch. The repository deletes
+    merged remote branches by itself, so `git push origin --delete` just fails.
 
 **Done means all of it:** local validation green, PR CI green, merged, post-merge automation green,
 the release and version bump actually completed, cleanup done, and no remaining failure
@@ -484,56 +379,28 @@ of those is "done" on its own, and none of them should be reported as done.
   owns it.
 - **Never let a skip-CI or version-bump token appear in a commit message or PR body**, even when
   writing *about* them — GitHub honours them from the body, and a push that silently ran no
-  workflows has already happened once. Paraphrase instead ("the skip-CI token"); `RELEASING.md`
-  has the detail.
+  workflows has already happened once. Paraphrase instead ("the skip-CI token").
 - **What does and does not release** — `Test.yml`'s `paths-ignore` is the single source of truth,
-  because `AutoRelease` triggers on `Test` completing, so anything `Test` skips is never released.
-  It ignores top-level `*.md` (`*` does not cross `/`, so `docs/src/*.md` still counts), `LICENSE`,
-  `.gitignore`, `codecov.yml`, `.lychee.toml`, `.copier-answers.yml`, **`docs/agents/**`**,
-  **`.claude/**`**, **`.codex/**`**, **`.agents/**`** and **`simulation/**`**. Everything else under `src/` or `docs/` does release —
-  so batch a `docs/src/` correction into the PR that needs it, or it costs a second version bump.
-  Two of those are easy to get wrong in the direction that *costs* you nothing and *tells* you
-  something false: `docs/agents/**` and the three agent-config trees look like they release because
-  they sit under `docs/` or look like config, and they do not — none is loaded by the package or built into the
-  site, so there is no `/stable/` for a tag to advance. `Docs.yml` carves `docs/agents/**` out with
-  a negated pattern for the same reason, so a PR touching only those paths legitimately gets **no
-  `Docs`, no `TestOnPRs` and no `Format`** — `Lint` alone, which matches `**/*.md`.
-  `simulation/**` is excluded on purpose rather than because nothing there ships: it is a package in
-  development that runs no CI until it is trusted (#289, #297). `Format` and `Lint` carve it out too.
-- **`gh` here is 2.100.0 (released 2026-09-03), upgraded from 2.23.0 on 2026-09-11.** Every
-  limitation this file used to record is gone. What follows was *retested* on the new version, not
-  assumed: `gh issue view <n>` and `gh pr edit` both used to die with a Projects-classic GraphQL
-  error (`repository.issue.projectCards`) — and `gh pr edit` **printed that error while silently
-  changing nothing**, which is how a PR description once stayed a placeholder after an edit that
-  looked like it had failed loudly and harmlessly. Both work now. So do `gh pr checks --json` and
-  `gh release list --json`, which 2.23.0 did not have. `gh api`, `gh run list --json` and
-  `gh release view --json` still work. **If a `gh` call fails now, it is a real failure — do not
-  reach for `gh api` as a version workaround.**
-- **Plain `gh pr checks <n>` exits 8 while any check is still pending**, 0 when all have passed,
-  1 when one failed — that exit code is the polling primitive to build a watcher on, and it beats
-  counting rows out of the table. **Adding `--json` drops it:** on 2.100.0, `gh pr checks 269 --json
-  name,bucket` exited **0 with three checks pending** (2026-09-17, #269), so a watcher looping
-  `until` a non-8 exit on the `--json` form stops on its first pass and reports CI settled when it
-  has not started. `--json`'s `bucket` field (`pass`/`fail`/`pending`/`skipping`/`cancel`) is still
-  the way to *print* what each check is doing; take the exit code from a separate plain call, or
-  decide from the buckets themselves. (Whether `--json` exits 1 on a failed check was not
-  observed.)
-- **Do not follow a PR with `gh pr checks <n> --watch` from here** — diagnosed on 2.23.0 and
-  deliberately **not** retested on 2.100.0, because retesting needs a PR with genuinely pending
-  checks and manufacturing one means a push that cuts a release. On the old version it drew a
-  redrawing terminal display, so with stdout redirected — which is what a backgrounded tool call
-  does — it emitted **zero bytes** across ten minutes of genuinely pending checks, and a silent
-  watcher is indistinguishable from a hung one. (It was fine typed at a real terminal, and fine
-  when every check had already settled, which is why it could look like it works.) Whether 2.100.0
-  fixed it does not matter: polling on exit code 8 is visible, cheap and already correct. Poll
-  `gh pr checks <n>` in a loop and print each check as it settles, so progress is visible and a
-  broken query is too. Same rule for the post-merge chain with `gh run list`.
-- When polling `gh` in a loop, run the query once on its own first. The original reason was a
-  missing flag on 2.23.0, which no longer applies, but the failure shape outlives it: **any** query
-  that breaks behind `2>/dev/null` becomes a watcher that polls forever and says nothing, which is
-  hard to tell from a slow CI run. A first-iteration heartbeat line makes that distinction visible
-  if you would rather not pre-check. Give the loop an explicit failure branch too: a filter that
-  only matches success is silent through a crash, which reads exactly like "still running".
+  because `AutoRelease` triggers on `Test` completing. It ignores top-level `*.md` (`*` does not
+  cross `/`, so `docs/src/*.md` still counts), `LICENSE`, `.gitignore`, `codecov.yml`,
+  `.lychee.toml`, `.copier-answers.yml`, **`docs/agents/**`**, **`.claude/**`**, **`.codex/**`**,
+  **`.agents/**`** and **`simulation/**`**. Everything else under `src/` or `docs/` releases — so
+  batch a `docs/src/` correction into the PR that needs it, or it costs a second version bump.
+  `docs/agents/**` and the three agent-config trees look like they release, and do not: none is
+  loaded by the package or built into the site. A PR touching only them gets `Lint` alone.
+  `simulation/**` is excluded because it is a package in development that runs no CI until it is
+  trusted (#289, #297).
+- **`gh pr checks <n>` is the polling primitive.** Plain, it exits 8 while any check is pending,
+  0 when all passed, 1 when one failed. **Adding `--json` drops that exit code** — it exited 0 with
+  three checks pending (#269) — so take the exit code from a plain call and use `--json
+  name,bucket` only to print progress. Poll in a loop rather than with `--watch`, which has emitted
+  nothing at all when backgrounded. Same rule for the post-merge chain with `gh run list`.
+- **Give every polling loop a heartbeat and a failure branch.** Any query that breaks behind
+  `2>/dev/null` becomes a watcher that polls forever and says nothing, indistinguishable from slow
+  CI; a filter that only matches success is silent through a crash. Run the query once on its own
+  first, or print a first-iteration line.
+- **A `gh` failure is a real failure** (gh is 2.100.0); investigate it rather than reaching for
+  `gh api` as a version workaround.
 
 ---
 
@@ -555,20 +422,12 @@ code looks right.
 ## 8. Agent skills
 
 Configuration the installed engineering skills read. Distinct from §4, which is about subagents.
+Delivering the work still follows §6, not a skill's generic git workflow.
 
-### Issue tracker
-
-GitHub issues on `yakir12/Fromage.jl`, via the `gh` CLI (2.100.0 — every `--json` flag the skills
-use works; see §6's `gh` notes). See `docs/agents/issue-tracker.md`. Delivering the work still
-follows §6, not a skill's generic git workflow.
-
-### Triage labels
-
-The five canonical roles, each label string equal to its name, and all five exist on the repo —
-`/triage` only ever *applies* labels, so a missing one would surface as a failed `gh issue edit`.
-See `docs/agents/triage-labels.md`, which carries the table and the commands that created them.
-
-### Domain docs
-
-Single-context: `CONTEXT.md` at the root, with `DECISIONS.md` standing in for `docs/adr/`. See
-`docs/agents/domain.md`.
+- **Issue tracker** — GitHub issues on `yakir12/Fromage.jl`, via `gh`. See
+  `docs/agents/issue-tracker.md`.
+- **Triage labels** — the five canonical roles, each label string equal to its name, all five
+  already on the repo (`/triage` only applies labels, never creates them). See
+  `docs/agents/triage-labels.md`.
+- **Domain docs** — single-context: `CONTEXT.md` at the root, with `DECISIONS.md` standing in for
+  `docs/adr/`. See `docs/agents/domain.md`.

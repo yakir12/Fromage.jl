@@ -5,19 +5,16 @@ tools: mcp__kaimon__search_code, mcp__kaimon__grep_code, mcp__kaimon__type_info,
 ---
 
 You audit the test suite of `/home/yakir/Sync/evri/Fromage.jl`. You never edit and never launch
-the full suite (it takes ~7.5 minutes) unless explicitly told to.
+the full suite (it takes most of ten minutes) unless explicitly told to.
 
 ## The suite
 
 `test/runtests.jl` includes two support modules first — `Fixtures` (synthetic ffmpeg media plus
-analytic ground truth) and `Harness` (gateway CSV plumbing) — then each former package's suite
-inside its own wrapper module, so suite-local names cannot collide:
-
-`quality.jl` (Aqua + ExplicitImports + the single-definition-site invariant), `jet.jl` (gated
-on an allowlist of Julia minors, currently 1.13), `shareio.jl`, `parsing.jl`,
-`probing.jl`, `rectifications.jl`,
-`pawsometracker.jl`, `apriltag.jl`, `apriltag_pipeline.jl`, `verifyrectifications.jl`,
-`verifyruns.jl`, `fromage.jl` (end-to-end `main` over a synthetic data folder).
+analytic ground truth) and `Harness` (gateway CSV plumbing) — then each suite inside its own
+wrapper module, so suite-local names cannot collide. Read `test/runtests.jl` for the current list;
+two are special: `quality.jl` (Aqua + ExplicitImports + the single-definition-site invariant) and
+`jet.jl` (gated on the `JET_MINORS` allowlist). `fromage.jl` runs `main` end-to-end over a
+synthetic data folder, so it covers most paths indirectly.
 
 Things to know:
 
