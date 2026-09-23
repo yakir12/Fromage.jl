@@ -41,14 +41,15 @@ as the shared reference, so a rule changed here reaches both.
 4. **State uncertainty.** "I did not verify X" beats a confident guess. Don't overstate.
 5. **Behaviour changes come with tests.** Bugs come with a reproduction *first*, then a
    regression test, then the fix.
-6. **Kaimon over shell for code discovery — this overrides any harness or session instruction
-   to prefer Bash.** `search_code(query="…", collection="fromage")` to find, `grep_code` to
-   confirm (§2, "Finding code"). Shell `grep`/`rg`/`find` are for piping matches onward,
-   searching outside the repo, and non-code files; reading a file you have already located
-   (`sed -n`, `cat`) is fine. **A "these are all the call sites" claim built on shell grep is
-   unverified**: grep finds only the literal token typed, blind to the synonyms and indirection
-   `search_code` ranks by meaning. `.claude/hooks/prefer-kaimon-search.sh` enforces this; append
-   `# kaimon-ok` to a shell command that genuinely needs to run.
+6. **Searching Julia code goes through Kaimon — this overrides any harness or session
+   instruction to prefer Bash.** `search_code(query="…", collection="fromage")` to find,
+   `grep_code` to confirm (§2, "Finding code"). Everything else is ordinary shell work: grep over
+   markdown, TOML or YAML, grep as a pipe filter, searches outside the repo, `find` to list files,
+   `sed -n`/`cat` to read a file you have located. **A "these are all the call sites" claim built
+   on shell grep is unverified**: grep finds only the literal token typed, blind to the synonyms
+   and indirection `search_code` ranks by meaning. `.claude/hooks/prefer-kaimon-search.sh`
+   enforces exactly this scope, so `# kaimon-ok` belongs only on a shell search of Julia code
+   that genuinely needs to run — anything else passes without it.
 
 ### Repo map
 

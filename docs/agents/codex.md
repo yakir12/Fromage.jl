@@ -192,9 +192,12 @@ same `hookSpecificOutput` SessionStart context and PreToolUse deny JSON. Thus
 no input adapter or duplicated policy script is needed. Both have five-second
 timeouts. The search hook is blocking, read-only and network-free; its exit code
 is normally zero even for denial. The startup hook performs only a two-second
-loopback GET and emits context. Existing regex scope and deliberate override
-remain exactly as in Claude; hook errors/timeouts are not a fail-closed security
-boundary. Review visibility with `/hooks`.
+loopback GET and emits context. The search hook's shell wrapper runs
+`prefer_kaimon_search.py`, which tokenises the command and denies only a search
+that reads this repo's Julia code; it reads the payload's `cwd` when present and
+falls back to the process working directory. Its scope and `# kaimon-ok` override
+are exactly as in Claude; hook errors, timeouts and a missing `python3` fail open,
+so the hook is not a security boundary. Review visibility with `/hooks`.
 
 ## Complete coverage matrix
 
@@ -347,9 +350,7 @@ keep these brief copies synchronized. No generator rewrites Claude files.
 - Local service provisioning, clean-machine authentication and actual delegated
   model behavior were not simulated by a configuration parser. Re-run the live
   Kaimon checks on each machine.
-- Index writes were deferred for this task's no-service-mutation constraint.
-  Reindex the new integration files only when that operation is authorized.
-- Hook scripts need Bash, curl and jq. Native Windows users need those available
+- Hook scripts need Bash, curl, jq and Python 3. Native Windows users need those available
   (for example through Git Bash) or a WSL setup. Windows hook execution was not
   tested; without those dependencies, use the disclosed manual bootstrap/search
   fallback and do not claim deterministic enforcement.
