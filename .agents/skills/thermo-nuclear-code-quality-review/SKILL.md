@@ -9,7 +9,8 @@ review rubric and output priorities. Input is a diff plus its originating spec;
 resolve the comparison base before reviewing. Read DECISIONS.md before proposing
 removals and use current repository evidence, not index-only line numbers.
 
-Review requests authorize findings, not implementation. Delegate independent
+The shared skill is report-only: edit no files, and treat implementing a finding
+as a separate request under AGENTS.md's authorization rules. Delegate independent
 investigations to read-only specialists when useful. Preserve Julia idioms when
 interpreting the generic abstraction examples in the shared rubric. If the base,
 spec or runtime evidence is unavailable, state the gap and bound the findings.
