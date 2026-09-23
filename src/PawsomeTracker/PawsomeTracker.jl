@@ -433,7 +433,11 @@ struct EvictedPatch{F}
     pixels::OffsetMatrix{Gray{N0f8}, Matrix{Gray{N0f8}}}
 end
 
-function restore_background!(stack, j, protect, keep::AbstractMatrix)
+# `keep` stays untyped: callers hold `protect` and `keep` as two unions that are `nothing` together,
+# and inference, splitting them separately, also asks for `keep::Nothing` with a real `protect`.
+# That pair never happens, but annotating `keep::AbstractMatrix` leaves it matching no method, and
+# JET reports it — measured, in both tracking loops.
+function restore_background!(stack, j, protect, keep)
     selectdim(parent(parent(stack)), 3, j)[protect] = keep
     return
 end
