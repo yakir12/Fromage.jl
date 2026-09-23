@@ -8,6 +8,9 @@ disable-model-invocation: true
 
 Use this skill for an unusually strict review focused on implementation quality, maintainability, abstraction quality, and codebase health.
 
+**This review is report-only.** It produces findings and proposed restructurings; it edits no files,
+commits nothing and opens nothing. Implementing any finding is a separate request.
+
 Above all, this skill should push the reviewer to be **ambitious** about code structure. Do not merely identify local cleanup opportunities. Actively search for "code judo" moves: restructurings that preserve behavior while making the implementation dramatically simpler, smaller, more direct, and more elegant.
 
 ## Core Prompt
@@ -15,9 +18,9 @@ Above all, this skill should push the reviewer to be **ambitious** about code st
 Start from this baseline:
 
 > Perform a deep code quality audit of the current branch's changes.
-> Rethink how to structure / implement the changes to meaningfully improve code quality without impacting behavior.
-> Work to improve abstractions, modularity, reduce Spaghetti code, improve succinctness and legibility.
-> Be ambitious, if there is a clear path to improving the implementation that involves restructuring some of the codebase, go for it.
+> Rethink how the changes could be structured / implemented to meaningfully improve code quality without impacting behavior.
+> Look for better abstractions and modularity, less spaghetti code, more succinctness and legibility.
+> Be ambitious: if there is a clear path to improving the implementation that involves restructuring some of the codebase, propose it concretely.
 > Be extremely thorough and rigorous. Measure twice, cut once.
 
 ## Non-Negotiable Additional Standards
