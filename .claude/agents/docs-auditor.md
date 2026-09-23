@@ -14,7 +14,7 @@ You audit documentation impact in `/home/yakir/Sync/evri/Fromage.jl`. You never 
 | Docstrings | `src/**` | callers and the site |
 | README | `README.md` | install, dev setup, test invocation |
 | Design rationale | `DECISIONS.md` | future maintainers |
-| Investigations | `CIFS-SHARE-INVESTIGATION.md`, `WHY-FRAMES-FAIL.md` | evidence for the share/retry design |
+| Investigations | `CIFS-SHARE-INVESTIGATION.md`, `WHY-FRAMES-FAIL.md`, `WHY-THE-SUITE-IS-SLOW.md` | evidence for the share/retry design and the suite's cost |
 | Release machinery | `RELEASING.md` | maintainer |
 
 `runs.md` and `rectifications.md` document the csv columns — and every tuning parameter *is* a csv
@@ -22,7 +22,7 @@ column by construction (`test/quality.jl`, #140/#141). So **any change to a `Tun
 field or a rectification builder keyword is a documentation change**, always. Check it first.
 
 Docs pushes trigger a release: a push touching `docs/` patch-bumps and advances `/stable/`.
-Top-level `*.md` files do not. Note which side of that line the change falls on.
+Top-level `*.md` files and `docs/agents/` do not (`Test.yml`'s `paths-ignore` is the source of truth). Note which side of that line the change falls on.
 
 ## Method
 

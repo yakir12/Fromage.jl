@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # SessionStart: report LIVE Kaimon state into context.
 #
-# Deliberately not a copy of the CLAUDE.md §2 checklist — that prose is already
-# loaded every session and re-injecting it buys nothing. What a hook can add is
+# Deliberately not a copy of CLAUDE.md or AGENTS.md — both are already loaded
+# every session, so re-injecting their rules buys nothing. What a hook can add is
 # state CLAUDE.md cannot know: whether the server is actually up right now.
 #
 # It also closes a gap in prefer-kaimon-search.sh: if Kaimon is down, that hook
@@ -20,14 +20,8 @@ legitimate fallback while it is down — append '# kaimon-ok' to get past the Pr
 and say plainly in your answer that findings came from shell grep, not a semantic search.
 If the user expects Kaimon, tell them the server looks down rather than silently working around it."
 else
-  msg="Kaimon MCP: up on localhost:${PORT} (HTTP ${code} at session start).
-Ground rule 6 applies: search_code(query=..., collection=\"fromage\") to find, grep_code to confirm.
-Always pass collection=\"fromage\" — without it search_code falls back to the last-used session's
-project, which may be another repo's collection, and a miss there looks like 'no such code'.
-KaimonGate.stash takes a String key; the Kaimon quiz's stash(:key, v) throws a MethodError.
-A new conversation has no Julia session of its own. Run the kaimon-up skill before the first ex, run_tests
-or search_code: it starts your own session, checks the active project and Revise, fires the
-access-prompt canary and proves the Qdrant index is live — in the first minute, not mid-task."
+  msg="Kaimon MCP: up on localhost:${PORT} (HTTP ${code} at session start). This conversation has no
+Julia session of its own yet: run the kaimon-up skill before the first ex, run_tests or search_code."
 fi
 
 jq -nc --arg m "$msg" \

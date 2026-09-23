@@ -31,8 +31,8 @@ not in CI.
 
 For micro-questions, run Julia from the repo root:
 `JULIA_NUM_THREADS=auto julia --project -e '…'` — `@time`, `@allocated`, `@code_warntype`,
-`JET.@report_opt`. Never `julia` without `--project`. Do not use the shared REPL (`ex`) unless
-`investigate_environment()` confirms the active project is this package; it usually is not.
+`JET.@report_opt`. Never `julia` without `--project`. Leave the shared REPL (`ex`) to the parent
+session: it belongs to the user, and timings taken there compete with whatever else it is running.
 
 Warm up before timing, and report thread count with every number.
 

@@ -9,10 +9,10 @@ unchanged. The original prompts and scripts remain canonical shared resources.
 No symlinks, package dependencies, model pins or credentials are added.
 
 The migration was local only: no commit, push, PR, merge, tag, release, remote
-configuration change or publication. A future push of `.codex/**` or `.agents/**`
-to main **does trigger the existing release chain**: unlike `.claude/**`, these
-paths are not excluded by `Test.yml`. The integration deliberately does not
-change those filters. `docs/agents/**` and root Markdown remain excluded.
+configuration change or publication. `.codex/**` and `.agents/**` were at first
+not excluded by `Test.yml`, so a push touching only them cut a release (v0.6.15
+came from a 4-line `.codex/config.toml` commit). They are now ignored alongside
+`.claude/**`, `docs/agents/**` and root Markdown.
 
 ## Start and trust
 
@@ -109,8 +109,9 @@ installed but missing from PATH, start it with:
 Use its setup UI to review security mode, API key, port and allowed projects.
 Register this checkout in the user's Kaimon project/grep allowlists, never in
 tracked configuration. A new Julia minor may need KaimonGate installed in that
-minor's **global** environment; CLAUDE.md §2 describes the exact missing-ZMQ
-failure and session-log diagnosis. Do not add KaimonGate to Fromage's dependencies.
+minor's **global** environment; the Troubleshooting section of
+`.claude/skills/kaimon-up/SKILL.md` describes the exact missing-ZMQ failure and
+session-log diagnosis. Do not add KaimonGate to Fromage's dependencies.
 
 The inspected Kaimon version supports managed Qdrant: `KAIMON_QDRANT_MANAGED`
 is `auto`, `always` or `off`; default `auto` starts an installed service on
@@ -131,20 +132,10 @@ If the required model is absent, deliberately download it with
 `ollama pull qwen3-embedding:0.6b`. Downloads and service provisioning are setup
 operations, not validation steps, and were not performed during this migration.
 
-Inside Codex, invoke `$kaimon-up`. Required evidence is:
-
-1. `ping` succeeds and lists connected sessions.
-2. `start_session(project_path=<resolved-root>, name="fromage")` creates an owned
-   session; verify it with `investigate_environment(session=<key>)` before eval.
-   If it returns someone else's already-running session, use local Julia instead.
-3. `qdrant_list_collections` includes `fromage`.
-4. `search_code(query="retry reading a video frame from the network share when it fails with EAGAIN", collection="fromage")`
-   returns relevant code; confirm `src/shareio.jl`'s opening comment with
-   `grep_code(pattern="^# Every retry in this package", path=<root>/src)`.
-
+Inside Codex, invoke `$kaimon-up`; its shared procedure in
+`.claude/skills/kaimon-up/SKILL.md` lists the evidence each layer must show.
 The startup hook only checks HTTP reachability; a 401 proves a listener exists,
-not that credentials, MCP initialization, Julia or search work. The above tool
-calls establish those layers separately. Exact result order can change.
+not that credentials, MCP initialization, Julia or search work.
 
 ### Index lifecycle
 
@@ -160,28 +151,8 @@ credentials. Qdrant storage, snapshots, service environment, logs and indexes
 belong in Kaimon's user cache (managed storage is under `qdrant/storage`), not Git.
 No such data is copied into this repository.
 
-On an authorized edit, refresh each settled file explicitly:
-
-```text
-qdrant_reindex_file(collection="fromage", file_path=<absolute-file>, project_path=<resolved-root>)
-```
-
-If a full rebuild is genuinely needed and authorized:
-
-```text
-qdrant_index_project(collection="fromage", project_path=<resolved-root>,
-                     extra_dirs=["test", "docs", "examples", "benchmark", ".agents", ".codex"],
-                     recreate=true)
-```
-
-Recreation replaces the collection; it is not a health check. Keep the embedding
-model consistent with the collection. `qdrant_sync_index` has missed real edits,
-so its zero-change result does not establish freshness. Overlapping/stale ranges
-and mismatches with `grep_code` are evidence to reindex. If embeddings fail,
-`search_code(mode="lexical")` and `grep_code` remain useful. If all Kaimon access
-fails, disclose the loss and use shell search with the existing `# kaimon-ok`
-escape. Index updates for this migration are deliberately deferred because the
-task forbids mutating service resources.
+Reindexing (per file, and the full rebuild) follows CLAUDE.md §2, "Finding code",
+with this checkout's root. Keep the embedding model consistent with the collection.
 
 ## Permissions and hooks
 
@@ -320,14 +291,7 @@ startup hooks unless disabled; use the validator's safe path rather than dumping
 a potentially sensitive effective prompt. `codex doctor --help` describes local
 diagnostics; review output locally before sharing it.
 
-For a targeted Julia suite, load fixtures/harness then that suite in the test
-environment; inspect imports first. Full validation remains:
-
-```sh
-JULIA_NUM_THREADS=auto julia --project -e 'using Pkg; Pkg.test()'
-```
-
-Documentation-only local build after docs dependencies are installed:
+Julia suites run as CLAUDE.md §2, "Tests", describes. Documentation-only local build after docs dependencies are installed:
 
 ```sh
 julia --project=docs docs/agents/build-local.jl
@@ -341,56 +305,30 @@ existing Node/npm tooling and cached packages. Generated `docs/build` is ignored
 The shape check detects drift, not arbitrary side effects in future build
 arguments or imported dependencies; changes to those still require review.
 
-### Migration validation record (2026-09-22)
+### Migration record
 
-| Command/check | Observed outcome |
-|---|---|
-| `codex --version`; `claude --version`; `julia --project --startup-file=no -e 'print(VERSION)'` | 0.155.1; 2.1.278; 1.13.0 |
-| CLI help commands listed below; `codex features list` | Installed feature/configuration surface inspected; hooks and multi-agent stable/enabled |
-| `codex app-server generate-json-schema --experimental --out <temporary-directory>` | Installed protocol schema generated outside repository |
-| `python3 docs/agents/validate-codex.py` | Structured files, references, 18-tool parity, six role declarations, three native skills, native config/hooks, prompt discovery and rule/fixture checks passed |
-| Temporary metadata probe against normal user configuration (`config/read`, `skills/list`, `hooks/list`) | Passed after allowing normal Codex runtime-state access: project layer active, sandbox/approval origins are project, six role declarations and three skills discovered; both project hooks **untrusted**; zero discovery errors/warnings. No user trust/config changed |
-| `codex mcp list --json` (output filtered to name/enabled) | Kaimon enabled; no credential values printed |
-| `codex --strict-config mcp list --json` | Unsupported combination in this version; replaced with ordinary list and strict app-server validation |
-| Skill creator's `quick_validate.py` on each of the three new skills | All valid |
-| Optional Python `jsonschema` check against downloaded official schema | Dependency unavailable; no install performed. Native strict config/role loading and TOML/JSON parsing were used instead |
-| `bash -n` on both original hooks and cache-cleanup helper | Passed; cleanup helper not executed |
-| Original-file SHA-256 before/after comparison | CLAUDE.md, every Claude file including ignored local settings, release doc and all GitHub files unchanged |
-| New-file machine-path, credential-pattern and existing Kaimon credential comparison | Passed; no credential value or machine home path copied |
-| `git diff --check`; final status/diff inspection | Passed; only integration additions and additive ignore patterns |
-| Kaimon `ping`, `investigate_environment`, `qdrant_list_collections`, known `search_code` and live `grep_code` | Healthy; existing Fromage/Revise session; `fromage` present; shareio semantic hit confirmed at line 1 |
-| Kaimon `start_session` | Returned an existing session; no borrowed-session eval performed |
-| Qdrant `/healthz`; Ollama `/api/tags` filtered to embedding model | Healthy; qwen3-embedding:0.6b installed |
-| `JULIA_NUM_THREADS=auto julia --project --startup-file=no -e 'using Fromage; println((julia=VERSION, package=pkgversion(Fromage), threads=Threads.nthreads()))'` | Julia 1.13.0, Fromage 0.6.10, 32 threads |
-| `JULIA_NUM_THREADS=auto julia --project -e 'using Pkg; Pkg.test()'` | First attempt blocked by sandbox depot lock; rerun with cache access passed **2265/2265**, 7m26s; no JET skip reported |
-| `julia --project=docs --startup-file=no docs/agents/build-local.jl --check` | Passed: three imports and makedocs selected; deployment excluded |
-| Julia parser/AST round-trip and harmless makedocs/deploydocs stub experiment | Passed; selected build expression evaluated, deployment stub never called |
-| `julia --project=@runic --startup-file=no -e 'using Runic; exit(Runic.main(ARGS))' -- --check --diff docs/agents/build-local.jl` | Passed |
-| `julia --project=docs --startup-file=no docs/agents/build-local.jl` | Sandbox cache write initially blocked; retry reached pre-existing docs manifest mismatch: Julia 1.12.6 manifest omits current LRUCache dependency. Full docs build **not validated**; manifest left unchanged |
-
-Not run: trusted hook lifecycle, delegated specialist model turns, clean-machine
-service provisioning/authentication, persistent-task/network link suites, index
-writes/rebuilds, workflow dispatch, cleanup hooks, remote Git/GitHub mutations,
-deployment or release recovery. None is silently reported as successful.
-
-Independent final review: Spec found no blocking gap beyond the disclosed runtime
-limits. Standards found that raw agent declarations alone do not prove loaded
-roles; the validator now verifies resolved files and fails on malformed-role
-startup warnings, while clearly separating delegated execution. Julia review
-found no blocking issue with the adapter for the current docs entry point.
+The original migration (commits `c6a7c3c`..`2b78ee4`, 2026-09-22) recorded its
+full validation log here: CLI versions, the protocol-schema probe, the
+first threaded suite run and the checks deliberately not run (trusted hook
+lifecycle, delegated model turns, clean-machine provisioning). It is in git
+history; `validate-codex.py` is the living check.
 
 ### Synchronization strategy
 
-No large prompt is duplicated or extracted from Claude. Codex wrappers read
-the original complete role/skill prompt with explicit path, tool-name and
-authorization adaptations. AGENTS.md repeats only bootstrap-critical rules and
-requires the original complete operational reference. All domain, design,
-troubleshooting, issue-tracker and release documents are shared unchanged.
+Both agents maintain the repo, and `CLAUDE.md` plus `.claude/` are the single
+source: a shared rule, agent prompt or skill changes there, whichever agent makes
+the change. Codex wrappers read the original complete role/skill prompt and add
+only path, tool-name and authorization adaptations. AGENTS.md repeats only
+bootstrap-critical rules and requires the complete operational reference. All
+domain, design, troubleshooting, issue-tracker and release documents are shared.
 
 After changing a Claude skill/agent name or adding one, update its native wrapper
 and run the validator: it fails on missing counterparts, wrong names/policies,
-broken references or allowlist drift. After changing operational rules, review
-AGENTS.md's critical summary and adapters for semantic agreement. Descriptions
+broken references, allowlist drift or a release filter that stops ignoring agent
+configuration. After changing operational rules, review AGENTS.md's critical
+summary and the wrappers for semantic agreement — the validator checks
+structure, not meaning. Generic engineering skills are installed per user
+(`~/.agents/skills`), not vendored here. Descriptions
 appear both in native role files and registration tables for discoverability;
 keep these brief copies synchronized. No generator rewrites Claude files.
 
@@ -408,16 +346,13 @@ keep these brief copies synchronized. No generator rewrites Claude files.
   resolve paths dynamically and require current runtime/workflow evidence.
 - Local service provisioning, clean-machine authentication and actual delegated
   model behavior were not simulated by a configuration parser. Re-run the live
-  Kaimon checks on each machine. An existing REPL may prevent an owned session;
-  the safe fallback is a fresh local Julia subprocess.
+  Kaimon checks on each machine.
 - Index writes were deferred for this task's no-service-mutation constraint.
   Reindex the new integration files only when that operation is authorized.
 - Hook scripts need Bash, curl and jq. Native Windows users need those available
   (for example through Git Bash) or a WSL setup. Windows hook execution was not
   tested; without those dependencies, use the disclosed manual bootstrap/search
   fallback and do not claim deterministic enforcement.
-- Future release-filter changes should be a separately authorized decision;
-  they are not silently bundled into assistant integration.
 
 ## Sources consulted
 

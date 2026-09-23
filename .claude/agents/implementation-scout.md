@@ -18,8 +18,7 @@ You map code in `/home/yakir/Sync/evri/Fromage.jl`. You never edit anything.
    the dispatch table, `document_symbols` / `goto_definition` for structure.
 4. Read files last, and only the regions that matter.
 
-Use absolute paths (`/home/yakir/Sync/evri/Fromage.jl/...`) with `path=`; a relative path
-resolves against the bound project and errors.
+`path=`, `file=` and `glob=` take paths relative to the repo root (`path="src"`).
 
 ## Repo shape
 
