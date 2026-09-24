@@ -411,7 +411,10 @@ translation, and bit-identical to the crop it used to be implemented as. Frames 
 `ground_start` to `ground_stop`, also in ground-canvas pixels (1-based array indices). `pause`, a
 range of frames after the first, holds it still through those frames, and it still ends at
 `ground_stop`. `disc_gray` is its gray level, and `textured` swaps the white ground for
-`ground_texture` — all off by default, so existing flights render bit-identically.
+`ground_texture`. `flash`, a range of frames, paints a white square `flash_half` px either side
+of the disc's centre under it through those frames: a bright object (an experimenter's arm)
+passing over a target that stays visible. All off by default, so existing flights render
+bit-identically.
 
 Returns a NamedTuple; its first four fields are positional-destructuring compatible with the
 older `(file, groundpath, start_location, nframes)` form.
@@ -431,7 +434,7 @@ function make_apriltag_video(
         nframes = 60, fps = 25, tw = 12, amp = 40, pose = nothing,
         occlude = Int[], tag_blocks = TAG_BLOCKS,
         ground_start = (260.0, 260.0), ground_stop = (300.0, 320.0),
-        textured = false, disc_gray = 0x00, pause = 1:0
+        textured = false, disc_gray = 0x00, pause = 1:0, flash = 1:0, flash_half = 0
     )
     ox0, oy0 = (GW - W) ÷ 2, (GH - H) ÷ 2                   # the fixed crop: ground -> frame
     turn(k) = 2π * (k - 1) / nframes
@@ -465,7 +468,13 @@ function make_apriltag_video(
     raw = joinpath(dir, "$name.raw")
     open(raw, "w") do io
         for k in 1:nframes
-            g = draw_disc(k in occlude ? occluded : ground, gr(k), gc(k), tw; value = disc_gray)
+            g = k in occlude ? occluded : ground
+            if k in flash
+                g = copy(g)
+                rows, cols = (round(Int, x - flash_half):round(Int, x + flash_half) for x in (gr(k), gc(k)))
+                g[rows, cols] .= 0xff
+            end
+            g = draw_disc(g, gr(k), gc(k), tw; value = disc_gray)
             write(io, vec(permutedims(render_pose(g, poses[k], H, W))))   # row-major for ffmpeg
         end
     end
