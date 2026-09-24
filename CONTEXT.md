@@ -122,7 +122,9 @@ second sense is noted rather than legislated away.
 ### Target
 
 The thing being tracked. Usually an animal; the tracker only cares that it is a blob of known
-approximate width that differs in brightness from its background.
+approximate width that differs in brightness from its background. The target can be a composite:
+in a ball-rolling run it is the beetle and its ball together, and `target_width` is the width of
+that whole blob, as the tracker sees it, not of the animal alone.
 
 ### Arena
 
@@ -278,7 +280,7 @@ separates the two types carrying them:
 - `Tuning` holds what one run shares. The name is narrower than the contents: four of its nine
   fields are observations rather than choices — `native_fps` (the rate the video runs at), `aspect`
   (its pixel aspect ratio), `darker_target` (a property of the footage) and `target_width` (a
-  measurement of the animal).
+  measurement of the target).
   Membership is not "knobs": it is *run-level, and an argument of `track`*.
 
 `verify_run_consistency!` is that scope rule enforced — segments of one run must agree on every
