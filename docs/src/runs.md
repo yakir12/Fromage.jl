@@ -30,7 +30,7 @@ beetle03.mp4,afternoon
 | --- | --- | --- |
 | `start` | `0` | timestamp where the run starts in the video. |
 | `stop` | full duration | timestamp where the run ends. |
-| `target_width` | `25` | the full width (diameter, not radius) of the target, in pixels. **The single most important tracking parameter** — measure it in a paused frame. |
+| `target_width` | `25` | the full width (diameter, not radius) of the target, in pixels — of everything that moves as one blob, so a beetle *with its ball*. **The single most important tracking parameter** — measure it in a paused frame. |
 | `start_location` | see [below](#Where-the-tracker-starts-looking) | `"(x, y)"` pixel coordinate of the target at `start`. |
 | `darker_target` | `true` | `true` if the target is darker than its background, `false` if lighter. |
 | `window_size` | computed | the size of the search window the tracker scans around the target's last known position: a single number for a square window (e.g. `41`) or `"(w, h)"` for a rectangle. Must be comfortably larger than `target_width` plus however far the target can move between consecutive frames. The default is computed from `target_width` and a conservative speed estimate, and is usually fine. |
@@ -72,7 +72,7 @@ beetle03.mp4,afternoon
     The `white_point` column was accepted but never had any effect, so it remains ignored metadata. Nothing about tracking changes, since the value was never read.
 
 !!! tip "The one parameter worth measuring: `target_width`"
-    Pause a run video on a frame where the animal is clearly visible, and measure how many pixels wide it is (many image viewers let you draw a selection box and read off its size). If the tracker keeps losing your animal, a wrong `target_width` is the first thing to check.
+    Pause a run video on a frame where the animal is clearly visible, and measure how many pixels wide it is (many image viewers let you draw a selection box and read off its size). Measure what the tracker sees as one blob: if the animal moves together with something it carries or pushes, such as a dung beetle rolling its ball, measure the two together. If the tracker keeps losing your animal, a wrong `target_width` is the first thing to check.
 
 ## Where the tracker starts looking
 
