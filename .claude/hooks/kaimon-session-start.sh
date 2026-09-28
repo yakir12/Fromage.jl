@@ -11,11 +11,22 @@
 set -uo pipefail
 
 PORT=${KAIMON_PORT:-2828}
-code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "http://localhost:${PORT}/mcp" 2>/dev/null) || code=000
+# A server that is up but busy (indexing collections just after it starts) can take seconds to
+# answer. On 2026-09-28 the old 2 s limit timed out on a server whose log shows it answering that
+# very request, and the session was told Kaimon was down and worked without it. So a timeout
+# (curl exit 28) is not "down"; only a refused or failed connection is. 4 s leaves the probe
+# inside the 5 s hook timeout.
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 4 "http://localhost:${PORT}/mcp" 2>/dev/null)
+rc=$?
 
-if [ "$code" = "000" ]; then
-  msg="Kaimon MCP: NOT REACHABLE on localhost:${PORT} (checked at session start).
-Code discovery via search_code/grep_code is unavailable this session. Shell grep/rg is the
+if [ "$rc" = 28 ]; then
+  msg="Kaimon MCP: SLOW on localhost:${PORT} (no answer within 4 s at session start; it is likely busy
+indexing). Treat it as up: call the kaimon ping tool, and use Kaimon as normal if it answers. Fall back to
+shell search only if ping fails too. Then run the kaimon-up skill before the first ex, run_tests or search_code."
+elif [ "$rc" != 0 ] || [ "${code:-000}" = "000" ]; then
+  msg="Kaimon MCP: NOT REACHABLE on localhost:${PORT} (checked at session start, curl exit ${rc}).
+Kaimon may still come up later in the session: call the kaimon ping tool before you rely on this.
+If ping fails too, code discovery via search_code/grep_code is unavailable. Shell grep/rg is the
 legitimate fallback while it is down — append '# kaimon-ok' to get past the PreToolUse hook,
 and say plainly in your answer that findings came from shell grep, not a semantic search.
 If the user expects Kaimon, tell them the server looks down rather than silently working around it."

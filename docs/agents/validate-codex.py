@@ -124,12 +124,15 @@ def hook_and_rule_checks():
         assert handler["timeout"] == 5
     # Export a fake curl only inside this child shell: exercise both startup
     # branches without contacting any service or altering the original hook.
-    for status in ("200", "000"):
-        output = run(["bash", "-c", f"curl() {{ printf '%s' '{status}'; }}; "
+    # curl prints 000 both when the connection is refused (exit 7) and when a busy server
+    # misses the deadline (exit 28); only the first is "down".
+    for status, rc, expected in [("200", 0, "up on"), ("401", 0, "up on"),
+                                 ("000", 7, "NOT REACHABLE"), ("000", 28, "SLOW")]:
+        output = run(["bash", "-c", f"curl() {{ printf '%s' '{status}'; return {rc}; }}; "
                       "export -f curl; bash .claude/hooks/kaimon-session-start.sh"])
         context = json.loads(output)["hookSpecificOutput"]
         assert context["hookEventName"] == "SessionStart"
-        assert ("NOT REACHABLE" in context["additionalContext"]) == (status == "000")
+        assert expected in context["additionalContext"], (status, rc, context)
     # These scripts were inspected: this hook only parses input and prints JSON.
     # The hook denies only searches that read this repo's Julia code (CLAUDE.md §1 rule 6).
     for command, denied in [
