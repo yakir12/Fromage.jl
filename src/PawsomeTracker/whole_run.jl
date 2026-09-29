@@ -335,7 +335,13 @@ function score_dark(vol::RunVolume, bg, darker_target)
 end
 
 # One sample's z into `out`, through the caller's buffers; left 0 when the response has no spread.
-function score_sample!(out, frame, bg, darker_target, near, far, fg, fp, s, sfar, flat)
+# Typed, not generic: JET analyses a method on its own signature, and with untyped buffers
+# `imfilter!` there has union-split cases no method matches (the #381 PR's red JET run).
+function score_sample!(
+        out::AbstractMatrix{Float32}, frame::Matrix{UInt8}, bg::Matrix{Float32}, darker_target::Bool,
+        near::Tuple, far::Tuple, fg::Matrix{Float32}, fp::Matrix{Float32}, s::Matrix{Float32},
+        sfar::Matrix{Float32}, flat::Vector{Float32}
+    )
     for i in eachindex(fg)
         x = Float32(frame[i])
         fg[i] = darker_target ? bg[i] - x : x - bg[i]

@@ -1174,6 +1174,12 @@ rather than `Int16`, so no target width makes the walking reach overflow them (a
 28 px target would), and a frame whose response has no spread at all (MAD 0) scores 0 rather than
 dividing by zero.
 
+**Its inner loops are threaded** (`grid_frame`, `score_dark`, both Viterbis), under `main`'s own
+per-run `tmap`. The innermost layer the online tracker lost (#68) was a 21×21 window; these are whole
+grids, and on one drone run (8_2, 410 samples) they measured: read 46 s serial, 19 s at 8 threads,
+10.5 s at 32; path 22 s, 5.0 s and 3.5 s. One run at 32 threads read in 41 s once, on its first
+read over the share, so read the numbers as an order, not a benchmark.
+
 `whole_run` is a value branched on once, at `VerifyRuns.track(r::Run, …)`, not a type: it is a csv
 cell like a run's segment count ("A run's segment count is data, not a type"), and a type would make
 `Vector{Run}` abstract again. Below the seam every choice is by dispatch, on the rectification.
