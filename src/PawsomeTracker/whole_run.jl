@@ -29,7 +29,7 @@
 using ImageFiltering: Fill
 using ImageFiltering.KernelFactors: kernelfactors
 using OffsetArrays: OffsetVector
-using OhMyThreads: tforeach
+using OhMyThreads: @local, @tasks, tforeach
 using CoordinateTransformations: AffineMap
 using ..Rectifications: StaticRectification
 
@@ -75,13 +75,20 @@ const EDGE_BAND = 3.6873156342182893
 const EDGE_COST = 6.78
 const EDGE_CAP = 300.0
 
-# Without the motion model: a per-sample step of σ NO_MOTION_SPEED widths per second.
+# Without the motion model: a per-sample step of σ NO_MOTION_SPEED widths per second, and a sample's
+# score capped at NO_MOTION_CAP × the target's own contrast. The cap's value is PLATEAU's, and it is a
+# separate knob: it was settled on its own, for this path (#368).
 const NO_MOTION_SPEED = 1.0
+const NO_MOTION_CAP = 0.7
 
 # A run whose fastest second covers more than this many target widths is flagged (`@warn`). The
 # fitted walk's p99.9 is 1.6 widths/s; every whole-run failure among 157 drone runs had a fastest
 # second of 3.5–4 (#376).
 const SUSPECT_SPEED = 3.0
+
+# Each segment's sample times: the `StepRangeLen` a `range` of `Float64`s is, as the online
+# tracker's `track` collects them.
+const SampleTimes = StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}
 
 # ---- the volume ------------------------------------------------------------------------------
 
@@ -97,36 +104,44 @@ the target's width and `dt` the seconds between samples — all on the grid.
 struct RunVolume
     frames::Vector{Matrix{UInt8}}
     has::Vector{Bool}
-    tss::Vector{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}
+    tss::Vector{SampleTimes}
     start::NTuple{2, Float64}
     anchor::Float64
     width::Float64
     dt::Float64
 end
 
-# The display grid (non-AprilTag footage): grid index `(r, c, k)` → the stored frame's index. A grid
-# index `i` is full-resolution index `i / downscale` (the online tracker's convention, see
-# `RegisteredWarp`), and a display column crosses to a stored one through `sar`. The same call shape
-# as `RegisteredWarp`, so `grid_frame` takes either.
-struct DisplayGrid
-    downscale::Float64
+# A grid pixel is the full-resolution pixels under its footprint: at a downscale of 1/3, grid index
+# `r` covers full indices `3r − 2 … 3r`, centred on `3r − 1`. So a grid index and a full-resolution
+# index (reference on AprilTag footage, display otherwise) convert as below, both ways, everywhere
+# the grid meets the frame. NOT the online tracker's `r / downscale`, which is a point sample one
+# full pixel off this footprint: on textured ground that is a different volume, and it flipped two
+# fragile drone runs against the research tracker this was measured on (DECISIONS, "The whole-run
+# tracker's constants").
+full_index(g, downscale) = (g - 0.5) / downscale + 0.5
+grid_index(i, downscale) = (i - 0.5) * downscale + 0.5
+
+# The display frame (non-AprilTag footage): full-resolution display index `(r, c, k)` → the stored
+# frame's index; a display column crosses to a stored one through `sar`. The same call shape as
+# `RegisteredWarp`, so `grid_frame` takes either.
+struct DisplayToStored
     sar::Float64
 end
-(g::DisplayGrid)(x::SVector{3}) = SVector(x[1] / g.downscale, (x[2] / g.downscale - 1) / g.sar + 1, x[3])
+(g::DisplayToStored)(x::SVector{3}) = SVector(x[1], (x[2] - 1) / g.sar + 1, x[3])
 
 # One grid frame from the raw frame `img`: each grid pixel is the mean of `n × n` bilinear samples
-# spread evenly over the full-resolution pixels it covers, `n = ceil(1 / downscale)` — at a
-# downscale of 1/3, exactly the nine full pixels under it. `to_raw` maps a (fractional) grid index
-# to a raw index; a sample off the raw frame reads 0.
+# spread evenly over its footprint, `n = ceil(1 / downscale)` — at a downscale of 1/3, exactly the
+# nine full pixels under it. `to_raw` maps a (fractional) full-resolution index to a raw index; a
+# sample off the raw frame reads 0.
 function grid_frame(img, to_raw, (R, C), downscale)
     n = ceil(Int, 1 / downscale)
-    offsets = [(i - (n + 1) / 2) / n for i in 1:n]
+    offsets = [(i - (n + 1) / 2) / (n * downscale) for i in 1:n]
     out = Matrix{UInt8}(undef, R, C)
     tforeach(1:C) do c
         for r in 1:R
             acc = 0.0f0
             for dr in offsets, dc in offsets
-                p = to_raw(SVector(r + dr, c + dc, 1.0))
+                p = to_raw(SVector(full_index(r, downscale) + dr, full_index(c, downscale) + dc, 1.0))
                 v = bilinear(img, (p[1], p[2]))
                 isnothing(v) || (acc += Float32(gray(v)))
             end
@@ -166,7 +181,7 @@ function read_run(segments, tuning, rectification::ApriltagRectification)
     ds = tuning.downscale
     sz = round.(Int, ds .* reference_size(rectification))
     frames, has = Matrix{UInt8}[], Bool[]
-    tss = Vector{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}(undef, length(segments))
+    tss = Vector{SampleTimes}(undef, length(segments))
     seeds = map(enumerate(segments)) do (i, s)
         video(s.file, tuning.native_fps, tuning.sample_fps, s.start, s.stop, 1.0, tuning.aspect) do vid
             tss[i] = range(s.start; step = 1 / vid.sample_fps, length = vid.nframes)
@@ -178,16 +193,16 @@ function read_run(segments, tuning, rectification::ApriltagRectification)
     # through that segment's first registration, as the online tracker's `apriltag_guess` does
     function to_grid((x, y))
         p = to_index(apply_h(seedR, SVector(stored_x(x, tuning.aspect), Float64(y))))
-        return (ds * p[2], ds * p[1])
+        return (grid_index(p[2], ds), grid_index(p[1], ds))
     end
     return RunVolume(frames, has, tss, first(segments).start_location, to_grid, tuning)
 end
 
 function read_run(segments, tuning, _)
     ds, sar = tuning.downscale, Float64(tuning.aspect)
-    to_raw = DisplayGrid(ds, sar)
+    to_raw = DisplayToStored(sar)
     frames, has = Matrix{UInt8}[], Bool[]
-    tss = Vector{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}(undef, length(segments))
+    tss = Vector{SampleTimes}(undef, length(segments))
     for (i, s) in enumerate(segments)
         video(s.file, tuning.native_fps, tuning.sample_fps, s.start, s.stop, 1.0, tuning.aspect) do vid
             tss[i] = range(s.start; step = 1 / vid.sample_fps, length = vid.nframes)
@@ -200,7 +215,7 @@ function read_run(segments, tuning, _)
         end
     end
     # a display (x, y), 0-based, is display index (y + 1, x + 1)
-    to_grid((x, y)) = (ds * (y + 1), ds * (x + 1))
+    to_grid((x, y)) = (grid_index(y + 1, ds), grid_index(x + 1, ds))
     return RunVolume(frames, has, tss, first(segments).start_location, to_grid, tuning)
 end
 
@@ -229,13 +244,13 @@ function read_registered!(frames, has, vid, rectification, ds, sz, file)
                     seedR = R
                     seeded = true
                     for img in pending
-                        push!(frames, grid_frame(img, RegisteredWarp(ds, [Hinv]), sz, ds))
+                        push!(frames, grid_frame(img, RegisteredWarp(1.0, [Hinv]), sz, ds))
                     end
                     empty!(pending)
                 end
             end
             if seeded
-                push!(frames, grid_frame(vid.img, RegisteredWarp(ds, [Hinv]), sz, ds))
+                push!(frames, grid_frame(vid.img, RegisteredWarp(1.0, [Hinv]), sz, ds))
             else
                 push!(pending, collect(vid.img))
             end
@@ -304,37 +319,46 @@ function score_dark(vol::RunVolume, bg, darker_target)
     σ = vol.width / 2sqrt(2log(2))
     near, far = gaussian(σ), gaussian(3σ)
     z = zeros(Float32, R, C, n)
-    tforeach(collect(Iterators.partition(1:n, cld(n, Threads.nthreads())))) do ks   # one set of buffers per task
-        fg, fp, s, sfar = (Matrix{Float32}(undef, R, C) for _ in 1:4)
-        flat = Vector{Float32}(undef, R * C)
-        for k in ks
-            vol.has[k] || continue
-            frame = vol.frames[k]
-            for i in eachindex(fg)
-                x = Float32(frame[i])
-                fg[i] = darker_target ? bg[i] - x : x - bg[i]
-                fp[i] = max(0.0f0, fg[i])
-            end
-            imfilter!(s, fg, near, Fill(0.0f0))
-            imfilter!(sfar, fg, far, Fill(0.0f0))
-            flat .= vec(s) .- vec(sfar)
-            med = Float32(middle!(flat))
-            flat .= abs.(vec(s) .- vec(sfar) .- med)
-            mad = 1.4826f0 * Float32(middle!(flat))
-            mad > 0 || continue
-            imfilter!(s, fp, near, Fill(0.0f0))
-            imfilter!(sfar, fp, far, Fill(0.0f0))
-            @views z[:, :, k] .= (s .- sfar .- med) ./ mad
+    @tasks for k in 1:n
+        @local begin                     # one set of buffers per task
+            fg = Matrix{Float32}(undef, R, C)
+            fp = Matrix{Float32}(undef, R, C)
+            s = Matrix{Float32}(undef, R, C)
+            sfar = Matrix{Float32}(undef, R, C)
+            flat = Vector{Float32}(undef, R * C)
+        end
+        if vol.has[k]
+            score_sample!(view(z, :, :, k), vol.frames[k], bg, darker_target, near, far, fg, fp, s, sfar, flat)
         end
     end
     return z
+end
+
+# One sample's z into `out`, through the caller's buffers; left 0 when the response has no spread.
+function score_sample!(out, frame, bg, darker_target, near, far, fg, fp, s, sfar, flat)
+    for i in eachindex(fg)
+        x = Float32(frame[i])
+        fg[i] = darker_target ? bg[i] - x : x - bg[i]
+        fp[i] = max(0.0f0, fg[i])
+    end
+    imfilter!(s, fg, near, Fill(0.0f0))
+    imfilter!(sfar, fg, far, Fill(0.0f0))
+    flat .= vec(s) .- vec(sfar)
+    med = Float32(middle!(flat))
+    flat .= abs.(vec(s) .- vec(sfar) .- med)
+    mad = 1.4826f0 * Float32(middle!(flat))
+    mad > 0 || return out
+    imfilter!(s, fp, near, Fill(0.0f0))
+    imfilter!(sfar, fp, far, Fill(0.0f0))
+    out .= (s .- sfar .- med) ./ mad
+    return out
 end
 
 # The pixels within the anchor radius of the start: where the target is at the first sample. Never
 # empty — a radius under half a pixel still holds the pixel nearest the start.
 function anchor_disk(vol, R, C)
     r0, c0 = vol.start
-    disk = [I for I in CartesianIndices((R, C)) if hypot(I[1] - r0, I[2] - c0) <= vol.anchor]
+    disk = [ix for ix in CartesianIndices((R, C)) if hypot(ix[1] - r0, ix[2] - c0) <= vol.anchor]
     isempty(disk) && push!(disk, CartesianIndex(round(Int, r0), round(Int, c0)))
     return disk
 end
@@ -343,7 +367,7 @@ end
 function anchor_contrast(z, vol)
     disk = anchor_disk(vol, size(z, 1), size(z, 2))
     ks = 1:min(size(z, 3), max(1, round(Int, 1 / vol.dt)))
-    peaks = [maximum(z[I, k] for I in disk) for k in ks]
+    peaks = [maximum(z[ix, k] for ix in disk) for k in ks]
     return Float32(middle!(peaks))
 end
 
@@ -386,13 +410,13 @@ function best_path(::NoMotionModel, z, za, vol)
     reach = max(2, ceil(Int, 4σ))
     offsets = [(dr, dc) for dc in -reach:reach for dr in -reach:reach if dr^2 + dc^2 <= reach^2]
     cost = Float32[(dr^2 + dc^2) / 2σ^2 for (dr, dc) in offsets]
-    cap = Float32(PLATEAU * za)
+    cap = Float32(NO_MOTION_CAP * za)
     back = Array{Int32, 3}(undef, R, C, n)
     δ = fill(-Inf32, R, C)
-    for I in anchor_disk(vol, R, C)
-        δ[I] = min(z[I, 1], cap)
+    for ix in anchor_disk(vol, R, C)
+        δ[ix] = min(z[ix, 1], cap)
     end
-    new = similar(δ)
+    δnext = similar(δ)
     for k in 2:n
         tforeach(1:C) do c
             for r in 1:R
@@ -403,11 +427,11 @@ function best_path(::NoMotionModel, z, za, vol)
                     s = δ[rr, cc] - cost[j]
                     s > best && ((best, arg) = (s, Int32(j)))
                 end
-                new[r, c] = best + min(z[r, c, k], cap)
+                δnext[r, c] = best + min(z[r, c, k], cap)
                 back[r, c, k] = arg
             end
         end
-        δ .= new .- maximum(new)
+        δ .= δnext .- maximum(δnext)
     end
     return backtrack(back, offsets, argmax(δ))
 end
@@ -534,8 +558,8 @@ function best_path(model::MotionModel, z, za, vol)
     bpw = Array{Int32, 3}(undef, R, C, N)   # into walking: same, negative when it came from stopped
     S = fill(-Inf32, R, C)
     W = fill(-Inf32, R, C)
-    for I in anchor_disk(vol, R, C)
-        S[I] = W[I] = e[I, 1] + log(0.5f0)
+    for ix in anchor_disk(vol, R, C)
+        S[ix] = W[ix] = e[ix, 1] + log(0.5f0)
     end
     A, B, Snew, Wnew = similar(S), similar(S), similar(S), similar(S)
     fromW, fromS = falses(R, C), falses(R, C)
@@ -614,22 +638,21 @@ end
 
 # ---- out of the grid -------------------------------------------------------------------------
 
-# AprilTag: a grid index is reference index `p / downscale`, and the fixed metric map takes it to
-# ground, as the online tracker's `img_to_ground`. Unregistered samples are `missing`, as there.
-function grid_coordinates(vol, p, rectification::ApriltagRectification, tuning)
+# AprilTag: a grid index is a reference index (`full_index`), and the fixed metric map takes it to
+# ground, as the online tracker's `img_to_ground`. Every sample has a position, an unregistered one
+# included: the path is in reference space and runs through it, so only that sample's pixels were
+# unusable, never where the path puts it. The element type admits `missing` all the same, so a run's
+# track has one type whichever tracker made it.
+function grid_coordinates(p, rectification::ApriltagRectification, tuning)
     ds = tuning.downscale
-    coords = Vector{Union{Missing, GroundXY}}(undef, length(p))
-    for k in eachindex(p)
-        coords[k] = vol.has[k] ? img_to_ground(rectification.reference.M, p[k] ./ ds) : missing
-    end
-    return coords
+    return Union{Missing, GroundXY}[img_to_ground(rectification.reference.M, full_index.(q, ds)) for q in p]
 end
 
-# Otherwise: a grid index is display index `p / downscale`, and the column crosses to stored through
-# `aspect` — a stored index, as the online tracker's `detect` returns.
-function grid_coordinates(vol, p, _, tuning)
+# Otherwise: a grid index is a display index (`full_index`), and the column crosses to stored
+# through `aspect` — a stored index, as the online tracker's `detect` returns.
+function grid_coordinates(p, _, tuning)
     ds, sar = tuning.downscale, Float64(tuning.aspect)
-    return RowCol[RowCol(r / ds, (c / ds - 1) / sar + 1) for (r, c) in p]
+    return RowCol[RowCol(full_index(r, ds), (full_index(c, ds) - 1) / sar + 1) for (r, c) in p]
 end
 
 # The same return as the online `track` on the same rectification, so a run's track has one type
@@ -642,15 +665,16 @@ real_coordinates(coords, rectification) = map(rectification.image2real, map(from
 
 # The run diagnostic clip, from the grid frames the path was found on: the existing writer and
 # scenes, each told how to read a grid frame. AprilTag: the scene's image → ground map for a grid
-# frame is the metric map after grid → reference (a grid index `i` is reference index `i / ds`).
+# frame is the metric map after grid → reference, which in 0-based pixels is `(g + ½)/ds − ½`
+# (`full_index`, less the one each side of it).
 function write_diagnostic(file, vol, p, coords, tuning, rectification::ApriltagRectification)
     s = 1 / tuning.downscale
-    grid2ref = SMatrix{3, 3, Float64, 9}(s, 0, 0, 0, s, 0, s - 1, s - 1, 1)   # 0-based (x, y); column-major
+    grid2ref = SMatrix{3, 3, Float64, 9}(s, 0, 0, 0, s, 0, s / 2 - 1 / 2, s / 2 - 1 / 2, 1)   # column-major
     H = rectification.reference.M * grid2ref
     fps = effective_fps(tuning.native_fps, tuning.sample_fps)
     diagnose_apriltag(file, rectification, tuning.darker_target, fps) do dia
         each_sample(vol, dia) do k, t, frame
-            dia(t, frame, coords[k], vol.has[k] ? H : nothing)
+            dia(t, frame, coords[k], H)
         end
     end
     return
@@ -683,12 +707,12 @@ function each_sample(f, vol, dia)
 end
 
 # The rectification seen from the grid: stored 0-based (row, col) → grid 0-based is
-# `((row + 1)·ds − 1, (col·sar + 1)·ds − 1)`, so composing it in makes `RectifiedScene` sample the
-# grid frame and place a grid index.
+# `((row + ½)·ds − ½, (col·sar + ½)·ds − ½)` (`grid_index`, less the one each side of it), so
+# composing it in makes `RectifiedScene` sample the grid frame and place a grid index.
 on_grid(::Nothing, _) = nothing
 function on_grid(r::StaticRectification, tuning)
     ds, sar = tuning.downscale, Float64(tuning.aspect)
-    g = AffineMap(SDiagonal(ds, ds * sar), SVector(ds - 1, ds - 1))
+    g = AffineMap(SDiagonal(ds, ds * sar), SVector(ds / 2 - 1 / 2, ds / 2 - 1 / 2))
     return StaticRectification(r.image2real ∘ inv(g), g ∘ r.real2image, r.ratio, r.width, r.height)
 end
 
@@ -706,8 +730,8 @@ read.
 With an `ApriltagRectification` the path follows the fitted motion model with the no-return prior,
 and, when `tuning.arena_radius` is given, the arena prior (see `MotionModel`); otherwise a
 per-sample step cost (`NoMotionModel`). Coordinates are those `track` returns on the same
-rectification: real-world, `missing` where an AprilTag sample was not registered; stored `(row,
-col)` pixels without one.
+rectification: real-world, or stored `(row, col)` pixels without one. Unlike the online tracker's,
+an AprilTag track has a position at every sample, unregistered ones included (`grid_coordinates`).
 
 Memory: the grid volume (one byte per grid pixel per sample, ~0.07 GB per minute of drone footage at
 the defaults), its score (four bytes) and the path's back-pointers.
@@ -715,7 +739,7 @@ the defaults), its score (four bytes) and the path's back-pointers.
 function track_whole_run(segments::Vector{Segment}, tuning::Tuning, rectification, diagnostic_file)
     vol = read_run(segments, tuning, rectification)
     p = whole_run_path(vol, path_model(rectification, tuning), tuning.darker_target)
-    coords = grid_coordinates(vol, p, rectification, tuning)
+    coords = grid_coordinates(p, rectification, tuning)
     isnothing(diagnostic_file) || write_diagnostic(diagnostic_file, vol, p, coords, tuning, rectification)
     return (_concat_timestamps(vol.tss), real_coordinates(coords, rectification))
 end

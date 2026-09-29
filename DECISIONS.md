@@ -1156,10 +1156,27 @@ Left out of the port on purpose: the runner-up path and its margin, and the burs
 predicted the tracker's failures over the 157 runs, #376), and `ground`, the background cap against
 median ghosts, which was tried on one run and did not fix it.
 
-Differences from the research code: the back-pointers are `Int32` rather than `Int16`, so no walking
-reach is too large; a frame whose response has no spread at all (MAD 0) scores 0 rather than dividing
-by zero; the median is `partialsort!`, since `Statistics` is not a dependency; the Gaussian is
-`ImageFiltering`'s.
+**A grid pixel is its footprint's mean, and grid index `r` is centred on full index `(r − ½)/ds + ½`**
+(`full_index`), not on the online tracker's `r / ds`. The port first used the latter, a point one
+full pixel off the footprint. On textured ground that is a different volume: 1.4–3 grey levels per
+pixel from the research's, and the two fragile dev runs flipped on it (10_1 agreed with the research
+on 84% of samples, 22_1 on 58%, and 22_1 then warned at 5.2 widths/s). With the footprint the
+volumes agree to 0.02–0.07 grey, and the path to 100% of steps. Where the port's path ran on the
+research's own cached volume, it matched on 100% either way, so the path code was never the cause.
+
+**An unregistered AprilTag sample has a position**, where the online tracker reports `missing`. The
+path is in reference space and runs through such a sample, so only its pixels were unusable, not
+where the path is. Reporting `missing` failed two clicked runs (1_5, 7_1) against the harness, which
+scores a click on a missing point as infinitely far off.
+
+Two differences from the research code that would look like slips: the back-pointers are `Int32`
+rather than `Int16`, so no target width makes the walking reach overflow them (at `downscale = 1` a
+28 px target would), and a frame whose response has no spread at all (MAD 0) scores 0 rather than
+dividing by zero.
+
+`whole_run` is a value branched on once, at `VerifyRuns.track(r::Run, …)`, not a type: it is a csv
+cell like a run's segment count ("A run's segment count is data, not a type"), and a type would make
+`Vector{Run}` abstract again. Below the seam every choice is by dispatch, on the rectification.
 
 ---
 

@@ -143,7 +143,8 @@ end
 #
 # The one place the two trackers part: a run that opted in (`whole_run`) goes to the whole-run
 # tracker, with the same arguments and the same return. A branch on a value, not a dispatch: whether
-# a run opts in is data, like its segment count (DECISIONS). The online call is the line it was.
+# a run opts in is data, like its segment count (DECISIONS, "A run's segment count is data, not a
+# type"). The online call is the line it was.
 function track(r::Run, center, rectification, diagnostic_file)
     segments = resolved_segments(r, center, rectification)
     r.tuning.whole_run && return track_whole_run(segments, r.tuning, rectification, diagnostic_file)

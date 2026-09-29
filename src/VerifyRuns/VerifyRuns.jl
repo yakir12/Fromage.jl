@@ -49,11 +49,12 @@ include("verifications.jl")
 # came through usable. Split out of `load_runs` so `main` can settle BOTH files' identities before
 # either one opens a video (#121).
 function parse_runs(data_path, file; defaults, progress)
+    whole_run_defaults = resolve_whole_run_defaults(defaults)
     defaults = resolve_defaults(defaults)   # fail fast on unknown keys / unconvertible values
     csvrows = read_rows(file, COLUMNS, "runs"; renamed = RENAMED_COLUMNS)
 
     # parse each row to a Dict of parsed values + an :issues accumulator
-    cs = @showprogress desc = "Parsing runs.csv..." enabled = progress tmap(r -> parse_row(r, defaults), collect(csvrows))
+    cs = @showprogress desc = "Parsing runs.csv..." enabled = progress tmap(r -> parse_row(r, defaults, whole_run_defaults), collect(csvrows))
 
     df = DataFrame(Tables.dictrowtable(cs))
     allowmissing!(df)

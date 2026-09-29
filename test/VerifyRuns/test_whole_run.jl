@@ -36,6 +36,9 @@ end
         @test (t.downscale, t.sample_fps) == (0.5, 10.0)
         t = only(checkwhole([wholerow(whole_run = "true")]; defaults = (downscale = 0.5, sample_fps = 10))).tuning
         @test (t.downscale, t.sample_fps) == (0.5, 10.0)
+        # even when what the caller passed equals the online tracker's hardcoded default
+        t = only(checkwhole([wholerow(whole_run = "true")]; defaults = (downscale = 1.0,))).tuning
+        @test (t.downscale, t.sample_fps) == (1.0, 5.0)
     end
 
     @testset "whole_run and arena_radius are settable globally" begin

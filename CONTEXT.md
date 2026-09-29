@@ -196,8 +196,10 @@ Both halves of the pipeline have the same shape, and each stage has its own name
 | **verified** — parsed, checked, probe-filled | `RectificationMethod` (`Checkerboard`, `Apriltag`, `MATLAB`, `Uniform`) | `Run` |
 | **the product** | `StaticRectification` / `ApriltagRectification` | the track |
 
-One asymmetry worth knowing: on the run side every field is concrete by the time a `Run` exists. On
-the rectification side it is not — some absences are load-bearing. A `Checkerboard` with **no
+One asymmetry worth knowing: on the run side every field is concrete by the time a `Run` exists, but
+for two blanks that mean something — a segment's `start_location` (search for the target) and
+`arena_radius` (no arena prior). On the rectification side absences are the rule, and some are
+load-bearing. A `Checkerboard` with **no
 intrinsic window** (both bounds blank) selects a different builder: the extrinsics-only fit. Absence
 is a choice there, not a gap.
 

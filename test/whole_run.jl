@@ -127,6 +127,12 @@ const WALK = 1.2
         errors = [norm(c - e) for (c, e) in zip(coords, expected) if !ismissing(c)]
         @test length(errors) == 50
         @test maximum(errors) < 3          # ground px; a grid px is 3
+        # two windows of the same flight: one run, one path, each segment finding its tags and
+        # registering on its own, and only the first one's start location read
+        halves = segments(fill(joinpath(dir, v.file), 2); start = [0.0, 5.0], stop = [5.0, 10.0], start_location = [v.start_location, missing])
+        _, halves_coords = track_whole_run(halves, t, rect, nothing)
+        @test length(halves_coords) == 50
+        @test maximum(norm(c - e) for (c, e) in zip(halves_coords, expected) if !ismissing(c)) < 3
         # the clip: the AprilTag scene's square canvas, every sample written at 5 Hz
         s = probe_stream(clip)
         @test (s.width, s.height) == (PT.DIAGNOSTIC_SIZE, PT.DIAGNOSTIC_SIZE)

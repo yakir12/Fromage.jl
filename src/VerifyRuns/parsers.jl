@@ -59,22 +59,20 @@ resolve_defaults(overrides) = Parsing.resolve_defaults(overrides, DEFAULTS, DEFA
 # tracker's constants"). Its motion model steps whole seconds, so sampling faster only costs memory.
 const WHOLE_RUN_DEFAULTS = (; downscale = 1 / 3, sample_fps = 5.0)
 
-# The fallback for a blank `k` cell on this row. A row that does not opt in gets `defaults[k]`,
-# exactly what it got before the whole-run tracker existed. A whole-run row gets the whole-run
-# fallback, unless the caller's `defaults` replaced the hardcoded one: the hierarchy is still csv
-# cell → caller's default → hardcoded default, with a hardcoded default per tracker. `whole_run` is
-# `missing` when its own cell failed to parse, and such a row is rejected anyway.
-function blank_default(defaults, k, whole_run)
-    whole_run === true && isequal(defaults[k], DEFAULTS[k]) && return WHOLE_RUN_DEFAULTS[k]
-    return defaults[k]
-end
+# The defaults a row that opts into the whole-run tracker falls back on: the same caller's
+# `overrides`, resolved over the whole-run fallbacks instead. So the hierarchy is still csv cell →
+# caller's default → hardcoded default, with one hardcoded default per tracker, and a value the caller
+# passed wins on every row whether or not it equals a hardcoded one.
+resolve_whole_run_defaults(overrides) =
+    Parsing.resolve_defaults(overrides, merge(DEFAULTS, WHOLE_RUN_DEFAULTS), DEFAULT_TYPES, "tracking")
 
 # Every column becomes one tracking parameter — a `Tuning` or `Segment` field (plus `run_id`/`path`
-# for identity and path resolution). The hardcoded defaults here are the only ones: `track` has no
-# keywords and no defaults of its own to disagree with (#140/#141). `stop`/`native_fps` are left
-# missing here and imputed from the probed video, and `sample_fps` from whatever `native_fps`
+# for identity and path resolution). The hardcoded defaults here (`DEFAULTS`, and
+# `WHOLE_RUN_DEFAULTS` for a whole-run row's grid) are the only ones: neither tracker has keywords or
+# defaults of its own to disagree with (#140/#141). `stop`/`native_fps` are left missing here and
+# imputed from the probed video, and a blank online `sample_fps` from whatever `native_fps`
 # resolves to; `window_size`/`start_location` stay missing and are imputed later.
-function parse_run!(dict, row, defaults)
+function parse_run!(dict, row, defaults, whole_run_defaults)
     parseto!(dict, row, :run_id, String, missing)               # all-or-nothing: blank only allowed when every row is blank (then imputed from the row number); see resolve_run_ids!
     parseto!(dict, row, :rectification_id, String, REQUIRED)      # Fromage joins runs to rectifications on it
     parseto!(dict, row, :file, String, REQUIRED)
@@ -85,20 +83,22 @@ function parse_run!(dict, row, defaults)
     parseto!(dict, row, :start_location, NTuple{2, Int}, missing)
     parseto!(dict, row, :window_size, MyWindow, defaults.window_size)
     parseto!(dict, row, :darker_target, Bool, defaults.darker_target)
-    # before the two cells whose blank fallback it decides
+    # before the two cells whose blank fallback it decides: a row that does not opt in (or whose
+    # `whole_run` cell failed to parse, and is rejected anyway) falls back exactly as it always has
     parseto!(dict, row, :whole_run, Bool, defaults.whole_run)
     parseto!(dict, row, :arena_radius, Float64, defaults.arena_radius)
+    grid = dict[:whole_run] === true ? whole_run_defaults : defaults
     parseto!(dict, row, :native_fps, Float64, defaults.native_fps)   # imputed from the video's own framerate when missing
-    parseto!(dict, row, :sample_fps, Float64, blank_default(defaults, :sample_fps, dict[:whole_run]))   # imputed from :native_fps when missing
+    parseto!(dict, row, :sample_fps, Float64, grid.sample_fps)       # imputed from :native_fps when missing
     parseto!(dict, row, :initial_search_factor, Float64, defaults.initial_search_factor)
-    parseto!(dict, row, :downscale, Float64, blank_default(defaults, :downscale, dict[:whole_run]))
+    parseto!(dict, row, :downscale, Float64, grid.downscale)
     parseto!(dict, row, :background_length, Int, defaults.background_length)
     return parseto!(dict, row, :aspect, Rational{Int}, missing)   # imputed from the video's own sample aspect ratio when missing
 end
 
-function parse_row(row, defaults)
+function parse_row(row, defaults, whole_run_defaults)
     dict = Dict{Symbol, Any}(:issues => String[])
-    parse_run!(dict, row, defaults)
+    parse_run!(dict, row, defaults, whole_run_defaults)
     return backfill!(dict, COLUMNS)
 end
 
