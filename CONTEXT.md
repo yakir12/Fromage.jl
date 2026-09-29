@@ -126,6 +126,18 @@ approximate width that differs in brightness from its background. The target can
 in a ball-rolling run it is the beetle and its ball together, and `target_width` is the width of
 that whole blob, as the tracker sees it, not of the animal alone.
 
+The **target shadow** is the shadow the target itself casts. It is evidence about the target (its
+height, where it is), not clutter to remove, and it is never part of the track.
+
+### Distractor
+
+Anything in the foreground that is not the target or its shadow: an experimenter, their shadow, a
+tool, a foliage shadow, debris, and another beetle with its ball. That last is identical in kind to
+the target: it may trace a genuinely real track, and only the run's own start (the start location,
+at the first segment's `start`) and end (the arena's edge, at the last segment's `stop`) tell the
+two apart. A distractor is what hijacks a tracker. "Background object" is not
+a synonym: a distractor is, by definition, something the background failed to absorb.
+
 ### Arena
 
 The physical surface the target moves on. Real-world coordinates are coordinates on the arena floor.
