@@ -35,8 +35,8 @@ Issue these in **one message** — none depends on another:
 
 Done when:
 
-- `start_session` returned an 8-char key, new or already running. "Process died" → see
-  **Troubleshooting** below.
+- `start_session` returned an 8-char key, new or already running. "Process died" or "Startup
+  timeout" → see **Troubleshooting** below.
 - `grep_code` returned exactly `src/shareio.jl:1`, with no access prompt.
 - `search_code` ranked `src/shareio.jl` (L1–50) in its top five. Agent docs that quote this
   query (this skill among them) can outrank it; that is expected, not a stale index.
@@ -80,6 +80,11 @@ julia --project=@v1.NN --startup-file=no -e 'using Pkg; Pkg.add("KaimonGate")'
 ```
 
 The codex project's session is no evidence either way: it lists KaimonGate as a direct dependency.
+
+**`start_session` → "Startup timeout".** Usually not a failure: the spawned REPL is still
+precompiling (KaimonGate or Fromage's deps, after an update) and outlives Kaimon's wait. If the log's
+last lines show `Precompiling` rather than an `ERROR`, don't start another session — wait a few
+minutes and `ping` again; the same process connects on its own (seen 2026-09-29, ~3 min).
 
 **The canary prompts for access.** Kaimon's own gate on paths outside the bound project errors
 after ~50 s unanswered, and is separate from `.claude/settings.json`. The repo belongs under
