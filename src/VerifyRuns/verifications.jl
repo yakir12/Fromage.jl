@@ -99,6 +99,7 @@ window_nonpositive(x) = x ≤ 0
 const SHARED_PARAMS = (
     :target_width, :window_size, :darker_target, :native_fps, :sample_fps,
     :initial_search_factor, :downscale, :background_length, :dimension, :aspect,
+    :whole_run, :arena_radius,
 )
 
 # ---- first tier: identity ---------------------------------------------------------------------
@@ -273,6 +274,10 @@ function verifications!(df::AbstractDataFrame, data_path; progress)
     # 0 is a real mode (no background subtraction); 1–24 is a background model too short to model
     # anything, and negatives are nonsense — the predicate covers both.
     verify!(df, b -> b != 0 && b < 25, "background_length must be 0 (disables background subtraction) or at least 25", :background_length)
+    # Only on a row that opts into the whole-run tracker, the one reader of the value. Elsewhere it
+    # is ignored rather than reported: this gateway has no irrelevant-column check, and a row that
+    # does not opt in must verify exactly as it did before the column existed.
+    verify!(df, (r, w) -> w && r ≤ 0, "arena_radius must be larger than zero", :arena_radius, :whole_run)
 
     # Temporal window must be sane and lie within the video. start ≥ 0 runs first and nulls :start
     # on failure, so a negative start does not also trip "start must come before stop".

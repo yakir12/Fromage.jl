@@ -35,7 +35,7 @@ const GATE_DECAY = 0.99
 # spans background_length / sample_fps seconds.
 const DEFAULT_BACKGROUND_LENGTH = 250
 
-export track, ApriltagRectification, Segment, Tuning
+export track, track_whole_run, ApriltagRectification, Segment, Tuning
 
 # VideoIO.openvideo (libav's demuxer/codec open) is not thread-safe: concurrent opens race, and
 # yield garbled or simply wrong frames rather than an error. Decoding independent streams IS safe,
@@ -701,5 +701,8 @@ function track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnos
     # every ordinary rectified run.
     return isnothing(rectification) ? (ts, ij) : (ts, map(rectification.image2real, ij))
 end
+
+# After `track`, whose helpers it shares: the whole-run tracker.
+include("whole_run.jl")
 
 end

@@ -72,7 +72,7 @@ end
 
 """
     Tuning(target_width, window_size, darker_target, sample_fps, native_fps,
-           initial_search_factor, downscale, background_length, aspect)
+           initial_search_factor, downscale, background_length, aspect, whole_run, arena_radius)
 
 The run-level tracking parameters, every one of them concrete.
 
@@ -99,6 +99,13 @@ DoG filter is stretched by. It follows `native_fps` exactly — probed by the ga
 `runs.csv` when the video misreports it — and for the same reason is never read from the file here:
 VideoIO and ffprobe disagree about it when the ratio is stored in the container alone (#295). An
 exact `Rational{Int}`, since the gateway bounds-checks a display pixel against `width × aspect`.
+
+`whole_run` selects the whole-run tracker (`track_whole_run`) over the online one (`track`), and
+`arena_radius` is that tracker's arena prior: the distance from the start location to the arena's
+edge, in the rectification's real-world unit, `missing` for none. Both are read only by the
+whole-run tracker — the online `track` reads `Tuning` by field name and never names them — and
+they are fields rather than arguments because `runs.csv` and `main`'s `defaults` set them, which is
+what makes a value a tracking parameter (#140, #141).
 """
 struct Tuning
     target_width::Float64
@@ -110,6 +117,8 @@ struct Tuning
     downscale::Float64
     background_length::Int
     aspect::Rational{Int}
+    whole_run::Bool
+    arena_radius::Union{Missing, Float64}
 end
 
 """
