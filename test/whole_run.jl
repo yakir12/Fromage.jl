@@ -93,17 +93,14 @@ const WALK = 1.2
         @test fastest_second(range(0.0; step = 0.2, length = 3), coords[1:3]) == 0.0   # under a second
     end
 
-    @testset "a whole-run track whose fastest second is too fast is flagged, hit or miss" begin
+    @testset "a whole-run track whose fastest second is too fast is flagged" begin
         # target width 2, one real unit per pixel: a width is 2 units
-        tuning(whole_run) = PT.Tuning(2.0, 13, true, 5.0, 25.0, 4.0, 1 / 3, 250, 1 // 1, whole_run, missing)
         ts = range(0.0; step = 0.2, length = 11)
         slow = [PT.SVector(0.0, 0.2 * (k - 1)) for k in 1:11]         # 0.5 widths/s
         fast = copy(slow)
         fast[6] = PT.SVector(0.0, 8.0)                                  # 8 units in a second: 4 widths/s
-        @test_logs (:warn, r"run r: .*fastest second.*4\.0 target widths") Fromage.warn_if_fast("r", tuning(true), (ts, fast), 1.0)
-        @test_logs Fromage.warn_if_fast("r", tuning(true), (ts, slow), 1.0)
-        # the online tracker's tracks are not its to judge
-        @test_logs Fromage.warn_if_fast("r", tuning(false), (ts, fast), 1.0)
+        @test_logs (:warn, r"run r: .*fastest second.*4\.0 target widths") Fromage.warn_if_fast("r", 2.0, (ts, fast), 1.0)
+        @test_logs Fromage.warn_if_fast("r", 2.0, (ts, slow), 1.0)
     end
 
     # ---- through video ---------------------------------------------------------------------------

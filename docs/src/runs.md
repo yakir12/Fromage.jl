@@ -40,6 +40,8 @@ beetle03.mp4,afternoon
 | `downscale` | `1` | spatial downsampling factor (0 < downscale ≤ 1) applied before tracking; e.g. `0.5` tracks on half-resolution frames (faster). Returned coordinates are always in original-resolution pixels. The scaled target (`target_width × downscale`) must remain at least 1 pixel wide. Lowering it costs precision: on clean footage the tracking error is a fraction of a percent of `target_width` down to about `0.25`, a few percent by `0.1`, and worse below that — so treat it as a speed knob for large frames, not a default to reduce. |
 | `background_length` | `250` | how many tracked frames form the rolling background model the target is detected against. Counted at the sampling rate, so the model spans `background_length / sample_fps` seconds; memory scales with it. `0` disables background subtraction entirely — fine for clean, high-contrast scenes (and much lighter on memory), but static dark marks then compete with the target. Must be `0` or at least `25`. |
 | `aspect` | what the video file reports | the pixel aspect ratio: how much wider a displayed pixel is than a stored one (`2`, `0.5`, `"4/3"`, or `"4:3"`). You normally leave this blank — it is read from the file, and it is `1` for all but anamorphic footage. Fill it in when the file is **wrong** about it, and that is then the ratio everything believes: which pixel `start_location` names, how wide the frame is when checking it, and the shape the tracker looks for. It means the same as `aspect` in [`rectifications.csv`](rectifications.md), which you should then correct to the same value. |
+| `whole_run` | `false` | `true` tracks this run with the [whole-run tracker](#Tracking-a-whole-run-at-once) instead of frame by frame. Run-level: every segment of a run must agree. |
+| `arena_radius` | — | for the [whole-run tracker](#Tracking-a-whole-run-at-once) on AprilTag footage only: the distance from `start_location` to the arena's edge, where the run ends, in the rectification's real-world unit. Blank means no arena prior. Ignored on a row that does not set `whole_run`. |
 | `run_id` | row number | identifies the run; only needed when one run is tracked from more than one row (below). All-or-nothing: either every row has a `run_id`, or none does. It also names your track file, so it has to be usable as one — see below. |
 | `path` | `.` | the **folder** containing `file`, relative to the location of the csv file. Just the folder — the file name belongs in `file`, not here. |
 | `comment` | — | free text, ignored. |
@@ -73,6 +75,19 @@ beetle03.mp4,afternoon
 
 !!! tip "The one parameter worth measuring: `target_width`"
     Pause a run video on a frame where the animal is clearly visible, and measure how many pixels wide it is (many image viewers let you draw a selection box and read off its size). Measure what the tracker sees as one blob: if the animal moves together with something it carries or pushes, such as a dung beetle rolling its ball, measure the two together. If the tracker keeps losing your animal, a wrong `target_width` is the first thing to check.
+
+## Tracking a whole run at once
+
+By default a run is tracked **online**: frame by frame, each frame deciding where the target is from where it was a moment ago. That tracker can be led away by something that passes close to the target — a person's shadow, a dark object — and has no way back.
+
+Set `whole_run` to `true` and the run is instead tracked by the **whole-run tracker**, which reads the whole run into memory and finds the one path through all of it that best fits how the target looks and moves. It is slower and much hungrier for memory, and on the drone footage it was developed on it held the target in 149 of 157 runs.
+
+- **On AprilTag footage** it steps a second at a time under a model of how a beetle walks and stops (fitted on 88 drone runs), so a jump no beetle could make is refused. Give `arena_radius` and it also expects the run to end at the arena's edge, which is where a run ends; the start location is taken to be the arena's centre.
+- **On any other footage** it uses no motion model and no arena: only a cost on each step's length, of about a target width per second. It was checked on the 12 clicked tripod runs (10 tracked).
+- It works on a smaller grid than the online tracker: blank `downscale` and `sample_fps` cells on a `whole_run` row mean **a third of the resolution and 5 frames per second**, instead of full resolution and the video's own rate. A value you write, on the row or in `tracking_defaults`, still wins.
+- A run's segments are one path: the first segment's `start_location` is where it starts, and a later segment's is not read.
+- Memory is roughly 0.5 GB per minute of drone footage while a run is tracked, and all runs are tracked at once — so on a small machine, give `main` a few `run_ids` at a time.
+- If a run's track covers more than 3 target widths in its fastest second, `main` warns: no walk is that fast, so the path most likely left the target for something else. Check that run's diagnostic video.
 
 ## Where the tracker starts looking
 

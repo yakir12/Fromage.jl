@@ -153,8 +153,10 @@ function track_run(r::VerifyRuns.Run, c::VerifyRectifications.RectificationMetho
             finished || rm(folder; recursive = true, force = true)
         end
     end
-    # Outside the memo, so a track served from it is judged again rather than silently.
-    warn_if_fast(r.run_id, r.tuning, run_track, build_rectification(c).ratio)
+    # Outside the memo, so a track served from it is judged again rather than silently. Only a
+    # whole-run track is judged, and only it fetches the rectification: an online run's cache
+    # traffic is exactly what it was.
+    r.tuning.whole_run && warn_if_fast(r.run_id, r.tuning.target_width, run_track, build_rectification(c).ratio)
     return (track = run_track, clip, reused = !missed[])
 end
 
@@ -163,10 +165,9 @@ end
 # else (#376: every such failure among 157 drone runs was over it, and so were 3 of the passes). A
 # log line and not an issue report: there is no post-tracking report to put it in. `ratio` is the
 # rectification's real-world units per pixel, so a target width is `ratio × target_width` of the
-# track's units. The online tracker's tracks are not judged.
-function warn_if_fast(run_id, tuning, (ts, coords), ratio)
-    tuning.whole_run || return nothing
-    widths = fastest_second(ts, coords) / (ratio * tuning.target_width)
+# track's units.
+function warn_if_fast(run_id, target_width, (ts, coords), ratio)
+    widths = fastest_second(ts, coords) / (ratio * target_width)
     widths > SUSPECT_SPEED && @warn "run $run_id: its whole-run track's fastest second covers \
         $(round(widths; digits = 1)) target widths, more than the $SUSPECT_SPEED a walk does; check \
         its diagnostic clip, the path may have left the target for something else"

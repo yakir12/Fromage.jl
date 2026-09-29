@@ -34,6 +34,7 @@ You saw it in the [diagnostic video](results.md#The-diagnostic-video) — good, 
 2. **Wrong starting position.** Give the run an explicit `start_location` (see [where the tracker starts looking](runs.md#Where-the-tracker-starts-looking)).
 3. **Wrong contrast direction.** If your target is *lighter* than the background, set `darker_target` to `false`.
 4. **The animal moves fast between frames.** Increase `window_size`, or track at the video's full frame rate (don't lower `sample_fps`).
+5. **Something passed close to the animal and the track followed it instead.** Try the [whole-run tracker](runs.md#Tracking-a-whole-run-at-once) on that run: set `whole_run` to `true`.
 
 ## Iterating faster
 
@@ -145,7 +146,7 @@ main("path/to/data";
 ```
 
 - `rectification_defaults` may set: `checker_width`, `n_corners`, `temporal_step`, `radial_parameters`, `blur`, `yadif`, and — for `type = apriltag` rows — `apriltags`, `family`, `tag_cell_width`.
-- `tracking_defaults` may set: `target_width`, `window_size`, `darker_target`, `native_fps`, `sample_fps`, `initial_search_factor`, `downscale`, `background_length`.
+- `tracking_defaults` may set: `target_width`, `window_size`, `darker_target`, `native_fps`, `sample_fps`, `initial_search_factor`, `downscale`, `background_length`, `whole_run`, `arena_radius`. `tracking_defaults = (whole_run = true, arena_radius = 500)` tracks every run with the [whole-run tracker](runs.md#Tracking-a-whole-run-at-once).
 
 Anything else (identities, file names, timestamps, `start_location`/`center`/`north`, `aspect`) is per-row only, and an unrecognized, unconvertible or non-finite (`NaN`, `Inf`) entry is rejected with an error before anything runs. Global values pass through the same validation as csv cells — e.g. a global `sample_fps` must still not exceed each run's `native_fps`.
 
