@@ -26,7 +26,7 @@ using .Paths: RESULTS_DIR
 using .Gateway: verify_cross_references!
 using .Memo: BUILT_RECTIFICATIONS, CLIP_FOLDER, TRACKED_RUNS, make_room!
 using .Rectifications: Rectification, save_diagnostic
-using .PawsomeTracker: track
+using .PawsomeTracker: SUSPECT_SPEED, fastest_second, track
 
 using FFMPEG: ffmpeg_exe
 using OhMyThreads: tforeach, tmap

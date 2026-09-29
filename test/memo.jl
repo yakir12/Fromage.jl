@@ -91,6 +91,8 @@ vary(x::Float64) = x + 1.0
 vary(x::String) = string(x, "-other")
 vary(x::NTuple{2, Int}) = (x[1] + 1, x[2])
 vary(x::Rational{Int}) = x + 1
+# a blank `arena_radius`: filling it in is the change a user would make
+vary(::Missing) = 1.0
 
 # Rebuild `x` with field `i` replaced. Reaching the constructor by NAME drops the type parameter, so
 # a `Checkerboard{Float64}` is rebuilt by its own constructor rather than pinned by this function;

@@ -1112,6 +1112,80 @@ carried a label at all.
 
 ---
 
+### The whole-run tracker's constants (#380, #381)
+
+The whole-run tracker (`src/PawsomeTracker/whole_run.jl`) is the research tracker P4, ported with
+its configuration frozen. Every constant in that file was settled on real footage, and none was
+tuned in the port. The evidence is in the research workspace (`whole-segment/research/p4.md`,
+`p4-157.md`, `p4-tripod.md`; map #359, tickets #374–#379). What someone might undo:
+
+- **The emission** (`PLATEAU` 0.7, `FALLOFF_ONSET` 1.8, `FALLOFF` 1, `EMISSION_WEIGHT` 1). The
+  plateau's window is bounded both ways: 0.5–0.7 kept all 7 drone training cases, 0.9 lost one (a
+  fading target drops below the plateau), 1.2 lost five. The falloff was not load-bearing on those
+  cases; it stays because it is what makes a much darker body score less than the target.
+- **The clamped foreground** in `score_dark`. The experimenters wear white, and the signed
+  foreground's negative surround around a bright body scores like a dark target: 7_2's path rode that
+  ring 140 cm from the beetle. Clamping is the one change that fixed it.
+- **The motion model** (`STOP_SIGMA` … `WALK_TO_STOP`), fitted on 88 drone runs: a two-gamma walk
+  (KS D 0.032, against 0.105 for one gamma), stopped 17% of the time. The tail (`TAIL_WEIGHT` 1e-4)
+  was 5e-3 at first, which made a 25 cm/s second only ~8 nats dearer than a walk, and the path ran at
+  the reach limit onto a stationary look-alike 300 cm away. With the arena priors, the model is what
+  fixed 13 of the dev set's 14 P1 failures (by the researcher's reading of contact sheets). The
+  no-priors ablation lost 2 of 7 training cases and moved 12 of 17 dev paths.
+- **Target widths, not centimetres.** The model was fitted in cm and divided through by 6.78 cm per
+  width: the drone runs' 6 px target at 1.13 cm per reference px (1.10–1.17 over the 88 runs). So the
+  tracker asserts no unit (CONTEXT, "Metric is not a claim about SI"), and a run whose `target_width`
+  is not 6 px scales the model with it. That refit is checked only by the acceptance gate below. The
+  arena radius is converted with the rectification's own `ratio`, not with 1.13.
+- **The priors** (`RETURN_*`, `OUTSIDE_*`, `EDGE_*`). Runs end at the arena's edge: start → end was
+  480/504/518 cm (p10/p50/p90) over the 88 runs, and 486–525 on the 9 clicked drone cases. The band
+  was ± 40 cm, and ± 25 fixed 22_1 and changed nothing else.
+- **The grid**: a third of the resolution, 5 Hz, whole-second steps. /2 passed the same 9 clicked
+  cases with the same errors at 3× the time, and broke 22_1: a median ghost 160 cm away. Full
+  resolution was not run. At /2 the stopped kernel (σ ≈ 0.8 px) swallows slow walking, so the state
+  label is not a behaviour measurement at any grid.
+- **No motion model off AprilTag footage.** The tripod grid is ~9× finer in real units, the model was
+  fitted on drone runs only, and a tripod motion model is untried (#379). The per-sample step cost
+  (P1's) kept 10 of the 12 clicked tripod runs, with no regression against the online tracker.
+- **`SUSPECT_SPEED` 3 widths/s** (≈ 20 cm/s). Over 157 drone runs every failure had a fastest second
+  of 24–27 cm/s, and passes stayed at ≤ 10.7 but for five (19–26.5): all 8 failures caught, 3 false
+  alarms (#376). It flags the run, not the moment. It is a `@warn` because there is no post-tracking
+  report to route it through.
+
+Left out of the port on purpose: the runner-up path and its margin, and the burst flag (neither
+predicted the tracker's failures over the 157 runs, #376), and `ground`, the background cap against
+median ghosts, which was tried on one run and did not fix it.
+
+**A grid pixel is its footprint's mean, and grid index `r` is centred on full index `(r − ½)/ds + ½`**
+(`full_index`), not on the online tracker's `r / ds`. The port first used the latter, a point one
+full pixel off the footprint. On textured ground that is a different volume: 1.4–3 grey levels per
+pixel from the research's, and the two fragile dev runs flipped on it (10_1 agreed with the research
+on 84% of samples, 22_1 on 58%, and 22_1 then warned at 5.2 widths/s). With the footprint the
+volumes agree to 0.02–0.07 grey, and the path to 100% of steps. Where the port's path ran on the
+research's own cached volume, it matched on 100% either way, so the path code was never the cause.
+
+**An unregistered AprilTag sample has a position**, where the online tracker reports `missing`. The
+path is in reference space and runs through such a sample, so only its pixels were unusable, not
+where the path is. Reporting `missing` failed two clicked runs (1_5, 7_1) against the harness, which
+scores a click on a missing point as infinitely far off.
+
+Two differences from the research code that would look like slips: the back-pointers are `Int32`
+rather than `Int16`, so no target width makes the walking reach overflow them (at `downscale = 1` a
+28 px target would), and a frame whose response has no spread at all (MAD 0) scores 0 rather than
+dividing by zero.
+
+**Its inner loops are threaded** (`grid_frame`, `score_dark`, both Viterbis), under `main`'s own
+per-run `tmap`. The innermost layer the online tracker lost (#68) was a 21×21 window; these are whole
+grids, and on one drone run (8_2, 410 samples) they measured: read 46 s serial, 19 s at 8 threads,
+10.5 s at 32; path 22 s, 5.0 s and 3.5 s. One run at 32 threads read in 41 s once, on its first
+read over the share, so read the numbers as an order, not a benchmark.
+
+`whole_run` is a value branched on once, at `VerifyRuns.track(r::Run, …)`, not a type: it is a csv
+cell like a run's segment count ("A run's segment count is data, not a type"), and a type would make
+`Vector{Run}` abstract again. Below the seam every choice is by dispatch, on the rectification.
+
+---
+
 ## AprilTag rectification
 
 ### Geometry decisions, verified against a real drone frame (1080×1920, four tag36h11 tags)

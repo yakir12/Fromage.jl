@@ -100,7 +100,7 @@ end
 function make_target_video(
         dir, name; width = 100, height = 100, sar = 1 // 1, fps = 25, duration = 2,
         target_width = 10, darker_target = true, row = 50, col = 55, nsegments = 1, pause = nothing,
-        container_sar = false, reported_sar = sar
+        container_sar = false, reported_sar = sar, noise = 0
     )
     A = width / 2.5
     target_c, bkgd_c = darker_target ? (0, 255) : (255, 0)
@@ -110,7 +110,10 @@ function make_target_video(
     p1, p2 = isnothing(pause) ? (0, 0) : round.(Int, pause .* fps)
     Nexpr = isnothing(pause) ? "N" : "if(lt(N,$p1),N,if(lt(N,$p2),$p1,N-($p2-$p1)))"
     freeze(N) = isnothing(pause) ? N : (N < p1 ? N : (N < p2 ? p1 : N - (p2 - p1)))
-    vf = "geq=lum='if(lt(sqrt((X-$col+$A*sin(0.5*PI*($Nexpr)/$fps))^2+(Y-$row)^2),$(target_width / 2)),$target_c,$bkgd_c)':cb=128:cr=128,scale=$w2:$height,setsar=$sarg"
+    # `noise` adds ffmpeg's seeded, temporally varying luma noise of that strength: a frame with no
+    # noise at all has no spread for the whole-run tracker's z-score to normalise by
+    noisef = noise > 0 ? ",noise=alls=$noise:allf=t:all_seed=7" : ""
+    vf = "geq=lum='if(lt(sqrt((X-$col+$A*sin(0.5*PI*($Nexpr)/$fps))^2+(Y-$row)^2),$(target_width / 2)),$target_c,$bkgd_c)':cb=128:cr=128$noisef,scale=$w2:$height,setsar=$sarg"
     # lossless either way (x264 at -qp 0, FFV1 always) — the analytic ground truth stays exact, with
     # no encoder noise around the disc
     codec, ext = container_sar ? (`-c:v ffv1`, "mkv") : (`-qp 0`, "mp4")
@@ -384,6 +387,11 @@ function render_pose(ground, H, height, width)
     return out
 end
 
+# Integer noise uniform-ish in -amp:amp, a closed-form hash of pixel and frame: the same on every
+# platform and Julia version, unlike a seeded RNG stream.
+hash_noise(i, j, k, amp) = mod((i * 73856093) ⊻ (j * 19349663) ⊻ (k * 83492791), 2amp + 1) - amp
+add_noise(frame, k, amp) = [clamp(Int(frame[i, j]) + hash_noise(i, j, k, amp), 0, 255) % UInt8 for i in axes(frame, 1), j in axes(frame, 2)]
+
 # The disc, burned into a copy of the ground plane at ground position `(r0, c0)`, at gray `value`.
 function draw_disc(ground, r0, c0, tw; value = 0x00)
     g = copy(ground)
@@ -411,7 +419,9 @@ translation, and bit-identical to the crop it used to be implemented as. Frames 
 `ground_start` to `ground_stop`, also in ground-canvas pixels (1-based array indices). `pause`, a
 range of frames after the first, holds it still through those frames, and it still ends at
 `ground_stop`. `disc_gray` is its gray level, and `textured` swaps the white ground for
-`ground_texture` — all off by default, so existing flights render bit-identically.
+`ground_texture`. `distractor(k)` places a second disc like the first at a ground `(row, col)` in
+frame `k`, or none when it returns `nothing`, and `noise` adds `hash_noise` of that amplitude to
+every rendered frame — all off by default, so existing flights render bit-identically.
 
 Returns a NamedTuple; its first four fields are positional-destructuring compatible with the
 older `(file, groundpath, start_location, nframes)` form.
@@ -431,7 +441,7 @@ function make_apriltag_video(
         nframes = 60, fps = 25, tw = 12, amp = 40, pose = nothing,
         occlude = Int[], tag_blocks = TAG_BLOCKS,
         ground_start = (260.0, 260.0), ground_stop = (300.0, 320.0),
-        textured = false, disc_gray = 0x00, pause = 1:0
+        textured = false, disc_gray = 0x00, pause = 1:0, distractor = k -> nothing, noise = 0
     )
     ox0, oy0 = (GW - W) ÷ 2, (GH - H) ÷ 2                   # the fixed crop: ground -> frame
     turn(k) = 2π * (k - 1) / nframes
@@ -466,7 +476,11 @@ function make_apriltag_video(
     open(raw, "w") do io
         for k in 1:nframes
             g = draw_disc(k in occlude ? occluded : ground, gr(k), gc(k), tw; value = disc_gray)
-            write(io, vec(permutedims(render_pose(g, poses[k], H, W))))   # row-major for ffmpeg
+            d = distractor(k)
+            isnothing(d) || (g = draw_disc(g, d..., tw; value = disc_gray))
+            frame = render_pose(g, poses[k], H, W)
+            noise > 0 && (frame = add_noise(frame, k, noise))
+            write(io, vec(permutedims(frame)))   # row-major for ffmpeg
         end
     end
     FFMPEG.ffmpeg_exe(`-y -loglevel error -f rawvideo -pix_fmt gray -s $(W)x$(H) -r $fps -i $raw -pix_fmt yuv420p -qp 0 $(joinpath(dir, "$name.mp4"))`)
@@ -632,7 +646,7 @@ function tuning(
         file; target_width = 25.0, window_size = missing, darker_target = true,
         native_fps = missing, sample_fps = missing, initial_search_factor = 4.0, downscale = 1.0,
         background_length = PawsomeTracker.DEFAULT_BACKGROUND_LENGTH, aspect = missing,
-        duration = missing
+        whole_run = false, arena_radius = missing, duration = missing
     )
     m = probe_stream(file)
     # the gateway's own cascade: the probe fills a blank `native_fps`, and `native_fps` — declared
@@ -650,7 +664,7 @@ function tuning(
     asp = coalesce(aspect, probe_video(file).sar)
     return Tuning(
         target_width, ws, darker_target, sfps, nfps, initial_search_factor, downscale,
-        background_length, asp
+        background_length, asp, whole_run, arena_radius
     )
 end
 

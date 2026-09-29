@@ -8,7 +8,7 @@ import ..Parsing: mytryparse                # extended on MyWindow (a type this 
 using ..Probing: frame_geometry, native_framerate, no_video_stream, parse_sar, probe_fields
 using ..Spaces: display_center_x
 using OhMyThreads: OhMyThreads, tmap
-using ..PawsomeTracker: PawsomeTracker, ApriltagRectification, Segment, Tuning, get_window
+using ..PawsomeTracker: PawsomeTracker, ApriltagRectification, Segment, Tuning, get_window, track_whole_run
 import ..PawsomeTracker: track
 using PrecompileTools: @setup_workload, @compile_workload
 using ProgressMeter: ProgressMeter, @showprogress
@@ -19,7 +19,7 @@ export load_runs, check_runs
 # Every column maps onto a field of `PawsomeTracker.Segment` or `PawsomeTracker.Tuning`, plus
 # `run_id` (identity / segment grouping) and `path` (path resolution). This is the full set of
 # recognized CSV columns; anything else is ignored metadata, with warnings for close spellings.
-const COLUMNS = (:rectification_id, :comment, :run_id, :path, :file, :start, :stop, :target_width, :start_location, :window_size, :darker_target, :native_fps, :sample_fps, :initial_search_factor, :downscale, :background_length, :aspect)
+const COLUMNS = (:rectification_id, :comment, :run_id, :path, :file, :start, :stop, :target_width, :start_location, :window_size, :darker_target, :native_fps, :sample_fps, :initial_search_factor, :downscale, :background_length, :aspect, :whole_run, :arena_radius)
 
 # `fps` meant two different rates at once — the video's own and the one to sample it at — which is
 # why it is gone rather than kept as a synonym for either. A file that still has the column is
@@ -49,11 +49,12 @@ include("verifications.jl")
 # came through usable. Split out of `load_runs` so `main` can settle BOTH files' identities before
 # either one opens a video (#121).
 function parse_runs(data_path, file; defaults, progress)
+    whole_run_defaults = resolve_whole_run_defaults(defaults)
     defaults = resolve_defaults(defaults)   # fail fast on unknown keys / unconvertible values
     csvrows = read_rows(file, COLUMNS, "runs"; renamed = RENAMED_COLUMNS)
 
     # parse each row to a Dict of parsed values + an :issues accumulator
-    cs = @showprogress desc = "Parsing runs.csv..." enabled = progress tmap(r -> parse_row(r, defaults), collect(csvrows))
+    cs = @showprogress desc = "Parsing runs.csv..." enabled = progress tmap(r -> parse_row(r, defaults, whole_run_defaults), collect(csvrows))
 
     df = DataFrame(Tables.dictrowtable(cs))
     allowmissing!(df)

@@ -74,7 +74,8 @@ function _tuning(g::AbstractDataFrame, frame_format::FrameFormat, segments::Vect
     )
     return Tuning(
         target_width, window_size, g.darker_target[1], sample_fps, g.native_fps[1],
-        g.initial_search_factor[1], g.downscale[1], g.background_length[1], g.aspect[1]
+        g.initial_search_factor[1], g.downscale[1], g.background_length[1], g.aspect[1],
+        g.whole_run[1], g.arena_radius[1]
     )
 end
 
@@ -139,5 +140,13 @@ end
 # way `main` calls this. With `nothing`, which since #256 only tests and benchmarks pass, they are
 # (row, col) in *stored* pixels of the original (unscaled) video; for an anamorphic video the
 # display-space x is col × aspect.
-track(r::Run, center, rectification, diagnostic_file) =
-    track(resolved_segments(r, center, rectification), r.tuning, rectification, diagnostic_file)
+#
+# The one place the two trackers part: a run that opted in (`whole_run`) goes to the whole-run
+# tracker, with the same arguments and the same return. A branch on a value, not a dispatch: whether
+# a run opts in is data, like its segment count (DECISIONS, "A run's segment count is data, not a
+# type"). The online call is the line it was.
+function track(r::Run, center, rectification, diagnostic_file)
+    segments = resolved_segments(r, center, rectification)
+    r.tuning.whole_run && return track_whole_run(segments, r.tuning, rectification, diagnostic_file)
+    return track(segments, r.tuning, rectification, diagnostic_file)
+end

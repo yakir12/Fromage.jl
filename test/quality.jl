@@ -129,7 +129,8 @@ end
             # something the gateway already decided, and — because a later splatted keyword
             # silently beats an earlier one — a way to override a verified value with an
             # unverified one.
-            for m in methods(PT.track)
+            # The whole-run tracker is the same seam's other entry point (#381), held to the same rule.
+            for m in [methods(PT.track); methods(PT.track_whole_run)]
                 # per-method testset: the invariant is about WHICH method grew a keyword, so a
                 # failure has to name it rather than the line the loop sits on
                 @testset "$(basename(string(m.file))):$(m.line)" begin

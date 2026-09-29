@@ -130,6 +130,28 @@ that whole blob, as the tracker sees it, not of the animal alone.
 
 The physical surface the target moves on. Real-world coordinates are coordinates on the arena floor.
 
+**`arena_radius`** is the distance from the run's start location to the arena's edge, where a run
+ends, in the rectification's real-world unit. It assumes a centred release: the start location is
+the arena's centre. Only the whole-run tracker reads it, as a prior on where its path ends (below).
+
+---
+
+## The two trackers
+
+A run is tracked by one of two trackers, chosen per run by the `whole_run` column.
+
+- **Online tracker** — `track`, the default: decides frame by frame where the target is, from where
+  it was a moment ago, against a rolling background of the frames just before. Its memory does not
+  grow with the run, and a decision once made is never revisited.
+- **Whole-run tracker** — `track_whole_run`, when `whole_run` is `true`: holds the whole run in
+  memory, on a coarser grid, against one background for all of it, and finds the one path over all
+  of it that best fits how the target looks and moves. On AprilTag footage that includes a fitted
+  model of how a beetle walks and stops, and the arena; elsewhere only a cost on a step's length.
+
+Both take the same arguments and return the same track. "Whole-run", not "whole-segment": a run's
+segments are concatenated into one volume and tracked as one path, with a join treated as an
+ordinary step.
+
 ---
 
 ## Rectification and calibration
@@ -174,8 +196,10 @@ Both halves of the pipeline have the same shape, and each stage has its own name
 | **verified** — parsed, checked, probe-filled | `RectificationMethod` (`Checkerboard`, `Apriltag`, `MATLAB`, `Uniform`) | `Run` |
 | **the product** | `StaticRectification` / `ApriltagRectification` | the track |
 
-One asymmetry worth knowing: on the run side every field is concrete by the time a `Run` exists. On
-the rectification side it is not — some absences are load-bearing. A `Checkerboard` with **no
+One asymmetry worth knowing: on the run side every field is concrete by the time a `Run` exists, but
+for two blanks that mean something — a segment's `start_location` (search for the target) and
+`arena_radius` (no arena prior). On the rectification side absences are the rule, and some are
+load-bearing. A `Checkerboard` with **no
 intrinsic window** (both bounds blank) selects a different builder: the extrinsics-only fit. Absence
 is a choice there, not a gap.
 
@@ -277,7 +301,7 @@ a value belongs to the whole run or varies between its segments — and that div
 separates the two types carrying them:
 
 - `Segment` holds what varies within a run — `file`, `start`, `stop`, `start_location`.
-- `Tuning` holds what one run shares. The name is narrower than the contents: four of its nine
+- `Tuning` holds what one run shares. The name is narrower than the contents: four of its eleven
   fields are observations rather than choices — `native_fps` (the rate the video runs at), `aspect`
   (its pixel aspect ratio), `darker_target` (a property of the footage) and `target_width` (a
   measurement of the target).
