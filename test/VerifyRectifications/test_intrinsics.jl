@@ -21,6 +21,13 @@
         @test flagged(df, 1, "fewer than 3 frames with detectable corners")
     end
 
+    @testset "a sample that decodes no frame is skipped, not reported (#395)" begin
+        # board.mp4's last frame is at 4.9 s and its duration 5 s, so 4.95 passes the duration check
+        # but decodes nothing. 1.95, 2.95, 3.95 all show the board: three detections, a clean row —
+        # the empty sample is a view without a board, exactly as the build treats it.
+        @test clean(check([checkerboardrow(intrinsic_start = "1.95", intrinsic_stop = "4.95", temporal_step = 1)]))
+    end
+
     @testset "a throwing read is reported, not propagated" begin
         # The gateway never reaches the window scan with an unreadable file — verify_intrinsics!
         # skips rows already flagged, so the probe and extrinsic checks catch it first, which is

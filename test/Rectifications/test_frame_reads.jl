@@ -34,6 +34,16 @@
             @test R._frame_at(file, 1.0, missing, w, h) == frame   # and the same t is repeatable
         end
 
+        @testset "a seek that decodes no frame says so (#395)" begin
+            # The last frame is at 2.9 s and the probed duration is 3 s: a seek between the two
+            # makes ffmpeg exit 0 having written nothing. That used to reach `reshape` and surface
+            # as a DimensionMismatch about array shapes; it must name the file and the time stamp.
+            e = (@test_throws R.NoFrameError R._frame_at(file, 2.95, missing, w, h)).value
+            @test e.t == 2.95
+            @test occursin("no frame at 2.95 s", sprint(showerror, e))
+            @test occursin(file, sprint(showerror, e))
+        end
+
         @testset "the filter clause is applied" begin
             # A heavy gblur must visibly smooth testsrc's hard edges. Comparing spread rather than
             # pixels keeps this about the filter reaching ffmpeg, not about ffmpeg's blur kernel.

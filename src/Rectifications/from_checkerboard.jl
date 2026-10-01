@@ -28,8 +28,25 @@ _cmd(file, t, vf) = `$(FFMPEG.ffmpeg()) -hide_banner -loglevel error -ss $t -i $
 # that used to sit here; see that module for what the share does and why this is needed at all.
 _read_frame(file, t, vf) = ShareIO.capture(_cmd(file, t, vf), "ffmpeg could not read the frame at $(t)s"; tries = ShareIO.TRIES)
 
+"""
+    NoFrameError(file, t)
+
+ffmpeg read `file` at `t` seconds, exited cleanly, and wrote no frame. It does that when the seek
+lands where nothing can be decoded, yet still inside the probed duration: after the last frame's
+time stamp, or in a final group of pictures the camera cut off (#395). Such a time stamp is a fact
+about the file, not the share, so it is never retried.
+"""
+struct NoFrameError <: Exception
+    file::String
+    t::Float64
+end
+
+Base.showerror(io::IO, e::NoFrameError) = print(io, "ffmpeg decoded no frame at ", e.t, " s of ", e.file)
+
 function _frame_at(file, t, vf, w, h)
     buf = _read_frame(file, t, vf)
+    # Named here, before `reshape` turns it into a DimensionMismatch about array shapes.
+    isempty(buf) && throw(NoFrameError(file, t))
     return permutedims(reshape(buf, w, h))
 end
 
@@ -38,13 +55,27 @@ function get_corners(file, t, vf, w, h, n_corners)
     return _detect_corners(reshape(img, 1, h, w), n_corners)
 end
 
+# The corners at one sample of the intrinsic window, or `missing` when that sample decodes no frame:
+# it is one view among many, so it counts as a view without a board, as an undetected one already
+# does. The build and the verification scan both read the window through this, so the scan cannot
+# pass a window the build then dies on (#395). The extrinsic frame is the one view that cannot be
+# skipped, and is read through `get_corners` directly.
+function intrinsic_corners(file, t, vf, w, h, n_corners)
+    return try
+        get_corners(file, t, vf, w, h, n_corners)
+    catch e
+        e isa NoFrameError || rethrow()
+        missing
+    end
+end
+
 # The frame at `t` as a `Gray` image — the same deinterlaced/blurred frame corner detection sees.
 # Used to save a failing rectification's extrinsic frame to the issues folder for inspection.
 extrinsic_gray_frame(file, t, vf, w, h) = colorview(Gray, normedview(_frame_at(file, t, vf, w, h)))
 
 function extract_intrinsics(file, start, stop, temporal_step, vf, w, h, n_corners)
     ts = start:temporal_step:stop
-    corners = tmap(t -> get_corners(file, t, vf, w, h, n_corners), ts)
+    corners = tmap(t -> intrinsic_corners(file, t, vf, w, h, n_corners), ts)
     return collect(skipmissing(corners))
 end
 

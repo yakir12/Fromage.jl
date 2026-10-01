@@ -1,7 +1,7 @@
 module VerifyRectifications
 
 using ..ShareIO: ShareReadError
-using ..Rectifications: get_corners, _vf, countkeys, extrinsic_gray_frame, findfirstkey,
+using ..Rectifications: NoFrameError, get_corners, intrinsic_corners, _frame_at, _vf, countkeys, extrinsic_gray_frame, findfirstkey,
     from_extrinsic, from_matlab, from_uniform, from_checkerboard
 import ..Rectifications: Rectification                     # extended below on the row types this module owns
 using ..PawsomeTracker: PawsomeTracker, ApriltagRectification
@@ -11,7 +11,7 @@ using DataFrames: AbstractDataFrame, ByRow, DataFrame, Not, allowmissing!, compl
     groupby, nonunique, nrow, passmissing, subset
 using ..Gateway: backfill!, blank!, detect_per_group!, issue_report, read_per_file!, read_rows,
     report_issues, resolve_paths!, verify!, verify_id_filename!
-using ..Memo: EXTRINSIC_DETECTIONS, INTRINSIC_DETECTIONS, MATLAB_METADATA, remember
+using ..Memo: EXTRINSIC_DETECTIONS, EXTRINSIC_FRAMES, INTRINSIC_DETECTIONS, MATLAB_METADATA, remember
 using ..Parsing: Parsing, MyTemporal, REQUIRED, filled, parseto!
 using ..Paths: invocation_issues_dir, issues_folder
 using ..Probing: frame_geometry, is_interlaced, no_video_stream, parse_sample_aspect, probe_fields

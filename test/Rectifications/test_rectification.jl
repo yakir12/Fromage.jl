@@ -92,6 +92,19 @@
             @test rect0.real2image isa Function
         end
 
+        @testset "an intrinsic sample that decodes no frame is skipped (#395)" begin
+            # The clip's last frame is at 1.3 s and its duration 1.4 s, so a window running to 1.35 s
+            # passes the duration check yet ends on a seek that decodes nothing — as a calibration
+            # video whose last group of pictures was cut off does. That sample must count as a view
+            # without a board, not abort the build that verification already passed.
+            args = (missing, Wimg, Himg, n_corners)
+            @test R.extract_intrinsics(vid, intrinsic_start, 1.35, step, args...) ==
+                R.extract_intrinsics(vid, intrinsic_start, 1.25, step, args...)
+            tail = R.from_checkerboard(; common..., intrinsic_stop = 1.35, center = missing, north = missing)
+            spacing = R.checker_width_pixel(map(tail.image2real, ext_corners), n_corners)
+            @test spacing ≈ checker_width rtol = 0.02
+        end
+
         @testset "center defaults to frame centre" begin
             # explicit frame-centre pixel must reproduce the center = missing result exactly
             i2r_explicit = R.from_checkerboard(;
