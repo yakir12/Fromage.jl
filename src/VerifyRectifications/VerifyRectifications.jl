@@ -1,7 +1,7 @@
 module VerifyRectifications
 
 using ..ShareIO: ShareReadError
-using ..Rectifications: get_corners, _vf, countkeys, extrinsic_gray_frame, findfirstkey,
+using ..Rectifications: NoFrameError, get_corners, intrinsic_corners, _vf, countkeys, extrinsic_gray_frame, findfirstkey,
     from_extrinsic, from_matlab, from_uniform, from_checkerboard
 import ..Rectifications: Rectification                     # extended below on the row types this module owns
 using ..PawsomeTracker: PawsomeTracker, ApriltagRectification

@@ -208,8 +208,8 @@
     end
 
     @testset "corner-detection failures are classified, not caught blindly" begin
-        # What the real pipeline raises (see the _detection_failure comment): a seek yielding no
-        # frame, OpenCV's C++ errors, and the frame read itself.
+        # What the real pipeline raises (see the _detection_failure comment): a read yielding part
+        # of a frame, OpenCV's C++ errors, and the frame read itself.
         @test VRect._detection_failure(DimensionMismatch("new dimensions"))
         @test VRect._detection_failure(ErrorException("OpenCV(4.13.0) … findChessboardCorners"))
         @test VRect._detection_failure(SystemError("open", 2))

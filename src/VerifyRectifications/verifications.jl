@@ -299,8 +299,9 @@ _unwrap_task(e) = e isa TaskFailedException ? _unwrap_task(e.task.result) :
     e isa CompositeException ? _unwrap_task(first(e.exceptions)) : e
 
 # What corner detection can legitimately fail with, as opposed to a bug here: the frame read raises
-# ShareReadError/IOError/SystemError (see ShareIO, which already retried the transient ones); a seek
-# that yields no frame raises DimensionMismatch out of the reshape; and OpenCV reports every C++
+# ShareReadError/IOError/SystemError (see ShareIO, which already retried the transient ones); a read
+# that returns some bytes but not a whole frame raises DimensionMismatch out of the reshape (one
+# that returns none is a NoFrameError, which the two scans settle themselves); and OpenCV reports every C++
 # error as a plain ErrorException. ErrorException is therefore as narrow as this can honestly get,
 # and it still excludes the MethodError/BoundsError of a bug on our side.
 _detection_failure(e) = e isa ShareReadError || e isa Base.IOError || e isa SystemError ||
@@ -338,9 +339,17 @@ function extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
     end
 end
 
+# A time stamp that decodes no frame is a verdict about the file, like finding no corners, so it is
+# returned (and memoized) here rather than classified in `extrinsic_issue`'s catch. Unlike an
+# intrinsic sample, the extrinsic frame cannot be skipped, so the message points at the fix (#395).
 function _extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
     vf = _vf(yadif, blur)
-    res = get_corners(file, extrinsic, vf, width, height, n_corners)
+    res = try
+        get_corners(file, extrinsic, vf, width, height, n_corners)
+    catch e
+        e isa NoFrameError || rethrow()
+        return "no frame could be decoded at the extrinsic time stamp, choose a different extrinsic"
+    end
     return ismissing(res) ? "no corners detected at the extrinsic time stamp" : nothing
 end
 
@@ -488,7 +497,7 @@ function _intrinsic_issue(file, intrinsic_start, intrinsic_stop, temporal_step, 
     vf = _vf(yadif, blur)
     found = 0
     for batch in Iterators.partition(intrinsic_start:temporal_step:intrinsic_stop, 4)
-        corners = tmap(t -> get_corners(file, t, vf, width, height, n_corners), collect(batch))
+        corners = tmap(t -> intrinsic_corners(file, t, vf, width, height, n_corners), collect(batch))
         found += count(!ismissing, corners)
         found ≥ 3 && return nothing
     end
