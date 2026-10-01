@@ -86,6 +86,11 @@ const APRILTAG_DETECTIONS = newcache(Tuple, Union{Nothing, String}; finalizer = 
 # to the end.
 const INTRINSIC_DETECTIONS = newcache(Tuple, Union{Nothing, String}; finalizer = nothing)
 
+# `VerifyRectifications.extrinsic_frame_issue(...)` — whether a matlab or uniform rectification's
+# extrinsic timestamp decodes a frame at all (#395). Nothing is detected in it, so it asks less of
+# the frame than the two extrinsic caches above, and takes fewer arguments to ask it.
+const EXTRINSIC_FRAMES = newcache(Tuple, Union{Nothing, String}; finalizer = nothing)
+
 # `Fromage.build_rectification(c)` — the image ↔ real map one verified rectifications row
 # describes (#251). The most expensive thing here: three of the four kinds read the source video and
 # detect in it, and a checkerboard with an intrinsic window scans that whole window again. A user who
@@ -187,7 +192,7 @@ end
 # their names: it is what `empty!` is mapped over.
 const CACHES = (
     VIDEO_PROBES, MATLAB_METADATA, EXTRINSIC_DETECTIONS, APRILTAG_DETECTIONS, INTRINSIC_DETECTIONS,
-    BUILT_RECTIFICATIONS, TRACKED_RUNS,
+    EXTRINSIC_FRAMES, BUILT_RECTIFICATIONS, TRACKED_RUNS,
 )
 
 # What a cache has served and what it had to compute — the only honest way to assert that a second

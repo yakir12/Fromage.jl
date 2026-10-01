@@ -23,6 +23,18 @@
         @test !flagged(df, 1, "DimensionMismatch")
     end
 
+    @testset "a matlab or uniform extrinsic that decodes no frame is flagged too (#395)" begin
+        # These two read their extrinsic frame only for the diagnostic image, which `main` draws
+        # while building — so an undecodable one would abort it there. video.mp4 (30 fps, 5 s) has
+        # its last frame at 4.967 s: 4.99 passes the duration check and decodes nothing.
+        for r in (uniformrow(extrinsic = "4.99"), matlabrow(extrinsic = "4.99"))
+            df = check([r])
+            @test flagged(df, 1, "no frame could be decoded at the extrinsic time stamp; choose a different extrinsic")
+        end
+        # ...while a time stamp that decodes leaves them clean
+        @test clean(check([uniformrow(extrinsic = "4.9")]))
+    end
+
     @testset "a throwing detection is caught as an issue, never thrown" begin
         # The gateway never reaches corner detection with an unreadable file — verify_extrinsics!
         # skips rows already flagged, so the probe catches it first (see the testset below), which

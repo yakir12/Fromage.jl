@@ -210,6 +210,12 @@ const MEMOIZED = (
         base = (PLAIN, 1.0, 4, "tag36h11", 12),
         alts = (OTHER, 1.5, 3, "tag25h9", 13),
     ),
+    (
+        name = "extrinsic_frame_issue", cache = M.EXTRINSIC_FRAMES, f = VRect.extrinsic_frame_issue,
+        #      file,  extrinsic, width, height
+        base = (PLAIN, 1.0, 320, 240),
+        alts = (OTHER, 1.5, 318, 238),
+    ),
     # The build (#251). Its argument list is ONE object, so the varied-parameter testset says only
     # that the object is the key; that every FIELD of it is part of that key is the structural
     # testset below. A `uniform` row because it is the one kind that reads nothing at all to build,
@@ -254,7 +260,7 @@ const MEMOIZED = (
         before = snapshot()
         first_rects, first_runs = check_rects(), check_runs()
         after = snapshot()
-        @test all(after[1] .> before[1])                       # every one of the five caches computed something
+        @test all(after[1] .> before[1])                       # every verification cache computed something
 
         # Second pass, same files, same rows: nothing is recomputed and everything is served.
         second_rects, second_runs = check_rects(), check_runs()
@@ -491,6 +497,12 @@ const MEMOIZED = (
                 key = (corrupt, 0.0, 1.0, 0.5, false, 0.0, 64, 64, (5, 8)),
                 f = () -> VRect.intrinsic_issue(corrupt, 0.0, 1.0, 0.5, false, 0.0, 64, 64, (5, 8)),
                 says = "issue with corner detection in the intrinsic window: ",
+            ),
+            (
+                name = "extrinsic_frame_issue", cache = M.EXTRINSIC_FRAMES,
+                key = (corrupt, 0.0, 64, 64),
+                f = () -> VRect.extrinsic_frame_issue(corrupt, 0.0, 64, 64),
+                says = "issue reading the frame at the extrinsic time stamp: ",
             ),
             (
                 name = "apriltag_extrinsic_issue", cache = M.APRILTAG_DETECTIONS,

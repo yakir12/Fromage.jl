@@ -301,9 +301,9 @@ _unwrap_task(e) = e isa TaskFailedException ? _unwrap_task(e.task.result) :
 # What corner detection can legitimately fail with, as opposed to a bug here: the frame read raises
 # ShareReadError/IOError/SystemError (see ShareIO, which already retried the transient ones); a read
 # that returns some bytes but not a whole frame raises DimensionMismatch out of the reshape (one
-# that returns none is a NoFrameError, which the two scans settle themselves); and OpenCV reports every C++
-# error as a plain ErrorException. ErrorException is therefore as narrow as this can honestly get,
-# and it still excludes the MethodError/BoundsError of a bug on our side.
+# that returns none is a NoFrameError, which the passes settle themselves); and OpenCV reports
+# every C++ error as a plain ErrorException. ErrorException is therefore as narrow as this can
+# honestly get, and it still excludes the MethodError/BoundsError of a bug on our side.
 _detection_failure(e) = e isa ShareReadError || e isa Base.IOError || e isa SystemError ||
     e isa DimensionMismatch || e isa ErrorException
 
@@ -339,18 +339,50 @@ function extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
     end
 end
 
+# Unlike an intrinsic sample, the extrinsic frame cannot be skipped, so the message points at the
+# fix (#395). Shared by the checkerboard pass and the matlab/uniform one below.
+const NO_EXTRINSIC_FRAME = "no frame could be decoded at the extrinsic time stamp; choose a different extrinsic"
+
 # A time stamp that decodes no frame is a verdict about the file, like finding no corners, so it is
-# returned (and memoized) here rather than classified in `extrinsic_issue`'s catch. Unlike an
-# intrinsic sample, the extrinsic frame cannot be skipped, so the message points at the fix (#395).
+# returned (and memoized) here rather than classified in `extrinsic_issue`'s catch. It is not the
+# share: a share failure dies in `open()` with a non-zero exit, which `ShareIO` retries and raises as
+# a ShareReadError, and no read has ever died part-way (DECISIONS, "Reads through a share fail on the
+# share's schedule, not on ours").
 function _extrinsic_issue(file, extrinsic, yadif, blur, width, height, n_corners)
     vf = _vf(yadif, blur)
     res = try
         get_corners(file, extrinsic, vf, width, height, n_corners)
     catch e
         e isa NoFrameError || rethrow()
-        return "no frame could be decoded at the extrinsic time stamp, choose a different extrinsic"
+        return NO_EXTRINSIC_FRAME
     end
     return ismissing(res) ? "no corners detected at the extrinsic time stamp" : nothing
+end
+
+# matlab and uniform rectifications read their extrinsic frame only to draw the diagnostic image,
+# but `build_rectifications` reads it all the same, and an undecodable one there would abort `main`
+# (#395). Nothing is detected, so the question is only whether the frame decodes — unfiltered, as
+# `warp_extrinsic` reads it. Memoized like `extrinsic_issue`, with the catch outside the memo for
+# the same reason.
+function extrinsic_frame_issue(file, extrinsic, width, height)
+    return try
+        get!(EXTRINSIC_FRAMES, (file, extrinsic, width, height)) do
+            _extrinsic_frame_issue(file, extrinsic, width, height)
+        end
+    catch e
+        _detection_failure(e) || rethrow()
+        "issue reading the frame at the extrinsic time stamp: $(_failure_message(e))"
+    end
+end
+
+function _extrinsic_frame_issue(file, extrinsic, width, height)
+    try
+        _frame_at(file, extrinsic, missing, width, height)
+    catch e
+        e isa NoFrameError || rethrow()
+        return NO_EXTRINSIC_FRAME
+    end
+    return nothing
 end
 
 # Eight hex digits naming one detection: a CRC-32C of every column in its group key, names included.
@@ -426,6 +458,14 @@ function flag_extrinsic!(g::AbstractDataFrame, k, issue; invocation_dir, get_fra
     return nothing
 end
 
+# The matlab/uniform pass's counterpart: its failure is a frame that could not be read, so there is
+# no frame to dump either.
+function flag_extrinsic_frame!(g::AbstractDataFrame, issue)
+    blank!(g, :extrinsic)
+    push!.(g.issues, issue)
+    return nothing
+end
+
 # The intrinsic pass's counterpart: it scans a window rather than one frame, so there is nothing to
 # dump and the bare issue is the whole message. Named rather than written inline purely so the three
 # call sites below read alike — an inline `flag!` was the one multi-statement lambda in the package.
@@ -461,6 +501,20 @@ function verify_extrinsics!(df::AbstractDataFrame, invocation_dir; progress)
             g, k, issue; invocation_dir,
             get_frame = () -> extrinsic_gray_frame(k.file, k.extrinsic, _vf(k.yadif, k.blur), k.width, k.height)
         );
+        progress
+    )
+    return df
+end
+
+# The matlab/uniform analogue of verify_extrinsics!: their extrinsic frame need only decode (see
+# `extrinsic_frame_issue`). One read per (file, extrinsic) — the frame size is the file's own.
+function verify_extrinsic_frames!(df::AbstractDataFrame; progress)
+    others = subset(df, :type => ByRow(passmissing(in(("matlab", "uniform")))); view = true, skipmissing = true)
+    cols = [:file, :extrinsic, :width, :height]
+    detect_per_group!(
+        others, cols, cols, "Reading extrinsic frames...",
+        k -> extrinsic_frame_issue(k.file, k.extrinsic, k.width, k.height),
+        (g, _, issue) -> flag_extrinsic_frame!(g, issue);
         progress
     )
     return df
@@ -660,6 +714,9 @@ function verifications!(df::AbstractDataFrame, data_path, results_dir; progress)
     # the extrinsic time stamp must actually yield a detectable frame; only meaningful once the
     # time stamp itself has been range-checked above
     verify_extrinsics!(df, invocation_dir; progress)
+
+    # matlab/uniform rows: the extrinsic time stamp must decode a frame, which the diagnostic reads
+    verify_extrinsic_frames!(df; progress)
 
     # the intrinsic window must actually contain ≥ 3 detectable-corner frames; runs after
     # verify_extrinsics! so rows whose extrinsic already failed are skipped, not re-scanned
