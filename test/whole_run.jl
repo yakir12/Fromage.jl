@@ -179,6 +179,17 @@ const WALK = 1.2
         @test length(ts) == 20 && first(ts) == 0.0     # one clock, as the online tracker's
         @test maximum(k -> norm(collect(ij[k]) .- (collect(expected(k; skip = 5)) .- 1)), eachindex(ij)) < 3    # one grid px
     end
+
+    @testset "where a path is anchored, by how its start is given (#397)" begin
+        # A searched-for start, around a pixel or (AprilTag mode's `missing`) the grid's centre, is
+        # anchored within the initial search's radius, min(R, C) / 2initial_search_factor; a given
+        # start within half a tracking window, whatever the factor.
+        t = PT.Tuning(10.0, 21, true, 5.0, 25.0, 4.0, 1 / 3, 250, 1 // 1, true, missing)
+        to_grid((x, y)) = (y + 1.0, x + 1.0)
+        @test PT.anchor(missing, to_grid, t, (60, 90)) == ((30.5, 45.5), 60 / 8)
+        @test PT.anchor(PT.StartSearch((20, 10)), to_grid, t, (60, 90)) == ((11.0, 21.0), 60 / 8)
+        @test PT.anchor((20, 10), to_grid, t, (60, 90)) == ((11.0, 21.0), t.downscale * 21 / 2)
+    end
 end
 
 end
