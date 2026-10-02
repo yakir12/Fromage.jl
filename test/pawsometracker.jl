@@ -10,6 +10,8 @@ using Fromage: PawsomeTracker
 # `Gray`/`N0f8` through the submodule, as test/apriltag.jl does — they are not test deps.
 using Fromage.PawsomeTracker: Gray, N0f8
 using Random: Xoshiro
+using StaticArrays: SMatrix
+using LinearAlgebra: I
 # For `VideoIO._active_writers`: a PRIVATE name, and the only direct evidence that a diagnostic
 # left nothing open (#160). An `UndefVarError` on it is a dependency rename, not a regression.
 # `isopen` needs no import — it is Base's, with VideoIO methods for the writer and the reader.
@@ -129,6 +131,11 @@ const DATADIR = mktempdir()
         @test_throws MethodError PT.Segment(base_file, 0.0, 2.0, CartesianIndex(50, 55))
         @test PT.Segment(base_file, 0.0, 2.0, (50, 55)).start_location == (50, 55)
         @test PT.Segment(base_file, 0.0, 2.0, missing).start_location === missing
+        # ...and a searched-for start is held to the same rule, or the swap would slip past the
+        # Segment's guard one level down, already converted (#397)
+        @test_throws MethodError PT.StartSearch(CartesianIndex(50, 55))
+        @test_throws MethodError PT.StartSearch((50.0, 55.0))
+        @test PT.Segment(base_file, 0.0, 2.0, PT.StartSearch((50, 55))).start_location == PT.StartSearch((50, 55))
     end
 
     @testset "Video declares no duration field (#231)" begin
@@ -249,6 +256,24 @@ const DATADIR = mktempdir()
             @test PT.get_guess((10, 90), nothing, anam, false, 0, 0, false) == (91, 21)
         finally
             close(anam.vid)
+        end
+    end
+
+    @testset "a searched-for start is found around its pixel, on both paths (#397)" begin
+        # base: a 10 px dark disc at display (55, 50) at frame 1, i.e. index (51, 56). The search
+        # starts 8 px away from it, inside the factor-4 search's radius of 12.
+        vid = PT.Video(base_file, 25, 25, 0, 2, 1.0, 1 // 1)
+        try
+            stack = PT.collect_stack(vid, (vid.height, vid.width), (10, 10), PT.n_background(vid, 250))
+            s = PT.StartSearch((63, 46))
+            online = PT.get_guess(s, stack, vid, true, 10.0, 4.0, true)
+            @test all(abs.(online .- (51, 56)) .<= 1)
+            # The gateway never makes one for an AprilTag run, but a `Segment` can hold it. With an
+            # identity seed registration the reference canvas is the run space, so it must land on
+            # the same pixel.
+            @test PT.apriltag_guess(s, stack, vid, true, 10.0, 4.0, true, SMatrix{3, 3, Float64}(I)) == online
+        finally
+            close(vid.vid)
         end
     end
 

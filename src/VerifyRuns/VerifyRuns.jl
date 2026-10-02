@@ -8,7 +8,7 @@ import ..Parsing: mytryparse                # extended on MyWindow (a type this 
 using ..Probing: frame_geometry, native_framerate, no_video_stream, parse_sar, probe_fields
 using ..Spaces: display_center_x
 using OhMyThreads: OhMyThreads, tmap
-using ..PawsomeTracker: PawsomeTracker, ApriltagRectification, Segment, Tuning, get_window, track_whole_run
+using ..PawsomeTracker: PawsomeTracker, ApriltagRectification, Segment, StartSearch, Tuning, get_window, track_whole_run
 import ..PawsomeTracker: track
 using PrecompileTools: @setup_workload, @compile_workload
 using ProgressMeter: ProgressMeter, @showprogress

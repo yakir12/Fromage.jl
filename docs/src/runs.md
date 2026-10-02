@@ -36,7 +36,7 @@ beetle03.mp4,afternoon
 | `window_size` | computed | the size of the search window the tracker scans around the target's last known position: a single number for a square window (e.g. `41`) or `"(w, h)"` for a rectangle. Must be comfortably larger than `target_width` plus however far the target can move between consecutive frames. The default is computed from `target_width` and a conservative speed estimate, and is usually fine. |
 | `native_fps` | what the video file reports | the frame rate the video itself runs at. You normally leave this blank — it is read from the file. Fill it in when the file is **wrong** about its own rate, and that is then the rate everything believes: the sampling stride, the timestamps in your track file, and the diagnostic video's playback speed. It cannot be higher than the rate the file reports (see the note below). |
 | `sample_fps` | `native_fps` | how many frames per second to track. Lower it for slow targets to speed things up. Cannot exceed `native_fps`. Tracking advances whole frames, so the only rates available are `native_fps` divided by a whole number: ask for anything else and you get the nearest one (on 30 fps footage, `sample_fps = 20` tracks at 15, and `sample_fps = 25` at 30). The timestamps in your track file always describe the rate actually used, never the one requested. |
-| `initial_search_factor` | `4` | when no start location is known at all, the target is searched for in a window of size `min(width, height) / initial_search_factor` centered on the frame. Larger values → smaller initial search window. |
+| `initial_search_factor` | `4` | when a run has no `start_location`, the target is searched for in a window of size `min(width, height) / initial_search_factor`, centred on the rectification's `center` or else on the frame (see [below](#Where-the-tracker-starts-looking)). Larger values → smaller initial search window. |
 | `downscale` | `1` | spatial downsampling factor (0 < downscale ≤ 1) applied before tracking; e.g. `0.5` tracks on half-resolution frames (faster). Returned coordinates are always in original-resolution pixels. The scaled target (`target_width × downscale`) must remain at least 1 pixel wide. Lowering it costs precision: on clean footage the tracking error is a fraction of a percent of `target_width` down to about `0.25`, a few percent by `0.1`, and worse below that — so treat it as a speed knob for large frames, not a default to reduce. |
 | `background_length` | `250` | how many tracked frames form the rolling background model the target is detected against. Counted at the sampling rate, so the model spans `background_length / sample_fps` seconds; memory scales with it. `0` disables background subtraction entirely — fine for clean, high-contrast scenes (and much lighter on memory), but static dark marks then compete with the target. Must be `0` or at least `25`. |
 | `aspect` | what the video file reports | the pixel aspect ratio: how much wider a displayed pixel is than a stored one (`2`, `0.5`, `"4/3"`, or `"4:3"`). You normally leave this blank — it is read from the file, and it is `1` for all but anamorphic footage. Fill it in when the file is **wrong** about it, and that is then the ratio everything believes: which pixel `start_location` names, how wide the frame is when checking it, and the shape the tracker looks for. It means the same as `aspect` in [`rectifications.csv`](rectifications.md), which you should then correct to the same value. |
@@ -91,11 +91,14 @@ Set `whole_run` to `true` and the run is instead tracked by the **whole-run trac
 
 ## Where the tracker starts looking
 
-The starting position for a run is determined by the first available of:
+Only `start_location` says where the target **is**. Give it, and tracking starts from there, looking for the target in the usual `window_size` around it.
 
-1. `start_location` in `runs.csv`,
-2. the `center` of the run's rectification in `rectifications.csv`,
-3. nothing — the target is searched for near the center of the frame, within a window of `min(width, height) / initial_search_factor` pixels.
+Leave it blank, and the target is **searched for** instead: in a window of `min(width, height) / initial_search_factor` pixels, centred on
+
+1. the `center` of the run's rectification in `rectifications.csv`, or
+2. the centre of the frame, when the rectification has no `center`.
+
+The track then starts wherever that search finds the target. So a run whose target is released at the arena's centre needs no `start_location`, and one that is found at the wrong place can be helped either by giving `start_location`, or by a smaller `initial_search_factor` (a larger window) when the target lies outside the search.
 
 ## Runs made of several segments
 

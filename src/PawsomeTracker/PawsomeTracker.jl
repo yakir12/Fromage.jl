@@ -35,7 +35,7 @@ const GATE_DECAY = 0.99
 # spans background_length / sample_fps seconds.
 const DEFAULT_BACKGROUND_LENGTH = 250
 
-export track, track_whole_run, ApriltagRectification, Segment, Tuning
+export track, track_whole_run, ApriltagRectification, Segment, StartSearch, Tuning
 
 # VideoIO.openvideo (libav's demuxer/codec open) is not thread-safe: concurrent opens race, and
 # yield garbled or simply wrong frames rather than an error. Decoding independent streams IS safe,
@@ -190,11 +190,22 @@ function get_guess(start_xy::NTuple{2, Int}, _, vid, _, _, _, _)
     return guess
 end
 
-function get_guess(::Missing, stack, vid, darker_target, target_width, initial_search_factor, subtract)
+# A start that is searched for: the window is centred on the given pixel, else (AprilTag mode's
+# `missing`) on the middle of the stack's canvas.
+function get_guess(s::StartSearch, stack, vid, darker_target, target_width, initial_search_factor, subtract)
+    around = get_guess(s.around, stack, vid, darker_target, target_width, initial_search_factor, subtract)
+    return initial_search(around, stack, vid, darker_target, target_width, initial_search_factor, subtract)
+end
+get_guess(::Missing, stack, vid, darker_target, target_width, initial_search_factor, subtract) =
+    initial_search(size(parent(stack))[1:2] .÷ 2, stack, vid, darker_target, target_width, initial_search_factor, subtract)
+
+# The initial search: one detection on the first slice, in a window `min(sz) / initial_search_factor`
+# wide centred on `guess` (a scaled-canvas index), rather than the tracking window. Returns the index
+# the target was found at, or `guess` itself when the window holds nothing (see `detect`).
+function initial_search(guess, stack, vid, darker_target, target_width, initial_search_factor, subtract)
     # size the throwaway search Tracker from the stack itself, not the video: in AprilTag mode the
     # stack's canvas is the (scaled) reference viewport, which may differ from the run space's
     sz = size(parent(stack))[1:2]
-    guess = sz .÷ 2
     window_size = fix_window_size(floor(Int, min(sz...) / initial_search_factor))
     tr = Tracker(vid, darker_target, target_width, window_size, sz, subtract)
     _, guess = detect(guess, stack, 1, tr, vid.downscale, Ref(0.0))   # a one-off search: no gate history

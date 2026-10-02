@@ -143,3 +143,72 @@
         @test tracking_rmse(ij, seg2_exp) < 1.5
     end
 end
+
+# Where the first segment starts (#397). Only an explicit `start_location` seeds the first detection
+# directly. Without one, the first segment SEARCHES for the target — around the rectification's
+# `center` when there is one, else around the frame centre — within a window
+# `min(width, height) / initial_search_factor` wide. Both fallbacks used to seed the first detection
+# directly instead, so `initial_search_factor` reached nothing outside AprilTag mode.
+#
+# The geometry makes the two rules disagree. A 200×200 frame and a 6 px target: the tracking window
+# is 13 px (radius 6), so a target 15+ px from the seed is invisible to it and the track holds at the
+# seed, while the search window has radius 25 at the default factor 4 and 50 at factor 2. Every
+# assertion is on the FIRST point, frame 1's detection, against the target there (`exp(1)`).
+@testset "where the first segment starts (#397)" begin
+    on_target(p, exp) = hypot((p .- exp(1))...) < 1
+    vid(name; kw...) = make_target_video(name; width = 200, height = 200, target_width = 6, kw...)
+    # the run's rows: one 6 px target, every other cell left to the gateway
+    rows(files; kw...) = [runrow(run_id = "s397", file = f, target_width = "6"; kw...) for f in files]
+
+    # 20 px right of the frame centre (100, 100): inside the default search, outside the window
+    off, off_exp = vid("s397_off"; row = 100, col = 120)
+    # at (x, y) = (140, 60), with a decoy disc on the frame centre
+    lure, lure_exp = vid("s397_lure"; row = 60, col = 140, decoy = (100, 100))
+    # 40 px right of the frame centre: beyond the search at factor 4, within it at factor 2
+    far, far_exp = vid("s397_far"; row = 100, col = 140)
+
+    @testset "no start_location, no center: a search around the frame centre" begin
+        ij = tracked(rows(off))
+        @test on_target(ij[1], off_exp)
+    end
+
+    @testset "no start_location, a center: a search around the center, not the frame centre" begin
+        # 15 px from the target, too far for the tracking window; a search around the frame centre
+        # would find the decoy sitting there instead
+        ij = tracked(rows(lure); center = (155, 60))
+        @test on_target(ij[1], lure_exp)
+    end
+
+    @testset "initial_search_factor reaches the search through the gateway" begin
+        @test !on_target(tracked(rows(far))[1], far_exp)                                    # 4: out of reach
+        @test on_target(tracked(rows(far; initial_search_factor = "2"))[1], far_exp)        # a runs.csv cell
+        runs = check(rows(far); defaults = (initial_search_factor = 2,))                    # a tracking default
+        @test clean(runs)
+        @test on_target(last(VR.track(only(runs), missing, nothing, nothing))[1], far_exp)
+    end
+
+    @testset "an explicit start_location seeds the detection, and nothing searches" begin
+        # 2 px off the target, with a center and a search wide enough to take in the decoy: a
+        # search from either would blend the decoy in, a seed alone finds the target
+        ij = tracked(rows(lure; start_location = "(142, 61)", initial_search_factor = "1"); center = (100, 100))
+        @test on_target(ij[1], lure_exp)
+    end
+
+    @testset "multi-segment: only the first segment searches" begin
+        # the first segment ends near (x, y) = (145, 40), nowhere near the second's target
+        ends_far, _ = vid("s397_first"; row = 40, col = 150)
+        two(sl) = [
+            runrow(run_id = "s397m", file = only(ends_far), target_width = "6", start_location = "(150, 40)"),
+            runrow(run_id = "s397m", file = only(off), target_width = "6", start_location = sl),
+        ]
+        n = 50                                        # the first segment's samples: 2 s at 25 fps
+        # without its own start_location the second segment continues from where the first ended,
+        # rather than searching around the frame centre, which would find its target
+        ij = tracked(two(missing))
+        @test hypot((ij[n + 1] .- ij[n])...) < 1
+        @test !on_target(ij[n + 1], off_exp)
+        # with one, that location seeds it, overriding where the first segment ended
+        ij = tracked(two("(121, 101)"))
+        @test on_target(ij[n + 1], off_exp)
+    end
+end

@@ -972,6 +972,30 @@ stack built. The union now names only what works. `RowCol` is absent on purpose 
 method: that is the internal form a *later* segment's start takes in the vector method, carried
 over from the previous segment's last coordinate, not something a caller supplies.
 
+### A blank first `start_location` is searched for, never taken as the target's position (#397)
+
+The gateway used to fill a blank first `start_location` with the rectification's `center`, else
+the frame centre, as a plain `(x, y)` — the same type as a position the user clicked. The tracker
+then seeded its first detection there with the ordinary `window_size`, so `initial_search_factor`
+reached the search only on AprilTag runs. Every other run started from wherever its first
+detection fell near the centre, and a target more than a window away from it never got picked up.
+In the #383 inventory, 153 runs re-tracked at `initial_search_factor = 2` were byte-identical to
+their tracks at 4.
+
+So the fallback is now its own type, `StartSearch`, and only an explicit `start_location` seeds the
+detection directly. Two consequences someone might want to undo:
+
+- **Every run started from a centre now tracks differently**, including the ones that tracked well
+  before: the first detection is the search's result rather than the tracking window's around the
+  exact centre. Accepted as the point of the fix.
+- **An explicit `start_location` still seeds the first detection; it is not itself the first
+  point.** #397 as written asked for it to "fix the first point exactly". On `main` it never did
+  (a start 3 px off a clean target gave a first point on the target), and the maintainer chose to
+  keep that rule rather than add a second behaviour change.
+
+The whole-run tracker follows the same rule: a `StartSearch` anchors its path within the search
+window's radius around the centre, where the old tuple anchored it within half a tracking window.
+
 ### A run's segment count is data, not a type (#68)
 
 `Run` used to be abstract over `SingleRun` (scalar `file`/`start`/`stop`/`start_location`) and

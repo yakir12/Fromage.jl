@@ -97,10 +97,15 @@ end
 # `reported_sar` is the ratio the file is TAGGED with, when it should lie about the squeeze `sar`
 # actually applied — the footage a declared `aspect` in runs.csv exists for. The ground truth
 # follows `sar`, the squeeze, whatever the tag says.
+#
+# `decoy = (row, col)` draws a second, identical disc starting there and moving exactly as the target
+# does — a distractor a centre search could pick instead of the target. It moves because a still
+# one would be absorbed by the background model and be invisible to the tracker. `expected` still
+# follows the target alone.
 function make_target_video(
         dir, name; width = 100, height = 100, sar = 1 // 1, fps = 25, duration = 2,
         target_width = 10, darker_target = true, row = 50, col = 55, nsegments = 1, pause = nothing,
-        container_sar = false, reported_sar = sar, noise = 0
+        container_sar = false, reported_sar = sar, noise = 0, decoy = nothing
     )
     A = width / 2.5
     target_c, bkgd_c = darker_target ? (0, 255) : (255, 0)
@@ -113,7 +118,9 @@ function make_target_video(
     # `noise` adds ffmpeg's seeded, temporally varying luma noise of that strength: a frame with no
     # noise at all has no spread for the whole-run tracker's z-score to normalise by
     noisef = noise > 0 ? ",noise=alls=$noise:allf=t:all_seed=7" : ""
-    vf = "geq=lum='if(lt(sqrt((X-$col+$A*sin(0.5*PI*($Nexpr)/$fps))^2+(Y-$row)^2),$(target_width / 2)),$target_c,$bkgd_c)':cb=128:cr=128$noisef,scale=$w2:$height,setsar=$sarg"
+    disc(r, c) = "lt(sqrt((X-$c+$A*sin(0.5*PI*($Nexpr)/$fps))^2+(Y-$r)^2),$(target_width / 2))"
+    inside = isnothing(decoy) ? disc(row, col) : "$(disc(row, col))+$(disc(decoy...))"
+    vf = "geq=lum='if($inside,$target_c,$bkgd_c)':cb=128:cr=128$noisef,scale=$w2:$height,setsar=$sarg"
     # lossless either way (x264 at -qp 0, FFV1 always) — the analytic ground truth stays exact, with
     # no encoder noise around the disc
     codec, ext = container_sar ? (`-c:v ffv1`, "mkv") : (`-qp 0`, "mp4")
