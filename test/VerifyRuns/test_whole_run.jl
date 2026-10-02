@@ -74,6 +74,19 @@ end
         @test step(ts) ≈ 1 / 25      # the video's own rate, as before
     end
 
+    @testset "a blank start_location is searched for within initial_search_factor's window (#397)" begin
+        # The whole-run path's first sample lies within a radius of its anchor. A searched-for start
+        # gets the online tracker's initial search radius, min(width, height) / 2initial_search_factor
+        # — 50 px at factor 2, 12.5 at factor 8 — around the frame centre (100, 100), and the target
+        # starts 45 px right of it. It used to get half a tracking window (20 px here) at any factor,
+        # and `refine` cannot carry a path from there to a target that far out.
+        files, expected = make_target_video("s397_whole"; width = 200, height = 200, target_width = 20, row = 100, col = 145, noise = 10)
+        first_point(factor) = first(last(VR.track(loaded_whole([wholerow(file = only(files), target_width = "20", whole_run = "true", initial_search_factor = factor)]), missing, nothing, nothing)))
+        on_target(p) = hypot((p .- expected(1))...) < 5     # a third-resolution grid: 3 px a cell
+        @test on_target(first_point("2"))
+        @test !on_target(first_point("8"))
+    end
+
     @testset "both are run-level: a run's segments must agree on them" begin
         # the blank downscale and sample_fps each segment fell back to disagree with it, so the
         # report names them too; what matters is that whole_run is among them

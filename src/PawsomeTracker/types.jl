@@ -19,13 +19,18 @@ travel as the same tuple, which is how a centre came to be taken for the target'
 """
 struct StartSearch
     around::NTuple{2, Int}
+
+    # Asserted, not converted, for the same reason `Segment`'s `start_location` is (#18): a
+    # `CartesianIndex{2}` converts silently to an `NTuple{2, Int}` and would arrive as an (x, y)
+    # with its axes swapped — past `Segment`'s own guard, since it would already be a `StartSearch`.
+    StartSearch(around::NTuple{2, Int}) = new(around)
 end
 
 """
     Segment(file, start, stop, start_location)
 
-One video of a run: the file, the seconds into it at which tracking starts and stops, and where the
-target is at `start`, as an `(x, y)` display-pixel position.
+One video of a run: the file, the seconds into it at which tracking starts and stops, and how the
+target is found at `start`.
 
 `start_location` is one of three things:
 

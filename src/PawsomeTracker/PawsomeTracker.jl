@@ -192,15 +192,17 @@ end
 
 # A start that is searched for: the window is centred on the given pixel, else (AprilTag mode's
 # `missing`) on the middle of the stack's canvas.
-get_guess(s::StartSearch, stack, vid, darker_target, target_width, initial_search_factor, subtract) =
-    search(get_guess(s.around, stack, vid, darker_target, target_width, initial_search_factor, subtract), stack, vid, darker_target, target_width, initial_search_factor, subtract)
+function get_guess(s::StartSearch, stack, vid, darker_target, target_width, initial_search_factor, subtract)
+    around = get_guess(s.around, stack, vid, darker_target, target_width, initial_search_factor, subtract)
+    return initial_search(around, stack, vid, darker_target, target_width, initial_search_factor, subtract)
+end
 get_guess(::Missing, stack, vid, darker_target, target_width, initial_search_factor, subtract) =
-    search(size(parent(stack))[1:2] .÷ 2, stack, vid, darker_target, target_width, initial_search_factor, subtract)
+    initial_search(size(parent(stack))[1:2] .÷ 2, stack, vid, darker_target, target_width, initial_search_factor, subtract)
 
 # The initial search: one detection on the first slice, in a window `min(sz) / initial_search_factor`
 # wide centred on `guess` (a scaled-canvas index), rather than the tracking window. Returns the index
 # the target was found at, or `guess` itself when the window holds nothing (see `detect`).
-function search(guess, stack, vid, darker_target, target_width, initial_search_factor, subtract)
+function initial_search(guess, stack, vid, darker_target, target_width, initial_search_factor, subtract)
     # size the throwaway search Tracker from the stack itself, not the video: in AprilTag mode the
     # stack's canvas is the (scaled) reference viewport, which may differ from the run space's
     sz = size(parent(stack))[1:2]

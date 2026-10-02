@@ -462,8 +462,10 @@ apriltag_guess(start_location::Missing, stack, vid, darker_target, target_width,
 # The gateway never makes one for an AprilTag run (its `center` is not a run-space pixel), but a
 # `Segment` can hold it, so it has a meaning here too: a search around that pixel of the run's
 # first frame, which crosses the seed registration exactly as a given start does.
-apriltag_guess(s::StartSearch, stack, vid, darker_target, target_width, initial_search_factor, subtract, seedR) =
-    search(apriltag_guess(s.around, stack, vid, darker_target, target_width, initial_search_factor, subtract, seedR), stack, vid, darker_target, target_width, initial_search_factor, subtract)
+function apriltag_guess(s::StartSearch, stack, vid, darker_target, target_width, initial_search_factor, subtract, seedR)
+    around = apriltag_guess(s.around, stack, vid, darker_target, target_width, initial_search_factor, subtract, seedR)
+    return initial_search(around, stack, vid, darker_target, target_width, initial_search_factor, subtract)
+end
 function apriltag_guess(start_xy::NTuple{2, Int}, _, vid, _, _, _, _, seedR)
     x, y = start_xy
     # `stored_x` and no swap: `seedR` is a homography over (x, y), so the display correction

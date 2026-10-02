@@ -129,6 +129,11 @@ const DATADIR = mktempdir()
         @test_throws MethodError PT.Segment(base_file, 0.0, 2.0, CartesianIndex(50, 55))
         @test PT.Segment(base_file, 0.0, 2.0, (50, 55)).start_location == (50, 55)
         @test PT.Segment(base_file, 0.0, 2.0, missing).start_location === missing
+        # ...and a searched-for start is held to the same rule, or the swap would slip past the
+        # Segment's guard one level down, already converted (#397)
+        @test_throws MethodError PT.StartSearch(CartesianIndex(50, 55))
+        @test_throws MethodError PT.StartSearch((50.0, 55.0))
+        @test PT.Segment(base_file, 0.0, 2.0, PT.StartSearch((50, 55))).start_location == PT.StartSearch((50, 55))
     end
 
     @testset "Video declares no duration field (#231)" begin
