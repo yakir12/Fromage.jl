@@ -5,16 +5,40 @@
 # gateways keep a `types.jl`.
 
 """
+    StartSearch(around)
+
+A segment's start that is searched for rather than given: the tracker looks for the target in a
+window `min(width, height) / initial_search_factor` wide centred on `around`, an `(x, y)` display
+pixel, and the track starts wherever it finds it.
+
+What the runs gateway makes of a blank first `start_location` cell, `around` being the
+rectification's `center`, else the frame centre (#397). Distinct from a bare `(x, y)` on purpose:
+that one says where the target IS, and only it seeds the first detection directly. Both used to
+travel as the same tuple, which is how a centre came to be taken for the target's position and
+`initial_search_factor` came to reach no search at all outside AprilTag mode.
+"""
+struct StartSearch
+    around::NTuple{2, Int}
+end
+
+"""
     Segment(file, start, stop, start_location)
 
 One video of a run: the file, the seconds into it at which tracking starts and stops, and where the
 target is at `start`, as an `(x, y)` display-pixel position.
 
-`start_location` is `missing` on any segment whose starting position is not known independently —
-the second and later segments of an ordinary run, where the target continues from where the
-previous one ended, and any segment of an AprilTag run, where a missing one becomes a frame-centre
-search. The first segment of an ordinary run carries a concrete one: the runs gateway resolves it
-(csv cell, then the rectification's `center`, then the frame centre) before building the segment.
+`start_location` is one of three things:
+
+- an `(x, y)`, where the target is: it seeds the first detection directly, and nothing searches;
+- a [`StartSearch`](@ref), where to look for it: the segment starts with a search around that pixel;
+- `missing`, on any segment whose starting position is not known independently — the second and
+  later segments of an ordinary run, where the target continues from where the previous one ended,
+  and any segment of an AprilTag run, where a missing one becomes a search around the centre of the
+  reference viewport.
+
+The first segment of an ordinary run is never `missing`: the runs gateway resolves it before building
+the segment — the csv cell if there is one, else a `StartSearch` around the rectification's `center`,
+else around the frame centre (#397).
 
 The union is exactly what is supported (#18). `RowCol` is absent on purpose despite having a
 `get_guess` method: that is the internal form a later segment's start takes, carried over from the
@@ -24,7 +48,7 @@ struct Segment
     file::String
     start::Float64
     stop::Float64
-    start_location::Union{Missing, NTuple{2, Int}}
+    start_location::Union{Missing, NTuple{2, Int}, StartSearch}
 
     # `start_location` is ASSERTED by this constructor, not converted. Julia converts struct fields
     # on assignment, and Base can convert a `CartesianIndex{2}` to an `NTuple{2, Int}` — so without
@@ -32,7 +56,7 @@ struct Segment
     # axes silently swapped. That is a worse version of the bug #18 was filed about (a type the
     # signature advertised but `get_guess` could not handle), and the reason the union names only
     # what `get_guess` has a method for. The other three fields convert as usual.
-    Segment(file, start, stop, start_location::Union{Missing, NTuple{2, Int}}) =
+    Segment(file, start, stop, start_location::Union{Missing, NTuple{2, Int}, StartSearch}) =
         new(file, start, stop, start_location)
 end
 
@@ -43,13 +67,14 @@ A `Segment` whose starting point has been settled, which is what a tracking func
 
 The difference from `Segment` is the union: this one also admits `RowCol`, the internal form a later
 segment's start takes when it is carried over from the previous segment's last coordinate. A
-`Segment` cannot hold that — its constructor asserts `Union{Missing, NTuple{2, Int}}` on purpose
-(#18) — so the chained value had to travel as a loose argument alongside the segment it belonged to.
-Here the union names **exactly** the three types `get_guess` has a method for, and nothing else.
+`Segment` cannot hold that — its constructor asserts `Union{Missing, NTuple{2, Int}, StartSearch}` on
+purpose (#18) — so the chained value had to travel as a loose argument alongside the segment it
+belonged to. Here the union names **exactly** the four types `get_guess` has a method for, and
+nothing else.
 
 Built by `track`, and **only on the ordinary path**: the gateway resolves the *first* segment's
-start (`VerifyRuns.resolved_segments`, csv cell → the rectification's `center` → the frame centre),
-and the chaining in `track` resolves the rest.
+start (`VerifyRuns.resolved_segments`: the csv cell, else a `StartSearch` around the rectification's
+`center` or the frame centre), and the chaining in `track` resolves the rest.
 
 `track_apriltag` takes a plain `Segment` instead, because AprilTag segments do not chain
 (DECISIONS.md) — nothing there can produce a `RowCol` start, and `apriltag_guess` has no method for
@@ -61,12 +86,12 @@ struct ResolvedSegment
     file::String
     start::Float64
     stop::Float64
-    start_location::Union{Missing, NTuple{2, Int}, RowCol}
+    start_location::Union{Missing, NTuple{2, Int}, StartSearch, RowCol}
 
     # Asserted, not converted, for the same reason `Segment`'s is: a `CartesianIndex{2}` converts
     # silently to an `NTuple{2, Int}` and would arrive as an (x, y) start location with its axes
     # swapped.
-    ResolvedSegment(file, start, stop, start_location::Union{Missing, NTuple{2, Int}, RowCol}) =
+    ResolvedSegment(file, start, stop, start_location::Union{Missing, NTuple{2, Int}, StartSearch, RowCol}) =
         new(file, start, stop, start_location)
 end
 
@@ -130,8 +155,8 @@ The three `Tuning` values pre-scaled by `downscale`, computed once per run rathe
 - `width` is the target's width in scaled pixels, which sizes the DoG sigma.
 - `window` is the search window as scaled `(rows, cols)` — `fix_window_size` has already turned the
   csv's display `(width, height)` into that order.
-- `search` is the scaled initial search factor, used only when a segment has no `start_location`
-  and the tracker falls back to a centre search.
+- `search` is the scaled initial search factor, used only when a segment's start is searched for
+  (a `StartSearch`, or AprilTag mode's `missing`) rather than given.
 
 **Not** `Tuning` fields under new values: the names differ from the csv columns
 (`target_width`/`window_size`/`initial_search_factor`) precisely because these are *derived*, and a

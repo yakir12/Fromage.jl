@@ -93,10 +93,10 @@ function Run(g::AbstractDataFrame)
     return Run(g.run_id[1], g.rectification_id[1], _tuning(g, frame_format, segments), frame_format, segments)
 end
 
-# The run's (or first segment's) start_location falls back to `center` (e.g. the rectification's
-# scene centre) and then to the frame's centre, so `track` always gets a concrete starting point.
-# Both are (x, y) in *display* pixels, matching start_location's convention, so x is half of
-# width × aspect (`Spaces.display_center_x`) and `track` maps it back to stored columns.
+# Where the first segment's start is searched for when its start_location is blank: around `center`
+# (the rectification's scene centre), else around the frame's centre (#397). Both are (x, y) in
+# *display* pixels, matching start_location's convention, so x is half of width × aspect
+# (`Spaces.display_center_x`) and `track` maps it back to stored columns.
 #
 # The rounding is deliberately spelled here rather than shared: a start location is an Int pixel, so
 # the x rounds and the y truncates, where `Rectifications.default_center` — the other caller of
@@ -104,12 +104,17 @@ end
 # to half a pixel on an odd height, which is not obviously right and is not this function's to fix.
 frame_center(f::FrameFormat, aspect) = (round(Int, display_center_x(f.width, aspect)), f.height ÷ 2)
 
-# The run's segments with the first one's start-location fallbacks applied, ready for `track`.
+# The run's segments with the first one's start resolved, ready for `track`.
+#
+# Only a start_location the csv gave says where the target IS, and only it seeds the first detection.
+# A blank one becomes a `StartSearch`: the tracker looks for the target within `initial_search_factor`'s
+# window around `center`, or around the frame centre without one. Both fallbacks used to be handed
+# over as the target's position, so the search never ran and the factor reached nothing (#397).
 #
 # For an AprilTag run the rectification's `center` is a pixel in the (moved) extrinsic frame, not in
-# the RUN SPACE, so it can't seed the tracker's start: the per-segment start_locations are used as-is, a
-# missing one becoming the frame-centre search inside `track`, and each segment relocates on its
-# own. Every other rectification shares the run space, so its centre is a valid fallback for the
+# the RUN SPACE, so it can't centre the tracker's search: the per-segment start_locations are used
+# as-is, a missing one becoming the centre search inside `track`, and each segment relocates on its
+# own. Every other rectification shares the run space, so its centre is a valid search centre for the
 # first segment.
 #
 # `center` defaults to nothing here only through its callers; it arrives as `missing` when absent,
@@ -127,7 +132,7 @@ function resolved_segments(r::Run, center, rectification)
     s = out[1]
     out[1] = Segment(
         s.file, s.start, s.stop,
-        @coalesce s.start_location center frame_center(r.frame_format, r.tuning.aspect)
+        @coalesce s.start_location StartSearch(@coalesce center frame_center(r.frame_format, r.tuning.aspect))
     )
     return out
 end

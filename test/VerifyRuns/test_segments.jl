@@ -261,24 +261,27 @@
         before = [s.start_location for s in r.segments]
         @test all(ismissing, before)                  # nothing to impute from the csv
 
+        # a blank first start_location is searched for around `center`, never taken as the target's
+        # position (#397)
         sls = VR.resolved_segments(r, (7, 9), nothing)
-        @test sls[1].start_location == (7, 9)         # the caller gets the resolved segments...
+        @test sls[1].start_location == PT.StartSearch((7, 9))   # the caller gets the resolved segments...
         @test ismissing(sls[2].start_location)        # ...with later segments left alone
         @test sls !== r.segments                      # ...as a vector of its own
         @test isequal([s.start_location for s in r.segments], before)   # run itself unchanged
 
         # so a second call is free to impute something else
         sls2 = VR.resolved_segments(r, (11, 13), nothing)
-        @test sls2[1].start_location == (11, 13)
+        @test sls2[1].start_location == PT.StartSearch((11, 13))
         @test isequal([s.start_location for s in r.segments], before)
 
         # the frame-centre fallback (no centre given) must not write back either
         sls3 = VR.resolved_segments(r, missing, nothing)
         # The literal, not `VR.frame_center(...)`: comparing the function against itself passes
         # whichever order it returns, and (320, 240) is distinguishable from its transpose. a.mp4 is
-        # 640x480 at sar 1, and the fallback is display (x, y), so the x comes first.
-        @test sls3[1].start_location == (320, 240)
-        @test sls3[1].start_location == VR.frame_center(r.frame_format, r.tuning.aspect)
+        # 640x480 at sar 1, and the fallback is display (x, y), so the x comes first. It too is a
+        # search centre, not the target's position (#397).
+        @test sls3[1].start_location == PT.StartSearch((320, 240))
+        @test sls3[1].start_location == PT.StartSearch(VR.frame_center(r.frame_format, r.tuning.aspect))
         @test isequal([s.start_location for s in r.segments], before)
     end
 
@@ -290,11 +293,17 @@
         @test length(r.segments) == 1
         @test all(s -> ismissing(s.start_location), r.segments)
         sls = VR.resolved_segments(r, (7, 9), nothing)
-        @test [s.start_location for s in sls] == [(7, 9)]
+        @test [s.start_location for s in sls] == [PT.StartSearch((7, 9))]
         @test sls !== r.segments
         @test all(s -> ismissing(s.start_location), r.segments)      # the run itself is untouched
         # so a second call is free
-        @test [s.start_location for s in VR.resolved_segments(r, (11, 13), nothing)] == [(11, 13)]
+        @test [s.start_location for s in VR.resolved_segments(r, (11, 13), nothing)] == [PT.StartSearch((11, 13))]
+    end
+
+    @testset "a csv start_location is the target's position, whatever the center (#397)" begin
+        r = only(check([runrow(run_id = "e", start_location = "(5, 6)")]))
+        @test only(VR.resolved_segments(r, (7, 9), nothing)).start_location == (5, 6)
+        @test only(VR.resolved_segments(r, missing, nothing)).start_location == (5, 6)
     end
     # ---- windows of one file (#153) ---------------------------------------------------------
     # A run's segments may be several windows of ONE file — that is how an untrackable stretch is

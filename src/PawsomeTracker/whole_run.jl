@@ -152,13 +152,16 @@ function grid_frame(img, to_raw, (R, C), downscale)
 end
 
 # Where the target starts, as a grid index, and the radius it starts within. A `start_location`
-# is a display pixel; the online tracker's search window, halved, is how far off it may be. With
-# none (an AprilTag run whose csv leaves it blank), the grid's centre and the online tracker's
-# centre search window, halved.
+# is a display pixel; the online tracker's search window, halved, is how far off it may be. A
+# start that is searched for gets the online tracker's initial search window, halved, around
+# its pixel (a `StartSearch`) or around the grid's centre (`missing`, an AprilTag run whose csv
+# leaves it blank).
 function anchor(start_location::NTuple{2, Int}, to_grid, tuning, _)
     return to_grid(start_location), tuning.downscale * maximum(fix_window_size(tuning.window_size)) / 2
 end
-anchor(::Missing, _, tuning, (R, C)) = ((R + 1) / 2, (C + 1) / 2), min(R, C) / (2 * tuning.initial_search_factor)
+anchor(s::StartSearch, to_grid, tuning, (R, C)) = to_grid(s.around), search_radius(tuning, (R, C))
+anchor(::Missing, _, tuning, (R, C)) = ((R + 1) / 2, (C + 1) / 2), search_radius(tuning, (R, C))
+search_radius(tuning, (R, C)) = min(R, C) / (2 * tuning.initial_search_factor)
 
 function RunVolume(frames, has, tss, start_location, to_grid, tuning)
     sz = size(first(frames))
