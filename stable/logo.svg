@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <clipPath id="wedgeclip">
+      <path d="M40 262 L462 132 L462 382 L40 262 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- cheese body: rounded triangle -->
+  <path d="M60 256 L452 136 L452 376 Z"
+        fill="#F6C445" stroke="#F6C445" stroke-width="40" stroke-linejoin="round"/>
+
+  <!-- top-edge highlight (rind) -->
+  <path d="M64 252 L448 134" fill="none" stroke="#FFDF7E" stroke-width="26" stroke-linecap="round"/>
+
+  <!-- holes -->
+  <g fill="#DA9E2B">
+    <circle cx="298" cy="228" r="34"/>
+    <circle cx="252" cy="330" r="22"/>
+    <circle cx="172" cy="272" r="15"/>
+    <circle cx="386" cy="318" r="26"/>
+  </g>
+  <!-- half-hole cut by the right edge -->
+  <circle cx="464" cy="192" r="22" fill="#DA9E2B" clip-path="url(#wedgeclip)"/>
+
+  <!-- dotted tracking trail leading to one hole -->
+  <path d="M150 272 Q 240 318 330 330"
+        fill="none" stroke="#7A4A12" stroke-width="11"
+        stroke-linecap="round" stroke-dasharray="0.1 30"/>
+
+  <!-- diagnostic-video circle around the tracked "target" hole -->
+  <circle cx="386" cy="318" r="46" fill="none" stroke="#7A4A12" stroke-width="11"/>
+</svg>
