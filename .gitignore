@@ -4,6 +4,7 @@
 *.log
 /Manifest.toml
 /docs/Manifest.toml
+/test/Manifest*.toml
 /docs/build/
 /deps/downloads/
 /deps/src/
