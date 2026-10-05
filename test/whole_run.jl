@@ -205,6 +205,15 @@ const WALK = 1.2
         # (measured worst 3.94 display px), and a stored column is sar display columns.
         @test maximum(k -> norm(collect(px[k]) .- truth(k)), eachindex(px)) < 4.5
         @test all(k -> collect(ij[k]) ≈ [px[k][2], px[k][1] / 2], eachindex(px))
+        # Through a real rectification the pixels do not change, and each one, taken back through
+        # `to_stored` and the rectification, is its own sample's real-world position: the csv's
+        # round trip, on the whole-run tracker.
+        rect = Fromage.Rectifications.from_uniform(;
+            pixel_width = 0.5, aspect = 2.0, center = missing, north = missing, width = 50, height = 100
+        )
+        _, xy, rpx = track_whole_run(segments(file; start_location = (55, 50)), t, rect, nothing)
+        @test rpx == px
+        @test all(k -> rect.image2real(PT.SVector(Fromage.Spaces.to_stored(rpx[k], 2)...)) ≈ xy[k], eachindex(xy))
     end
 
     @testset "a run of two segments is one path" begin

@@ -71,6 +71,7 @@ function save2csv(results_dir, run_id, (ts, coords, pixels))
         end
     end
 end
+# Two csv cells after a comma each: a coordinate pair's values, or two empty cells for `missing`.
 print_pair(io, ::Missing) = print(io, ",,")
 print_pair(io, (a, b)) = print(io, ',', a, ',', b)
 

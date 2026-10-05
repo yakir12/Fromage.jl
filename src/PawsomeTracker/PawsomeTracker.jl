@@ -601,10 +601,12 @@ function get_window(target_width, sample_fps, m, duration)
     return max(ws1, ws2)
 end
 
-# A track's display pixels (#401): each 0-based stored `(row, col)` as the display `(x, y)` an image
-# viewer shows, through `Spaces.to_display`. `Float64` whatever the tracker held, so both trackers'
-# pixels are one element type; never `missing`, because a fixed camera's samples never are.
-display_pixels(stored, sar) = [SVector{2, Float64}(to_display(p, sar)) for p in stored]
+# A track's display pixel (#401): a 0-based stored `(row, col)` as the display `(x, y)` an image viewer
+# shows, through `Spaces.to_display`. Widened to `Float64` before `sar` touches it, whatever the
+# tracker held (`RowCol` is `Float32`), so every path's pixels are one element type. A fixed camera's
+# track is all of them, never `missing`.
+display_pixel(stored, sar) = SVector{2, Float64}(to_display(SVector{2, Float64}(stored), sar))
+display_pixels(stored, sar) = [display_pixel(p, sar) for p in stored]
 
 # Apply an image2real map over a track that may hold `missing` frames (AprilTag mode reports
 # `missing` where a frame lost a tag), leaving the missings in place.
