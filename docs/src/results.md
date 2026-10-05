@@ -16,12 +16,13 @@ Running `main` again into the same folder overwrites the track files and the dia
 
 ## The track files
 
-Each run's track is written to `results_dir/<run_id>.csv` — a plain csv you can open in Excel, R, Python, MATLAB, or anything else. It has three columns:
+Each run's track is written to `results_dir/<run_id>.csv` — a plain csv you can open in Excel, R, Python, MATLAB, or anything else. It has five columns:
 
 | column | content |
 | --- | --- |
 | `time` | the timestamp of each detected coordinate, in seconds on the run's clock — which starts at the run's first `start` and advances one sampling interval per coordinate. For a run tracked from a single row, that is simply seconds into the video. |
 | `x`, `y` | the target's **real-world** coordinates at that time. |
+| `x_display`, `y_display` | the same position in **pixels of the original video frame**, as an image viewer shows them — the same pixels you read `start_location` off (see [the pixel coordinates](#The-pixel-coordinates) below). |
 
 !!! note "`time` when a run has several segments"
     The clock counts tracked frames, so time you left out of the run does not appear in it: a stretch cut out between two [segments](runs.md#Runs-made-of-several-segments) of one file, and the join between two files, are both closed up rather than shown as a jump. Speeds computed from the track therefore ignore them, which is the intent. The real times are still in `runs.csv` if you need to put them back.
@@ -32,6 +33,12 @@ The coordinates are already fully converted — lens distortion, perspective, an
 - If you gave a `north` point, the coordinates are rotated so north is consistent across rectifications.
 - The **unit** is whatever your calibration used: the `checker_width` unit for checkerboard rectifications (e.g. cm if you measured your squares in cm), the `tag_cell_width` unit for AprilTag ones, the `pixel_width` unit for `uniform` ones, or the MATLAB calibration's unit for `matlab`.
 - `x` grows rightward and `y` grows **downward** in the image, like the pixel convention.
+
+### The pixel coordinates
+
+`x_display` and `y_display` are where the target is in the video frame itself, before any rectification: the top-left pixel's centre is `(0, 0)`, `x` grows rightward and `y` downward, and on footage with non-square pixels they are already stretched to what an image viewer shows. They are the same kind of pixel you give as `start_location`, `center` and `north`, so you can compare them directly with points you clicked on a frame.
+
+For drone (`apriltag`) footage they are pixels of **that frame of the video**, as filmed: the drone's motion is not removed from them. A frame in which a tag could not be seen has no way back into the original frame, so its two pixel cells are empty. Its `x` and `y` may still have a value: the whole-run tracker gives every frame a real-world position.
 
 ## The diagnostic video
 

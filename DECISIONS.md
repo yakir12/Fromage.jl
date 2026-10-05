@@ -51,7 +51,45 @@ needs through `build_rectification`, which on the same row is a memo hit on the 
 tracked through; no tolerance moved.
 
 **Considered and not done:** a replacement entry point for the pixel-conversion use of the
-`rectification` object. Nobody asked for one.
+`rectification` object. Nobody asked for one. (Until #401 did, for the pixels themselves rather than
+the object — the next entry.)
+
+### The track csv carries display pixels too (#401)
+
+Every track csv has `x_display` and `y_display` after `time,x,y`: the same sample in display space,
+in the original video frame. Always written; there is no toggle, and if one is ever wanted it is a
+`main` keyword, never one on `track` (#140/#141).
+
+**Why it came back after #256.** Tracker research (#383) needs tracks in pixels, to judge them
+against hand clicks, and it got them by forking Fromage: the #359 fork existed only for pixel output
+and fell 33 releases behind in 14 days. Real-world output alone is not enough to go without the
+fork. On drone runs each frame's registration is discarded once tracking ends, so a raw-frame click
+cannot be carried into real-world coordinates afterwards. The research workspace now runs against
+the live checkout instead, and the pixels come from the package.
+
+**Why display space**, and not stored, reference or scaled: it is the space every user coordinate
+enters in (`start_location`, `center`, `north`) and the one an image viewer, and so a hand click,
+reports. It is written through `Spaces.to_display`, the exact inverse of the `to_stored` those
+coordinates come in through. That keeps the `x / sar` convention (#276's entry above), not the
+area-exact `(x + ½)·sar − ½`, so a pixel and a `start_location` read off the same frame agree, and a
+csv pixel taken back through `to_stored` and `image2real` reproduces its row's `x,y`.
+
+**Drone pixels are in the raw frame, unregistered.** Each sample's reference-space position is taken
+back through that frame's own inverse registration (`raw_display`), so the pixel is where the target
+is in the frame as filmed. That is what a click is in. A reference-space pixel would need the
+registration that was thrown away to compare with anything.
+
+**An unregistered sample has empty pixel cells**, whatever its real-world cells hold. Its own
+registration is unknown, and the one it borrowed was good enough for a background model but not to
+place a measurement in the raw frame. So the online tracker writes it empty all through, as before,
+and the whole-run tracker keeps its real-world position ("An unregistered AprilTag sample has a
+position") while leaving the pixel cells empty. The whole-run tracker keeps each sample's inverse
+registration in `RunVolume.Hinvs` for this; the online one already held it.
+
+**The return grew rather than a second function.** `track` and `track_whole_run` return
+`(ts, coords, pixels)`, so existing `ts, coords = …` destructuring still reads. A fixed camera's
+pixels are a concrete `Vector{SVector{2, Float64}}`, for the reason in "What was deliberately *not*
+merged"; only the AprilTag path's admit `missing`.
 
 ### The diagnostic video is concatenated with ffmpeg's concat demuxer
 
@@ -954,8 +992,8 @@ axis order.
 The AprilTag and ordinary branches still stand apart, and the last line of each still differs:
 
 ```julia
-isnothing(rectification) ? (ts, ij) : (ts, map(rectification.image2real, ij))   # ordinary
-_apply_image2real(rectification.image2real, reduce(vcat, segs))                # AprilTag
+isnothing(rectification) ? (ts, ij, pixels) : (ts, map(rectification.image2real, ij), pixels)   # ordinary
+_apply_image2real(rectification.image2real, reduce(vcat, segs))                                # AprilTag
 ```
 
 `_apply_image2real` is missing-tolerant and would cover both — but only by widening the ordinary
@@ -1191,7 +1229,8 @@ research's own cached volume, it matched on 100% either way, so the path code wa
 **An unregistered AprilTag sample has a position**, where the online tracker reports `missing`. The
 path is in reference space and runs through such a sample, so only its pixels were unusable, not
 where the path is. Reporting `missing` failed two clicked runs (1_5, 7_1) against the harness, which
-scores a click on a missing point as infinitely far off.
+scores a click on a missing point as infinitely far off. Its display pixel is still empty (#401):
+that is the one thing the unusable pixels do decide.
 
 Two differences from the research code that would look like slips: the back-pointers are `Int32`
 rather than `Int16`, so no target width makes the walking reach overflow them (at `downscale = 1` a

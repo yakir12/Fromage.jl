@@ -184,7 +184,7 @@ end
         @test on_target(tracked(rows(far; initial_search_factor = "2"))[1], far_exp)        # a runs.csv cell
         runs = check(rows(far); defaults = (initial_search_factor = 2,))                    # a tracking default
         @test clean(runs)
-        @test on_target(last(VR.track(only(runs), missing, nothing, nothing))[1], far_exp)
+        @test on_target(VR.track(only(runs), missing, nothing, nothing)[2][1], far_exp)
     end
 
     @testset "an explicit start_location seeds the detection, and nothing searches" begin

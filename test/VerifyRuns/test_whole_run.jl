@@ -81,7 +81,7 @@ end
         # starts 45 px right of it. It used to get half a tracking window (20 px here) at any factor,
         # and `refine` cannot carry a path from there to a target that far out.
         files, expected = make_target_video("s397_whole"; width = 200, height = 200, target_width = 20, row = 100, col = 145, noise = 10)
-        first_point(factor) = first(last(VR.track(loaded_whole([wholerow(file = only(files), target_width = "20", whole_run = "true", initial_search_factor = factor)]), missing, nothing, nothing)))
+        first_point(factor) = first(VR.track(loaded_whole([wholerow(file = only(files), target_width = "20", whole_run = "true", initial_search_factor = factor)]), missing, nothing, nothing)[2])
         on_target(p) = hypot((p .- expected(1))...) < 5     # a third-resolution grid: 3 px a cell
         @test on_target(first_point("2"))
         @test !on_target(first_point("8"))

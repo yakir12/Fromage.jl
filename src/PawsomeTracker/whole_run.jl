@@ -96,14 +96,17 @@ const SampleTimes = StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.Twi
     RunVolume
 
 A whole run on the grid: `frames[k]` is sample `k`, `has[k]` whether it was registered (always
-true without AprilTags; an unregistered sample borrows the nearest registration and scores 0), and
-`tss` each segment's file times, the segments' samples following one another in `frames`. `start` is the
+true without AprilTags; an unregistered sample borrows the nearest registration and scores 0),
+`Hinvs[k]` its inverse registration, reference → raw frame (meaningful only where `has[k]`, and
+empty without AprilTags; it is how a sample's display pixel is found, #401), and `tss` each
+segment's file times, the segments' samples following one another in `frames`. `start` is the
 start location as a grid index, `anchor` the radius around it the target starts within, `width`
 the target's width and `dt` the seconds between samples — all on the grid.
 """
 struct RunVolume
     frames::Vector{Matrix{UInt8}}
     has::Vector{Bool}
+    Hinvs::Vector{SMatrix{3, 3, Float64, 9}}
     tss::Vector{SampleTimes}
     start::NTuple{2, Float64}
     anchor::Float64
@@ -163,13 +166,13 @@ anchor(s::StartSearch, to_grid, tuning, (R, C)) = to_grid(s.around), search_radi
 anchor(::Missing, _, tuning, (R, C)) = ((R + 1) / 2, (C + 1) / 2), search_radius(tuning, (R, C))
 search_radius(tuning, (R, C)) = min(R, C) / (2 * tuning.initial_search_factor)
 
-function RunVolume(frames, has, tss, start_location, to_grid, tuning)
+function RunVolume(frames, has, Hinvs, tss, start_location, to_grid, tuning)
     sz = size(first(frames))
     start, radius = anchor(start_location, to_grid, tuning, sz)
     # a start off the grid anchors at the nearest grid pixel
     start = (clamp(start[1], 1, sz[1]), clamp(start[2], 1, sz[2]))
     dt = 1 / effective_fps(tuning.native_fps, tuning.sample_fps)
-    return RunVolume(frames, has, tss, start, radius, tuning.downscale * tuning.target_width, dt)
+    return RunVolume(frames, has, Hinvs, tss, start, radius, tuning.downscale * tuning.target_width, dt)
 end
 
 """
@@ -183,12 +186,12 @@ the display frame.
 function read_run(segments, tuning, rectification::ApriltagRectification)
     ds = tuning.downscale
     sz = round.(Int, ds .* reference_size(rectification))
-    frames, has = Matrix{UInt8}[], Bool[]
+    frames, has, Hinvs = Matrix{UInt8}[], Bool[], SMatrix{3, 3, Float64, 9}[]
     tss = Vector{SampleTimes}(undef, length(segments))
     seeds = map(enumerate(segments)) do (i, s)
         video(s.file, tuning.native_fps, tuning.sample_fps, s.start, s.stop, 1.0, tuning.aspect) do vid
             tss[i] = range(s.start; step = 1 / vid.sample_fps, length = vid.nframes)
-            read_registered!(frames, has, vid, rectification, ds, sz, s.file)
+            read_registered!(frames, has, Hinvs, vid, rectification, ds, sz, s.file)
         end
     end
     seedR = first(seeds)
@@ -198,7 +201,7 @@ function read_run(segments, tuning, rectification::ApriltagRectification)
         p = to_index(apply_h(seedR, SVector(stored_x(x, tuning.aspect), Float64(y))))
         return (grid_index(p[2], ds), grid_index(p[1], ds))
     end
-    return RunVolume(frames, has, tss, first(segments).start_location, to_grid, tuning)
+    return RunVolume(frames, has, Hinvs, tss, first(segments).start_location, to_grid, tuning)
 end
 
 function read_run(segments, tuning, _)
@@ -219,13 +222,14 @@ function read_run(segments, tuning, _)
     end
     # a display (x, y), 0-based, is display index (y + 1, x + 1)
     to_grid((x, y)) = (grid_index(y + 1, ds), grid_index(x + 1, ds))
-    return RunVolume(frames, has, tss, first(segments).start_location, to_grid, tuning)
+    return RunVolume(frames, has, SMatrix{3, 3, Float64, 9}[], tss, first(segments).start_location, to_grid, tuning)
 end
 
-# One segment's samples, registered and reduced onto the grid; returns the segment's first
-# registration. A sample before the first registration is held raw until it arrives, and one
-# without all its tags borrows the last registration (and is recorded as unregistered).
-function read_registered!(frames, has, vid, rectification, ds, sz, file)
+# One segment's samples, registered and reduced onto the grid, with the inverse registration each was
+# warped through; returns the segment's first registration. A sample before the first registration
+# is held raw until it arrives, and one without all its tags borrows the last registration (and is
+# recorded as unregistered).
+function read_registered!(frames, has, Hinvs, vid, rectification, ds, sz, file)
     ref = rectification.reference
     ids = ref.ids
     dets = [set_detector!(AprilTagDetector(rectification.family)) for _ in ids]
@@ -248,12 +252,14 @@ function read_registered!(frames, has, vid, rectification, ds, sz, file)
                     seeded = true
                     for img in pending
                         push!(frames, grid_frame(img, RegisteredWarp(1.0, [Hinv]), sz, ds))
+                        push!(Hinvs, Hinv)
                     end
                     empty!(pending)
                 end
             end
             if seeded
                 push!(frames, grid_frame(vid.img, RegisteredWarp(1.0, [Hinv]), sz, ds))
+                push!(Hinvs, Hinv)
             else
                 push!(pending, collect(vid.img))
             end
@@ -670,6 +676,18 @@ real_coordinates(coords, rectification::ApriltagRectification) = _apply_image2re
 real_coordinates(coords, ::Nothing) = map(from_index, coords)
 real_coordinates(coords, rectification) = map(rectification.image2real, map(from_index, coords))
 
+# The track's display pixels (#401). AprilTag: each sample's reference index back in its own raw
+# frame, through its own registration (`raw_display`), so an unregistered sample has none — though
+# it has a position (`grid_coordinates`). Otherwise the stored pixels `real_coordinates` maps, as
+# display ones, so the two columns of a row are one sample however far `sar` is from 1.
+function display_coordinates(p, _, vol, rectification::ApriltagRectification, tuning)
+    ds = tuning.downscale
+    return Union{Missing, SVector{2, Float64}}[
+        vol.has[k] ? raw_display(vol.Hinvs[k], full_index.(p[k], ds), tuning.aspect) : missing for k in eachindex(p)
+    ]
+end
+display_coordinates(_, coords, _, _, tuning) = display_pixels(map(from_index, coords), tuning.aspect)
+
 # ---- the diagnostic --------------------------------------------------------------------------
 
 # The run diagnostic clip, from the grid frames the path was found on: the existing writer and
@@ -739,8 +757,9 @@ read.
 With an `ApriltagRectification` the path follows the fitted motion model with the no-return prior,
 and, when `tuning.arena_radius` is given, the arena prior (see `MotionModel`); otherwise a
 per-sample step cost (`NoMotionModel`). Coordinates are those `track` returns on the same
-rectification: real-world, or stored `(row, col)` pixels without one. Unlike the online tracker's,
-an AprilTag track has a position at every sample, unregistered ones included (`grid_coordinates`).
+rectification: real-world, or stored `(row, col)` pixels without one; and `pixels`, the display
+pixels `track` returns too. Unlike the online tracker's, an AprilTag track has a position at every
+sample, unregistered ones included (`grid_coordinates`), though only a registered one has a pixel.
 
 Memory: the grid volume (one byte per grid pixel per sample, ~0.07 GB per minute of drone footage at
 the defaults), its score (four bytes) and the path's back-pointers.
@@ -749,8 +768,9 @@ function track_whole_run(segments::Vector{Segment}, tuning::Tuning, rectificatio
     vol = read_run(segments, tuning, rectification)
     p = whole_run_path(vol, path_model(rectification, tuning), tuning.darker_target)
     coords = grid_coordinates(p, rectification, tuning)
+    pixels = display_coordinates(p, coords, vol, rectification, tuning)
     isnothing(diagnostic_file) || write_diagnostic(diagnostic_file, vol, p, coords, tuning, rectification)
-    return (_concat_timestamps(vol.tss), real_coordinates(coords, rectification))
+    return (_concat_timestamps(vol.tss), real_coordinates(coords, rectification), pixels)
 end
 
 """

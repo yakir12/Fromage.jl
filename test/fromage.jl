@@ -21,16 +21,25 @@ using ..Harness: capturing
 # is a frame `track` could not localize. `save2csv` prints each `Float64` in full, so the values
 # round-trip exactly and no tolerance below had to move to absorb it. The header is checked because
 # the swap depends on the column order it names.
+#
+# The third value is the display-space pixels (#401), in the csv's own `(x, y)` order — the order
+# they are in on screen, so nothing is swapped back — and `missing` where both cells are empty.
 function read_track(file)
     header, lines... = readlines(file)
-    header == "time,x,y" || error("$file: expected the header time,x,y, got $(repr(header))")
+    expected_header = "time,x,y,x_display,y_display"
+    header == expected_header || error("$file: expected the header $expected_header, got $(repr(header))")
     rows = split.(lines, ',')
-    ts = [parse(Float64, t) for (t, _, _) in rows]
-    coords = Union{Missing, SVector{2, Float64}}[
-        isempty(x) ? missing : SVector(parse(Float64, y), parse(Float64, x)) for (_, x, y) in rows
-    ]
-    return ts, coords
+    point(a, b) = isempty(a) ? missing : SVector(parse(Float64, a), parse(Float64, b))
+    ts = [parse(Float64, row[1]) for row in rows]
+    coords = Union{Missing, SVector{2, Float64}}[point(y, x) for (_, x, y, _, _) in rows]
+    pixels = Union{Missing, SVector{2, Float64}}[point(px, py) for (_, _, _, px, py) in rows]
+    return ts, coords, pixels
 end
+
+# The round trip a user would make from a csv pixel back to its real-world row: display → stored
+# (`Spaces.to_stored`, the conversion `start_location` takes in) → the rectification's `image2real`,
+# which returns `track`'s `(y, x)` order — so it compares with `read_track`'s coordinates directly.
+display_to_real(rectification, px, sar) = rectification.image2real(SVector(Fromage.Spaces.to_stored(px, sar)...))
 
 # The rectification `main` built for the row `rectification_id` names, rebuilt here for a ground
 # truth to go through. The row is parsed into the same `RectificationMethod` `main` built from, and
@@ -89,11 +98,15 @@ end
         outdir
     )
     @test Fromage.Memo.hits(Fromage.Memo.BUILT_RECTIFICATIONS) == hits + 1   # main's own object, served
-    t, xy = read_track(joinpath(outdir, "results_dir", "1.csv"))   # the REAL-WORLD coords track returned
+    t, xy, px = read_track(joinpath(outdir, "results_dir", "1.csv"))   # the REAL-WORLD coords track returned
     @test length(xy) == 50                          # the full 2 s at 25 fps
     # ground truth is the analytic pixel path pushed through the same rectification
     real_expected(i; kw...) = Tuple(rectification.image2real(SVector(expected(i; kw...)...)))
     @test tracking_rmse(xy, real_expected) < 0.3    # tracked vs ground truth, in real-world units
+    # the display pixels: the stored (row, col) ground truth as (x, y), at sar 1 (#401) …
+    @test tracking_rmse(px, (i; kw...) -> reverse(expected(i; kw...))) < 0.5
+    # … and each one, taken back through the rectification, is its own row's real-world position
+    @test all(k -> display_to_real(rectification, px[k], 1) ≈ xy[k], eachindex(px))
     @test rectification.ratio > 0                   # a real rectification, not a degenerate one
     diag = joinpath(outdir, "results_dir", "diagnostic.mp4")
     @test isfile(diag)
@@ -114,8 +127,8 @@ end
     # one row per detected coordinate (run_id imputed to "1")
     lines = readlines(joinpath(outdir, "results_dir", "1.csv"))
     @test length(lines) == 51                       # header + 50 coordinates
-    @test lines[1] == "time,x,y"
-    t0, x0, y0 = parse.(Float64, split(lines[2], ','))
+    @test lines[1] == "time,x,y,x_display,y_display"
+    t0, x0, y0 = parse.(Float64, split(lines[2], ','))[1:3]
     @test t0 == 0.0
     # the analytic ground-truth pixel, pushed through the same rectification (which returns
     # (y-direction, x-direction), mirroring its (row, col) input)
@@ -168,9 +181,21 @@ end
         ), outdir
     )
 
-    t, xy = read_track(joinpath(outdir, "results_dir", "anamorphic.csv"))
+    t, xy, px = read_track(joinpath(outdir, "results_dir", "anamorphic.csv"))
     @test length(t) == 30
     @test all(!ismissing, xy)
+
+    # The display pixels (#401) against the fixture's own projection, stretched back by sar. The
+    # fixture's squeeze is area-exact, `(col + ½)·sar − ½`, while `Spaces` keeps `col × sar` — the
+    # inverse of the `x / sar` every user coordinate enters through (DECISIONS, #276) — so the two
+    # differ by ½(sar − 1) = 0.5 display columns here, which the bound holds above.
+    truth(k) = ((row, col) = target_clip.stored(board_path(k)...); ((col + 0.5) * sar - 0.5, row))
+    @test maximum(k -> hypot((Tuple(px[k]) .- truth(k))...), eachindex(px)) < 1.5
+    rectification = cd(
+        () -> rebuilt_rectification(joinpath(dir, "rectifications.csv"), "c1"; defaults = (; n_corners)),
+        outdir
+    )
+    @test all(k -> display_to_real(rectification, px[k], sar) ≈ xy[k], eachindex(px))
 
     # The expected track is built from the fixture's independent board inverse. The declared
     # center/north gauge makes real coordinates board (Y, X), centred at the independently
@@ -221,7 +246,8 @@ end
     # motion cancellation, the metric scale (tag_cell_width = cell size), the centre/north gauge, and
     # the csv/diagnostic outputs — the pure geometry is unit-tested separately in test/apriltag.jl.
     dir = mktempdir()
-    vid, groundpath, sl, nframes = make_apriltag_video(dir, "drone")
+    flight = make_apriltag_video(dir, "drone")
+    vid, groundpath, sl, nframes = flight
     open(joinpath(dir, "rectifications.csv"), "w") do io
         println(io, "rectification_id,type,file,extrinsic,apriltags,family,tag_cell_width")
         println(io, "drone,apriltag,$vid,0,4,tag36h11,8")
@@ -246,9 +272,15 @@ end
     @test Fromage.Memo.hits(Fromage.Memo.BUILT_RECTIFICATIONS) == hits + 1    # main's own object, served
     @test rect isa Fromage.PawsomeTracker.ApriltagRectification   # the row built the apriltag kind
     @test rect.ratio > 0
-    ts, xy = read_track(joinpath(outdir, "results_dir", "beetle.csv"))
+    ts, xy, px = read_track(joinpath(outdir, "results_dir", "beetle.csv"))
     @test length(xy) == nframes
     @test !any(ismissing, xy)                          # every frame held all four tags (no gaps)
+    # The display pixels are in each RAW frame (#401): the reference pixel taken back through that
+    # frame's own registration, so they follow the drone's pan (`image_xy`), not the reference
+    # (`expected_ref`), which every frame here sits up to 80 px away from.
+    @test !any(ismissing, px)
+    @test maximum(k -> hypot((px[k] - flight.image_xy(k))...), 1:nframes) < 1.5
+    @test maximum(k -> hypot((px[k] - flight.expected_ref(k))...), 1:nframes) > 10
     # tag_cell_width = 8 ⇒ one metric unit = one ground pixel, so the tracked path is directly
     # comparable to the known straight ground path: the same total displacement (drone pan cancelled),
     # and straight (small deviation from its own chord).
@@ -275,7 +307,7 @@ end
     @test hypot((p0[end] - p0[1])...) ≈ ground_disp rtol = 0.05
     # outputs: one track csv (real-world x/y) and the shared diagnostic video
     lines = readlines(joinpath(outdir, "results_dir", "beetle.csv"))
-    @test length(lines) == nframes + 1 && lines[1] == "time,x,y"
+    @test length(lines) == nframes + 1 && lines[1] == "time,x,y,x_display,y_display"
     diag = joinpath(outdir, "results_dir", "diagnostic.mp4")
     @test isfile(diag) && filesize(diag) > 0
     # nothing failed detection, so no frame was dumped — and the issues folder was never created
@@ -292,16 +324,21 @@ end
     # to land on the reference-space stack.
     dir = mktempdir()
     occluded = vcat(1:3, 260:264)
-    vid, groundpath, sl, nframes = make_apriltag_video(dir, "bigpan"; nframes = 300, amp = 55, occlude = occluded)
+    flight = make_apriltag_video(dir, "bigpan"; nframes = 300, amp = 55, occlude = occluded)
+    vid, groundpath, sl, nframes = flight
     file = joinpath(dir, vid)
     # extrinsic at t = 0.2 s (frame 6): the frames around t = 0 have the occluded tag
     rect = Fromage.PawsomeTracker.ApriltagRectification(;
         aspect = 1.0, file = file, extrinsic = 0.2, ntags = 4, family = "tag36h11",
         tag_cell_width = 8, center = missing, north = missing, width = 480, height = 480
     )
-    ts, xy = track1(file; rectification = rect, start_location = sl, target_width = 12)
+    ts, xy, px = track1(file; rectification = rect, start_location = sl, target_width = 12)
     @test length(xy) == nframes
     @test findall(ismissing, xy) == occluded            # a lost tag ⇒ missing, exactly there
+    # and no pixel either: a frame without its own registration cannot be taken back to the raw
+    # frame (#401). Every other frame's pixel is where the disc is in that raw frame.
+    @test findall(ismissing, px) == occluded
+    @test maximum(k -> hypot((px[k] - flight.image_xy(k))...), findall(!ismissing, px)) < 1.5
     pidx = findall(!ismissing, xy)
     present = [xy[i] for i in pidx]
     # same accuracy contract as the e2e above (tag_cell_width = 8 ⇒ metric unit = ground px),
@@ -554,8 +591,34 @@ end
     for i in 1:4
         lines = readlines(joinpath(outdir, "results_dir", "run$i.csv"))
         @test length(lines) == 51                   # header + 50 coordinates
-        @test lines[1] == "time,x,y"
+        @test lines[1] == "time,x,y,x_display,y_display"
     end
+    # Both other rectification kinds carry display pixels (#401): uniform (runs 1 and 3, on two
+    # rectifications) and matlab (run 4). Each is where the disc is, and goes back, through the
+    # rectification, to its own row.
+    rectifications = cd(() -> Dict(id => rebuilt_rectification(joinpath(dir, "rectifications.csv"), id) for id in ("c1", "c2", "m1")), outdir)
+    @testset "run$i through $(calib_ids[i])" for i in (1, 3, 4)
+        _, xy, px = read_track(joinpath(outdir, "results_dir", "run$i.csv"))
+        expected = last(targets[i])
+        @test tracking_rmse(px, (k; kw...) -> reverse(expected(k; kw...))) < 0.5
+        @test all(k -> display_to_real(rectifications[calib_ids[i]], px[k], 1) ≈ xy[k], eachindex(px))
+    end
+end
+
+@testset "save2csv: real-world columns, then display ones, empty where missing (#401)" begin
+    results_dir = mktempdir()
+    ts = range(0.0; step = 0.5, length = 3)
+    coords = Union{Missing, SVector{2, Float64}}[SVector(2.0, 1.0), missing, SVector(4.0, 3.0)]
+    # the middle sample: a drone frame that lost its tag on the online tracker, so neither has one;
+    # the last: the whole-run tracker's unregistered sample, a position without a pixel
+    pixels = Union{Missing, SVector{2, Float64}}[SVector(10.0, 20.0), missing, missing]
+    Fromage.save2csv(results_dir, "r", (ts, coords, pixels))
+    @test readlines(joinpath(results_dir, "r.csv")) == [
+        "time,x,y,x_display,y_display",
+        "0.0,1.0,2.0,10.0,20.0",       # real (y, x) is written x,y; display (x, y) as it is
+        "0.5,,,,",
+        "1.0,3.0,4.0,,",
+    ]
 end
 
 # The three concat testsets below all build one list out of real videos and read the joined result

@@ -87,6 +87,21 @@ const S = Fromage.Spaces
             end
         end
     end
+
+    @testset "to_display swaps and corrects, the other way (#401)" begin
+        # stored (row, col) ↦ display (x, y) = (col × sar, row): the way a track's pixels leave.
+        @test S.to_display((5.0, 1.5), 2.0) == (3.0, 5.0)
+        @test S.to_display((30, 120), 1.0) == (120.0, 30)
+        # a transposed implementation would give (row × sar, col), and dividing would give 0.75
+        @test S.to_display((5.0, 1.5), 2.0) != (10.0, 1.5)
+        @test S.to_display((5.0, 1.5), 2.0) != (0.75, 5.0)
+    end
+
+    @testset "to_display inverts to_stored" begin
+        for sar in (2.0, 0.5, 1 // 1, 4 // 3), xy in ((3.0, 5.0), (120.0, 30.0))
+            @test collect(S.to_display(S.to_stored(xy, sar), sar)) ≈ collect(xy)
+        end
+    end
 end
 
 end
