@@ -97,4 +97,4 @@ end
 
 # ...and most of those cases go straight on to track it and look at the coordinates. `center` is what
 # Fromage passes from the rectification; `missing` is the frame-centre fallback.
-tracked(rows; center = missing) = last(VR.track(loaded(rows), center, nothing, nothing))
+tracked(rows; center = missing) = VR.track(loaded(rows), center, nothing, nothing)[2]   # the coordinates, not the display pixels after them

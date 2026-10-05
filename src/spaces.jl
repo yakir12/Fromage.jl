@@ -81,6 +81,18 @@ function to_stored(xy, sar::Real)
 end
 
 """
+    to_display(rc, sar)
+
+Stored `(row, col)` to display `(x, y)`: the inverse of [`to_stored`](@ref) — a swap, and the column
+multiplied back by `sar`. The door the other way: how a tracked pixel leaves as what an image viewer
+shows, in the track csv's display columns (#401).
+"""
+function to_display(rc, sar::Real)
+    row, col = rc
+    return (col * sar, row)
+end
+
+"""
     from_index(i)
 
 A Julia array index to the stored or display coordinate of the same pixel: one less, because both

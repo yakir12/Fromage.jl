@@ -46,28 +46,34 @@ end
 
 # Save one run's track to <results_dir>/<run_id>.csv: one row per coordinate, with the `time` stamp
 # (seconds on the run's clock — the first segment's `start`, plus one sampling interval per tracked
-# frame, so time left out between segments is closed up) and the `x`/`y` real-world coordinates.
+# frame, so time left out between segments is closed up), the `x`/`y` real-world coordinates, and
+# the `x_display`/`y_display` pixels of the same sample (#401).
 # `track` returns coordinates the rectification's `image2real` has already been applied to, so the
 # origin is at the rectification's `center`, north-aligned when `north` was given, in the
 # rectification's real-world unit. Axis follows the image — x rightward, y downward — as
-# `(y-direction, x-direction)`, hence the `y, x` unpack.
-# That order is the `real` row of CONTEXT.md's table, which `Spaces` documents; this unpack is where
+# `(y-direction, x-direction)`, hence the `reverse`.
+# That order is the `real` row of CONTEXT.md's table, which `Spaces` documents; this reversal is where
 # the package's output contract meets it, and the only place the convention is undone.
+# The pixels are already display `(x, y)` — 0-based, in the original video frame, unrectified and on
+# drone footage unregistered — so they are written as they come.
 # A `missing` coordinate (AprilTag tracking, where a frame's target couldn't be localized) keeps its
-# `time` with empty `x`/`y`, so the time axis stays intact and the gaps are explicit.
-function save2csv(results_dir, run_id, (ts, coords))
+# `time` with empty `x`/`y`, so the time axis stays intact and the gaps are explicit; a `missing`
+# pixel (a drone frame with no registration of its own) leaves its two cells empty the same way,
+# whatever its real-world cells hold.
+function save2csv(results_dir, run_id, (ts, coords, pixels))
     return open(joinpath(results_dir, string(run_id, ".csv")), "w") do io
-        println(io, "time,x,y")
-        for (t, c) in zip(ts, coords)
-            if ismissing(c)
-                println(io, t, ",,")
-            else
-                y, x = c
-                println(io, t, ',', x, ',', y)
-            end
+        println(io, "time,x,y,x_display,y_display")
+        for (t, c, p) in zip(ts, coords, pixels)
+            print(io, t)
+            print_pair(io, ismissing(c) ? c : reverse(c))
+            print_pair(io, p)
+            println(io)
         end
     end
 end
+# Two csv cells after a comma each: a coordinate pair's values, or two empty cells for `missing`.
+print_pair(io, ::Missing) = print(io, ",,")
+print_pair(io, (a, b)) = print(io, ',', a, ',', b)
 
 # Keep only the entries whose `id` field was asked for, and reject any requested id that matched
 # nothing. Filtering by id is a convenience for iterating on one run, so an id that matches nothing
@@ -261,8 +267,10 @@ write the results. Returns `nothing`.
 
 Everything produced lands in the output folder `results_dir` (see below), created if it does not
 exist: one `<run_id>.csv` per run (a row per coordinate, with `time` in seconds on the run's clock —
-starting at its first segment's `start` — and `x`/`y` in the rectification's real-world unit, origin
-at its `center`), `diagnostic.mp4`, and the `rectifications/` and `issues/` subfolders when there is
+starting at its first segment's `start` — `x`/`y` in the rectification's real-world unit, origin
+at its `center`, and `x_display`/`y_display`, the same position in 0-based display pixels of the
+original video frame — unrectified, and on AprilTag footage unregistered, so empty for a frame with
+no registration of its own), `diagnostic.mp4`, and the `rectifications/` and `issues/` subfolders when there is
 anything to put in them. A file of the same name already there is overwritten.
 
 # Keyword arguments

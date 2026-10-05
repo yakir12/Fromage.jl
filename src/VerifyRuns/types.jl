@@ -144,7 +144,7 @@ end
 # With a rectification the returned coordinates are real-world (see `PawsomeTracker.track`) — the only
 # way `main` calls this. With `nothing`, which since #256 only tests and benchmarks pass, they are
 # (row, col) in *stored* pixels of the original (unscaled) video; for an anamorphic video the
-# display-space x is col × aspect.
+# display-space x is col × aspect. Either way the third value is those display pixels (#401).
 #
 # The one place the two trackers part: a run that opted in (`whole_run`) goes to the whole-run
 # tracker, with the same arguments and the same return. A branch on a value, not a dispatch: whether

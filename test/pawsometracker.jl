@@ -104,6 +104,20 @@ const DATADIR = mktempdir()
         end
     end
 
+    @testset "the track's display pixels: $(v.name) (#401)" for v in shapes
+        # The third value is each sample in DISPLAY space — 0-based (x, y), what an image viewer
+        # shows — which is the stored (row, col) ground truth swapped and its column stretched by
+        # sar. Spelled out here rather than through `Spaces.to_display`, so the two cannot agree by
+        # sharing a bug. The x error is a stored-column error times sar, hence the bound.
+        sar = tuning(v.file).aspect                          # the ratio `track1` tracks with
+        _, ij, px = track1(v.file; start_location = v.start, target_width = v.width)
+        @test eltype(px) == PT.SVector{2, Float64}          # concrete: no `missing` on a fixed camera
+        truth(i) = ((r, c) = v.expected(i); (c * sar, r))
+        @test sqrt(sum(i -> sum(abs2, Tuple(px[i]) .- truth(i)), eachindex(px)) / length(px)) < 0.5 * max(1, sar)
+        # the same samples as the stored ones `track` returned without a rectification
+        @test all(i -> collect(ij[i]) ≈ [px[i][2], px[i][1] / sar], eachindex(ij))
+    end
+
     @testset "tracking is deterministic" begin
         # Same file, same Segment and Tuning, same coordinates — bit for bit, whatever
         # JULIA_NUM_THREADS is. Measured over separate processes and at 1, 2, 4, 8 and 32 threads:

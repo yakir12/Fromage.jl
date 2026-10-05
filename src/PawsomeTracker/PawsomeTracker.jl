@@ -18,7 +18,7 @@ using OpenCV: OpenCV
 using CoordinateTransformations: LinearMap, Transformation
 using LinearAlgebra: I
 using ..Memo: APRILTAG_DETECTIONS, remember
-using ..Spaces: GroundXY, RowCol, from_index, from_pixel_edges, stored_x, to_index, to_stored
+using ..Spaces: GroundXY, RowCol, from_index, from_pixel_edges, stored_x, to_display, to_index, to_stored
 
 # Confidence gate for `detect`: when the window's peak DoG response falls below GATE_FRACTION of
 # the running response level, the frame is treated as "target not seen" (occlusion, glare,
@@ -601,6 +601,13 @@ function get_window(target_width, sample_fps, m, duration)
     return max(ws1, ws2)
 end
 
+# A track's display pixel (#401): a 0-based stored `(row, col)` as the display `(x, y)` an image viewer
+# shows, through `Spaces.to_display`. Widened to `Float64` before `sar` touches it, whatever the
+# tracker held (`RowCol` is `Float32`), so every path's pixels are one element type. A fixed camera's
+# track is all of them, never `missing`.
+display_pixel(stored, sar) = SVector{2, Float64}(to_display(SVector{2, Float64}(stored), sar))
+display_pixels(stored, sar) = [display_pixel(p, sar) for p in stored]
+
 # Apply an image2real map over a track that may hold `missing` frames (AprilTag mode reports
 # `missing` where a frame lost a tag), leaving the missings in place.
 _apply_image2real(f, coords) = map(c -> ismissing(c) ? missing : f(c), coords)
@@ -624,7 +631,8 @@ sampling `tuning.sample_fps` frames per second (which the gateway has capped at
 frames — `native_fps / skip`; the returned timestamps always describe the rate actually used, never
 the one requested).
 
-Returns `(ts, coords)`: timestamps and the target's per-frame position. `ts` is the run's one clock
+Returns `(ts, coords, pixels)`: timestamps, the target's per-frame position, and the same position
+in display space. `ts` is the run's one clock
 — the first segment's `start`, one sampling interval per tracked frame — so a later segment's own
 `start` (a time in its own file) does not appear in it, and time left out between segments is closed
 up. With a `rectification`,
@@ -632,6 +640,11 @@ up. With a `rectification`,
 they are raw stored `(row, col)` pixels in the original frame, 0-based with pixel centres on the
 integers (CONTEXT.md) — `tuning.downscale` trades precision for
 speed, and coordinates are always reported unscaled.
+
+`pixels` are 0-based display `(x, y)` pixels of the original video frame — what an image viewer
+shows, the space `start_location` is given in — whatever the rectification. They are unrectified,
+and on AprilTag footage unregistered too: each frame's reference-space position taken back through
+that frame's own registration, so `missing` wherever `coords` is.
 
 An `ApriltagRectification` selects AprilTag mode (drone footage): every background-stack slice is
 lazily warped into the rectification's shared reference, so drone motion is removed at lookup time
@@ -675,15 +688,19 @@ function track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnos
         # `GroundXY` (the same type as `RowCol`, see Spaces): what track_apriltag returns is metric
         # ground (x, y), and the gauge below is what turns it into real coordinates.
         segs = Vector{Vector{Union{Missing, GroundXY}}}(undef, nsegments)
+        pxs = Vector{Vector{Union{Missing, SVector{2, Float64}}}}(undef, nsegments)
         diagnose_apriltag(diagnostic_file, rectification, tuning.darker_target, dia_fps) do dia
             for (i, s) in enumerate(segments)
                 begin_segment!(dia, i)
                 # The `Segment` itself, unresolved: nothing chains here, so its start_location
                 # is already final — what the csv said, or `missing` for a centre search.
-                tss[i], segs[i] = track_apriltag(s, tuning, scaled, dia, rectification)
+                tss[i], segs[i], pxs[i] = track_apriltag(s, tuning, scaled, dia, rectification)
             end
         end
-        return (_concat_timestamps(tss), _apply_image2real(rectification.image2real, reduce(vcat, segs)))
+        return (
+            _concat_timestamps(tss), _apply_image2real(rectification.image2real, reduce(vcat, segs)),
+            reduce(vcat, pxs),
+        )
     end
 
     ijs = Vector{Vector{RowCol}}(undef, nsegments)
@@ -705,12 +722,13 @@ function track(segments::Vector{Segment}, tuning::Tuning, rectification, diagnos
     # skipping this puts each rectified point one stored pixel down and right of the target (#276).
     # The chaining above stays in indices, because `get_guess` takes an index back.
     ij = map(from_index, reduce(vcat, ijs))
+    pixels = display_pixels(ij, tuning.aspect)
 
     # Real-world coordinates when a rectification is given, else pixels. This stays `map`, not
     # `_apply_image2real`: no coordinate here can be `missing`, and routing it through the
     # missing-tolerant version would widen the returned element type to `Union{Missing, …}` for
     # every ordinary rectified run.
-    return isnothing(rectification) ? (ts, ij) : (ts, map(rectification.image2real, ij))
+    return isnothing(rectification) ? (ts, ij, pixels) : (ts, map(rectification.image2real, ij), pixels)
 end
 
 # After `track`, whose helpers it shares: the whole-run tracker.

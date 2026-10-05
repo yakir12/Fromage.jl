@@ -36,7 +36,7 @@ end
 function volume(objects...; R = 60, C = 130, n, dt = 0.2, width = 2.0, start, anchor = 2.0)
     frames = [frame([o((k - 1) * dt) for o in objects], k; R, C, width) for k in 1:n]
     tss = [range(0.0; step = dt, length = n)]
-    return RunVolume(frames, fill(true, n), tss, start, anchor, width, dt)
+    return RunVolume(frames, fill(true, n), PT.SMatrix{3, 3, Float64, 9}[], tss, start, anchor, width, dt)
 end
 
 # the worst distance, in grid px, between the path and where the object `o` is
@@ -78,7 +78,7 @@ const WALK = 1.2
 
     @testset "a lighter target" begin
         vol = volume(t -> (30.0, 20.0 + WALK * t); n = 50, start = (30.0, 20.0))
-        inverted = RunVolume([0xff .- f for f in vol.frames], vol.has, vol.tss, vol.start, vol.anchor, vol.width, vol.dt)
+        inverted = RunVolume([0xff .- f for f in vol.frames], vol.has, vol.Hinvs, vol.tss, vol.start, vol.anchor, vol.width, vol.dt)
         @test worst(whole_run_path(inverted, MotionModel(missing), false), t -> (30.0, 20.0 + WALK * t), vol.dt) < 1.0
     end
 
@@ -112,7 +112,8 @@ const WALK = 1.2
         # crosses its path at 8 widths/s around t = 5 s and parks 7 widths away.
         cross(k) = 100 <= k <= 150 ? (280 + 96 * (k - 125) / 25 / sqrt(2), 290 - 96 * (k - 125) / 25 / sqrt(2)) :
             k > 150 ? (280 + 96 / sqrt(2), 290 - 96 / sqrt(2)) : nothing
-        v = make_apriltag_video(dir, "whole"; nframes = 250, tw = 12, textured = true, distractor = cross, noise = 4)
+        # Frames 51–55 lose a tag: the sample at 2 s (frame 51) has no registration of its own (#401).
+        v = make_apriltag_video(dir, "whole"; nframes = 250, tw = 12, textured = true, distractor = cross, noise = 4, occlude = 51:55)
         rect = ApriltagRectification(;
             aspect = 1.0, file = joinpath(dir, v.file), extrinsic = 0, ntags = 4, family = "tag36h11",
             tag_cell_width = Fixtures.TAG_CELL, center = missing, north = missing, width = 480, height = 480
@@ -120,19 +121,34 @@ const WALK = 1.2
         segs = segments(joinpath(dir, v.file); start_location = v.start_location)
         t = tuning(segs[1].file; target_width = 12, whole_run = true, downscale = 1 / 3, sample_fps = 5)
         clip = joinpath(dir, "whole_clip.mp4")   # not the flight's own name, which it would overwrite
-        ts, coords = track_whole_run(segs, t, rect, clip)
+        ts, coords, px = track_whole_run(segs, t, rect, clip)
         @test length(ts) == 50 && step(ts) ≈ 0.2
         # the prediction, carried through the pipeline's own maps as test/apriltag_pipeline.jl does
         expected = [rect.image2real(apply_h(rect.reference.M, v.expected_ref(round(Int, s * 25) + 1))) for s in ts]
         errors = [norm(c - e) for (c, e) in zip(coords, expected) if !ismissing(c)]
-        @test length(errors) == 50
-        @test maximum(errors) < 3          # ground px; a grid px is 3
+        @test length(errors) == 50         # the unregistered sample too: it has a position
+        # ground px; a grid px is 3. The unregistered sample scores 0 everywhere, so `refine` places
+        # it anywhere within a target width of its path point (measured 8.1, the rest ≤ 2.3): it is
+        # held to that instead.
+        @test maximum(errors[setdiff(1:50, 11)]) < 3
+        @test errors[11] < 12
+        # Its display pixels are in the RAW frame, each through its own sample's registration, so
+        # they follow the drone's pan (`image_xy`), not the reference (`expected_ref`). The one
+        # sample with no registration has none (#401).
+        unregistered = findall(s -> 51 <= round(Int, s * 25) + 1 <= 55, ts)
+        @test unregistered == [11]
+        @test findall(ismissing, px) == unregistered
+        @test !ismissing(coords[11])
+        raw_errors = [norm(px[k] - v.image_xy(round(Int, s * 25) + 1)) for (k, s) in enumerate(ts) if !ismissing(px[k])]
+        @test maximum(raw_errors) < 3      # raw px: the pan is a pure translation, so a grid px is 3
+        ref_errors = [norm(px[k] - v.expected_ref(round(Int, s * 25) + 1)) for (k, s) in enumerate(ts) if !ismissing(px[k])]
+        @test maximum(ref_errors) > 10     # the pan, which reference-space pixels would not show
         # two windows of the same flight: one run, one path, each segment finding its tags and
         # registering on its own, and only the first one's start location read
         halves = segments(fill(joinpath(dir, v.file), 2); start = [0.0, 5.0], stop = [5.0, 10.0], start_location = [v.start_location, missing])
         _, halves_coords = track_whole_run(halves, t, rect, nothing)
         @test length(halves_coords) == 50
-        @test maximum(norm(c - e) for (c, e) in zip(halves_coords, expected) if !ismissing(c)) < 3
+        @test maximum(norm(halves_coords[k] - expected[k]) for k in setdiff(1:50, 11)) < 3
         # the clip: the AprilTag scene's square canvas, every sample written at 5 Hz
         s = probe_stream(clip)
         @test (s.width, s.height) == (PT.DIAGNOSTIC_SIZE, PT.DIAGNOSTIC_SIZE)
@@ -150,10 +166,13 @@ const WALK = 1.2
         results_dir = mktempdir()
         main(dir; results_dir)
         header, lines... = readlines(joinpath(results_dir, "beetle.csv"))
-        @test header == "time,x,y"
-        rows = [parse.(Float64, split(l, ',')) for l in lines]
-        @test first.(rows) ≈ collect(ts)
-        @test [PT.SVector(y, x) for (_, x, y) in rows] ≈ coords
+        @test header == "time,x,y,x_display,y_display"
+        cells = split.(lines, ',')
+        @test [parse(Float64, c[1]) for c in cells] ≈ collect(ts)
+        @test [PT.SVector(parse(Float64, c[3]), parse(Float64, c[2])) for c in cells] ≈ coords
+        # the unregistered sample keeps its real-world position and leaves its pixel cells empty
+        @test isempty(cells[11][4]) && isempty(cells[11][5]) && !isempty(cells[11][2])
+        @test all(k -> k == 11 || PT.SVector(parse(Float64, cells[k][4]), parse(Float64, cells[k][5])) ≈ px[k], eachindex(cells))
         @test isfile(joinpath(results_dir, "diagnostic.mp4"))
     end
 
@@ -162,12 +181,39 @@ const WALK = 1.2
         file = joinpath(dir, only(files))
         segs = segments(file; start_location = (55, 50))
         t = tuning(file; target_width = 20, whole_run = true, downscale = 1 / 3, sample_fps = 5)
-        ts, ij = track_whole_run(segs, t, nothing, joinpath(dir, "plainwr_dia.mp4"))
+        ts, ij, px = track_whole_run(segs, t, nothing, joinpath(dir, "plainwr_dia.mp4"))
         @test length(ts) == 20
         # `expected` is 1-based (row, col); `track` reports 0-based stored pixels
         @test maximum(k -> norm(collect(ij[k]) .- (collect(expected(k; skip = 5)) .- 1)), eachindex(ij)) < 3    # one grid px
+        # and display (x, y) pixels, the same samples swapped (sar 1), never `missing` (#401)
+        @test eltype(px) == PT.SVector{2, Float64}
+        @test maximum(k -> norm(collect(px[k]) .- reverse(collect(expected(k; skip = 5)) .- 1)), eachindex(px)) < 3
+        @test all(k -> collect(px[k]) ≈ reverse(collect(ij[k])), eachindex(px))
         s = probe_stream(joinpath(dir, "plainwr_dia.mp4"))
         @test s.nframes == 20
+    end
+
+    @testset "an anamorphic video: display pixels are stretched back by sar (#401)" begin
+        files, expected = make_target_video(dir, "sarwr"; width = 100, height = 100, sar = 2 // 1, target_width = 20, duration = 4, noise = 10)
+        file = joinpath(dir, only(files))
+        t = tuning(file; target_width = 20, whole_run = true, downscale = 1 / 3, sample_fps = 5)
+        @test t.aspect == 2
+        _, ij, px = track_whole_run(segments(file; start_location = (55, 50)), t, nothing, nothing)
+        # `expected` is the stored (row, col); display is (col × sar, row)
+        truth(k) = ((r, c) = expected(k; skip = 5); [2c, r])
+        # One and a half grid px: the path's own stored-column misses reach 1.97 at the sine's turns
+        # (measured worst 3.94 display px), and a stored column is sar display columns.
+        @test maximum(k -> norm(collect(px[k]) .- truth(k)), eachindex(px)) < 4.5
+        @test all(k -> collect(ij[k]) ≈ [px[k][2], px[k][1] / 2], eachindex(px))
+        # Through a real rectification the pixels do not change, and each one, taken back through
+        # `to_stored` and the rectification, is its own sample's real-world position: the csv's
+        # round trip, on the whole-run tracker.
+        rect = Fromage.Rectifications.from_uniform(;
+            pixel_width = 0.5, aspect = 2.0, center = missing, north = missing, width = 50, height = 100
+        )
+        _, xy, rpx = track_whole_run(segments(file; start_location = (55, 50)), t, rect, nothing)
+        @test rpx == px
+        @test all(k -> rect.image2real(PT.SVector(Fromage.Spaces.to_stored(rpx[k], 2)...)) ≈ xy[k], eachindex(xy))
     end
 
     @testset "a run of two segments is one path" begin

@@ -451,6 +451,16 @@ end
 # fitted to.
 img_to_ground(H, rc) = apply_h(H, from_index(SVector(rc[2], rc[1])))           # (row,col) index → ground
 
+# The other way out of reference space (#401): the same reference INDEX, taken back into the raw frame
+# it was tracked in through that frame's own inverse registration `Hinv`, to stored (x, y) = (col,
+# row), and from there to the display pixel an image viewer shows (`display_pixel`, `sar` being the
+# run's). Neither registered nor rectified — so only a frame with a registration of its own has
+# one, and the callers hold `missing` for the rest.
+function raw_display(Hinv, rc, sar)
+    x, y = apply_h(Hinv, from_index(SVector(rc[2], rc[1])))
+    return display_pixel((y, x), sar)
+end
+
 # Resolve the initial guess in CANVAS coordinates. `start_location` is the target's (x, y)
 # display-pixel position in the run's first frame — NATIVE space — while the stack lives in
 # reference space, so the guess crosses the seed frame's registration `seedR` (native stored
@@ -670,6 +680,7 @@ function track_apriltag(
             # image (row, col). It is the SAME type — `track` collects both paths into one array
             # type, so it has to be — under the name that is true here.
             coords = Vector{Union{Missing, GroundXY}}(undef, n)
+            pixels = Vector{Union{Missing, SVector{2, Float64}}}(undef, n)   # raw-frame display px, `missing` with coords
             boxes = NTuple{4, Int}[]                       # per-tag ROI search boxes
             seeded = false
             seedR = SMatrix{3, 3, Float64}(I)              # the seed frame's registration (start_location crosses it)
@@ -720,10 +731,11 @@ function track_apriltag(
             for i in 1:n_bkgd
                 H = Hs[i]
                 if isnothing(H)
-                    coords[i] = missing
+                    coords[i] = pixels[i] = missing
                 else
                     rc, guess = detect(guess, stack, i, tr, vid.downscale, level)
                     coords[i] = img_to_ground(ref.M, rc)       # rc is reference px; ref.M is the fixed metric map
+                    pixels[i] = raw_display(warp.Hinvs[i], rc, tuning.aspect)   # this frame's own: H is not nothing
                 end
                 dia(ts[i], slice(i), coords[i], H)
             end
@@ -755,16 +767,17 @@ function track_apriltag(
                 populate_slice!(stack, j, vid)
                 warp.Hinvs[j] = lastHinv
                 if isnothing(H)
-                    coords[i] = missing
+                    coords[i] = pixels[i] = missing
                 else
                     rc, guess = detect(guess, stack, j, tr, vid.downscale, level)
                     coords[i] = img_to_ground(ref.M, rc)
+                    pixels[i] = raw_display(lastHinv, rc, tuning.aspect)        # set from this frame's R above
                 end
                 dia(ts[i], vid.img, coords[i], H)
                 isnothing(protect) || restore_background!(stack, j, protect, keep)
             end
 
-            return (ts, coords)
+            return (ts, coords, pixels)
         finally
             foreach(freeDetector!, dets)
         end

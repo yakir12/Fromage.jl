@@ -83,7 +83,9 @@ is the row's position within that block.
 
 ### Track
 
-What a run yields: timestamps paired with the target's position, in real-world coordinates. Written
+What a run yields: timestamps paired with the target's position, in real-world coordinates, and the
+same position in **display** space — the original video frame's pixels, unrectified, and on drone
+footage unregistered (a frame with no registration of its own has none). Written
 to `<run_id>.csv` in the output folder — the caller's `results_dir`, by default `results_dir/`;
 `main` returns nothing, so that file is the only place a track lives once `main` has finished.
 
@@ -247,18 +249,20 @@ because it is always compounded, never bare.
 
 **Pixel origin: stored and display space are 0-based, with pixel centres on the integers.** The
 top-left pixel's centre is `(0, 0)`. That is what OpenCV's corners use, what GIMP or Photoshop
-report for `center`, `north` and `start_location`, and what `track` returns. A Julia array index is
+report for `center`, `north` and `start_location`, what `track` returns, and what a track's
+`x_display`/`y_display` columns hold. A Julia array index is
 one more (`Spaces.to_index`, `Spaces.from_index`), and the only code that works in indices is the
 code that indexes, warps or draws into an array. Two outside conventions are converted where they
 enter: a MATLAB `.mat`'s principal point is 1-based, and the AprilTag detector puts pixel centres
 at `n + ½` (`Spaces.from_pixel_edges`).
 
-`display` → `stored` is `sar` **and a swap** — `(x, y) → (y, x / sar)`, which is `Spaces.to_stored`.
+`display` → `stored` is `sar` **and a swap** — `(x, y) → (y, x / sar)`, which is `Spaces.to_stored`;
+`Spaces.to_display` is its inverse, the way a tracked pixel leaves.
 `scaled` is `downscale`. `metric` → `real` is `XY_SWAP` composed with centering and northing.
 
 The conversions between these spaces live in **`src/spaces.jl`**, and only there: `stored_x` (the
 `sar` correction on the x axis alone, which is all a homography-facing site needs), `to_stored` (that
-plus the swap), `display_center_x`, and the origin conversions `from_index`, `to_index` and
+plus the swap), its inverse `to_display`, `display_center_x`, and the origin conversions `from_index`, `to_index` and
 `from_pixel_edges`. This table says what the spaces *are*; that module is how you
 get from one to another.
 
