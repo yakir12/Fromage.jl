@@ -22,6 +22,7 @@ using Fromage
 using StaticArrays: SVector
 using LinearAlgebra: norm
 using AprilTags: AprilTagDetector, freeDetector!, tag36h11
+using Fromage.PawsomeTracker: Gray, N0f8   # through the submodule, as test/apriltag.jl does: not test deps
 using Fromage.PawsomeTracker: ApriltagRectification, track, detect_tags, register, set_detector!,
     apply_h
 const PT = Fromage.PawsomeTracker
@@ -298,6 +299,45 @@ end
             @test maximum(norm(xy[k] - expected(k)) for k in 1:NFRAMES) < TRACK_TOL
         end
     end
+end
+
+# #406: a garbage collection on another thread during a detect must not free the frame under the
+# detector (see `detect_locked`). Other threads allocating and collecting stand in for the runs
+# tracked beside this one. Needs more than one thread, as the suite runs (`JULIA_NUM_THREADS=auto`);
+# on one thread the churn cannot overlap a detect, and this passes either way.
+@testset "AprilTag detection survives garbage collection on other threads (#406)" begin
+    ground = apriltag_ground()
+    det = set_detector!(AprilTagDetector(tag36h11))
+    stop = Threads.Atomic{Bool}(false)
+    churn = map(1:4) do _
+        Threads.@spawn while !stop[]
+            fill!(Vector{UInt8}(undef, 400_000), 0x01)
+            GC.gc(false)
+        end
+    end
+    missed = try
+        count(isnothing(detect_tags(det, ground, [0, 1, 2, 3])) for _ in 1:20)
+    finally
+        stop[] = true
+        foreach(wait, churn)
+        freeDetector!(det)
+    end
+    @test missed == 0
+
+    # The copy `detect_locked` hands C is the one AprilTags.jl's own call would build, for the frame
+    # type the tracker reads (a `PermutedDimsArray` of `Gray{N0f8}`) and a crop of it.
+    frame = PermutedDimsArray(Gray.(reinterpret(N0f8, permutedims(ground))), (2, 1))
+    crop = @view frame[50:400, 30:500]
+    det = set_detector!(AprilTagDetector(tag36h11))
+    try
+        for img in (frame, crop)
+            @test [(t.id, t.p) for t in PT.detect_locked(det, img)] == [(t.id, t.p) for t in det(collect(img))]
+        end
+        @test_throws MethodError PT.detect_locked(det, Float32.(ground))
+    finally
+        freeDetector!(det)
+    end
+    @test_throws ArgumentError PT.detect_locked(det, ground)
 end
 
 end
