@@ -436,11 +436,12 @@ end
 # reentrant (see APRILTAG_LOCK). It calls the C detector itself rather than `det(img)`: AprilTags.jl's
 # call hands C a pointer into a temporary row-major copy of the frame that nothing roots, so a garbage
 # collection on another thread mid-detect frees the frame under the detector and tags go missing
-# (#406). Here the copy is held by `GC.@preserve` for the whole call. `img` is any matrix of one-byte
-# gray pixels (`Gray{N0f8}`, `N0f8`, `UInt8`), a view included.
-function detect_locked(det, img)
+# (#406). Here the copy is held by `GC.@preserve` for the whole call. Views are fine; any pixel type but
+# the detector's own one byte is an error, not garbage read as bytes.
+function detect_locked(det, img::AbstractMatrix{<:Union{UInt8, N0f8, Gray{N0f8}}})
+    det.td == C_NULL && throw(ArgumentError("the AprilTag detector has been freed"))
     rows, cols = size(img)
-    frame = permutedims(reinterpret(UInt8, img))   # row-major: the detector's stride is the width
+    frame = collect(transpose(reinterpret(UInt8, img)))   # row-major: the detector's stride is the width
     return lock(APRILTAG_LOCK) do
         GC.@preserve frame begin
             found = apriltag_detector_detect(det.td, image_u8_t(Int32(cols), Int32(rows), Int32(cols), pointer(frame)))

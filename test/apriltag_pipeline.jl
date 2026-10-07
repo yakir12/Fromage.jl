@@ -22,6 +22,7 @@ using Fromage
 using StaticArrays: SVector
 using LinearAlgebra: norm
 using AprilTags: AprilTagDetector, freeDetector!, tag36h11
+using Fromage.PawsomeTracker: Gray, N0f8   # through the submodule, as test/apriltag.jl does: not test deps
 using Fromage.PawsomeTracker: ApriltagRectification, track, detect_tags, register, set_detector!,
     apply_h
 const PT = Fromage.PawsomeTracker
@@ -324,6 +325,21 @@ end
         freeDetector!(det)
     end
     @test missed == 0
+
+    # The copy `detect_locked` hands C is the one AprilTags.jl's own call would build, for the frame
+    # type the tracker reads (a `PermutedDimsArray` of `Gray{N0f8}`) and a crop of it.
+    frame = PermutedDimsArray(Gray.(reinterpret(N0f8, permutedims(ground))), (2, 1))
+    crop = @view frame[50:400, 30:500]
+    det = set_detector!(AprilTagDetector(tag36h11))
+    try
+        for img in (frame, crop)
+            @test [(t.id, t.p) for t in PT.detect_locked(det, img)] == [(t.id, t.p) for t in det(collect(img))]
+        end
+        @test_throws MethodError PT.detect_locked(det, Float32.(ground))
+    finally
+        freeDetector!(det)
+    end
+    @test_throws ArgumentError PT.detect_locked(det, ground)
 end
 
 end
