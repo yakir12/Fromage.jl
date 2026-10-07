@@ -8,7 +8,8 @@
 
 using StaticArrays: SVector, SMatrix
 using LinearAlgebra: svd, det, norm
-using AprilTags: AprilTags, AprilTagDetector, freeDetector!
+using AprilTags: AprilTags, AprilTagDetector, freeDetector!, apriltag_detector_detect, apriltag_detections_destroy,
+    copyAprilTagDetections, image_u8_t
 using ..Rectifications: i2r_centering_northing
 import ..Rectifications: save_diagnostic   # extended on ApriltagRectification (a type this module owns)
 
@@ -268,7 +269,7 @@ function reference_space(file, extrinsic, ntags, family, tag_cell_width)
         end
         det = set_detector!(AprilTagDetector(april_family(family)))
         try
-            tags = det(collect(img))                # already holding APRILTAG_LOCK
+            tags = detect_locked(det, img)          # already holding APRILTAG_LOCK, which re-enters
             length(tags) ≥ ntags || return "only $(length(tags)) of $ntags AprilTags detected at the extrinsic frame"
             ids = sort([t.id for t in tags])[1:ntags]
             tc = detect_tags(det, img, ids)         # re-enters the lock (re-entrant), fine
@@ -432,15 +433,32 @@ function set_detector!(det)
 end
 
 # Every detection call goes through this, serializing them process-wide: the C detector is not
-# reentrant (see APRILTAG_LOCK).
-detect_locked(det, img) = lock(() -> det(img), APRILTAG_LOCK)
+# reentrant (see APRILTAG_LOCK). It calls the C detector itself rather than `det(img)`: AprilTags.jl's
+# call hands C a pointer into a temporary row-major copy of the frame that nothing roots, so a garbage
+# collection on another thread mid-detect frees the frame under the detector and tags go missing
+# (#406). Here the copy is held by `GC.@preserve` for the whole call. `img` is any matrix of one-byte
+# gray pixels (`Gray{N0f8}`, `N0f8`, `UInt8`), a view included.
+function detect_locked(det, img)
+    rows, cols = size(img)
+    frame = permutedims(reinterpret(UInt8, img))   # row-major: the detector's stride is the width
+    return lock(APRILTAG_LOCK) do
+        GC.@preserve frame begin
+            found = apriltag_detector_detect(det.td, image_u8_t(Int32(cols), Int32(rows), Int32(cols), pointer(frame)))
+            try
+                copyAprilTagDetections(found)
+            finally
+                apriltag_detections_destroy(found)
+            end
+        end
+    end
+end
 
 # Detect and return the 16 corners grouped per tag, aligned to `ids` order (each tag's `.p` corners
 # as [col, row]); `nothing` if any expected id is absent. `SVector`-typed so the geometry consumes
 # them directly. The detector's pixel centres sit at `n + ½`; `from_pixel_edges` moves them onto the
 # integers, the stored-space convention every other map and index here is converted against (#276).
 function detect_tags(det, img, ids)
-    tags = detect_locked(det, collect(img))
+    tags = detect_locked(det, img)
     byid = Dict(t.id => t for t in tags)
     all(haskey(byid, i) for i in ids) || return nothing
     return [SVector{2, Float64}[from_pixel_edges(SVector(p[1], p[2])) for p in byid[i].p] for i in ids]
@@ -510,7 +528,7 @@ end
 function find_tag_roi(det, img, id, box, sz)
     r1, c1, r2, c2 = box
     while true
-        tags = detect_locked(det, collect(@view img[r1:r2, c1:c2]))
+        tags = detect_locked(det, @view img[r1:r2, c1:c2])
         k = findfirst(t -> t.id == id, tags)
         if k !== nothing
             # the crop starts at index (r1, c1), i.e. 0-based pixel (r1 - 1, c1 - 1)

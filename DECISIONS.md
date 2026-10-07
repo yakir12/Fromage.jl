@@ -322,6 +322,17 @@ Reference-frame building serializes the whole read + detect, because it also fac
 `VideoIO` read race above. It is one-time setup over a handful of calibrations, so the cost is
 negligible.
 
+**The lock does not cover the garbage collector (#406).** AprilTags.jl's `det(img)` hands C a pointer
+into a temporary copy of the frame that nothing roots, so a collection on *another* thread during a
+detect, which the lock cannot stop, frees the frame under the detector. Detections then miss tags on
+good frames: 37 of 40 on a drone frame while other threads allocated and collected, none alone. In
+the inventory batches, ten runs tracked at once lost the first registrations of 16 drone runs this
+way. That zeroed the whole-run tracker's anchor contrast, and the path wandered over bare ground
+(the "shaking" tracks). So `detect_locked` calls the C detector itself, with its copy held by
+`GC.@preserve`. The three failure modes recorded above were measured with that unrooted call, so
+part of what they saw may have been this race rather than the detector's static state. That is not
+re-measured, and the lock stays.
+
 ---
 
 ## Coordinate spaces
