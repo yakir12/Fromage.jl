@@ -301,12 +301,10 @@ end
     end
 end
 
-# #406: AprilTags.jl's own `det(img)` hands the C detector a pointer into a temporary copy of the
-# frame that nothing roots, so a garbage collection on another thread during the detect frees the
-# frame under it and tags go missing. In the inventory batches, ten runs tracked at once lost the
-# first registrations of 16 drone runs this way. Other threads allocating and collecting stand in
-# for those runs. Needs more than one thread, as the suite runs (`JULIA_NUM_THREADS=auto`); on one
-# thread the churn cannot overlap a detect, and this passes either way.
+# #406: a garbage collection on another thread during a detect must not free the frame under the
+# detector (see `detect_locked`). Other threads allocating and collecting stand in for the runs
+# tracked beside this one. Needs more than one thread, as the suite runs (`JULIA_NUM_THREADS=auto`);
+# on one thread the churn cannot overlap a detect, and this passes either way.
 @testset "AprilTag detection survives garbage collection on other threads (#406)" begin
     ground = apriltag_ground()
     det = set_detector!(AprilTagDetector(tag36h11))
