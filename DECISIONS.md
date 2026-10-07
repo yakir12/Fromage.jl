@@ -1198,8 +1198,8 @@ tuned in the port. The evidence is in the research workspace (`whole-segment/res
   ring 140 cm from the beetle. Clamping is the one change that fixed it.
 - **The anchor contrast counts registered samples only** (#406). The emission is scaled by the
   target's own contrast, the median peak score at the start over the first second. An unregistered
-  sample scores 0 everywhere, and in the inventory batches a GC race in AprilTag detection left the
-  first 3–5 samples of 16 drone runs unregistered. The median was then 0, every dark object, the
+  sample scores 0 everywhere, and in the inventory batches a GC race in AprilTag detection left 3–5
+  of the first 5 samples of 16 drone runs unregistered. The median was then 0, every dark object, the
   target included, scored below bare ground, and each path wandered over empty ground for the whole
   run. The eye failed 14 of those 16 tracks, and the other 2 shook. Counting only
   registered samples gives 17_2 a contrast of 24.6 against 24.2 with every sample registered, and

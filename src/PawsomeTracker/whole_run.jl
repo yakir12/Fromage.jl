@@ -382,8 +382,9 @@ end
 # inside the anchor disk. An unregistered sample scores 0 everywhere, so counting one would say the
 # target has no contrast; with most of the first second unregistered the median was 0, every dark
 # object then scored below bare ground, and the path left the target for the whole run (#406). With
-# none of the first second registered, the first registered sample stands in; with none at all,
-# there is no contrast to measure.
+# none of the first second registered, the first registered sample stands in, still measured in the
+# anchor disk: the target walks ~0.6 widths/s, so a second or two later it is still inside it. A run
+# with no registered sample at all never gets here (`read_registered!` refuses it); the 0 is defensive.
 function anchor_contrast(z, vol)
     disk = anchor_disk(vol, size(z, 1), size(z, 2))
     ks = filter(k -> vol.has[k], 1:min(size(z, 3), max(1, round(Int, 1 / vol.dt))))

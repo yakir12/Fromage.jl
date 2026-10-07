@@ -39,8 +39,8 @@ function volume(objects...; R = 60, C = 130, n, dt = 0.2, width = 2.0, start, an
     return RunVolume(frames, fill(true, n), PT.SMatrix{3, 3, Float64, 9}[], tss, start, anchor, width, dt)
 end
 
-# the worst distance, in grid px, between the path and where the object `o` is
-worst(p, o, dt) = maximum(k -> norm(collect(p[k]) .- collect(o((k - 1) * dt))), eachindex(p))
+# the worst distance, in grid px, between the path and where the object `o` is, over samples `ks`
+worst(p, o, dt, ks = eachindex(p)) = maximum(k -> norm(collect(p[k]) .- collect(o((k - 1) * dt))), ks)
 
 # The fitted walk's mean is 0.6 target widths per second; here a width is 2 grid px.
 const WALK = 1.2
@@ -85,9 +85,9 @@ const WALK = 1.2
         beetle = t -> (30.0, 20.0 + WALK * t)
         vol = volume(beetle; n = 100, start = (30.0, 20.0))
         @testset "first $lost samples unregistered" for lost in (3, 5)
-            late = RunVolume(vol.frames, [k > lost for k in 1:100], vol.Hinvs, vol.tss, vol.start, vol.anchor, vol.width, vol.dt)
-            p = whole_run_path(late, MotionModel(missing), true)
-            @test maximum(k -> norm(collect(p[k]) .- collect(beetle((k - 1) * vol.dt))), (lost + 1):100) < 1.0
+            registered = [k > lost for k in eachindex(vol.frames)]
+            late = RunVolume(vol.frames, registered, vol.Hinvs, vol.tss, vol.start, vol.anchor, vol.width, vol.dt)
+            @test worst(whole_run_path(late, MotionModel(missing), true), beetle, vol.dt, findall(registered)) < 1.0
         end
     end
 
