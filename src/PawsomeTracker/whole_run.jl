@@ -378,10 +378,20 @@ function anchor_disk(vol, R, C)
     return disk
 end
 
-# The target's own contrast: the median, over the first second, of the peak z inside the anchor disk.
+# The target's own contrast: the median, over the first second's registered samples, of the peak z
+# inside the anchor disk. An unregistered sample scores 0 everywhere, so counting one would say the
+# target has no contrast; with most of the first second unregistered the median was 0, every dark
+# object then scored below bare ground, and the path left the target for the whole run (#406). With
+# none of the first second registered, the first registered sample stands in; with none at all,
+# there is no contrast to measure.
 function anchor_contrast(z, vol)
     disk = anchor_disk(vol, size(z, 1), size(z, 2))
-    ks = 1:min(size(z, 3), max(1, round(Int, 1 / vol.dt)))
+    ks = filter(k -> vol.has[k], 1:min(size(z, 3), max(1, round(Int, 1 / vol.dt))))
+    if isempty(ks)
+        first_registered = findfirst(vol.has)
+        isnothing(first_registered) && return 0.0f0
+        push!(ks, first_registered)
+    end
     peaks = [maximum(z[ix, k] for ix in disk) for k in ks]
     return Float32(middle!(peaks))
 end

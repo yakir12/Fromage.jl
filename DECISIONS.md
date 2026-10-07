@@ -1196,6 +1196,15 @@ tuned in the port. The evidence is in the research workspace (`whole-segment/res
 - **The clamped foreground** in `score_dark`. The experimenters wear white, and the signed
   foreground's negative surround around a bright body scores like a dark target: 7_2's path rode that
   ring 140 cm from the beetle. Clamping is the one change that fixed it.
+- **The anchor contrast counts registered samples only** (#406). The emission is scaled by the
+  target's own contrast, the median peak score at the start over the first second. An unregistered
+  sample scores 0 everywhere, and in the inventory batches a GC race in AprilTag detection left the
+  first 3–5 samples of 16 drone runs unregistered. The median was then 0, every dark object, the
+  target included, scored below bare ground, and each path wandered over empty ground for the whole
+  run. The eye failed 14 of those 16 tracks, and the other 2 shook. Counting only
+  registered samples gives 17_2 a contrast of 24.6 against 24.2 with every sample registered, and
+  the same path from the fourth sample on. This was a fix, not a tuning: on a run whose first second
+  is registered, nothing changes.
 - **The motion model** (`STOP_SIGMA` … `WALK_TO_STOP`), fitted on 88 drone runs: a two-gamma walk
   (KS D 0.032, against 0.105 for one gamma), stopped 17% of the time. The tail (`TAIL_WEIGHT` 1e-4)
   was 5e-3 at first, which made a 25 cm/s second only ~8 nats dearer than a walk, and the path ran at

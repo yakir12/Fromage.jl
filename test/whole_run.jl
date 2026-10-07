@@ -76,6 +76,16 @@ const WALK = 1.2
         @test worst(whole_run_path(vol, NoMotionModel(), true), target, vol.dt) < 1.0
     end
 
+    @testset "unregistered first samples do not erase the target's contrast (#406)" begin
+        # An unregistered sample scores 0 everywhere. With most of the first second unregistered, a
+        # median over every sample of it made the target's own contrast 0, every dark object then
+        # scored below bare ground, and the path wandered off the target for the whole run.
+        beetle = t -> (30.0, 20.0 + WALK * t)
+        vol = volume(beetle; n = 100, start = (30.0, 20.0))
+        late = RunVolume(vol.frames, [k > 3 for k in 1:100], vol.Hinvs, vol.tss, vol.start, vol.anchor, vol.width, vol.dt)
+        @test worst(whole_run_path(late, MotionModel(missing), true), beetle, vol.dt) < 1.0
+    end
+
     @testset "a lighter target" begin
         vol = volume(t -> (30.0, 20.0 + WALK * t); n = 50, start = (30.0, 20.0))
         inverted = RunVolume([0xff .- f for f in vol.frames], vol.has, vol.Hinvs, vol.tss, vol.start, vol.anchor, vol.width, vol.dt)
