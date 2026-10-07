@@ -80,10 +80,15 @@ const WALK = 1.2
         # An unregistered sample scores 0 everywhere. With most of the first second unregistered, a
         # median over every sample of it made the target's own contrast 0, every dark object then
         # scored below bare ground, and the path wandered off the target for the whole run.
+        # Held on the registered samples only: an unregistered one has nothing to place it by.
+        # Three of the first second's five, and then all five (the first registered sample stands in).
         beetle = t -> (30.0, 20.0 + WALK * t)
         vol = volume(beetle; n = 100, start = (30.0, 20.0))
-        late = RunVolume(vol.frames, [k > 3 for k in 1:100], vol.Hinvs, vol.tss, vol.start, vol.anchor, vol.width, vol.dt)
-        @test worst(whole_run_path(late, MotionModel(missing), true), beetle, vol.dt) < 1.0
+        @testset "first $lost samples unregistered" for lost in (3, 5)
+            late = RunVolume(vol.frames, [k > lost for k in 1:100], vol.Hinvs, vol.tss, vol.start, vol.anchor, vol.width, vol.dt)
+            p = whole_run_path(late, MotionModel(missing), true)
+            @test maximum(k -> norm(collect(p[k]) .- collect(beetle((k - 1) * vol.dt))), (lost + 1):100) < 1.0
+        end
     end
 
     @testset "a lighter target" begin
