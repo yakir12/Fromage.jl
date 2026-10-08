@@ -39,8 +39,8 @@ function volume(objects...; R = 60, C = 130, n, dt = 0.2, width = 2.0, start, an
     return RunVolume(frames, fill(true, n), PT.SMatrix{3, 3, Float64, 9}[], tss, start, anchor, width, dt)
 end
 
-# the worst distance, in grid px, between the path and where the object `o` is
-worst(p, o, dt) = maximum(k -> norm(collect(p[k]) .- collect(o((k - 1) * dt))), eachindex(p))
+# the worst distance, in grid px, between the path and where the object `o` is, over samples `ks`
+worst(p, o, dt, ks = eachindex(p)) = maximum(k -> norm(collect(p[k]) .- collect(o((k - 1) * dt))), ks)
 
 # The fitted walk's mean is 0.6 target widths per second; here a width is 2 grid px.
 const WALK = 1.2
@@ -74,6 +74,21 @@ const WALK = 1.2
         target = t -> (30.0 + 4 * sin(t / 2), 20.0 + 2 * t)
         vol = volume(target; n = 200, start = (30.0, 20.0))
         @test worst(whole_run_path(vol, NoMotionModel(), true), target, vol.dt) < 1.0
+    end
+
+    @testset "unregistered first samples do not erase the target's contrast (#406)" begin
+        # An unregistered sample scores 0 everywhere. With most of the first second unregistered, a
+        # median over every sample of it made the target's own contrast 0, every dark object then
+        # scored below bare ground, and the path wandered off the target for the whole run.
+        # Held on the registered samples only: an unregistered one has nothing to place it by.
+        # Three of the first second's five, and then all five (the first registered sample stands in).
+        beetle = t -> (30.0, 20.0 + WALK * t)
+        vol = volume(beetle; n = 100, start = (30.0, 20.0))
+        @testset "first $lost samples unregistered" for lost in (3, 5)
+            registered = [k > lost for k in eachindex(vol.frames)]
+            late = RunVolume(vol.frames, registered, vol.Hinvs, vol.tss, vol.start, vol.anchor, vol.width, vol.dt)
+            @test worst(whole_run_path(late, MotionModel(missing), true), beetle, vol.dt, findall(registered)) < 1.0
+        end
     end
 
     @testset "a lighter target" begin
