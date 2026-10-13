@@ -1239,8 +1239,11 @@ tuned in the port. The evidence is in the research workspace (`whole-segment/res
   what the track took under a person was a blob of 26–233 grid px, and the beetle stays 1–5 px even
   there. Drone dev went from 136 to 143 of 148 (9 fixed, 10_2 and 14_2 broken), evri held at
   369/370, and no other dev pass regressed. On the held-out gate (#414) it passed 448 of 450 and
-  failed no run the shipped tracker passed. The path costs 0.79× the time it did before (median;
-  p95 0.92). What someone might undo:
+  failed no run the shipped tracker passed. The path costs 1.11× the time it did before (median;
+  p95 1.31), timed head to head on 61 of those runs, one after the other on an idle machine at 32
+  threads. The prototype itself timed 1.14× the same way. The research's 0.79× compared two
+  separate harness runs, and did not reproduce head to head. The path is about a third of a
+  whole-run tracking, the reading the rest. What someone might undo:
   - **The size term is load-bearing; the entry cost alone is not enough.** The entry cost alone
     (candidate C) fixed one drone run. The departures happen *inside* the person's region: the
     person covers the beetle, then the track leaves with them, so there is no entry to pay for. A
