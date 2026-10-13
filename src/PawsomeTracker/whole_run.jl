@@ -5,7 +5,11 @@
 # csv order, and the path is the best one through that volume under a model of how the target moves
 # and how it looks. Selected per run by `Tuning.whole_run`; the seam is `VerifyRuns.track(r::Run, …)`.
 #
-#   read_run → background → score_dark → anchor_contrast → best_path → refine
+#   read_run → background → score_dark → anchor_contrast → large_foreground → penalise_large_blobs!
+#     → best_path → refine
+#
+# Large foreground (#412) is where an experimenter, or their shadow, is: the path pays to enter it
+# and a large blob inside it scores less, so the track does not leave the target with a person.
 #
 # Two variants, chosen by the rectification's type (`path_model`):
 #
@@ -80,6 +84,22 @@ const EDGE_CAP = 300.0
 # separate knob: it was settled on its own, for this path (#368).
 const NO_MOTION_SPEED = 1.0
 const NO_MOTION_CAP = 0.7
+
+# Large foreground (#412): an experimenter, or their shadow, is a large region that differs from the
+# whole-run background, brighter or darker; the target is a few pixels. A grid pixel is large
+# foreground when it differs from the background by at least FG_GREY grey levels and its 4-connected
+# component of such pixels covers at least FG_AREA_W2 square target widths; the mask is then dilated
+# by FG_DILATE_W widths. Inside it the path pays twice: a move of at least ENTRY_MIN_W widths that
+# enters it costs ENTRY_KAPPA × the target's own contrast, and a z blob (4-connected, z ≥ ½ the
+# target's contrast) larger than SIZE_KAPPA square widths loses SIZE_LAMBDA × that contrast on its
+# pixels inside it. FG_GREY is absolute grey levels, not a fraction of anything.
+const FG_GREY = 20.0
+const FG_AREA_W2 = 25.0
+const FG_DILATE_W = 1.0
+const ENTRY_KAPPA = 1.0
+const ENTRY_MIN_W = 1.0
+const SIZE_KAPPA = 4.0
+const SIZE_LAMBDA = 1.0
 
 # A run whose fastest second covers more than this many target widths is flagged (`@warn`). The
 # fitted walk's p99.9 is 1.6 widths/s; every whole-run failure among 157 drone runs had a fastest
@@ -397,6 +417,113 @@ function anchor_contrast(z, vol)
     return Float32(middle!(peaks))
 end
 
+# ---- large foreground ------------------------------------------------------------------------
+
+# Calls `f(component)` on every 4-connected component of the pixels `i` where `inside(i)`, as a
+# vector of linear indices (reused between calls). `seen`, `stack` and `comp` are the caller's.
+function foreach_component(f, inside, seen::BitMatrix, stack::Vector{Int}, comp::Vector{Int})
+    R, C = size(seen)
+    fill!(seen, false)
+    for i in eachindex(seen)
+        (seen[i] || !inside(i)) && continue
+        seen[i] = true
+        empty!(comp)
+        push!(stack, i)
+        while !isempty(stack)
+            j = pop!(stack)
+            push!(comp, j)
+            r, c = mod1(j, R), cld(j, R)
+            for (rr, cc) in ((r + 1, c), (r - 1, c), (r, c + 1), (r, c - 1))
+                (1 <= rr <= R && 1 <= cc <= C) || continue
+                q = rr + (cc - 1) * R
+                (seen[q] || !inside(q)) && continue
+                seen[q] = true
+                push!(stack, q)
+            end
+        end
+        f(comp)
+    end
+    return
+end
+
+# `L` |= `src` dilated by a square of half-side `d` grid px, as two separable passes through `tmp`.
+function dilate!(L::BitMatrix, src::BitMatrix, tmp::BitMatrix, d)
+    R, C = size(L)
+    fill!(tmp, false)
+    for c in 1:C, r in 1:R
+        src[r, c] || continue
+        tmp[max(1, r - d):min(R, r + d), c] .= true
+    end
+    for c in 1:C, r in 1:R
+        tmp[r, c] || continue
+        L[r, max(1, c - d):min(C, c + d)] .= true
+    end
+    return L
+end
+
+"""
+    large_foreground(vol, bg) -> Vector{BitMatrix}
+
+Each sample's large foreground (see `FG_GREY`): the pixels that differ from the background `bg` by
+at least `FG_GREY` grey levels, in 4-connected components of at least `FG_AREA_W2` square target
+widths, dilated by `FG_DILATE_W` widths. A pixel that is 0 in the frame or the background is off
+the footprint (an AprilTag sample's warp reads 0 off the raw frame): it never counts toward a
+component, though the dilation may still reach it.
+"""
+function large_foreground(vol::RunVolume, bg)
+    R, C = size(bg)
+    amin = ceil(Int, FG_AREA_W2 * vol.width^2)
+    d = round(Int, FG_DILATE_W * vol.width)
+    out = [falses(R, C) for _ in vol.frames]
+    @tasks for k in eachindex(vol.frames)
+        @local begin
+            big, seen, tmp = falses(R, C), falses(R, C), falses(R, C)
+            stack, comp = Int[], Int[]
+        end
+        frame = vol.frames[k]
+        differs = i -> frame[i] != 0 && bg[i] != 0 && abs(Float32(frame[i]) - bg[i]) >= Float32(FG_GREY)
+        fill!(big, false)
+        foreach_component(differs, seen, stack, comp) do component
+            length(component) >= amin && (big[component] .= true)
+        end
+        d > 0 ? dilate!(out[k], big, tmp, d) : copyto!(out[k], big)
+    end
+    return out
+end
+
+# The size term: at every sample, each z blob (4-connected, z ≥ ½ `za`) larger than SIZE_KAPPA
+# square widths loses SIZE_LAMBDA × `za` on its pixels inside large foreground `fg`. In place: the
+# path and `refine` both see the lowered score.
+function penalise_large_blobs!(z, fg, za, width)
+    R, C, n = size(z)
+    thr = 0.5f0 * za
+    amax = SIZE_KAPPA * width^2
+    pen = Float32(SIZE_LAMBDA) * za
+    @tasks for k in 1:n
+        @local begin
+            seen = falses(R, C)
+            stack, comp = Int[], Int[]
+        end
+        zk, fgk = view(z, :, :, k), fg[k]
+        foreach_component(i -> zk[i] >= thr, seen, stack, comp) do component
+            length(component) > amax || return
+            for j in component
+                fgk[j] && (zk[j] -= pen)
+            end
+        end
+    end
+    return z
+end
+
+# Whether each offset is long enough to pay the entry cost.
+long_moves(offsets, width) = [hypot(dr, dc) >= ENTRY_MIN_W * width for (dr, dc) in offsets]
+
+# The motion model's step masks: the union of its `m` samples' masks.
+function step_foreground(fg, m)
+    m == 1 && return fg
+    return [reduce(.|, fg[((K - 1) * m + 1):min(end, K * m)]) for K in 1:cld(length(fg), m)]
+end
+
 # ---- the path --------------------------------------------------------------------------------
 
 """
@@ -421,21 +548,35 @@ path_model(_, ::Tuning) = NoMotionModel()
     whole_run_path(vol, model, darker_target) -> Vector{NTuple{2, Float64}}
 
 The target's grid index at every sample of `vol`: the best path under `model`, each point then
-localised on the uncapped score.
+localised on the uncapped score. Inside large foreground (`large_foreground`) the score of a large
+blob is lowered and entering it costs the path (#412).
 """
 function whole_run_path(vol::RunVolume, model, darker_target)
-    z = score_dark(vol, background(vol.frames), darker_target)
-    return refine(z, best_path(model, z, anchor_contrast(z, vol), vol), vol.width)
+    bg = background(vol.frames)
+    z = score_dark(vol, bg, darker_target)
+    return whole_run_path!(z, large_foreground(vol, bg), vol, model)
+end
+
+# The path on the score `z`, given each sample's large foreground `fg`; lowers `z` by the size term.
+# With no large foreground anywhere this is the tracker before #412 exactly, which is how the tests
+# compare the two.
+function whole_run_path!(z, fg, vol::RunVolume, model)
+    za = anchor_contrast(z, vol)   # the target's own contrast, before the size term lowers z
+    penalise_large_blobs!(z, fg, za, vol.width)
+    return refine(z, best_path(model, z, za, vol, fg), vol.width)
 end
 
 # The per-pixel ceiling on a sample's score, as a fraction of the target's own contrast: anything at
-# least as dark as the target scores the same, so a larger dark thing is no more attractive.
-function best_path(::NoMotionModel, z, za, vol)
+# least as dark as the target scores the same, so a larger dark thing is no more attractive. A long
+# move from outside sample `k`'s large foreground to inside it pays the entry cost `ec`.
+function best_path(::NoMotionModel, z, za, vol, fg)
     R, C, n = size(z)
     σ = NO_MOTION_SPEED * vol.width * vol.dt
     reach = max(2, ceil(Int, 4σ))
     offsets = [(dr, dc) for dc in -reach:reach for dr in -reach:reach if dr^2 + dc^2 <= reach^2]
     cost = Float32[(dr^2 + dc^2) / 2σ^2 for (dr, dc) in offsets]
+    long = long_moves(offsets, vol.width)
+    ec = Float32(ENTRY_KAPPA) * za
     cap = Float32(NO_MOTION_CAP * za)
     back = Array{Int32, 3}(undef, R, C, n)
     δ = fill(-Inf32, R, C)
@@ -444,13 +585,16 @@ function best_path(::NoMotionModel, z, za, vol)
     end
     δnext = similar(δ)
     for k in 2:n
+        fgk = fg[k]
         tforeach(1:C) do c
             for r in 1:R
                 best, arg = -Inf32, Int32(0)
+                into = fgk[r, c]
                 for (j, (dr, dc)) in enumerate(offsets)
                     rr, cc = r - dr, c - dc
                     (1 <= rr <= R && 1 <= cc <= C) || continue
                     s = δ[rr, cc] - cost[j]
+                    (into && long[j] && !fgk[rr, cc]) && (s -= ec)
                     s > best && ((best, arg) = (s, Int32(j)))
                 end
                 δnext[r, c] = best + min(z[r, c, k], cap)
@@ -532,14 +676,16 @@ function step_kernels(width)
 end
 
 # One kernel pass: out[x] = max over offsets o of src[x - o] + logp[o] (minus the no-return cost of
-# the move, when `return_cost > 0`), and the arg-max offset into `bp`, negated when the source came
+# the move, when `return_cost > 0`, and the entry cost `ec` of a `long` move from outside the step's
+# large foreground `fgK` to inside it), and the arg-max offset into `bp`, negated when the source came
 # from the other state (`switched`).
-function kernel_pass!(out, bp, K, src, switched, (offsets, logp), rmap, return_cost)
+function kernel_pass!(out, bp, K, src, switched, (offsets, logp), rmap, return_cost, fgK, long, ec)
     R, C = size(src)
     tforeach(1:C) do c
         for r in 1:R
             best, arg = -Inf32, 0
             rx = rmap[r, c]
+            into = fgK[r, c]
             for j in eachindex(offsets)
                 dr, dc = offsets[j]
                 rr, cc = r - dr, c - dc
@@ -549,6 +695,7 @@ function kernel_pass!(out, bp, K, src, switched, (offsets, logp), rmap, return_c
                     rp = rmap[rr, cc]
                     rp > RETURN_FREE && rp > rx && (s -= return_cost * (rp - rx))
                 end
+                (into && long[j] && !fgK[rr, cc]) && (s -= ec)
                 s > best && ((best, arg) = (s, j))
             end
             out[r, c] = best
@@ -566,12 +713,15 @@ function arena_costs(d, arena::Float64)
     return outside, ending
 end
 
-function best_path(model::MotionModel, z, za, vol)
+function best_path(model::MotionModel, z, za, vol, fg)
     R, C, n = size(z)
     m = max(1, round(Int, STEP_SECONDS / vol.dt))
     e = emission(z, za, m)
     N = size(e, 3)
     stopped, walking = step_kernels(vol.width)
+    long_s, long_w = long_moves(stopped[1], vol.width), long_moves(walking[1], vol.width)
+    ec = Float32(ENTRY_KAPPA) * za
+    fgs = step_foreground(fg, m)   # one mask per step
     T = STEP_SECONDS
     a_ss, a_ws = Float32(log1p(-STOP_TO_WALK * T)), Float32(log(WALK_TO_STOP * T))
     a_ww, a_sw = Float32(log1p(-WALK_TO_STOP * T)), Float32(log(STOP_TO_WALK * T))
@@ -598,8 +748,8 @@ function best_path(model::MotionModel, z, za, vol)
             B[i] = max(x, y)
             fromS[i] = y > x
         end
-        kernel_pass!(Snew, bps, K, A, fromW, stopped, rmap, 0.0f0)
-        kernel_pass!(Wnew, bpw, K, B, fromS, walking, rmap, Float32(RETURN_COST))
+        kernel_pass!(Snew, bps, K, A, fromW, stopped, rmap, 0.0f0, fgs[K], long_s, ec)
+        kernel_pass!(Wnew, bpw, K, B, fromS, walking, rmap, Float32(RETURN_COST), fgs[K], long_w, ec)
         top = max(maximum(Snew), maximum(Wnew))
         ek = view(e, :, :, K)
         @. S = Snew + ek - outside - top
@@ -773,7 +923,7 @@ pixels `track` returns too. Unlike the online tracker's, an AprilTag track has a
 sample, unregistered ones included (`grid_coordinates`), though only a registered one has a pixel.
 
 Memory: the grid volume (one byte per grid pixel per sample, ~0.07 GB per minute of drone footage at
-the defaults), its score (four bytes) and the path's back-pointers.
+the defaults), its score (four bytes), its large foreground (one bit) and the path's back-pointers.
 """
 function track_whole_run(segments::Vector{Segment}, tuning::Tuning, rectification, diagnostic_file)
     vol = read_run(segments, tuning, rectification)
