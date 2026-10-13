@@ -1713,7 +1713,8 @@ know and so cannot verify.
 
 The case that settled it was a BORIS export run whose segments carry different `Subject` values, two
 animals under one `run_id`. It looks like a typo, since a run is usually one animal, but nothing in
-Fromage depends on it. It is allowed, and the run's `subject` is the joined values.
+Fromage depends on it. It is allowed, and each segment keeps its own `subject`, which is metadata
+the gateway never compares.
 
 ### Failures are reported, not thrown
 
