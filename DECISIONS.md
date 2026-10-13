@@ -1230,6 +1230,39 @@ tuned in the port. The evidence is in the research workspace (`whole-segment/res
   of 24–27 cm/s, and passes stayed at ≤ 10.7 but for five (19–26.5): all 8 failures caught, 3 false
   alarms (#376). It flags the run, not the moment. It is a `@warn` because there is no post-tracking
   report to route it through.
+- **Large foreground** (`FG_GREY` 20, `FG_AREA_W2` 25, `FG_DILATE_W` 1, `ENTRY_KAPPA` 1,
+  `ENTRY_MIN_W` 1, `SIZE_KAPPA` 4, `SIZE_LAMBDA` 1; #412, ported in #417). This is the research's
+  candidate D (`robust-tracking/prototypes/412/appearance.jl`, write-up `research/experimenter.md`).
+  All 12 whole-run drone failures on dev were the track leaving a still-visible beetle with an
+  experimenter or their shadow. The path now pays the target's contrast to step a width or more
+  into large foreground. Inside it, a z blob larger than 4 widths² loses the target's contrast:
+  what the track took under a person was a blob of 26–233 grid px, and the beetle stays 1–5 px even
+  there. Drone dev went from 136 to 143 of 148 (9 fixed, 10_2 and 14_2 broken), evri held at
+  369/370, and no other dev pass regressed. On the held-out gate (#414) it passed 448 of 450 and
+  failed no run the shipped tracker passed. The path costs 1.11× the time it did before (median;
+  p95 1.31), timed head to head on 61 of those runs, one after the other on an idle machine at 32
+  threads. The prototype itself timed 1.14× the same way. The research's 0.79× compared two
+  separate harness runs, and did not reproduce head to head. The path is about a third of a
+  whole-run tracking, the reading the rest. What someone might undo:
+  - **The size term is load-bearing; the entry cost alone is not enough.** The entry cost alone
+    (candidate C) fixed one drone run. The departures happen *inside* the person's region: the
+    person covers the beetle, then the track leaves with them, so there is no entry to pay for. A
+    flat penalty on all of large foreground (candidate A) fixed 7 and broke 7, pushing the track off
+    a beetle walking past a person.
+  - **`FG_GREY` is an absolute intensity**, in grey levels on the grid, not a fraction of the
+    target's contrast or the frame's spread. It caused no regression on the IR or LED footage, but
+    nothing was fitted there.
+  - **The margin lost its edge, and that was accepted by design.** The minimum anchored margin's
+    AUROC for failure fell from 0.988 to 0.853: D fixed exactly the failures whose margin was near 0.
+    The keep rule judges a fix by the eye and leaves the confidence signals to the flagging round
+    (#413), so a fix that removes the low-margin failures is not held back for it.
+  - The entry cost belongs in the backward (margin) pass too, as the research measured it. There is
+    no backward pass in the package yet.
+
+  `ENTRY_KAPPA` is 1, though the prototype's `entry.jl` defaults to 2: D was run with 1. With both
+  κ at 0 the path is the one before #412 exactly. The port reproduces D's stored tracks at 0.0 px on
+  all 1,622 judged runs (store batches `2026-10-12_p412_size_d_drone`, `2026-10-13_p412_size_d_other`
+  and `2026-10-13_p414_size_d_heldout`).
 
 Left out of the port on purpose: the runner-up path and its margin, and the burst flag (neither
 predicted the tracker's failures over the 157 runs, #376), and `ground`, the background cap against

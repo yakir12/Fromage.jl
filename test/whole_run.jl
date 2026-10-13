@@ -91,6 +91,53 @@ const WALK = 1.2
         end
     end
 
+    @testset "large foreground: big regions that differ from the background, dilated, on the footprint" begin
+        R, C = 40, 60
+        frames = [fill(0x80, R, C)]
+        vol = RunVolume(frames, [true], PT.SMatrix{3, 3, Float64, 9}[], [0.0:0.2:0.0], (20.0, 10.0), 2.0, 2.0, 0.2)
+        bg = fill(128.0f0, R, C)
+        f = frames[1]
+        f[11:20, 11:20] .= 0x80 - 0x14   # 100 px, 25 widths², exactly FG_GREY darker: large
+        f[30:33, 40:43] .= 0x10          # 16 px, much darker: a target, not large
+        f[1:12, 46:60] .= 0xff           # 180 px brighter …
+        f[1:12, 55:60] .= 0x00           # … of which 108 are on the footprint: large
+        L = only(PT.large_foreground(vol, bg))
+        @test all(L[9:22, 9:22])                                 # dilated by a width, 2 px
+        @test !L[8, 15] && !L[23, 15] && !L[15, 8] && !L[15, 23]
+        @test !any(L[28:35, 38:45])
+        @test all(L[1:14, 44:56]) && !any(L[:, 57:60])           # the footprint's part, dilated
+        f[20, 11:20] .= 0x80                                     # 90 px, under 25 widths²: not large
+        f[1, 46:54] .= 0x80                                      # 99 px: not large
+        @test !any(only(PT.large_foreground(vol, bg)))
+    end
+
+    @testset "a large dark body passing the target does not take the path (#412)" begin
+        # A target that fades after the first second, and a body as dark as the target was (a person,
+        # or their shadow, 16 px across: 50 widths²) walking the other way along the target's path, 6
+        # px beside it, then parked. Its rim scores like the target, and without large foreground
+        # the path leaves with it; with it, the path stays on the target.
+        beetle = t -> (30.0, 20.0 + WALK * t)
+        body = t -> (16.0, max(12.0, 20.0 + WALK * 30 - 3 * (t - 30)))
+        R, C, n, dt = 60, 130, 300, 0.2
+        frames = map(1:n) do k
+            t = (k - 1) * dt
+            f = frame([beetle(t)], k; R, C, width = 2.0, depth = t < 2 ? 60 : 40)
+            p = body(t)
+            for c in 1:C, r in 1:R
+                (r - p[1])^2 + (c - p[2])^2 <= 64 && (f[r, c] = max(0, Int(f[r, c]) - 60))
+            end
+            f
+        end
+        vol = RunVolume(frames, fill(true, n), PT.SMatrix{3, 3, Float64, 9}[], [range(0.0; step = dt, length = n)], (30.0, 20.0), 2.0, 2.0, dt)
+        bg = PT.background(vol.frames)
+        z = PT.score_dark(vol, bg, true)
+        none = [falses(R, C) for _ in 1:n]   # no large foreground anywhere: the tracker before #412
+        @testset "$(nameof(typeof(model)))" for model in (MotionModel(missing), NoMotionModel())
+            @test worst(PT.whole_run_path!(copy(z), none, vol, model), beetle, dt) > 20
+            @test worst(whole_run_path(vol, model, true), beetle, dt) < 1.0
+        end
+    end
+
     @testset "a lighter target" begin
         vol = volume(t -> (30.0, 20.0 + WALK * t); n = 50, start = (30.0, 20.0))
         inverted = RunVolume([0xff .- f for f in vol.frames], vol.has, vol.Hinvs, vol.tss, vol.start, vol.anchor, vol.width, vol.dt)
