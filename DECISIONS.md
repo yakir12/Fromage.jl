@@ -1697,6 +1697,25 @@ sites and ~98 messages, and it changes the `:issues` column `verify` hands back 
 change with a narrower benefit than it looks, because `Harness.flagged` already asserts on
 `df.issues` by value. Worth doing only if the message-text coupling turns out to hurt.
 
+### The gateways check what Fromage needs, not what the data means (#409)
+
+The gateways verify a csv only as far as Fromage itself needs to work correctly: a cell it cannot
+parse, a value that would make `track` or a rectification builder error or misbehave, a file it
+cannot read, two claims about one recording that cannot both be honoured. They do not judge whether
+the data makes experimental sense. `verifications!` in `src/VerifyRuns/verifications.jl` says the
+same thing about its value ranges: only what would make `track` error or misbehave nonsensically is
+flagged.
+
+So a proposed check has to pass one test: **does the data, as given, break something Fromage
+does?** If not, the check is not added, however likely the pattern is to be a mistake. Users combine
+things in ways the package cannot foresee, and their own columns carry meanings Fromage does not
+know and so cannot verify.
+
+The case that settled it was a BORIS export run whose segments carry different `Subject` values, two
+animals under one `run_id`. It looks like a typo, since a run is usually one animal, but nothing in
+Fromage depends on it. It is allowed, and each segment keeps its own `subject`, which is metadata
+the gateway never compares.
+
 ### Failures are reported, not thrown
 
 A calibration whose extrinsic frame yields no corners, a `.mat` missing a required field, an
