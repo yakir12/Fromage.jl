@@ -159,26 +159,45 @@ function track_run(r::VerifyRuns.Run, c::VerifyRectifications.RectificationMetho
             finished || rm(folder; recursive = true, force = true)
         end
     end
-    # Outside the memo, so a track served from it is judged again rather than silently. Only a
-    # whole-run track is judged, and only it fetches the rectification: an online run's cache
-    # traffic is exactly what it was.
-    r.tuning.whole_run && warn_if_fast(r.run_id, r.tuning.target_width, run_track, build_rectification(c).ratio)
     return (track = run_track, clip, reused = !missed[])
 end
 
-# The whole-run tracker's one check on its own result: a fastest second beyond
-# `SUSPECT_SPEED` target widths is not a walk, so the path most likely left the target for something
-# else (#376: every such failure among 157 drone runs was over it, and so were 3 of the passes). A
-# log line and not an issue report: there is no post-tracking report to put it in. `ratio` is the
-# rectification's real-world units per pixel, so a target width is `ratio × target_width` of the
-# track's units.
-function warn_if_fast(run_id, target_width, (ts, coords), ratio)
-    widths = fastest_second(ts, coords) / (ratio * target_width)
-    widths > SUSPECT_SPEED && @warn "run $run_id: its whole-run track's fastest second covers \
-        $(round(widths; digits = 1)) target widths, more than the $SUSPECT_SPEED a walk does; check \
-        its diagnostic clip, the path may have left the target for something else"
+# The whole-run review (#418): `results_dir/review/flags.csv`, one row per whole-run run and signal
+# (online runs get none), and one `@warn` per flagged run, naming why and pointing at the file. A
+# folder of its own, so the file cannot collide with a `<run_id>.csv` track. The review rides in the
+# memoized track (its fourth element), so a served track is reported again rather than silently, as
+# its csv is written again. Nothing is written when no run was tracked whole.
+function write_review(results_dir, rs, runs)
+    reviews = [(r.run_id, last(t.track)) for (r, t) in zip(rs, runs) if r.tuning.whole_run]
+    isempty(reviews) && return nothing
+    file = joinpath(mkpath(joinpath(results_dir, "review")), "flags.csv")
+    rows = [review_row(run_id, name, s) for (run_id, review) in reviews for (name, s) in pairs(signals(review))]
+    CSV.write(file, DataFrame(rows))
+    for (run_id, review) in reviews
+        flagged(review) || continue
+        reasons = join((why(Val(name), s) for (name, s) in pairs(signals(review)) if s.flagged), "; ")
+        @warn "run $run_id: its whole-run track is flagged for review: $reasons. Check its diagnostic \
+            clip; the signals and their moments are in $file"
+    end
     return nothing
 end
+
+# One row of `flags.csv`: the moment's segment and file time beside its run time (`time`), the file
+# time as the diagnostic labels it. A signal with no moment, or no cut, leaves those cells empty.
+# Each number is written as its own type prints it: one column holds the Float32 margin and the
+# Float64 speed and seconds, and a column's promotion to Float64 would print 2.87998f0 as
+# 2.879980087280273.
+review_row(run_id, name, s::Signal) =
+    (; run_id, signal = String(name), value = string(s.value), cut = cell(s.cut), s.flagged, moment_cells(s.moment)...)
+cell(::Missing) = missing
+cell(x) = string(x)
+moment_cells(::Missing) = (time = missing, segment = missing, file_time = missing)
+moment_cells(m::Moment) = (time = m.run_time, m.segment, file_time = format_file_time(m.file_time))
+
+# Each signal's reason, as the warning gives it.
+why(::Val{:fast}, s) = "its fastest second covers $(round(s.value; digits = 1)) target widths, more than the $(s.cut) a walk does"
+why(::Val{:ambiguous}, s) = "its anchored margin falls to $(round(s.value; digits = 2)), under its video type's cut of $(round(s.cut; digits = 2))"
+why(::Val{:unstable}, s) = "it moves for $(round(s.value; digits = 1)) s when its background is built from half the run"
 
 # Every run, in parallel. Run ids are unique within a dataset, so no two of these share a key and no
 # two tasks ever compute the same entry — which matters beyond wasted work: when two do, `LRU` keeps
@@ -270,8 +289,10 @@ exist: one `<run_id>.csv` per run (a row per coordinate, with `time` in seconds 
 starting at its first segment's `start` — `x`/`y` in the rectification's real-world unit, origin
 at its `center`, and `x_display`/`y_display`, the same position in 0-based display pixels of the
 original video frame — unrectified, and on AprilTag footage unregistered, so empty for a frame with
-no registration of its own), `diagnostic.mp4`, and the `rectifications/` and `issues/` subfolders when there is
-anything to put in them. A file of the same name already there is overwritten.
+no registration of its own), `diagnostic.mp4`, `review/flags.csv` when any run is tracked whole (the
+whole-run tracker's review of each such run: three rows per run, one per signal, and a `@warn` for
+each run it flags), and the `rectifications/` and `issues/` subfolders when there is anything to put
+in them. A file of the same name already there is overwritten.
 
 # Keyword arguments
 
@@ -351,6 +372,7 @@ function main(
     # from every run's clip in run order. Only the tracking was skipped.
     mktempdir(path -> concatenate(results_dir, path, [t.clip for t in runs]))
     tforeach((r, t) -> save2csv(results_dir, r.run_id, t.track), rs, runs)
+    write_review(results_dir, rs, runs)
 
     return nothing
 end

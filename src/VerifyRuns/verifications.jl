@@ -99,7 +99,7 @@ window_nonpositive(x) = x ≤ 0
 const SHARED_PARAMS = (
     :target_width, :window_size, :darker_target, :native_fps, :sample_fps,
     :initial_search_factor, :downscale, :background_length, :dimension, :aspect,
-    :whole_run, :arena_radius,
+    :whole_run, :arena_radius, :video_type,
 )
 
 # ---- first tier: identity ---------------------------------------------------------------------
@@ -278,6 +278,12 @@ function verifications!(df::AbstractDataFrame, data_path; progress)
     # is ignored rather than reported: this gateway has no irrelevant-column check, and a row that
     # does not opt in must verify exactly as it did before the column existed.
     verify!(df, (r, w) -> w && r ≤ 0, "arena_radius must be larger than zero", :arena_radius, :whole_run)
+    # The same on a whole-run row's `video_type`, which keys the review's margin cut: a name outside
+    # the six is a mistake in the csv, reported here, and never a lookup that fails after tracking.
+    verify!(
+        df, (v, w) -> w && v ∉ PawsomeTracker.VIDEO_TYPES,
+        "video_type must be one of: " * join(PawsomeTracker.VIDEO_TYPES, ", "), :video_type, :whole_run
+    )
 
     # Temporal window must be sane and lie within the video. start ≥ 0 runs first and nulls :start
     # on failure, so a negative start does not also trip "start must come before stop".

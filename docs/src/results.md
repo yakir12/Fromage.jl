@@ -1,6 +1,6 @@
 # Your results
 
-When `main` finishes, everything it produced is on disk, in a `results_dir` folder created in the folder Julia was started in: a track file per run, one diagnostic video, and — if you asked for them — an image per rectification.
+When `main` finishes, everything it produced is on disk, in a `results_dir` folder created in the folder Julia was started in: a track file per run, one diagnostic video, a review of every run tracked whole, and — if you asked for them — an image per rectification.
 
 ## Choosing the output folder
 
@@ -39,6 +39,32 @@ The coordinates are already fully converted — lens distortion, perspective, an
 `x_display` and `y_display` are where the target is in the video frame itself, before any rectification: the top-left pixel's centre is `(0, 0)`, `x` grows rightward and `y` downward, and on footage with non-square pixels they are already stretched to what an image viewer shows. They are the same kind of pixel you give as `start_location`, `center` and `north`, so you can compare them directly with points you clicked on a frame.
 
 For drone (`apriltag`) footage they are pixels of **that frame of the video**, as filmed: the drone's motion is not removed from them. A frame in which a tag could not be seen has no way back into the original frame, so its two pixel cells are empty. Its `x` and `y` may still have a value: the whole-run tracker gives every frame a real-world position.
+
+## The review
+
+Every run tracked with the [whole-run tracker](runs.md#Tracking-a-whole-run-at-once) is checked by the tracker itself, and the result lands in `results_dir/review/flags.csv`. A run is **flagged** when the tracker has reason to doubt its own track. That means "watch this run's diagnostic clip first", not "this run failed". On the footage the review was fitted on, it caught 11 of 13 failed runs and flagged 16 of 1,119 good ones, and none of 25 unflagged runs checked by eye had failed.
+
+`main` also warns about every flagged run as it finishes, naming what flagged it.
+
+The file has one row per run and signal, three rows per run. Runs tracked frame by frame have none:
+
+| column | content |
+| --- | --- |
+| `run_id` | the run. |
+| `signal` | `fast`, `ambiguous` or `unstable` (below). |
+| `value` | the signal's value. |
+| `cut` | what the value is held to. Empty when the signal has none. |
+| `flagged` | `true` when the value is past the cut. The run is flagged when any of its three rows is. |
+| `time` | when it happens, in the run's time, like the `time` column of the track file. |
+| `segment`, `file_time` | the same moment as the [diagnostic video's label](#The-diagnostic-video) gives it: the segment, and the time in that segment's own video file (`hh:mm:ss.fff`), so you can seek straight to it. |
+
+The three signals:
+
+- **`fast`**: the most target widths the track covers in one second, from the start of that second. No beetle walks faster than 3 widths a second, so a faster track has most likely jumped to something else. This is only flagged on drone footage: elsewhere `target_width` is rarely measured, so a width means too little.
+- **`ambiguous`**: how much better the chosen path is than the best path that strays more than 3 target widths from it, at the moment where it is least better. A low value means another path would have done almost as well, such as a look-alike nearby. The scale differs between kinds of footage, so the cut is set by the run's [`video_type`](runs.md): the value below which 1% of the good runs of that type fell.
+- **`unstable`**: the longest stretch, in seconds, over which the track moves more than 3 target widths when the background is built from only the first half of the run, or only the second. A run whose track moves away for 60 seconds or more is flagged: something in the footage is changing what the tracker sees.
+
+The whole-run tracker takes about 1.5–1.9 times as long to find and review a path as to find it alone. The reading of the video, which takes longer than either, is unchanged.
 
 ## The diagnostic video
 

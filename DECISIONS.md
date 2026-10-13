@@ -1228,8 +1228,8 @@ tuned in the port. The evidence is in the research workspace (`whole-segment/res
   (P1's) kept 10 of the 12 clicked tripod runs, with no regression against the online tracker.
 - **`SUSPECT_SPEED` 3 widths/s** (≈ 20 cm/s). Over 157 drone runs every failure had a fastest second
   of 24–27 cm/s, and passes stayed at ≤ 10.7 but for five (19–26.5): all 8 failures caught, 3 false
-  alarms (#376). It flags the run, not the moment. It is a `@warn` because there is no post-tracking
-  report to route it through.
+  alarms (#376). It is now the cut of the review's `fast` signal, on AprilTag footage only (#418,
+  "The whole-run review" below).
 - **Large foreground** (`FG_GREY` 20, `FG_AREA_W2` 25, `FG_DILATE_W` 1, `ENTRY_KAPPA` 1,
   `ENTRY_MIN_W` 1, `SIZE_KAPPA` 4, `SIZE_LAMBDA` 1; #412, ported in #417). This is the research's
   candidate D (`robust-tracking/prototypes/412/appearance.jl`, write-up `research/experimenter.md`).
@@ -1256,8 +1256,8 @@ tuned in the port. The evidence is in the research workspace (`whole-segment/res
     AUROC for failure fell from 0.988 to 0.853: D fixed exactly the failures whose margin was near 0.
     The keep rule judges a fix by the eye and leaves the confidence signals to the flagging round
     (#413), so a fix that removes the low-margin failures is not held back for it.
-  - The entry cost belongs in the backward (margin) pass too, as the research measured it. There is
-    no backward pass in the package yet.
+  - The entry cost belongs in the backward (margin) pass too, as the research measured it. The
+    review's backward pass (#418) pays it on the same moves.
 
   `ENTRY_KAPPA` is 1, though the prototype's `entry.jl` defaults to 2: D was run with 1. With both
   κ at 0 the path is the one before #412 exactly. The port reproduces D's stored tracks at 0.0 px on
@@ -1296,6 +1296,69 @@ read over the share, so read the numbers as an order, not a benchmark.
 `whole_run` is a value branched on once, at `VerifyRuns.track(r::Run, …)`, not a type: it is a csv
 cell like a run's segment count ("A run's segment count is data, not a type"), and a type would make
 `Vector{Run}` abstract again. Below the seam every choice is by dispatch, on the rectification.
+
+### The whole-run review: rule R1 (#418)
+
+The whole-run tracker reviews its own track, and `main` writes the review to
+`results_dir/review/flags.csv` (CONTEXT, "Review"). This is the research's flag rule R1
+(`robust-tracking/research/flagging.md`, #413; held-out `research/heldout-gate.md`, #414). A run is
+flagged when any of three signals is:
+
+- `fast`: the fastest second is more than `SUSPECT_SPEED` (3.0) widths/s, on AprilTag footage only;
+- `ambiguous`: the minimum anchored margin is below the run's video type's cut;
+- `unstable`: the track is more than 3 widths from the path re-solved on a background median of one
+  half of the run, for 60 s or more.
+
+On dev it caught 11 of 13 failures and flagged 16 of 1,119 passes. On held-out it caught 1 of 2 and
+flagged none of 448. An eye check passed all 25 of a random draw of runs it leaves unflagged.
+
+**The margin cuts are conformal, one per video type** (`MARGIN_CUTS`). The margin's scale differs by
+footage: a drone pass's median is about 15 nats, elsewhere 200–480. So each type's cut is a rank among
+its own eye-passed dev runs, the k-th lowest `margin_min`, with k chosen so that 1% of them fall
+below it. Tripod outdoor sand mirror had no passes left after elin outdoors was excluded, so it takes
+the pooled cut of every non-drone pass (the 10th lowest of 976), and so does a blank `video_type`
+off AprilTag footage. A blank one on AprilTag footage takes the drone cut. The fallback was measured
+at 8/13 failures caught and 17 passes flagged.
+
+- **The constants are the margins themselves, in Float32.** The issue's table rounded them to two
+  decimals, and with `<` those roundings flag two more dev passes. They are bastien's 2nd-lowest pass
+  (15.119993 against 15.12) and plywood's 5th (1.0799866 against 1.08). With the exact values a pass
+  at the cut is not flagged, as the prototype's leave-one-out rank had it, and the dev numbers come
+  out as the issue states them.
+- **A video type, not the rectification method, keys them.** Keying on AprilTag-or-not puts bastien
+  on the pooled 2.88, and loses three of its five failures (56, 62 and 248, at margins 5.97, 3.52 and
+  10.35) that its own 15.12 catches. Every non-AprilTag type shares the same rectification methods,
+  so the method cannot tell them apart; the video type is a `runs.csv` column instead, checked by the
+  gateway on whole-run rows.
+- **The video type is a `Tuning` field**, because `tracking_defaults` may set it (a dataset is one
+  video type), and every key `tracking_defaults` takes is a `Tuning` field (#140, #141). Being in the
+  tracking memo's key, changing it re-tracks the run although only the cut moves. That was accepted:
+  a dataset's type is set once.
+
+**The 60 s stability cut rests on dev's 23_7 alone.** 23_7 is confidently wrong, with a high margin
+all through, and only `unstable` catches it (`bg_first` moved it for 89.8 s). Leave-one-session-out
+on drone misses it with session 2026-02-19 held out, and on held-out the cut never fired (the highest
+failure was 6 s). Held-out neither supports nor contradicts it, so it stays, untuned.
+
+**`fast` is held to its cut on AprilTag footage only.** Elsewhere `target_width` is a default rather
+than the target's real width, so widths per second mean different things in different datasets: sherry's
+passes run at about 3. A non-drone speed rank (R2) caught bastien 18 for 7 more flagged passes, and was
+not kept. The value is still written for every run, with an empty cut.
+
+**One behaviour change: a fast non-AprilTag run no longer warns.** `warn_if_fast` warned on every
+whole-run track whose fastest second was over 3 widths/s, whatever the footage. The review's warning
+names whichever signals flagged, and points at the csv.
+
+**Cost.** The review costs one backward pass for the margin and two more solves, the two
+background halves (each a full path, without the margin). Without the motion model the margin also
+keeps the forward messages: four more bytes per grid pixel per sample, as much again as the score.
+With it they are kept per step, a fifth of that. The research measured the three at a median 1.5–1.9×
+the shipped path (`flagging.md`, `heldout-gate.md`).
+
+**Reproduced on the 1,622 judged runs** (D's three store batches): GATE-RESULT
+
+What was left out: the margin curve (no gain on drone), data stability over all four perturbations
+(more flagged drone passes), and evidence-removal stability (AUROC 0.58), all in `flagging.md`.
 
 ---
 

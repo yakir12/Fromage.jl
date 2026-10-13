@@ -42,6 +42,7 @@ beetle03.mp4,afternoon
 | `aspect` | what the video file reports | the pixel aspect ratio: how much wider a displayed pixel is than a stored one (`2`, `0.5`, `"4/3"`, or `"4:3"`). You normally leave this blank — it is read from the file, and it is `1` for all but anamorphic footage. Fill it in when the file is **wrong** about it, and that is then the ratio everything believes: which pixel `start_location` names, how wide the frame is when checking it, and the shape the tracker looks for. It means the same as `aspect` in [`rectifications.csv`](rectifications.md), which you should then correct to the same value. |
 | `whole_run` | `false` | `true` tracks this run with the [whole-run tracker](#Tracking-a-whole-run-at-once) instead of frame by frame. Run-level: every segment of a run must agree. |
 | `arena_radius` | — | for the [whole-run tracker](#Tracking-a-whole-run-at-once) on AprilTag footage only: the distance from `start_location` to the arena's edge, where the run ends, in the rectification's real-world unit. Blank means no arena prior. Ignored on a row that does not set `whole_run`. |
+| `video_type` | — | for the [whole-run tracker](#Tracking-a-whole-run-at-once): what kind of footage the run is, which sets how strictly its track is [reviewed](results.md#The-review). One of `drone`, `tripod outdoor plywood`, `static outdoor sand mirror`, `tripod outdoor sand mirror`, `indoor LED` and `indoor infrared`, written exactly so. Blank reviews drone footage (an `apriltag` rectification) as `drone`, and anything else by a cut shared by every other type. Run-level, and ignored on a row that does not set `whole_run`. |
 | `run_id` | row number | identifies the run; only needed when one run is tracked from more than one row (below). All-or-nothing: either every row has a `run_id`, or none does. It also names your track file, so it has to be usable as one — see below. |
 | `path` | `.` | the **folder** containing `file`, relative to the location of the csv file. Just the folder — the file name belongs in `file`, not here. |
 | `comment` | — | free text, ignored. |
@@ -87,7 +88,7 @@ Set `whole_run` to `true` and the run is instead tracked by the **whole-run trac
 - It works on a smaller grid than the online tracker: blank `downscale` and `sample_fps` cells on a `whole_run` row mean **a third of the resolution and 5 frames per second**, instead of full resolution and the video's own rate. A value you write, on the row or in `tracking_defaults`, still wins.
 - A run's segments are one path: the first segment's `start_location` is where it starts, and a later segment's is not read.
 - Memory is roughly 0.5 GB per minute of drone footage while a run is tracked, and all runs are tracked at once — so on a small machine, give `main` a few `run_ids` at a time.
-- If a run's track covers more than 3 target widths in its fastest second, `main` warns: no walk is that fast, so the path most likely left the target for something else. Check that run's diagnostic video.
+- Every whole-run track is [reviewed](results.md#The-review): `main` writes three signals per run to `results_dir/review/flags.csv`, and warns about each run any of them flags, so you know which diagnostic clips to watch first. Give each run its `video_type`, which the review is calibrated by.
 
 ## Where the tracker starts looking
 

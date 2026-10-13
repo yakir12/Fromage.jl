@@ -1,9 +1,9 @@
-# The two columns the whole-run tracker adds, `whole_run` and `arena_radius`, as the gateway sees
-# them. Everything here also pins the other half of the contract: a row that does not opt in is
+# The columns the whole-run tracker adds, `whole_run`, `arena_radius` and `video_type`, as the
+# gateway sees them. Everything here also pins the other half of the contract: a row that does not opt in is
 # verified exactly as before, whatever the new columns hold.
 #
 # Its own header, so the rest of the suite's scenarios keep writing the csv they always wrote.
-const WHOLE_HEADER = [HEADER; "whole_run"; "arena_radius"]
+const WHOLE_HEADER = [HEADER; "whole_run"; "arena_radius"; "video_type"]
 wholerow(; kw...) = buildrow(WHOLE_HEADER; merge((run_id = "r", rectification_id = "c", file = ART.a), values(kw))...)
 checkwhole(rows; kw...) = check(rows; header = WHOLE_HEADER, kw...)
 function loaded_whole(rows)
@@ -59,6 +59,25 @@ end
         # check, and a row that does not opt in must verify exactly as it did before the column
         @test clean(checkwhole([wholerow(arena_radius = "-5")]))
         @test flagged(checkwhole([wholerow(arena_radius = "wide")]), 1, "wrong arena_radius format")
+    end
+
+    @testset "video_type (#418)" begin
+        @test ismissing(only(checkwhole([wholerow(whole_run = "true")])).tuning.video_type)
+        @testset "$name" for name in PT.VIDEO_TYPES
+            @test only(checkwhole([wholerow(whole_run = "true", video_type = name)])).tuning.video_type == name
+        end
+        msg = "video_type must be one of: " * join(PT.VIDEO_TYPES, ", ")
+        @test flagged(checkwhole([wholerow(whole_run = "true", video_type = "drones")]), 1, msg)
+        @test flagged(checkwhole([wholerow(whole_run = "true", video_type = "Drone")]), 1, msg)
+        # ignored on a row that does not opt in, as arena_radius is
+        @test clean(checkwhole([wholerow(video_type = "drones")]))
+        t = only(checkwhole([wholerow()]; defaults = (whole_run = true, video_type = "indoor LED"))).tuning
+        @test t.video_type == "indoor LED"
+        rows = [
+            wholerow(whole_run = "true", video_type = "drone"),
+            wholerow(whole_run = "true", video_type = "indoor LED", file = ART.b),
+        ]
+        @test flagged(checkwhole(rows), 1, "run segments disagree on video_type")
     end
 
     @testset "a malformed whole_run is reported" begin
