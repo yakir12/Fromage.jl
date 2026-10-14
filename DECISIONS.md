@@ -1352,8 +1352,19 @@ names whichever signals flagged, and points at the csv.
 **Cost.** The review costs one backward pass for the margin and two more solves, the two
 background halves (each a full path, without the margin). Without the motion model the margin also
 keeps the forward messages: four more bytes per grid pixel per sample, as much again as the score.
-With it they are kept per step, a fifth of that. The research measured the three at a median 1.5–1.9×
-the shipped path (`flagging.md`, `heldout-gate.md`).
+With it they are kept per step, a fifth of that.
+
+- **Measured: 3.8× the path alone** (median; p95 4.07, max 4.27). That is 61 runs, every 27th
+  judged run across all ten datasets, timed head to head on an idle machine at 32 threads:
+  `whole_run_path`, then `whole_run_review`, on the same volume. Every dataset's median falls
+  between 3.6 and 3.99.
+- **The research's 1.5–1.9× (`flagging.md`, `heldout-gate.md`) does not carry over.** Its "shipped
+  path" was the harness's `run_path`, which always ran the margin's backward pass. The package's path
+  never did, so here the backward pass is part of the review's cost.
+- **The path is about a third of a whole-run tracking** ("The whole-run tracker's constants" above),
+  so a reviewed tracking takes roughly twice as long as before. That is an estimate from that third;
+  it was not measured end to end.
+- It stays well inside the map's 10× limit.
 
 **Reproduced on the 1,622 judged runs** (D's three store batches). `whole_run_review` ran on every
 cached volume of the research harness, with each run's `video_type` taken from the store's
@@ -2240,6 +2251,19 @@ ExplicitImports) at 71 s, `PawsomeTracker` at 56 s and `Rectifications` at 26 s.
 since dropped to about 42 s — see "Aqua's persistent-task check is the one network-dependent check"
 below — which changes none of the arithmetic that follows.) A fixture cache
 would have added machinery to save well under 1% of the run, so the duplicate encodes stay.
+
+### The test job's time limit is 60 minutes (#418)
+
+`ReusableTest.yml`'s `timeout-minutes` was 30, and main's ubuntu leg ran in 14–18 of them: about 7
+precompiling with coverage, then about 12 testing. The whole-run review (#418) costs every whole-run
+tracking one backward pass and two more path solves, 3.8× the path alone, and coverage multiplies a
+tight loop's cost far more than the rest. #418's ubuntu leg ran out of its 30 minutes twice. The
+second time was with the review's own tests already cut to the solves each signal needs; it had
+been testing for 23 minutes when it was cancelled. Locally, under coverage at 4 threads, the
+whole-run test file went from 4m25s on main to 18m34s, and then to 11m33s after that cut. The
+AprilTag flight is most of what is left (6m33s against 2m26s on main): its three whole-run
+trackings now each pay for the review. The limit went to 60 rather than 45 because the runner is
+slower than that local measure, and a cold depot roughly doubles the precompile.
 
 ### Cutting the test suite was measured and declined
 

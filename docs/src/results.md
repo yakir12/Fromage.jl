@@ -64,7 +64,7 @@ The three signals:
 - **`ambiguous`**: how much better the chosen path is than the best path that strays more than 3 target widths from it, at the moment where it is least better. A low value means another path would have done almost as well, such as a look-alike nearby. The scale differs between kinds of footage, so the cut is set by the run's [`video_type`](runs.md): the value below which 1% of the good runs of that type fell.
 - **`unstable`**: the longest stretch, in seconds, over which the track moves more than 3 target widths when the background is built from only the first half of the run, or only the second. A run whose track moves away for 60 seconds or more is flagged: something in the footage is changing what the tracker sees.
 
-The whole-run tracker takes about 1.5–1.9 times as long to find and review a path as to find it alone. The reading of the video, which takes longer than either, is unchanged.
+The review is not free: finding and reviewing a path takes about four times as long as finding the path alone, which makes a whole-run run take roughly twice as long as it did. Reading the video takes the same time as before.
 
 ## The diagnostic video
 

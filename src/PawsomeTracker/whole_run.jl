@@ -1133,7 +1133,8 @@ moment(vol::RunVolume, k::Integer) = Moment(vol.tss, k)
 
 The whole-run path over `vol` (`whole_run_path`'s), and its `Review`. On top of the path itself this
 costs a backward pass for the margin and two more solves, the background median built from the first
-half of the samples and from the second; the issue measured the three at 1.5–1.9× the path alone.
+half of the samples and from the second: 3.8× the path alone (median over 61 runs; DECISIONS, "The
+whole-run review").
 Lengths are compared on the full-resolution track (reference pixels on AprilTag footage, display
 ones otherwise) against `tuning.target_width`, as the research measured them.
 """
