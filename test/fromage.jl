@@ -239,6 +239,51 @@ end
     @test isfile(joinpath(outdir, "results_dir", "r1.csv"))
 end
 
+@testset "Fromage end-to-end: a BORIS export as the runs file (#409)" begin
+    # Two Roll pairs coded in one observation, the second sharing the first's run_id, and a third of
+    # its own — with a Dance between them that is not tracked. The export has the coder's own
+    # absolute paths, which name another machine: only the file name is used.
+    dir = mktempdir()
+    make_video(joinpath(dir, "cal.mp4"); size = (320, 240), duration = 2)
+    target, _ = make_target_video(dir, "boris")
+    open(joinpath(dir, "rectifications.csv"), "w") do io
+        println(io, "rectification_id,type,file,extrinsic,pixel_width")
+        println(io, "c1,uniform,cal.mp4,1,2")
+    end
+    boris_header = "Observation id,Observation date,Description,Observation duration,Observation type,Source,Time offset (s),Media duration (s),FPS,Subject,Behavior,Behavioral category,Behavior type,Time,Media file name,Image index,Image file path,Comment,run_id,rectification_id,start_location"
+    event(type, time, behavior, run_id) =
+        "obs,2026-10-06,,2,Media file(s),player #1:E:/coding/$(only(target)),0.0,2.000,25.000,JK,$behavior,,$type,$time,E:/coding/$(only(target)),0,NA,,$run_id,c1,\"(55, 50)\""
+    open(joinpath(dir, "roll.csv"), "w") do io
+        println(io, boris_header)
+        println(io, event("START", 0.0, "Roll", "first"))
+        println(io, event("STOP", 0.6, "Roll", "first"))
+        println(io, event("START", 0.7, "Dance", ""))
+        println(io, event("START", 0.8, "Roll", "first"))
+        println(io, event("STOP", 1.2, "Roll", "first"))
+        println(io, event("STOP", 1.3, "Dance", ""))
+        println(io, event("START", 1.4, "Roll", "second"))
+        println(io, event("STOP", 1.9, "Roll", "second"))
+    end
+    checked = verify(dir; runs_file = "roll.csv", results_dir = mktempdir())
+    @test all(isempty, checked.runs.issues)
+    @test checked.runs.run_id == ["first", "first", "second"]
+    @test checked.runs.csv_rows == [[1, 2], [4, 5], [7, 8]]
+
+    outdir = mktempdir()
+    main(dir; runs_file = "roll.csv", tracking_defaults = (target_width = 10,), results_dir = outdir)
+    @test sort(filter(endswith(".csv"), readdir(outdir))) == ["first.csv", "second.csv"]
+    ts, _, _ = read_track(joinpath(outdir, "first.csv"))
+    @test length(ts) == round(Int, 25 * 0.6) + round(Int, 25 * 0.4)   # both of its segments
+
+    # a problem only the export can have aborts `main` after the report, citing the export's rows
+    open(joinpath(dir, "lonely.csv"), "w") do io
+        println(io, boris_header)
+        println(io, event("START", 0.0, "Roll", "first"))
+    end
+    result, printed = capturing(() -> @test_throws "there were issues" main(dir; runs_file = "lonely.csv", results_dir = mktempdir()))
+    @test occursin("row 1 (run_id: first): Behavior type must alternate START and STOP", printed)
+end
+
 @testset "Fromage end-to-end: AprilTag drone tracking" begin
     # The whole AprilTag path through `main`: a `type = apriltag` rectifications.csv row builds the shared
     # reference from the extrinsic frame; the run registers each frame to it (cancelling the drone

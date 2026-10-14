@@ -106,11 +106,11 @@ const SHARED_PARAMS = (
 # Everything here reads `run_id` and `rectification_id` and nothing else — no filesystem, no decoding.
 # It runs before `verifications!` so that a mistyped or duplicated id fails before a single video is
 # opened, instead of after the whole file has been probed and corner-detected (#121).
-function verify_ids!(df::AbstractDataFrame)
-    # run_id is all-or-nothing, and auto-numbered when every cell is blank. It comes first because
-    # the grouping below, the issue report, and (in `main`) the cross-file check all need the final
-    # value.
-    resolve_run_ids!(df)
+function verify_ids!(df::AbstractDataFrame, format)
+    # run_id is all-or-nothing, and auto-numbered when every cell is blank — in a runs.csv. It comes
+    # first because the grouping below, the issue report, and (in `main`) the cross-file check all
+    # need the final value.
+    resolve_run_ids!(df, format)
     # run_id names the track file and the run diagnostic clip, so it must be a usable file name.
     verify_id_filename!(df, :run_id)
     # Before the rectification comparison: a split run is the more basic mistake, and once it is
@@ -298,6 +298,10 @@ function verifications!(df::AbstractDataFrame, data_path; progress)
     # file that overstates its rate is the case worth declaring; one that understates it cannot be
     # expressed this way, because the extra frames it would need are not there.
     verify!(df, (n, p) -> n > p, "native_fps must not exceed the frame rate the video file reports", :native_fps, :probed_fps)
+    # A BORIS segment's times were coded against BORIS's player, at the rate BORIS read for its
+    # video. Played at another rate, the same `Time` is another frame. BORIS writes the rate to three
+    # decimals, hence the tolerance; a runs.csv row has no `boris_fps` and passes by (#409).
+    verify!(df, (b, p) -> abs(b - p) > BORIS_FPS_TOLERANCE, "FPS must match the frame rate the video file reports", :boris_fps, :probed_fps)
     # A window shorter than half a frame period is not what anyone asking for a window meant. It
     # does not crash: `Video` floors its sample count at one (`max(1, floor(Int, …))`), so such a
     # segment yields a single-sample track instead — silently, which is why this is checked here.

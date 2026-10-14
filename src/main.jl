@@ -224,12 +224,12 @@ track_runs(rs, cs) = @showprogress desc = "Building runs" tmap(track_run, rs, cs
 # The two loaders are driven a tier at a time rather than through `load_rectifications`/`load_runs`,
 # which validate one file end to end: the cross-file check has to happen between the tiers, and it
 # needs both files parsed to run at all.
-function _validate_dataset(results_dir, data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults)
+function _validate_dataset(results_dir, data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults, boris_behavior)
     rects, rects_ids_ok = VerifyRectifications.parse_rectifications(
         data_path, joinpath(data_path, rectifications_file); defaults = rectification_defaults, progress = true
     )
     runs, runs_ids_ok = VerifyRuns.parse_runs(
-        data_path, joinpath(data_path, runs_file); defaults = tracking_defaults, progress = true
+        data_path, joinpath(data_path, runs_file); defaults = tracking_defaults, boris_behavior, progress = true
     )
 
     # Coherence is a property of the two files AS WRITTEN, so it is checked on all of their rows —
@@ -255,10 +255,10 @@ function _validate_dataset(results_dir, data_path, rectifications_file, runs_fil
 end
 
 # Build both, or throw. Always returns the two vectors.
-function load_dataset(results_dir, data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults)
+function load_dataset(results_dir, data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults, boris_behavior)
     rects, runs, bad = _validate_dataset(
         results_dir, data_path, rectifications_file, runs_file,
-        rectification_defaults, tracking_defaults
+        rectification_defaults, tracking_defaults, boris_behavior
     )
     bad && error("there were issues with the data (see above)")
     return VerifyRectifications.build_methods(rects), VerifyRuns.build_runs(runs)
@@ -267,10 +267,10 @@ end
 # Validate and report, never throw. Always returns both annotated DataFrames — both, not just the
 # offending one: a dataset is accepted or rejected as a whole, and runs whose rectification was
 # rejected are not buildable anyway.
-function check_dataset(results_dir, data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults)
+function check_dataset(results_dir, data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults, boris_behavior)
     rects, runs, _ = _validate_dataset(
         results_dir, data_path, rectifications_file, runs_file,
-        rectification_defaults, tracking_defaults
+        rectification_defaults, tracking_defaults, boris_behavior
     )
     return rects, runs
 end
@@ -278,7 +278,7 @@ end
 """
     main(data_path; rectifications_file = "rectifications.csv", runs_file = "runs.csv",
          rectification_defaults = (;), tracking_defaults = (;), run_ids = nothing,
-         rectification_diagnostics = false, results_dir = "results_dir")
+         rectification_diagnostics = false, results_dir = "results_dir", boris_behavior = "Roll")
 
 Run the whole pipeline over the data folder `data_path`: validate `rectifications.csv` and `runs.csv` as one
 dataset, build the map each rectification row describes, track every run through the one it names, and
@@ -296,7 +296,14 @@ in them. A file of the same name already there is overwritten.
 
 # Keyword arguments
 
-- `rectifications_file`, `runs_file`: the two csv file names, relative to `data_path`.
+- `rectifications_file`, `runs_file`: the two csv file names, relative to `data_path`. `runs_file`
+  may also be a BORIS "Tabular events" export (csv) with `run_id` and `rectification_id` columns
+  added: each START/STOP pair of the `boris_behavior` behaviour becomes a segment, as a `runs.csv`
+  row would (see the runs docs).
+
+- `boris_behavior`: the BORIS behaviour whose START/STOP pairs are tracked when `runs_file` is a
+  BORIS export, spelled as in the export's `Behavior` column. Rows of every other behaviour are
+  ignored. Has no effect on a `runs.csv`.
 
 - `rectification_defaults`, `tracking_defaults`: globally replace the hardcoded defaults of the
   tracking and rectification parameters, e.g.
@@ -332,10 +339,11 @@ anything.
 function main(
         data_path::String; rectifications_file = "rectifications.csv", runs_file = "runs.csv",
         rectification_defaults = (;), tracking_defaults = (;), run_ids = nothing,
-        rectification_diagnostics::Bool = false, results_dir::String = RESULTS_DIR
+        rectification_diagnostics::Bool = false, results_dir::String = RESULTS_DIR,
+        boris_behavior::String = VerifyRuns.DEFAULT_BORIS_BEHAVIOR
     )
     results_dir = mkpath(abspath(results_dir))   # resolved once, so every artefact lands in one place
-    cs, rs = load_dataset(results_dir, data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults)
+    cs, rs = load_dataset(results_dir, data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults, boris_behavior)
 
     # Coherence guarantees every rectification is used, so with no `run_ids` this keeps all of them;
     # with one, it drops the rectifications the surviving runs no longer reference.
@@ -379,7 +387,8 @@ end
 
 """
     verify(data_path; rectifications_file = "rectifications.csv", runs_file = "runs.csv",
-           rectification_defaults = (;), tracking_defaults = (;), results_dir = "results_dir")
+           rectification_defaults = (;), tracking_defaults = (;), results_dir = "results_dir",
+           boris_behavior = "Roll")
 
 Validate `rectifications.csv` and `runs.csv` in `data_path` as one dataset and report everything wrong with
 them, **without building or tracking anything**. For looking at a dataset rather than processing it;
@@ -398,16 +407,23 @@ The only files `verify` writes are the frames of rectifications that failed dete
 `<results_dir>/issues/` in a time-stamped folder per invocation. `results_dir` is the output folder
 itself, as in [`main`](@ref), and a relative one is resolved against the working directory at the call.
 A dataset with nothing to report creates nothing, not even `results_dir`.
+
+`runs_file` may be a BORIS export, as in [`main`](@ref), with `boris_behavior` naming the behaviour
+to track. The returned `runs` then holds one row per segment the export was turned into — a pair
+that crosses into the next video is two — with `csv_rows` naming the export's rows it came from, and
+the export's `subject`, `behavior`, `observation_id` and `comment`, plus any column you added, beside
+them. Nothing of it is written to disk; this is the way to look at it.
 """
 function verify(
         data_path::String; rectifications_file = "rectifications.csv", runs_file = "runs.csv",
-        rectification_defaults = (;), tracking_defaults = (;), results_dir::String = RESULTS_DIR
+        rectification_defaults = (;), tracking_defaults = (;), results_dir::String = RESULTS_DIR,
+        boris_behavior::String = VerifyRuns.DEFAULT_BORIS_BEHAVIOR
     )
     # Not created here: the issue frames are the only thing `verify` writes, and their folder is made
     # when the first one is saved, so a clean dataset leaves no trace (#86).
     rects, runs = check_dataset(
         abspath(results_dir), data_path, rectifications_file, runs_file,
-        rectification_defaults, tracking_defaults
+        rectification_defaults, tracking_defaults, boris_behavior
     )
     return (; rectifications = rects, runs)
 end

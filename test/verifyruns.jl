@@ -23,6 +23,7 @@ include("VerifyRuns/helpers.jl")
     include("VerifyRuns/test_gatekeeper.jl")
     include("VerifyRuns/test_tracking.jl")
     include("VerifyRuns/test_whole_run.jl")
+    include("VerifyRuns/test_boris.jl")
 end
 
 end

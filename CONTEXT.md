@@ -22,6 +22,9 @@ Everything starts with one folder holding videos and two csv files.
 
 They are joined on `rectification_id`, which is a column of both.
 
+`runs.csv` has one alternative: a **BORIS export** (below) can stand in for it, and becomes the same
+segments.
+
 ---
 
 ## Run
@@ -74,6 +77,26 @@ A tracked frame has two times, and they agree only within the first segment:
 - **Run time** — the run's timeline above: the `time` column of the track. It never jumps.
 
 "Timestamp" alone says neither; say which.
+
+A BORIS export adds a third, which only the adapter reads:
+
+- **Observation time** — seconds into a BORIS observation's videos played back to back, from the
+  start of the first. It is BORIS's `Time` less its `Time offset (s)`. The adapter turns it into a
+  video and a file time; nothing past the gateway sees it.
+
+### BORIS export
+
+A **BORIS "Tabular events" export** (csv), used as the runs file in place of a `runs.csv`. One per
+observation; one row per START or STOP of a coded behaviour. Each START/STOP pair of the chosen
+**behaviour** becomes a segment — or one segment per video, when the pair crosses from one of the
+observation's videos into the next, since a segment never spans two files. The user adds `run_id`
+and `rectification_id` columns (and any other `runs.csv` column) to it; pairs sharing a `run_id` are
+the segments of one run. Recognised by its header, adapted in memory (`VerifyRuns`' `boris.jl`),
+and never written out as a `runs.csv`.
+
+**Behaviour** is BORIS's word for what a coder marks (`Roll`, `Dance`): the `Behavior` column,
+chosen by `main`'s and `verify`'s `boris_behavior`. Fromage spells it the British way except where
+it names BORIS's column or that keyword.
 
 ### Segment number
 

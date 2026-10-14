@@ -134,6 +134,30 @@ Both are one run: one track file, one diagnostic, one set of parameters.
 - `run_id` is all-or-nothing: as soon as one row has a `run_id`, every row needs one (rows with a `run_id` all of their own are ordinary single-segment runs). If no row has one, each row is its own run.
 - `run_id` becomes a **file name**: your track file is `<run_id>.csv`, and the diagnostic video is assembled from per-run parts named the same way. So it may not contain `/`, `\`, `:`, `*`, `?`, `"`, `<`, `>` or `|`, and may not be `.` or `..` — a bad one is reported along with everything else in the file, before any tracking starts. Spaces and apostrophes are fine (`beetle's run 3` works).
 
+## Runs coded in BORIS
+
+If you mark your runs in [BORIS](https://github.com/olivierfriard/BORIS) — a START and a STOP for each stretch of a behaviour such as `Roll` — you can give Fromage BORIS's export instead of writing a `runs.csv`. Each START/STOP pair becomes one segment.
+
+1. In BORIS, export the observation's events as **Tabular events**, in **csv** format (not tsv, xlsx, or "Aggregated events"). One file per observation.
+2. Open the file in a spreadsheet and add two columns: **`run_id`** and **`rectification_id`**. Fill both on every START and STOP row of the behaviour you track; rows of other behaviours can stay blank. Pairs that share a `run_id` are the segments of one run, in the file's order — so a roll that was interrupted and coded as three pairs is one run if you give the three the same `run_id`.
+3. Put the file in your data folder and name it as the runs file:
+
+```julia
+main("/path/to/data"; runs_file = "beetles_T1.csv")
+verify("/path/to/data"; runs_file = "beetles_T1.csv")   # to check it first
+```
+
+The behaviour tracked is `Roll` unless you say otherwise: `boris_behavior = "Dance"` tracks the `Dance` pairs instead. Every other behaviour's rows are ignored. Fromage recognises a BORIS export by its own column names, so a `runs.csv` is never mistaken for one.
+
+What else to know:
+
+- **Videos.** Fromage finds each pair's video in the export's `Source` list, by file name only — the folders BORIS recorded are on the computer that did the coding. Put the videos beside the export, or say where they are with a `path` column. `start` and `stop` come from BORIS's `Time`, less its `Time offset (s)`.
+- **A pair that crosses into the next video** (the camera split the recording) is split for you into one segment per video, all under the pair's `run_id`.
+- **Every other `runs.csv` column works too.** Add `start_location`, `target_width`, `whole_run`, … as columns, exactly as in a `runs.csv`. A pair's START and STOP rows must agree on them.
+- **Your own columns are kept** in what `verify` returns, beside the export's `subject`, `behavior`, `observation_id` and `comment`. Where a pair's two rows differ, you see both values, START's first: `before | after`.
+- **Checks.** Besides everything checked in a `runs.csv`, Fromage reports a START with no STOP (or a STOP with no START) within a subject, a POINT event of the tracked behaviour, a blank `run_id`, an observation that is live or made from images instead of video, more than one player, a `Time` outside the observation's videos (which is also how an observation coded with the video's creation date as its offset shows up), and a video whose frame rate is not the `FPS` BORIS used. Issues name the export's own rows — `rows 11 and 12` — so you can find them in the file you edit.
+- Pairs of different subjects may share a `run_id`; Fromage does not check what your runs mean, only what it needs to track them.
+
 ## Next
 
 - [rectifications.csv →](rectifications.md)

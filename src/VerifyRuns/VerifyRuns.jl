@@ -1,9 +1,9 @@
 module VerifyRuns
 
-using DataFrames: AbstractDataFrame, DataFrame, allowmissing!, groupby, nrow
-using ..Gateway: backfill!, blank!, issue_report, read_per_file!, read_rows, report_issues, resolve_paths!,
-    verify!, verify_id_filename!
-using ..Parsing: Parsing, MyTemporal, REQUIRED, parseto!
+using DataFrames: AbstractDataFrame, DataFrame, allowmissing!, groupby, nrow, passmissing
+using ..Gateway: backfill!, blank!, issue_report, read_csv, read_per_file!, report_issues, resolve_paths!,
+    screen_columns, verify!, verify_id_filename!
+using ..Parsing: Parsing, MyTemporal, REQUIRED, filled, parseto!
 import ..Parsing: mytryparse                # extended on MyWindow (a type this module owns)
 using ..Probing: frame_geometry, native_framerate, no_video_stream, parse_sar, probe_fields
 using ..Spaces: display_center_x
@@ -40,6 +40,7 @@ const RENAMED_COLUMNS = Dict(
 )
 
 include("types.jl")
+include("boris.jl")       # before parsers.jl, whose `resolve_run_ids!` dispatches on its formats
 include("parsers.jl")
 include("verifications.jl")
 
@@ -48,13 +49,24 @@ include("verifications.jl")
 # DataFrame — `:issues` carrying whatever the parse and that tier found — and whether every identity
 # came through usable. Split out of `load_runs` so `main` can settle BOTH files' identities before
 # either one opens a video (#121).
-function parse_runs(data_path, file; defaults, progress)
+#
+# `file` is a `runs.csv` or a BORIS export, told apart by its header (boris.jl). Either way it becomes
+# one record per segment before a cell is parsed, and from there on the two are one pipeline.
+# `boris_behavior` names the behaviour a BORIS export's segments are coded as; a runs.csv ignores it.
+function parse_runs(data_path, file; defaults, boris_behavior, progress)
     whole_run_defaults = resolve_whole_run_defaults(defaults)
     defaults = resolve_defaults(defaults)   # fail fast on unknown keys / unconvertible values
-    csvrows = read_rows(file, COLUMNS, "runs"; renamed = RENAMED_COLUMNS)
+    csvrows = read_csv(file, "runs")
+    header = Tables.schema(csvrows).names
+    format = runs_format(header, boris_behavior)
+    screen_columns(csvrows, known_columns(format), RENAMED_COLUMNS, file)
+    records = segment_records(format, header, collect(csvrows))
 
-    # parse each row to a Dict of parsed values + an :issues accumulator
-    cs = @showprogress desc = "Parsing runs.csv..." enabled = progress tmap(r -> parse_row(r, defaults, whole_run_defaults), collect(csvrows))
+    # parse each record to a Dict of parsed values + an :issues accumulator, holding whatever the
+    # adapter already found, plus the cells that are not Fromage's to parse
+    cs = @showprogress desc = "Parsing runs.csv..." enabled = progress tmap(
+        r -> merge!(parse_row(r.cells, r.issues, defaults, whole_run_defaults), r.extra), records
+    )
 
     df = DataFrame(Tables.dictrowtable(cs))
     allowmissing!(df)
@@ -63,17 +75,19 @@ function parse_runs(data_path, file; defaults, progress)
     # keys on, so they are counted rather than inferred from the messages: whatever `verify_ids!`
     # adds, plus an identity the parser could not read at all.
     before = sum(length, df.issues)
-    verify_ids!(df)
+    verify_ids!(df, format)
     identities_ok = sum(length, df.issues) == before &&
         !any(ismissing, df.run_id) && !any(ismissing, df.rectification_id)
     return df, identities_ok
 end
 
 # a run_id that is missing (mixed numbering) or equal to the row number (auto-assigned) adds
-# nothing over "row $i", so it is only mentioned when the csv named the run itself
+# nothing over "row $i", so it is only mentioned when the csv named the run itself. A BORIS
+# segment cites the export's rows (`csv_rows`), and a pair's two rows can never be one number, so its
+# run_id, mandatory there, is mentioned.
 runs_report(df) = issue_report(
-    df, :run_id, "runs.csv";
-    mention = (i, rid) -> !ismissing(rid) && rid != string(i)
+    df, :run_id, "runs.csv", row_label.(df.csv_rows);
+    mention = (i, rid) -> !ismissing(rid) && df.csv_rows[i] != [tryparse(Int, rid)]
 )
 report_runs(df, strict) = report_issues(runs_report(df), "runs", strict)
 
@@ -90,8 +104,8 @@ build_runs(df) = Run[Run(g) for g in groupby(df, :run_id)]
 #
 # Only identity issues open this gate. A malformed `start` in one row does not make the other rows'
 # videos less worth checking, so it rides along to the full report rather than cutting the run short.
-function load_runs(data_path, file; defaults, progress)
-    df, identities_ok = parse_runs(data_path, file; defaults, progress)
+function load_runs(data_path, file; defaults, boris_behavior, progress)
+    df, identities_ok = parse_runs(data_path, file; defaults, boris_behavior, progress)
     identities_ok || report_runs(df, true)
     verifications!(df, data_path; progress)
     report_runs(df, true)
@@ -106,8 +120,8 @@ end
 # No first-tier abort here: nothing is going to be built, so the rows stay and are quarantined
 # instead. Every second-tier stage skips flagged rows, so the rest of the file is still validated
 # and the caller gets one combined report at the end.
-function check_runs(data_path, file; defaults, progress)
-    df, identities_ok = parse_runs(data_path, file; defaults, progress)
+function check_runs(data_path, file; defaults, boris_behavior, progress)
+    df, identities_ok = parse_runs(data_path, file; defaults, boris_behavior, progress)
     identities_ok || report_runs(df, false)
     verifications!(df, data_path; progress)
     report_runs(df, false)
