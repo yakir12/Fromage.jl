@@ -35,9 +35,28 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # GitHub sometimes answers the runner with 503 for a page that is up (#423), and lychee
+      # never retries a rejected status other than 429, whatever `max_retries` says. So the check
+      # runs twice: `--cache` keeps every link that passed and drops every one that failed, so the
+      # second pass re-fetches only the failures, two minutes later. A transient refusal clears on
+      # it; a dead link fails both. The report goes outside the checkout, or the second pass would
+      # check the first one's list of failures as if it were documentation.
       - name: Link Checker
         id: lychee
         uses: lycheeverse/lychee-action@v2
         with:
+          fail: false
+          output: ${{ runner.temp }}/lychee/first-pass.md
+          args: --config '.lychee.toml' --cache --max-cache-age 1d .
+
+      - name: Wait before re-checking the links that failed
+        if: steps.lychee.outputs.exit_code != 0
+        run: sleep 120
+
+      - name: Link Checker (failures only)
+        if: steps.lychee.outputs.exit_code != 0
+        uses: lycheeverse/lychee-action@v2
+        with:
           fail: true
-          args: --config '.lychee.toml' .
+          output: ${{ runner.temp }}/lychee/second-pass.md
+          args: --config '.lychee.toml' --cache --max-cache-age 1d .
