@@ -366,6 +366,12 @@ end. The per-fix pipeline buys nothing when CI cannot see the change.
 11. **Clean up.** `git checkout main && git pull` — the bot's bump commit leaves local `main` one
     behind after every release — then delete the **local** fix branch. The repository deletes
     merged remote branches by itself, so `git push origin --delete` just fails.
+    **Work done in a git worktree ends with the worktree removed**, once its branch is gone and
+    `git status` in it shows ignored files alone (anything else: stop and ask). A live session
+    holds its worktree `locked`, so remove it from outside: exit through Claude Code's worktree
+    exit with removal, or from the main checkout `git worktree unlock <path>`, then
+    `git worktree remove --force <path>` (`--force` because the ignored `Manifest.toml` blocks a
+    plain remove) and `git worktree prune`.
 
 **Done means all of it:** local validation green, PR CI green, merged, post-merge automation green,
 the release and version bump actually completed, cleanup done, and no remaining failure
