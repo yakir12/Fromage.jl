@@ -299,7 +299,7 @@ in them. A file of the same name already there is overwritten.
 - `rectifications_file`, `runs_file`: the two csv file names, relative to `data_path`. `runs_file`
   may also be a BORIS "Tabular events" export (csv) with `run_id` and `rectification_id` columns
   added: each START/STOP pair of the `boris_behavior` behaviour becomes a segment, as a `runs.csv`
-  row would (see the runs docs).
+  row would (see the docs page "Runs coded in BORIS", which walks through an example).
 
 - `boris_behavior`: the BORIS behaviour whose START/STOP pairs are tracked when `runs_file` is a
   BORIS export, spelled as in the export's `Behavior` column. Rows of every other behaviour are
@@ -412,7 +412,8 @@ A dataset with nothing to report creates nothing, not even `results_dir`.
 to track. The returned `runs` then holds one row per segment the export was turned into — a pair
 that crosses into the next video is two — with `csv_rows` naming the export's rows it came from, and
 the export's `subject`, `behavior`, `observation_id` and `comment`, plus any column you added, beside
-them. Nothing of it is written to disk; this is the way to look at it.
+them. Nothing of it is written to disk; this is the way to look at it. The docs page "Runs coded in
+BORIS" shows how to prepare such an export.
 """
 function verify(
         data_path::String; rectifications_file = "rectifications.csv", runs_file = "runs.csv",

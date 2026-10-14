@@ -35,7 +35,7 @@ my experiment/
 └── ...
 ```
 
-The two csv files are where you tell Fromage what to do — which video is which, when each run starts and stops, how big the target is, and so on. The [data folder page](data-folder.md) explains them, and template files to copy from live in [`examples/`](https://github.com/yakir12/Fromage.jl/tree/main/examples).
+The two csv files are where you tell Fromage what to do — which video is which, when each run starts and stops, how big the target is, and so on. The [data folder page](data-folder.md) explains them, and template files to copy from live in [`examples/`](https://github.com/yakir12/Fromage.jl/tree/main/examples). If you code your runs in BORIS, you can use its export instead of `runs.csv`: see [Runs coded in BORIS](boris.md).
 
 ### Start Julia with multiple threads
 
@@ -67,6 +67,7 @@ Open `results_dir/diagnostic.mp4` and watch it — it shows every run with a cir
 
 - [The data folder](data-folder.md) — how to organise your files and the rules both csv files share.
 - [runs.csv](runs.md) — describing your run videos.
+- [Runs coded in BORIS](boris.md) — using a BORIS export instead of `runs.csv`.
 - [rectifications.csv](rectifications.md) — describing your rectification videos.
 - [Your results](results.md) — what the output files contain and how the coordinates work.
 - [Help & troubleshooting](help.md) — when something goes wrong.
