@@ -11,6 +11,11 @@
 # Large foreground (#412) is where an experimenter, or their shadow, is: the path pays to enter it
 # and a large blob inside it scores less, so the track does not leave the target with a person.
 #
+# The tracker then reviews its own track (#418, `whole_run_review`): how fast its fastest second is,
+# how little its path beats any path that strays from it (the anchored margin, from a backward pass
+# over the same evidence), and how far it moves when the background is built from half the run. A run
+# any of the three flags is one to check by eye; `main` writes them to `review/flags.csv`.
+#
 # Two variants, chosen by the rectification's type (`path_model`):
 #
 # - AprilTag footage (drone): `MotionModel`. The path steps whole seconds through a Viterbi over
@@ -101,10 +106,33 @@ const ENTRY_MIN_W = 1.0
 const SIZE_KAPPA = 4.0
 const SIZE_LAMBDA = 1.0
 
-# A run whose fastest second covers more than this many target widths is flagged (`@warn`). The
-# fitted walk's p99.9 is 1.6 widths/s; every whole-run failure among 157 drone runs had a fastest
-# second of 3.5–4 (#376).
+# The review (#418, rule R1 of #413): three signals per run, and the run is flagged for review when
+# any of them is. `fast`: the fastest second covers more than SUSPECT_SPEED target widths, on
+# AprilTag footage only; elsewhere `target_width` is a default rather than the target's real width.
+# The fitted walk's p99.9 is 1.6 widths/s; every whole-run failure among 157 drone runs had a fastest
+# second of 3.5–4 (#376). `ambiguous`: the minimum anchored margin is below its video type's cut
+# (MARGIN_CUTS). `unstable`: the track is more than RIVAL_WIDTHS widths from the path re-solved on a
+# background median of half the run, for UNSTABLE_SECONDS or longer.
 const SUSPECT_SPEED = 3.0
+const RIVAL_WIDTHS = 3.0
+const UNSTABLE_SECONDS = 60.0
+
+# The margin cut of each video type (CONTEXT, "Video type"), in nats: the k-th lowest `margin_min`
+# among that type's eye-passed dev runs (k such that 1% of them fall below it), fitted on candidate D
+# in the research (`prototypes/413/margin_cuts.txt`) and frozen. The values are those margins exactly,
+# Float32 as the margin is: the issue's two-decimal roundings flag two more passes (DECISIONS, "R1").
+# Tripod outdoor sand mirror had no passes left to fit on, and borrows the pooled cut of every
+# non-drone pass, which is also what a blank video type gets off AprilTag footage.
+const POOLED_MARGIN_CUT = 2.87998f0
+const MARGIN_CUTS = (
+    "drone" => 1.0039139f0,
+    "tripod outdoor plywood" => 1.0799866f0,
+    "static outdoor sand mirror" => 15.119993f0,
+    "tripod outdoor sand mirror" => POOLED_MARGIN_CUT,
+    "indoor LED" => 14.76001f0,
+    "indoor infrared" => 108.72479f0,
+)
+const VIDEO_TYPES = first.(MARGIN_CUTS)
 
 # Each segment's sample times: the `StepRangeLen` a `range` of `Float64`s is, as the online
 # tracker's `track` collects them.
@@ -545,31 +573,59 @@ path_model(r::ApriltagRectification, t::Tuning) = MotionModel(t.arena_radius / (
 path_model(_, ::Tuning) = NoMotionModel()
 
 """
-    whole_run_path(vol, model, darker_target) -> Vector{NTuple{2, Float64}}
+    whole_run_path(vol, model, darker_target, ks = eachindex(vol.frames)) -> Vector{NTuple{2, Float64}}
 
 The target's grid index at every sample of `vol`: the best path under `model`, each point then
 localised on the uncapped score. Inside large foreground (`large_foreground`) the score of a large
-blob is lowered and entering it costs the path (#412).
+blob is lowered and entering it costs the path (#412). The background is the median over the
+samples `ks`: all of them, but for the review's background-half solves (`whole_run_review`).
 """
-function whole_run_path(vol::RunVolume, model, darker_target)
-    bg = background(vol.frames)
+whole_run_path(vol::RunVolume, model, darker_target, ks = eachindex(vol.frames)) =
+    first(solve(vol, model, darker_target, ks, nothing))
+
+# Asks `best_path` for the anchored margin too.
+struct WithMargin end
+
+# The path, and with `margin = WithMargin()` the anchored margin at each of its steps (`nothing`
+# without it). Every sample is scored and masked against the one background over `ks`.
+function solve(vol::RunVolume, model, darker_target, ks, margin::Union{Nothing, WithMargin})
+    bg = background(vol.frames[ks])
     z = score_dark(vol, bg, darker_target)
-    return whole_run_path!(z, large_foreground(vol, bg), vol, model)
+    return solve!(z, large_foreground(vol, bg), vol, model, margin)
 end
 
 # The path on the score `z`, given each sample's large foreground `fg`; lowers `z` by the size term.
 # With no large foreground anywhere this is the tracker before #412 exactly, which is how the tests
 # compare the two.
-function whole_run_path!(z, fg, vol::RunVolume, model)
+whole_run_path!(z, fg, vol::RunVolume, model) = first(solve!(z, fg, vol, model, nothing))
+
+function solve!(z, fg, vol::RunVolume, model, margin::Union{Nothing, WithMargin})
     za = anchor_contrast(z, vol)   # the target's own contrast, before the size term lowers z
     penalise_large_blobs!(z, fg, za, vol.width)
-    return refine(z, best_path(model, z, za, vol, fg), vol.width)
+    nodes, m = best_path(model, z, za, vol, fg, margin)
+    return refine(z, to_samples(nodes, step_samples(model, vol), size(z, 3)), vol.width), m
 end
+
+# Where `best_path` keeps its forward messages, for the margin's backward pass to complete into
+# max-marginals: one array per state and step. Each model allocates its own (`WithMargin`), so a
+# store never meets the other model's path.
+best_path(model, z, za, vol, fg, ::WithMargin) = best_path(model, z, za, vol, fg, forward_store(model, z, vol))
+forward_store(::NoMotionModel, z, _) = similar(z)
+function forward_store(model::MotionModel, z, vol)
+    R, C, n = size(z)
+    N = cld(n, step_samples(model, vol))
+    return (Array{Float32, 3}(undef, R, C, N), Array{Float32, 3}(undef, R, C, N))
+end
+
+# The samples per path step: a second's worth with the motion model, one without.
+step_samples(::MotionModel, vol) = max(1, round(Int, STEP_SECONDS / vol.dt))
+step_samples(::NoMotionModel, _) = 1
 
 # The per-pixel ceiling on a sample's score, as a fraction of the target's own contrast: anything at
 # least as dark as the target scores the same, so a larger dark thing is no more attractive. A long
-# move from outside sample `k`'s large foreground to inside it pays the entry cost `ec`.
-function best_path(::NoMotionModel, z, za, vol, fg)
+# move from outside sample `k`'s large foreground to inside it pays the entry cost `ec`. Returns the
+# path, one grid index per sample, and its anchored margin (`no_motion_margin`) when `F` is a store.
+function best_path(::NoMotionModel, z, za, vol, fg, F::Union{Nothing, Array{Float32, 3}})
     R, C, n = size(z)
     σ = NO_MOTION_SPEED * vol.width * vol.dt
     reach = max(2, ceil(Int, 4σ))
@@ -583,6 +639,7 @@ function best_path(::NoMotionModel, z, za, vol, fg)
     for ix in anchor_disk(vol, R, C)
         δ[ix] = min(z[ix, 1], cap)
     end
+    keep!(F, δ, 1)
     δnext = similar(δ)
     for k in 2:n
         fgk = fg[k]
@@ -602,8 +659,87 @@ function best_path(::NoMotionModel, z, za, vol, fg)
             end
         end
         δ .= δnext .- maximum(δnext)
+        keep!(F, δ, k)
     end
-    return backtrack(back, offsets, argmax(δ))
+    p = backtrack(back, offsets, argmax(δ))
+    return p, no_motion_margin(F, p, z, vol, fg, offsets, cost, long, cap, ec)
+end
+
+# Keep step `k`'s forward message in the store `F`: one array, or the (stopped, walking) pair.
+keep!(::Nothing, _, _) = nothing
+keep!(F::Array{Float32, 3}, δ, k) = (F[:, :, k] .= δ; nothing)
+function keep!((FS, FW)::NTuple{2, Array{Float32, 3}}, (S, W), k)
+    FS[:, :, k] .= S
+    FW[:, :, k] .= W
+    return nothing
+end
+
+# THE ANCHORED MARGIN (#418, from the research's linking note #389): at each step of the path, the
+# path's score less the best score of any path that satisfies the same anchors (starts in the anchor
+# disk, pays the same ending) and is more than RIVAL_WIDTHS target widths from the path at that step.
+# Max-marginals give it at every step for one more pass: the forward messages kept in `F`, plus a
+# backward pass over the same evidence, with the same entry cost on the same moves. It is a lower
+# bound on a disjoint rival's deficit, since the rival may rejoin the path elsewhere. In nats, the
+# score's unit, so its scale differs by footage (hence a cut per video type, `MARGIN_CUTS`).
+
+# Without a store there is no margin.
+no_motion_margin(::Nothing, _...) = nothing
+
+# β_k(x) = max over offsets o of β_{k+1}(x + o) + score_{k+1}(x + o) − cost(o), less the entry cost
+# of a long move from outside sample k + 1's large foreground into it. `F` becomes the max-marginals.
+function no_motion_margin(F::Array{Float32, 3}, p, z, vol, fg, offsets, cost, long, cap, ec)
+    R, C, n = size(z)
+    β = zeros(Float32, R, C)
+    βn, src = similar(β), similar(β)
+    for k in n:-1:1
+        if k < n
+            @. src = β + min($view(z, :, :, k + 1), cap)
+            no_motion_backward!(βn, src, offsets, cost, fg[k + 1], long, ec)
+            β .= βn .- maximum(βn)
+        end
+        view(F, :, :, k) .+= β
+    end
+    return margins(F, p, vol.width)
+end
+
+# The no-motion forward step run backward: out[x] = max over offsets o of src[x + o] − cost[o], less
+# the entry cost of a `long` move from outside `fgK` to inside it.
+function no_motion_backward!(out, src, offsets, cost, fgK, long, ec)
+    R, C = size(src)
+    tforeach(1:C) do c
+        for r in 1:R
+            best = -Inf32
+            from_out = !fgK[r, c]
+            for (j, (dr, dc)) in enumerate(offsets)
+                rr, cc = r + dr, c + dc
+                (1 <= rr <= R && 1 <= cc <= C) || continue
+                s = src[rr, cc] - cost[j]
+                (from_out && long[j] && fgK[rr, cc]) && (s -= ec)
+                best = max(best, s)
+            end
+            out[r, c] = best
+        end
+    end
+    return out
+end
+
+# The margin at each step, from the max-marginals `M` and the path `nodes` (one grid index per step):
+# the best of all minus the best more than RIVAL_WIDTHS widths from the path's point.
+function margins(M::Array{Float32, 3}, nodes, width)
+    R, C, N = size(M)
+    rad2 = (RIVAL_WIDTHS * width)^2
+    out = Vector{Float32}(undef, N)
+    tforeach(1:N) do K
+        r0, c0 = nodes[K]
+        top, rival = -Inf32, -Inf32
+        for c in 1:C, r in 1:R
+            v = M[r, c, K]
+            top = max(top, v)
+            (r - r0)^2 + (c - c0)^2 > rad2 && (rival = max(rival, v))
+        end
+        out[K] = top - rival
+    end
+    return out
 end
 
 function backtrack(back, offsets, last)
@@ -713,9 +849,11 @@ function arena_costs(d, arena::Float64)
     return outside, ending
 end
 
-function best_path(model::MotionModel, z, za, vol, fg)
+# Returns the path, one grid index per STEP (`to_samples` spreads it over the samples), and its
+# anchored margin (`motion_margin`) when `F` is a store.
+function best_path(model::MotionModel, z, za, vol, fg, F::Union{Nothing, NTuple{2, Array{Float32, 3}}})
     R, C, n = size(z)
-    m = max(1, round(Int, STEP_SECONDS / vol.dt))
+    m = step_samples(model, vol)
     e = emission(z, za, m)
     N = size(e, 3)
     stopped, walking = step_kernels(vol.width)
@@ -737,6 +875,7 @@ function best_path(model::MotionModel, z, za, vol, fg)
     for ix in anchor_disk(vol, R, C)
         S[ix] = W[ix] = e[ix, 1] + log(0.5f0)
     end
+    keep!(F, (S, W), 1)
     A, B, Snew, Wnew = similar(S), similar(S), similar(S), similar(S)
     fromW, fromS = falses(R, C), falses(R, C)
     for K in 2:N
@@ -754,11 +893,71 @@ function best_path(model::MotionModel, z, za, vol, fg)
         ek = view(e, :, :, K)
         @. S = Snew + ek - outside - top
         @. W = Wnew + ek - outside - top
+        keep!(F, (S, W), K)
     end
     ending = last.(arena_costs.(rmap, model.arena))
     Sf, Wf = S .+ ending, W .+ ending
     steps = backtrack_states(bps, bpw, stopped[1], walking[1], Sf, Wf, argmax(max.(Sf, Wf)))
-    return to_samples(steps, m, n)
+    transitions = (a_ss, a_ws, a_ww, a_sw)
+    return steps, motion_margin(F, steps, e, vol, fgs, stopped, walking, long_s, long_w, ec, transitions, rmap, outside, ending)
+end
+
+motion_margin(::Nothing, _...) = nothing
+
+# The backward pass of `best_path(::MotionModel, …)`. βS_K(x): the best continuation from (x,
+# stopped) at step K, the ending cost included. Moving into stopped at K + 1 uses the stopped kernel;
+# into walking, the walking kernel and the no-return cost of the move, as forward; either pays the
+# entry cost of a long move into step K + 1's large foreground. `FS` becomes the max-marginals.
+function motion_margin(
+        (FS, FW)::NTuple{2, Array{Float32, 3}}, steps, e, vol, fgs, stopped, walking, long_s, long_w, ec,
+        (a_ss, a_ws, a_ww, a_sw), rmap, outside, ending
+    )
+    N = size(e, 3)
+    βS, βW = copy(ending), copy(ending)
+    KS, KW, srcS, srcW = similar(βS), similar(βS), similar(βS), similar(βS)
+    for K in N:-1:1
+        if K < N
+            ek = view(e, :, :, K + 1)
+            @. srcS = βS + ek - outside
+            @. srcW = βW + ek - outside
+            backward_pass!(KS, srcS, stopped, rmap, 0.0f0, fgs[K + 1], long_s, ec)
+            backward_pass!(KW, srcW, walking, rmap, Float32(RETURN_COST), fgs[K + 1], long_w, ec)
+            @. βS = max(a_ss + KS, a_sw + KW)
+            @. βW = max(a_ww + KW, a_ws + KS)
+            top = max(maximum(βS), maximum(βW))
+            βS .-= top
+            βW .-= top
+        end
+        @. FS[:, :, K] = max(FS[:, :, K] + βS, FW[:, :, K] + βW)
+    end
+    return margins(FS, steps, vol.width)
+end
+
+# `kernel_pass!` run backward: out[x] = max over offsets o of src[x + o] + logp[o], less the no-return
+# cost of the move x → x + o and the entry cost of a `long` one from outside `fgK` to inside it.
+function backward_pass!(out, src, (offsets, logp), rmap, return_cost, fgK, long, ec)
+    R, C = size(src)
+    tforeach(1:C) do c
+        for r in 1:R
+            best = -Inf32
+            rx = rmap[r, c]
+            from_out = !fgK[r, c]
+            for j in eachindex(offsets)
+                dr, dc = offsets[j]
+                rr, cc = r + dr, c + dc
+                (1 <= rr <= R && 1 <= cc <= C) || continue
+                s = src[rr, cc] + logp[j]
+                if return_cost > 0
+                    rp = rmap[rr, cc]
+                    rx > RETURN_FREE && rx > rp && (s -= return_cost * (rx - rp))
+                end
+                (from_out && long[j] && fgK[rr, cc]) && (s -= ec)
+                best = max(best, s)
+            end
+            out[r, c] = best
+        end
+    end
+    return out
 end
 
 # The best step path ending at `last`, one grid index per step.
@@ -780,6 +979,7 @@ end
 
 # The step path at every sample: linear between the steps' centres, the first and last held.
 function to_samples(steps, m, n)
+    m == 1 && return steps
     centres = [((K - 1) * m + 1 + min(n, K * m)) / 2 for K in eachindex(steps)]
     return map(1:n) do k
         a = clamp(searchsortedlast(centres, k), 1, length(steps))
@@ -811,6 +1011,172 @@ function refine(z, p, width)
         w > 0 ? (sr / w, sc / w) : (float(br), float(bc))
     end
 end
+
+# ---- the review (#418) -----------------------------------------------------------------------
+
+"""
+    Moment(run_time, segment, file_time)
+
+Where a sample is: its `run_time` (the track csv's `time`), and the `segment` it is in with its
+`file_time`, the seconds into that segment's own video file (the diagnostic's label).
+"""
+struct Moment
+    run_time::Float64
+    segment::Int
+    file_time::Float64
+end
+
+# Sample `k`'s moment, given each segment's file times.
+function Moment(tss::Vector{SampleTimes}, k::Integer)
+    i, segment = k, 1
+    while i > length(tss[segment])
+        i -= length(tss[segment])
+        segment += 1
+    end
+    return Moment(_concat_timestamps(tss)[k], segment, tss[segment][i])
+end
+
+"""
+    Signal(value, cut, flagged, moment)
+
+One of a whole-run track's review signals: its `value`, the `cut` it is held to (`missing` where it
+is not held to one), whether it is `flagged`, and its `moment` (`missing` when it has none). `T` is
+the value's own type: Float32 for the margin, as the path's scores are, Float64 otherwise.
+"""
+struct Signal{T <: AbstractFloat}
+    value::T
+    cut::Union{Missing, T}
+    flagged::Bool
+    moment::Union{Missing, Moment}
+end
+
+"""
+    Review(fast, ambiguous, unstable)
+
+The whole-run tracker's check on its own track (#418, the research's rule R1): three `Signal`s, and
+the run is flagged for review when any of them is (`flagged`). Each one's value and moment:
+
+- `fast`: the fastest second, in target widths, from the start of that second. Held to
+  `SUSPECT_SPEED` on AprilTag footage only: elsewhere `target_width` is a default, not the target.
+- `ambiguous`: the minimum anchored margin, in nats, where it is lowest. Held to the run's video
+  type's cut (`margin_cut`).
+- `unstable`: the longest stretch, in seconds, over which the track is more than RIVAL_WIDTHS widths
+  from the path re-solved on a background median of only the first half of the run, or of only the
+  second (the worse of the two), from the start of that stretch. Held to UNSTABLE_SECONDS.
+"""
+struct Review
+    fast::Signal{Float64}
+    ambiguous::Signal{Float32}
+    unstable::Signal{Float64}
+end
+
+flagged(r::Review) = any(s -> s.flagged, signals(r))
+
+# The cuts, by footage. `fast`'s: on AprilTag footage only.
+fast_cut(::MotionModel) = SUSPECT_SPEED
+fast_cut(::NoMotionModel) = missing
+
+"""
+    margin_cut(video_type, model) -> Float32
+
+The cut `ambiguous` holds the margin to: the video type's (`MARGIN_CUTS`), or for a blank one the
+drone cut on AprilTag footage and the pooled non-drone cut otherwise.
+"""
+function margin_cut(video_type::String, _)
+    i = findfirst(p -> first(p) == video_type, MARGIN_CUTS)
+    isnothing(i) && throw(ArgumentError("unknown video_type $(repr(video_type)): it is one of $(join(VIDEO_TYPES, ", "))"))
+    return last(MARGIN_CUTS[i])
+end
+margin_cut(::Missing, ::MotionModel) = margin_cut("drone", nothing)
+margin_cut(::Missing, ::NoMotionModel) = POOLED_MARGIN_CUT
+
+# Whether `value` trips `cut` in the signal's own direction (`>`, `<`, `>=`); no cut, no flag.
+trips(_, _, ::Missing) = false
+trips(over, value, cut) = over(value, cut)
+
+"""
+    fastest_second(track, width, dt) -> (widths_per_second, sample)
+
+The largest distance `track` covers over one second (the nearest whole number of samples to it),
+over `width`, and the sample that second starts at (`missing` for a track shorter than a second).
+"""
+function fastest_second(track, width, dt)
+    lag = max(1, round(Int, 1 / dt))
+    fastest, at = 0.0, missing
+    for i in 1:(length(track) - lag)
+        v = hypot((track[i + lag] .- track[i])...) / (lag * dt)
+        v > fastest && ((fastest, at) = (v, i))
+    end
+    return fastest / width, at
+end
+
+"""
+    stretch(a, b, width, dt) -> (seconds, sample)
+
+The longest continuous stretch, in seconds, over which tracks `a` and `b` (the same samples, the same
+space) are more than RIVAL_WIDTHS × `width` apart, and the sample it starts at (`missing` for none).
+"""
+function stretch(a, b, width, dt)
+    longest, len, at = 0, 0, missing
+    for k in eachindex(a, b)
+        len = hypot((a[k] .- b[k])...) > RIVAL_WIDTHS * width ? len + 1 : 0
+        len > longest && ((longest, at) = (len, k - len + 1))
+    end
+    return longest * dt, at
+end
+
+moment(_, ::Missing) = missing
+moment(vol::RunVolume, k::Integer) = Moment(vol.tss, k)
+
+"""
+    whole_run_review(vol, model, tuning) -> (path, Review)
+
+The whole-run path over `vol` (`whole_run_path`'s), and its `Review`. On top of the path itself this
+costs a backward pass for the margin and two more solves, the background median built from the first
+half of the samples and from the second: 3.8× the path alone (median over 61 runs; DECISIONS, "The
+whole-run review").
+Lengths are compared on the full-resolution track (reference pixels on AprilTag footage, display
+ones otherwise) against `tuning.target_width`, as the research measured them.
+"""
+function whole_run_review(vol::RunVolume, model, tuning::Tuning)
+    p, margin = solve(vol, model, tuning.darker_target, eachindex(vol.frames), WithMargin())
+    track = full_track(p, tuning.downscale)
+    review = Review(
+        fast_signal(track, vol, model, tuning), ambiguous_signal(margin, vol, model, tuning),
+        unstable_signal(track, vol, model, tuning)
+    )
+    return p, review
+end
+
+# A grid path at full resolution: reference pixels on AprilTag footage, display ones otherwise.
+full_track(p, downscale) = [full_index.(g, downscale) for g in p]
+
+function fast_signal(track, vol, model, tuning)
+    v, k = fastest_second(track, tuning.target_width, vol.dt)
+    cut = fast_cut(model)
+    return Signal(v, cut, trips(>, v, cut), moment(vol, k))
+end
+
+# The margin is per path step; its moment is the step's first sample.
+function ambiguous_signal(margin, vol, model, tuning)
+    K = argmin(margin)
+    cut = margin_cut(tuning.video_type, model)
+    return Signal(margin[K], cut, trips(<, margin[K], cut), moment(vol, (K - 1) * step_samples(model, vol) + 1))
+end
+
+# The worse of the two background halves, the first on a tie.
+function unstable_signal(track, vol, model, tuning)
+    n = length(track)
+    halves = (1:max(1, n ÷ 2), min(n, n ÷ 2 + 1):n)
+    a, b = map(halves) do ks
+        stretch(track, full_track(whole_run_path(vol, model, tuning.darker_target, ks), tuning.downscale), tuning.target_width, vol.dt)
+    end
+    v, k = first(a) >= first(b) ? a : b
+    return Signal(v, UNSTABLE_SECONDS, trips(>=, v, UNSTABLE_SECONDS), moment(vol, k))
+end
+
+"The review's three signals by name, in `flags.csv`'s order."
+signals(r::Review) = (; r.fast, r.ambiguous, r.unstable)
 
 # ---- out of the grid -------------------------------------------------------------------------
 
@@ -922,31 +1288,19 @@ rectification: real-world, or stored `(row, col)` pixels without one; and `pixel
 pixels `track` returns too. Unlike the online tracker's, an AprilTag track has a position at every
 sample, unregistered ones included (`grid_coordinates`), though only a registered one has a pixel.
 
+The return is `track`'s three, `(ts, coords, pixels)`, and a fourth: the track's `Review`, whether
+it should be checked by eye (#418). So `ts, coords, pixels = …` reads either tracker's return.
+
 Memory: the grid volume (one byte per grid pixel per sample, ~0.07 GB per minute of drone footage at
-the defaults), its score (four bytes), its large foreground (one bit) and the path's back-pointers.
+the defaults), its score (four bytes), its large foreground (one bit) and the path's back-pointers,
+and for the review's margin the path's forward messages: four bytes per grid pixel per step, a
+second's worth of samples on AprilTag footage and one sample elsewhere.
 """
 function track_whole_run(segments::Vector{Segment}, tuning::Tuning, rectification, diagnostic_file)
     vol = read_run(segments, tuning, rectification)
-    p = whole_run_path(vol, path_model(rectification, tuning), tuning.darker_target)
+    p, review = whole_run_review(vol, path_model(rectification, tuning), tuning)
     coords = grid_coordinates(p, rectification, tuning)
     pixels = display_coordinates(p, coords, vol, rectification, tuning)
     isnothing(diagnostic_file) || write_diagnostic(diagnostic_file, vol, p, coords, tuning, rectification)
-    return (_concat_timestamps(vol.tss), real_coordinates(coords, rectification), pixels)
-end
-
-"""
-    fastest_second(ts, coords) -> Float64
-
-The largest distance, in `coords`' unit, covered over one second of a track (the nearest whole
-number of samples to one second), skipping `missing` points; 0 for a track shorter than that.
-"""
-function fastest_second(ts, coords)
-    lag = max(1, round(Int, 1 / step(ts)))
-    fastest = 0.0
-    for i in 1:(length(coords) - lag)
-        a, b = coords[i], coords[i + lag]
-        (ismissing(a) || ismissing(b)) && continue
-        fastest = max(fastest, norm(b - a) / (lag * step(ts)))
-    end
-    return fastest
+    return (_concat_timestamps(vol.tss), real_coordinates(coords, rectification), pixels, review)
 end

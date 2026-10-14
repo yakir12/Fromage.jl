@@ -653,7 +653,7 @@ function tuning(
         file; target_width = 25.0, window_size = missing, darker_target = true,
         native_fps = missing, sample_fps = missing, initial_search_factor = 4.0, downscale = 1.0,
         background_length = PawsomeTracker.DEFAULT_BACKGROUND_LENGTH, aspect = missing,
-        whole_run = false, arena_radius = missing, duration = missing
+        whole_run = false, arena_radius = missing, video_type = missing, duration = missing
     )
     m = probe_stream(file)
     # the gateway's own cascade: the probe fills a blank `native_fps`, and `native_fps` — declared
@@ -671,7 +671,7 @@ function tuning(
     asp = coalesce(aspect, probe_video(file).sar)
     return Tuning(
         target_width, ws, darker_target, sfps, nfps, initial_search_factor, downscale,
-        background_length, asp, whole_run, arena_radius
+        background_length, asp, whole_run, arena_radius, video_type
     )
 end
 

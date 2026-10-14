@@ -148,6 +148,14 @@ The physical surface the target moves on. Real-world coordinates are coordinates
 ends, in the rectification's real-world unit. It assumes a centred release: the start location is
 the arena's centre. Only the whole-run tracker reads it, as a prior on where its path ends (below).
 
+### Video type
+
+The kind of footage a run is: its camera, setting and lighting together. There are six: *drone*,
+*tripod outdoor plywood*, *static outdoor sand mirror*, *tripod outdoor sand mirror*, *indoor LED*
+and *indoor infrared*. It is what the results store calls `video type`. A video type is not a
+rectification method: drone footage is the AprilTag one, but the other five share the rest.
+_Avoid_: setup, footage kind, dataset (a dataset is one study's runs; every dataset so far is one video type)
+
 ---
 
 ## The two trackers
@@ -162,9 +170,27 @@ A run is tracked by one of two trackers, chosen per run by the `whole_run` colum
   of it that best fits how the target looks and moves. On AprilTag footage that includes a fitted
   model of how a beetle walks and stops, and the arena; elsewhere only a cost on a step's length.
 
-Both take the same arguments and return the same track. "Whole-run", not "whole-segment": a run's
-segments are concatenated into one volume and tracked as one path, with a join treated as an
-ordinary step.
+Both take the same arguments and return the same track; the whole-run tracker also returns its
+review (below). "Whole-run", not "whole-segment": a run's segments are concatenated into one volume
+and tracked as one path, with a join treated as an ordinary step.
+
+### Review
+
+The whole-run tracker's check on its own track, written to `review/flags.csv` in the output folder.
+It has three **signals**, each a value held to a **cut**, with the **moment** it points at (a run
+time, and the segment number and file time of the same sample):
+
+- *fast* — the track's fastest second, in target widths; held to a cut on drone footage only.
+- *ambiguous* — the **anchored margin**: how much better the path scores than the best path that
+  starts and ends as it does but is more than 3 target widths from it at some moment, at its lowest.
+  Held to its video type's cut.
+- *unstable* — how long the track moves away from itself when the background is built from only
+  half the run.
+
+A run is **flagged** when any signal is. Flagged means "check this run's diagnostic clip by eye",
+not "failed": most flagged runs pass, and an unflagged run can still fail. The online tracker has no
+review.
+_Avoid_: confidence (no signal is a probability), failure (for a flag), alarm
 
 ---
 

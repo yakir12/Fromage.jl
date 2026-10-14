@@ -102,10 +102,11 @@ end
 
 """
     Tuning(target_width, window_size, darker_target, sample_fps, native_fps,
-           initial_search_factor, downscale, background_length, aspect, whole_run, arena_radius)
+           initial_search_factor, downscale, background_length, aspect, whole_run, arena_radius,
+           video_type)
 
 The run-level tracking parameters, every one of them concrete, but for `arena_radius`, whose
-`missing` means "no arena prior".
+`missing` means "no arena prior", and `video_type`, whose `missing` means "not given".
 
 Deliberately without defaults, and `track` deliberately takes no keyword arguments: each of these
 values is decided in exactly one place — a csv cell, `VerifyRuns.DEFAULTS`, or the gateway's probe
@@ -137,6 +138,11 @@ edge, in the rectification's real-world unit, `missing` for none; only an AprilT
 whole-run tracker — the online `track` reads `Tuning` by field name and never names them — and
 they are fields rather than arguments because `runs.csv` and `main`'s `defaults` set them, which is
 what makes a value a tracking parameter (#140, #141).
+
+`video_type` is one of `VIDEO_TYPES` (CONTEXT, "Video type"), checked by the gateway on a whole-run
+row: it picks the cut the whole-run review holds the run's anchored margin to (`MARGIN_CUTS`), and
+the path never reads it. Being a field, it is in the tracking memo's key, so changing it re-tracks
+the run (DECISIONS, "The whole-run review").
 """
 struct Tuning
     target_width::Float64
@@ -150,6 +156,7 @@ struct Tuning
     aspect::Rational{Int}
     whole_run::Bool
     arena_radius::Union{Missing, Float64}
+    video_type::Union{Missing, String}
 end
 
 """

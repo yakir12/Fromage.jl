@@ -37,6 +37,7 @@ const DEFAULTS = (;
     background_length = PawsomeTracker.DEFAULT_BACKGROUND_LENGTH,
     whole_run = false,
     arena_radius = missing,
+    video_type = missing,
 )
 
 const DEFAULT_TYPES = (;
@@ -50,6 +51,7 @@ const DEFAULT_TYPES = (;
     background_length = Int,
     whole_run = Bool,
     arena_radius = Float64,
+    video_type = String,
 )
 
 resolve_defaults(overrides) = Parsing.resolve_defaults(overrides, DEFAULTS, DEFAULT_TYPES, "tracking")
@@ -87,6 +89,7 @@ function parse_run!(dict, row, defaults, whole_run_defaults)
     # `whole_run` cell failed to parse, and is rejected anyway) falls back exactly as it always has
     parseto!(dict, row, :whole_run, Bool, defaults.whole_run)
     parseto!(dict, row, :arena_radius, Float64, defaults.arena_radius)
+    parseto!(dict, row, :video_type, String, defaults.video_type)
     grid = dict[:whole_run] === true ? whole_run_defaults : defaults
     parseto!(dict, row, :native_fps, Float64, defaults.native_fps)   # imputed from the video's own framerate when missing
     parseto!(dict, row, :sample_fps, Float64, grid.sample_fps)       # imputed from :native_fps when missing

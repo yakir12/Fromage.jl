@@ -75,7 +75,7 @@ function _tuning(g::AbstractDataFrame, frame_format::FrameFormat, segments::Vect
     return Tuning(
         target_width, window_size, g.darker_target[1], sample_fps, g.native_fps[1],
         g.initial_search_factor[1], g.downscale[1], g.background_length[1], g.aspect[1],
-        g.whole_run[1], g.arena_radius[1]
+        g.whole_run[1], g.arena_radius[1], g.video_type[1]
     )
 end
 

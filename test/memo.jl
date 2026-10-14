@@ -91,8 +91,10 @@ vary(x::Float64) = x + 1.0
 vary(x::String) = string(x, "-other")
 vary(x::NTuple{2, Int}) = (x[1] + 1, x[2])
 vary(x::Rational{Int}) = x + 1
-# a blank `arena_radius`: filling it in is the change a user would make
-vary(::Missing) = 1.0
+# A blank field (`arena_radius`, `video_type`): filling it in is the change a user would make, with
+# a value of the field's own declared type.
+filled(::Type{Float64}) = 1.0
+filled(::Type{String}) = "drone"
 
 # Rebuild `x` with field `i` replaced. Reaching the constructor by NAME drops the type parameter, so
 # a `Checkerboard{Float64}` is rebuilt by its own constructor rather than pinned by this function;
@@ -111,11 +113,12 @@ end
 # under-specified key would hurt most — `center` and `north` change the map without changing anything
 # else about the row, and a segment's `stop` changes the track without changing the run's id.
 const NESTED = Union{VRect.Source, PT.Tuning, PT.Segment, VRuns.FrameFormat}
-field_variants(f, name) = [name => vary(f)]
-field_variants(f::NESTED, name) = variants(f, name)
+field_variants(f, name, _) = [name => vary(f)]
+field_variants(::Missing, name, F) = [name => filled(nonmissingtype(F))]
+field_variants(f::NESTED, name, _) = variants(f, name)
 # A run's segments: every field of the first one, and one segment more.
-field_variants(f::Vector{PT.Segment}, name) = [
-    [n => [v; f[2:end]] for (n, v) in field_variants(first(f), string(name, "[1]"))];
+field_variants(f::Vector{PT.Segment}, name, _) = [
+    [n => [v; f[2:end]] for (n, v) in field_variants(first(f), string(name, "[1]"), PT.Segment)];
     string(name, " (one segment more)") => [f; f]
 ]
 
@@ -125,7 +128,7 @@ function variants(x, name = string(nameof(typeof(x))))
     # declared type, `Checkerboard{Float64}`'s two `::S` bounds included — so the eltype says so.
     T = typeof(x)
     vs = Pair{String, T}[]
-    for i in 1:fieldcount(T), (n, v) in field_variants(getfield(x, i), string(name, ".", fieldname(T, i)))
+    for i in 1:fieldcount(T), (n, v) in field_variants(getfield(x, i), string(name, ".", fieldname(T, i)), fieldtype(T, i))
         push!(vs, n => replace_field(x, i, v))
     end
     return vs

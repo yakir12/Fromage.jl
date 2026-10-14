@@ -10,7 +10,8 @@ using Test
 using Fromage
 using LinearAlgebra: norm
 using Fromage.PawsomeTracker: ApriltagRectification, MotionModel, NoMotionModel, RunVolume,
-    fastest_second, track_whole_run, whole_run_path, apply_h
+    track_whole_run, whole_run_path, apply_h
+using Random: Xoshiro
 const PT = Fromage.PawsomeTracker
 using ..Fixtures
 
@@ -144,25 +145,198 @@ const WALK = 1.2
         @test worst(whole_run_path(inverted, MotionModel(missing), false), t -> (30.0, 20.0 + WALK * t), vol.dt) < 1.0
     end
 
-    @testset "the fastest second of a track" begin
-        ts = range(0.0; step = 0.2, length = 11)
-        coords = [PT.SVector(0.0, 1.0 * (k - 1)) for k in 1:11]   # 5 units/s
-        coords[6] = PT.SVector(0.0, 12.0)                          # one jump: 12 units in the first second …
-        @test fastest_second(ts, coords) ≈ 12.0
-        missings = Vector{Union{Missing, PT.SVector{2, Float64}}}(coords)
-        missings[6] = missing                                        # … which a missing sample hides
-        @test fastest_second(ts, missings) ≈ 5.0
-        @test fastest_second(range(0.0; step = 0.2, length = 3), coords[1:3]) == 0.0   # under a second
+    # ---- the review (#418) ----------------------------------------------------------------------
+
+    # A whole-run row's tuning for an in-memory volume, whose grid is the full resolution: a target
+    # width of 2 px at downscale 1, as `volume` draws it.
+    review_tuning(video_type = missing) = PT.Tuning(2.0, 21, true, 5.0, 25.0, 4.0, 1.0, 250, 1 // 1, true, missing, video_type)
+
+    @testset "the fastest second of a track, and where it starts" begin
+        track = [(0.0, 1.0 * (k - 1)) for k in 1:11]   # 5 px/s at 5 samples/s …
+        track[6] = (0.0, 12.0)                          # … but 12 px over the first second
+        @test PT.fastest_second(track, 2.0, 0.2) == (6.0, 1)   # in widths of 2 px
+        @test isequal(PT.fastest_second(track[1:3], 2.0, 0.2), (0.0, missing))   # under a second
     end
 
-    @testset "a whole-run track whose fastest second is too fast is flagged" begin
-        # target width 2, one real unit per pixel: a width is 2 units
-        ts = range(0.0; step = 0.2, length = 11)
-        slow = [PT.SVector(0.0, 0.2 * (k - 1)) for k in 1:11]         # 0.5 widths/s
-        fast = copy(slow)
-        fast[6] = PT.SVector(0.0, 8.0)                                  # 8 units in a second: 4 widths/s
-        @test_logs (:warn, r"run r: .*fastest second.*4\.0 target widths") Fromage.warn_if_fast("r", 2.0, (ts, fast), 1.0)
-        @test_logs Fromage.warn_if_fast("r", 2.0, (ts, slow), 1.0)
+    @testset "the longest stretch two tracks are apart, and where it starts" begin
+        a = [(0.0, 0.0) for _ in 1:12]
+        b = copy(a)
+        b[4:8] .= Ref((0.0, 6.1))     # more than 3 widths of 2 px …
+        b[11:12] .= Ref((7.0, 0.0))
+        b[2] = (6.0, 0.0)             # … and exactly 3, which is not more
+        @test PT.stretch(a, b, 2.0, 0.2) == (1.0, 4)
+        @test isequal(PT.stretch(a, a, 2.0, 0.2), (0.0, missing))
+    end
+
+    @testset "a moment is placed on the run clock and in its segment's file" begin
+        tss = [range(3.0; step = 0.2, length = 5), range(10.0; step = 0.2, length = 3)]
+        @test PT.Moment(tss, 1) == PT.Moment(3.0, 1, 3.0)
+        @test PT.Moment(tss, 5).segment == 1
+        m = PT.Moment(tss, 7)                  # the second segment's second sample
+        @test (m.segment, m.file_time) == (2, 10.2)
+        @test m.run_time ≈ 4.2                     # the run clock closes up the gap between segments
+    end
+
+    @testset "the margin cut is the video type's, and a blank one falls back by footage" begin
+        @test PT.margin_cut("indoor infrared", PT.NoMotionModel()) == 108.72479f0
+        @test PT.margin_cut("drone", PT.NoMotionModel()) == PT.margin_cut(missing, MotionModel(missing))
+        @test PT.margin_cut(missing, NoMotionModel()) == PT.POOLED_MARGIN_CUT
+        @test_throws ArgumentError PT.margin_cut("drones", NoMotionModel())
+        @test PT.margin_cut("tripod outdoor sand mirror", MotionModel(missing)) == PT.POOLED_MARGIN_CUT
+        @test Set(PT.VIDEO_TYPES) == Set(
+            [
+                "drone", "tripod outdoor plywood", "static outdoor sand mirror",
+                "tripod outdoor sand mirror", "indoor LED", "indoor infrared",
+            ]
+        )
+    end
+
+    @testset "the margin's backward steps are their forward steps reversed, entry cost included" begin
+        # Pointwise against the definition, on random scores and a random large foreground: out[x]
+        # is the best move from x, less the no-return cost (walking) and the entry cost of a long
+        # move from outside the mask into it — the costs the forward steps pay on the same move.
+        rng = Xoshiro(418)
+        R, C, width, ec = 15, 17, 2.0, 2.5f0
+        src = randn(rng, Float32, R, C)
+        fgK = BitMatrix(rand(rng, R, C) .< 0.3)
+        rmap = Float32[hypot(r - 8, c - 9) / 0.5 for r in 1:R, c in 1:C]   # past RETURN_FREE in places
+        function definition(cost_of, offsets, long)
+            return [
+                maximum(
+                    j -> begin
+                        rr, cc = r + offsets[j][1], c + offsets[j][2]
+                        (1 <= rr <= R && 1 <= cc <= C) || return -Inf32
+                        s = src[rr, cc] - cost_of(j, r, c, rr, cc)
+                        !fgK[r, c] && long[j] && fgK[rr, cc] ? s - ec : s
+                    end, eachindex(offsets)
+                ) for r in 1:R, c in 1:C
+            ]
+        end
+        for ((offsets, logp), rc) in zip(PT.step_kernels(width), (0.0f0, Float32(PT.RETURN_COST)))
+            long = PT.long_moves(offsets, width)
+            out = PT.backward_pass!(similar(src), src, (offsets, logp), rmap, rc, fgK, long, ec)
+            back(j, r, c, rr, cc) = -logp[j] + (rc > 0 && rmap[r, c] > PT.RETURN_FREE && rmap[r, c] > rmap[rr, cc] ? rc * (rmap[r, c] - rmap[rr, cc]) : 0.0f0)
+            @test out ≈ definition(back, offsets, long)
+        end
+        offsets = [(dr, dc) for dc in -2:2 for dr in -2:2 if dr^2 + dc^2 <= 4]
+        cost = Float32[(dr^2 + dc^2) / 2 for (dr, dc) in offsets]
+        long = PT.long_moves(offsets, width)
+        out = PT.no_motion_backward!(similar(src), src, offsets, cost, fgK, long, ec)
+        @test out ≈ definition((j, _...) -> cost[j], offsets, long)
+    end
+
+    @testset "the path holds the max-marginal at every step" begin
+        # The backward pass completes the forward messages into max-marginals; the best path's point
+        # is their maximum at every step (to Float32 rounding), here with a body in large foreground.
+        beetle = t -> (30.0, 20.0 + WALK * t)
+        body = t -> (16.0, max(12.0, 20.0 + WALK * 30 - 3 * (t - 30)))
+        vol = volume(beetle; n = 200, start = (30.0, 20.0))
+        frames = map(enumerate(vol.frames)) do (k, f)
+            p = body((k - 1) * vol.dt)
+            [(r - p[1])^2 + (c - p[2])^2 <= 64 ? UInt8(max(0, Int(f[r, c]) - 60)) : f[r, c] for r in axes(f, 1), c in axes(f, 2)]
+        end
+        vol = RunVolume(frames, vol.has, vol.Hinvs, vol.tss, vol.start, vol.anchor, vol.width, vol.dt)
+        bg = PT.background(vol.frames)
+        fg = PT.large_foreground(vol, bg)
+        @test any(any, fg)
+        @testset "$(nameof(typeof(model)))" for model in (MotionModel(missing), NoMotionModel())
+            z = PT.score_dark(vol, bg, true)
+            za = PT.anchor_contrast(z, vol)
+            PT.penalise_large_blobs!(z, fg, za, vol.width)
+            F = PT.forward_store(model, z, vol)
+            nodes, margin = PT.best_path(model, z, za, vol, fg, F)
+            M = F isa Tuple ? first(F) : F
+            gap(K) = maximum(view(M, :, :, K)) - M[round(Int, nodes[K][1]), round(Int, nodes[K][2]), K]
+            @test maximum(gap, eachindex(nodes)) < 1.0e-4
+            @test length(margin) == length(nodes) && all(≥(0), margin)
+            # the same path as without the margin's store
+            @test first(PT.best_path(model, z, za, vol, fg, nothing)) == nodes
+        end
+    end
+
+    # The signal scenes below solve only what each signal needs (a path, or a path and its margin);
+    # a whole review is two more solves, and these tests run under coverage in CI.
+    path_and_margin(vol, model) = PT.solve(vol, model, true, eachindex(vol.frames), PT.WithMargin())
+
+    @testset "ambiguous: two look-alikes leaving the start together leave little margin" begin
+        lone = volume(t -> (30.0, 20.0 + WALK * t); n = 150, start = (30.0, 20.0))
+        twins = volume(t -> (30.0 - 0.6t, 40.0 + WALK * t), t -> (30.0 + 0.6t, 40.0 + WALK * t); n = 150, start = (30.0, 40.0))
+        @testset "$(nameof(typeof(model)))" for model in (MotionModel(missing), NoMotionModel())
+            _, a = path_and_margin(lone, model)
+            _, b = path_and_margin(twins, model)
+            # measured 27.7 against 0.95 with the motion model, 76.8 against 7.2 without
+            @test minimum(b) < minimum(a) / 5
+            s = PT.ambiguous_signal(a, lone, model, review_tuning())
+            @test s.value == minimum(a)
+            @test s.cut == PT.margin_cut(missing, model) && !s.flagged
+            # a video type's cut, high enough to flag the lone target
+            s = PT.ambiguous_signal(a, lone, model, review_tuning("indoor infrared"))
+            @test s.cut == PT.margin_cut("indoor infrared", model) && s.flagged
+            @test s.moment isa PT.Moment
+        end
+    end
+
+    @testset "unstable: a target in the first half's background loses the path to a look-alike" begin
+        # The target sits at the start for 65 s of a 150 s run, so the median of the first half holds
+        # it and the median of the whole run does not; a look-alike walks off from beside it over
+        # those 65 s, and is gone. On the first half's background the path follows the look-alike.
+        # At 2 samples/s, and without the motion model only: the signal is the same code under
+        # either, and the AprilTag flight below reviews a motion-model run.
+        still = 65.0
+        target = t -> t < still ? (30.0, 40.0) : (30.0, 40.0 + WALK * (t - still))
+        decoy = t -> t < still ? (30.0 + 0.4 * t, 42.0 + 0.5 * t) : nothing
+        vol = volume(target, decoy; R = 64, C = 150, n = 300, dt = 0.5, start = (30.0, 40.0))
+        p, review = PT.whole_run_review(vol, NoMotionModel(), review_tuning())
+        @test worst(p, target, vol.dt) < 4.0                       # the path itself holds: 2 widths (measured 3.4)
+        s = review.unstable
+        @test s.cut == PT.UNSTABLE_SECONDS
+        @test PT.UNSTABLE_SECONDS <= s.value < still               # measured 63
+        @test s.flagged && PT.flagged(review)
+        @test 0 < s.moment.run_time < 10                           # measured 7
+        @test !review.fast.flagged
+    end
+
+    @testset "fast: held to SUSPECT_SPEED on AprilTag footage only" begin
+        # The target vanishes at 10 s, and a look-alike leaves its last place at 8 widths/s and parks:
+        # both paths take it (measured 7.5 widths/s without the motion model, 5.7 with), and only
+        # the motion model's is held to the cut.
+        beetle = t -> t < 10 ? (30.0, 20.0 + WALK * t) : nothing
+        leap = t -> t < 10 ? nothing : (30.0 + 16 * min(t - 10, 1.0), 20.0 + WALK * 10)
+        vol = volume(beetle, leap; n = 100, start = (30.0, 20.0))
+        fast(model) = PT.fast_signal(PT.full_track(whole_run_path(vol, model, true), 1.0), vol, model, review_tuning())
+        plain = fast(NoMotionModel())
+        @test plain.value > PT.SUSPECT_SPEED
+        @test ismissing(plain.cut) && !plain.flagged
+        @test 9 < plain.moment.run_time < 11
+        drone = fast(MotionModel(missing))
+        @test drone.cut == PT.SUSPECT_SPEED
+        @test drone.value > PT.SUSPECT_SPEED && drone.flagged
+        @test 9 < drone.moment.run_time < 11
+    end
+
+    @testset "review/flags.csv: a row per whole-run run and signal, and a warning per flagged run" begin
+        S(v, cut, f, m = missing) = PT.Signal{typeof(v)}(v, cut, f, m)
+        quiet = PT.Review(S(1.2, missing, false, PT.Moment(4.2, 2, 3661.25)), S(30.5f0, 2.87998f0, false, PT.Moment(0.0, 1, 0.0)), S(0.0, 60.0, false))
+        loud = PT.Review(S(4.04, 3.0, true, PT.Moment(1.0, 1, 1.0)), S(0.5f0, 1.0039139f0, true, PT.Moment(2.0, 1, 2.0)), S(61.0, 60.0, true, PT.Moment(3.0, 1, 3.0)))
+        run(id, whole) = (; run_id = id, tuning = (; whole_run = whole))
+        tracked(review...) = (; track = (0.0:0.2:1.0, [], [], review...))
+        dir = mktempdir()
+        file = joinpath(dir, "review", "flags.csv")
+        rs = [run("quiet, as can be", true), run("online", false), run("loud", true)]
+        runs = [tracked(quiet), tracked(), tracked(loud)]
+        @test_logs (:warn, r"^run loud: its whole-run track is flagged for review: its fastest second covers 4\.0 target widths, more than the 3\.0 a walk does; its anchored margin falls to 0\.5, under its video type's cut of 1\.0; it moves for 61\.0 s when its background is built from half the run\. .*review.flags\.csv$") Fromage.write_review(dir, rs, runs)
+        header, lines... = readlines(file)
+        @test header == "run_id,signal,value,cut,flagged,time,segment,file_time"
+        @test lines[1:3] == [
+            "\"quiet, as can be\",fast,1.2,,false,4.2,2,01:01:01.250",
+            "\"quiet, as can be\",ambiguous,30.5,2.87998,false,0.0,1,00:00:00.000",
+            "\"quiet, as can be\",unstable,0.0,60.0,false,,,",
+        ]
+        @test length(lines) == 6 && all(startswith("loud,"), lines[4:6])   # online runs get no rows
+        # no whole-run run, no file
+        rm(file)
+        Fromage.write_review(dir, rs[2:2], runs[2:2])
+        @test !isfile(file)
     end
 
     # ---- through video ---------------------------------------------------------------------------
@@ -183,8 +357,9 @@ const WALK = 1.2
         segs = segments(joinpath(dir, v.file); start_location = v.start_location)
         t = tuning(segs[1].file; target_width = 12, whole_run = true, downscale = 1 / 3, sample_fps = 5)
         clip = joinpath(dir, "whole_clip.mp4")   # not the flight's own name, which it would overwrite
-        ts, coords, px = track_whole_run(segs, t, rect, clip)
+        ts, coords, px, review = track_whole_run(segs, t, rect, clip)
         @test length(ts) == 50 && step(ts) ≈ 0.2
+        @test review isa PT.Review
         # the prediction, carried through the pipeline's own maps as test/apriltag_pipeline.jl does
         expected = [rect.image2real(apply_h(rect.reference.M, v.expected_ref(round(Int, s * 25) + 1))) for s in ts]
         errors = [norm(c - e) for (c, e) in zip(coords, expected) if !ismissing(c)]
@@ -222,8 +397,8 @@ const WALK = 1.2
             println(io, "drone,apriltag,$(v.file),0,4,tag36h11,8")
         end
         open(joinpath(dir, "runs.csv"), "w") do io
-            println(io, "run_id,rectification_id,file,start_location,target_width,whole_run")
-            println(io, "beetle,drone,$(v.file),\"$(v.start_location)\",12,true")
+            println(io, "run_id,rectification_id,file,start_location,target_width,whole_run,video_type")
+            println(io, "beetle,drone,$(v.file),\"$(v.start_location)\",12,true,")
         end
         results_dir = mktempdir()
         main(dir; results_dir)
@@ -236,6 +411,16 @@ const WALK = 1.2
         @test isempty(cells[11][4]) && isempty(cells[11][5]) && !isempty(cells[11][2])
         @test all(k -> k == 11 || PT.SVector(parse(Float64, cells[k][4]), parse(Float64, cells[k][5])) ≈ px[k], eachindex(cells))
         @test isfile(joinpath(results_dir, "diagnostic.mp4"))
+        # the review: three rows, its values the tracker's own, and a blank video type held to the
+        # drone cut on AprilTag footage (that online runs get none, `write_review`'s own test says)
+        header, lines... = readlines(joinpath(results_dir, "review", "flags.csv"))
+        @test header == "run_id,signal,value,cut,flagged,time,segment,file_time"
+        cells = split.(lines, ',')
+        @test [c[1:2] for c in cells] == [["beetle", "fast"], ["beetle", "ambiguous"], ["beetle", "unstable"]]
+        @test [parse(Float64, c[3]) for c in cells] ≈ [review.fast.value, review.ambiguous.value, review.unstable.value]
+        @test cells[1][4] == "3.0" && cells[3][4] == "60.0"
+        @test parse(Float32, cells[2][4]) == PT.margin_cut("drone", nothing)
+        @test all(c -> isempty(c[6]) || occursin(r"^\d\d:\d\d:\d\d\.\d{3}$", c[8]), cells)
     end
 
     @testset "a plain video: no motion model, stored pixels out" begin
@@ -292,7 +477,7 @@ const WALK = 1.2
         # A searched-for start, around a pixel or (AprilTag mode's `missing`) the grid's centre, is
         # anchored within the initial search's radius, min(R, C) / 2initial_search_factor; a given
         # start within half a tracking window, whatever the factor.
-        t = PT.Tuning(10.0, 21, true, 5.0, 25.0, 4.0, 1 / 3, 250, 1 // 1, true, missing)
+        t = PT.Tuning(10.0, 21, true, 5.0, 25.0, 4.0, 1 / 3, 250, 1 // 1, true, missing, missing)
         to_grid((x, y)) = (y + 1.0, x + 1.0)
         @test PT.anchor(missing, to_grid, t, (60, 90)) == ((30.5, 45.5), 60 / 8)
         @test PT.anchor(PT.StartSearch((20, 10)), to_grid, t, (60, 90)) == ((11.0, 21.0), 60 / 8)

@@ -42,7 +42,9 @@ jobs:
   test:
     name: Julia ${{ inputs.version }} - ${{ inputs.os }} - ${{ inputs.arch }} - ${{ github.event_name }}
     runs-on: ${{ inputs.os }}
-    timeout-minutes: 30
+    # 30 until #418: the whole-run review made every whole-run test several times dearer under
+    # coverage, and the ubuntu leg ran out twice (DECISIONS, "The test job's time limit").
+    timeout-minutes: 60
     continue-on-error: ${{ inputs.allow_failure }}
 
     steps:
