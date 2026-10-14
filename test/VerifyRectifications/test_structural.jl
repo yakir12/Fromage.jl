@@ -172,7 +172,7 @@
         )
         @test df.rectification_id[1] == "keep"
         @test ismissing(df.rectification_id[2])
-        @test occursin("row 2: rectification must not repeat an earlier row", VRect.rectifications_report(df))
+        @test occursin("row 2: rectification must not repeat an earlier row", VRect.rectifications_report(df, "rectifications.csv"))
     end
 
     @testset "three identical rows: the first is kept, both others flagged" begin

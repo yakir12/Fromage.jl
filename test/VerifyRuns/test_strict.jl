@@ -7,15 +7,23 @@
     # string the gateway builds instead of on a temp file it was redirected into.
     @testset "issue report names the row and its run_id; non-strict returns the df with :issues" begin
         df = check([runrow(target_width = "-1")])
-        out = VR.runs_report(df)
+        out = VR.runs_report(df, "runs.csv")
         @test occursin("row 1 (run_id: r): target_width must be larger than zero", out)
         @test !occursin("target_width must be larger than zero,", out)   # join adds no trailing separator
         @test df isa AbstractDataFrame
         @test hasproperty(df, :issues)
     end
 
+    # the gateway is handed the joined path; the report names the file by its own name (#425)
+    @testset "the report names the file it read" begin
+        _, out = capturing(() -> check("my_trial.csv", [runrow(target_width = "-1")]))
+        @test occursin("The following are issues with the my_trial.csv file", out)
+        @test !occursin("runs.csv", out)
+        @test !occursin(DATADIR, out)
+    end
+
     @testset "auto-assigned run_ids are not repeated in the issue report" begin
-        out = VR.runs_report(check([row(rectification_id = "c", file = ART.a, target_width = "-1")]))
+        out = VR.runs_report(check([row(rectification_id = "c", file = ART.a, target_width = "-1")]), "runs.csv")
         @test occursin("row 1: target_width must be larger than zero", out)
         @test !occursin("run_id", out)
     end

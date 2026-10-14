@@ -211,19 +211,22 @@ track_runs(rs, cs) = @showprogress desc = "Building runs" tmap(track_run, rs, cs
 # `load_rectifications`/`load_runs`, which validate one file end to end.
 #
 # The first tier: each file's identities, then the cross-file check that the two describe the same
-# thing. Opens no video. Returns both annotated DataFrames and whether the tier passed.
+# thing. Opens no video. Returns both annotated DataFrames and whether the tier passed. Every message
+# names the two files as the user passed them, relative to `data_path` (#425).
 function parse_dataset(data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults, boris_behavior)
     rects, rects_ids_ok = VerifyRectifications.parse_rectifications(
-        data_path, joinpath(data_path, rectifications_file); defaults = rectification_defaults, progress = true
+        data_path, joinpath(data_path, rectifications_file), rectifications_file;
+        defaults = rectification_defaults, progress = true
     )
     runs, runs_ids_ok = VerifyRuns.parse_runs(
-        data_path, joinpath(data_path, runs_file); defaults = tracking_defaults, boris_behavior, progress = true
+        data_path, joinpath(data_path, runs_file), runs_file;
+        defaults = tracking_defaults, boris_behavior, progress = true
     )
 
     # Coherence is a property of the two files AS WRITTEN, so it is checked on all of their rows —
     # before `run_ids` narrows anything. Narrowing decides what gets built, never what gets
     # validated; otherwise asking for one run would fail the rectifications it did not ask for.
-    coherent = verify_cross_references!(rects, runs, :rectification_id, "rectifications.csv", "runs.csv")
+    coherent = verify_cross_references!(rects, runs, :rectification_id, rectifications_file, runs_file)
     return rects, runs, rects_ids_ok && runs_ids_ok && coherent
 end
 
@@ -236,9 +239,9 @@ end
 
 # Both files' reports, once each, so a user fixing a dataset sees everything found in one pass rather
 # than one file's problems per run. Returns whether either file had an issue.
-function report_dataset(rects, runs)
-    bad = VerifyRectifications.report_rectifications(rects, false)
-    return bad | VerifyRuns.report_runs(runs, false)   # `|`, not `||`: the runs report must print too
+function report_dataset(rects, runs, rectifications_file, runs_file)
+    bad = VerifyRectifications.report_rectifications(rects, rectifications_file, false)
+    return bad | VerifyRuns.report_runs(runs, runs_file, false)   # `|`, not `||`: the runs report must print too
 end
 
 # Build both, or throw. Always returns the two vectors.
@@ -250,7 +253,7 @@ function load_dataset(results_dir, data_path, rectifications_file, runs_file, re
         data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults, boris_behavior
     )
     first_tier_ok && dataset_verifications!(rects, runs, data_path, results_dir)
-    bad = report_dataset(rects, runs)
+    bad = report_dataset(rects, runs, rectifications_file, runs_file)
     # A first-tier failure leaves an issue on some row, so `bad` already says so; the throw does not
     # depend on that.
     (bad || !first_tier_ok) && error("there were issues with the data (see above)")
@@ -268,7 +271,7 @@ function check_dataset(results_dir, data_path, rectifications_file, runs_file, r
         data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults, boris_behavior
     )
     dataset_verifications!(rects, runs, data_path, results_dir)
-    report_dataset(rects, runs)
+    report_dataset(rects, runs, rectifications_file, runs_file)
     return rects, runs
 end
 

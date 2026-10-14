@@ -40,7 +40,10 @@ function write_boris(rows; name = "boris_$(CASE[] += 1).csv")
 end
 
 # The first tier only: what the adapter and the parser made of the export, before any video.
-derived(rows; behavior = "Roll") = first(VR.parse_runs(DATADIR, write_boris(rows); defaults = (;), boris_behavior = behavior, progress = false))
+function derived(rows; behavior = "Roll")
+    csv = write_boris(rows)
+    return first(VR.parse_runs(DATADIR, csv, basename(csv); defaults = (;), boris_behavior = behavior, progress = false))
+end
 # By file name: the second tier resolves `file` to a real path, which on Windows need not be the
 # temp folder's spelling (`RUNNER~1` against `runneradmin`).
 windows(df) = collect(zip(passmissing(basename).(df.file), df.start, df.stop))
@@ -96,10 +99,10 @@ windows(df) = collect(zip(passmissing(basename).(df.file), df.start, df.stop))
     @testset "the export's own headers raise no did-you-mean warning" begin
         # `Comment` is one edit from `comment`; read as a runs.csv it would warn
         csv = write_boris([pair(0, 1, "Comment" => "fine")...])
-        @test_logs VR.parse_runs(DATADIR, csv; defaults = (;), boris_behavior = "Roll", progress = false)
+        @test_logs VR.parse_runs(DATADIR, csv, basename(csv); defaults = (;), boris_behavior = "Roll", progress = false)
         # …while a misspelt Fromage column in the same export still does
         csv = write_boris([pair(0, 1; rectification_ids = "c")...])
-        @test_logs (:warn, r"rectification_ids") match_mode = :any VR.parse_runs(DATADIR, csv; defaults = (;), boris_behavior = "Roll", progress = false)
+        @test_logs (:warn, r"rectification_ids") match_mode = :any VR.parse_runs(DATADIR, csv, basename(csv); defaults = (;), boris_behavior = "Roll", progress = false)
     end
 
     @testset "file time: Time less the offset, located in player #1's videos" begin
@@ -203,7 +206,7 @@ windows(df) = collect(zip(passmissing(basename).(df.file), df.start, df.stop))
             pair(0, 1, "Time offset (s)" => "x"; run_id = "n")...,         # 26–27
         ]
         df = derived(rows)
-        report = VR.runs_report(df)
+        report = VR.runs_report(df, "runs.csv")
         expect = [
             "row 1 (run_id: a): Behavior type must alternate START and STOP within a Subject — this START has no STOP",
             "row 4 (run_id: c): Behavior type must alternate START and STOP within a Subject — this STOP has no START",
@@ -240,7 +243,7 @@ windows(df) = collect(zip(passmissing(basename).(df.file), df.start, df.stop))
     @testset "an export with none of the behaviour is one issue, not a parse of nothing" begin
         df = derived([pair(0, 1, "Behavior" => "Dance")...])
         @test only(df.issues) == ["no START or STOP row has Behavior Roll — boris_behavior names the behaviour to track"]
-        @test occursin("every row: no START or STOP row has Behavior Roll", VR.runs_report(df))
+        @test occursin("every row: no START or STOP row has Behavior Roll", VR.runs_report(df, "runs.csv"))
         # a POINT alone is not a START or STOP either
         @test flagged(derived([boris("POINT", 1)]), 1, "no START or STOP row has Behavior Roll")
     end
@@ -255,7 +258,7 @@ windows(df) = collect(zip(passmissing(basename).(df.file), df.start, df.stop))
     @testset "BORIS's FPS must match the video's" begin
         df = check_csv(write_boris(pair(1, 2, "FPS" => "25.000;30.000")))
         @test flagged(df, 1, "FPS must match the frame rate the video file reports")
-        @test occursin("rows 1 and 2 (run_id: r): FPS must match", VR.runs_report(df))
+        @test occursin("rows 1 and 2 (run_id: r): FPS must match", VR.runs_report(df, "runs.csv"))
         # to BORIS's three decimals
         @test all(isempty, check_csv(write_boris(pair(1, 2, "FPS" => "30.0004;30.000"))).issues)
     end
@@ -264,6 +267,6 @@ windows(df) = collect(zip(passmissing(basename).(df.file), df.start, df.stop))
         df = check([runrow(target_width = "-1")])
         @test all(ismissing, df.boris_fps)
         @test df.csv_rows == [[1]]
-        @test occursin("row 1 (run_id: r): target_width must be larger than zero", VR.runs_report(df))
+        @test occursin("row 1 (run_id: r): target_width must be larger than zero", VR.runs_report(df, "runs.csv"))
     end
 end
