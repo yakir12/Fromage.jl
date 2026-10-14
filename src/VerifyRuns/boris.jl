@@ -13,8 +13,11 @@
 
 struct RunsCsv end
 
+# What `main` and `verify` track in a BORIS export unless told otherwise: the lab's ball rolling.
+const DEFAULT_BORIS_BEHAVIOR = "Roll"
+
 struct BorisExport
-    behavior::String
+    behaviour::String
 end
 
 # Every column BORIS writes whatever the project. An export also carries the project's independent
@@ -34,7 +37,7 @@ const BORIS_SIGNATURE = Symbol.(
 
 runs_format(names, behavior) = BORIS_SIGNATURE ⊆ names ? BorisExport(behavior) : RunsCsv()
 
-# What `read_rows`' header screening counts as known: a BORIS export's own columns are not metadata
+# What `screen_columns` counts as known: a BORIS export's own columns are not metadata
 # that might be a misspelt Fromage column (its `Comment` is one edit from `comment`).
 known_columns(::RunsCsv) = COLUMNS
 known_columns(::BorisExport) = (COLUMNS..., BORIS_COLUMNS...)
@@ -42,14 +45,19 @@ known_columns(::BorisExport) = (COLUMNS..., BORIS_COLUMNS...)
 # BORIS writes `FPS` to three decimals, so a rate it read exactly is within 0.0005 of the probe's.
 const BORIS_FPS_TOLERANCE = 0.001
 
+# BORIS writes times and durations to three decimals, and the running sum of the durations drifts in
+# the last bits besides (`10.1 + 20.2` is `30.299999999999997`). An observation time this close to a
+# video's end, or to 0, is taken to be exactly there.
+const BORIS_TIME_TOLERANCE = 0.0005
+
 # What a segment record carries beyond its Fromage cells. `csv_rows` is where it came from in the
 # user's file (data rows counted from 1, as the report has always numbered them). `boris_fps` is the
 # rate BORIS played the segment's video at, which verifications! compares with the probed one; a
 # runs.csv has none, so `missing` there passes that check by.
-runs_csv_extra(i) = Dict{Symbol, Any}(:csv_rows => [i], :boris_fps => missing)
+record_extra(csv_rows, boris_fps) = Dict{Symbol, Any}(:csv_rows => csv_rows, :boris_fps => boris_fps)
 
 # A runs.csv row is its own segment, with nothing found about it yet.
-segment_records(::RunsCsv, _, rows) = [(; cells = r, issues = String[], extra = runs_csv_extra(i)) for (i, r) in enumerate(rows)]
+segment_records(::RunsCsv, _, rows) = [(; cells = r, issues = String[], extra = record_extra([i], missing)) for (i, r) in enumerate(rows)]
 
 # The report's name for a record's rows in the user's own file. A runs.csv row's label is exactly
 # what it always was.
@@ -69,10 +77,18 @@ end
 
 cell(cells, name) = get(cells, Symbol(name), missing)
 
+# A finite number, or `nothing` for a cell that is blank or is not one.
+finite_number(::Missing) = nothing
+function finite_number(s)
+    x = tryparse(Float64, strip(s))
+    return isnothing(x) || !isfinite(x) ? nothing : x
+end
+
 # A `;`-separated list of positive, finite numbers, one per video — or `nothing`.
+number_list(::Missing) = nothing
 function number_list(s)
-    xs = map(x -> tryparse(Float64, strip(x)), split(s, ';'))
-    any(x -> isnothing(x) || !isfinite(x) || x ≤ 0, xs) && return nothing
+    xs = map(finite_number, split(s, ';'))
+    any(x -> isnothing(x) || x ≤ 0, xs) && return nothing
     return Float64[x for x in xs]
 end
 
@@ -98,17 +114,17 @@ function boris_clock!(issues, cells)
         return nothing
     end
     files = file_name.(split(only(players), ';'))
-    durations = passmissing(number_list)(cell(cells, "Media duration (s)"))
-    fps = passmissing(number_list)(cell(cells, "FPS"))
+    durations = number_list(cell(cells, "Media duration (s)"))
+    fps = number_list(cell(cells, "FPS"))
     ok = true
-    if ismissing(durations) || isnothing(durations)
+    if isnothing(durations)
         push!(issues, "wrong Media duration (s) format")
         ok = false
     elseif length(durations) != length(files)
         push!(issues, "Media duration (s) must list one duration per video in Source")
         ok = false
     end
-    if ismissing(fps) || isnothing(fps)
+    if isnothing(fps)
         push!(issues, "wrong FPS format")
         ok = false
     elseif length(fps) != length(files)
@@ -124,16 +140,23 @@ end
 # media creation date as its offset shows up, since its times are wall-clock and nothing else in
 # the export says so.
 function observation_time!(issues, cells, clock)
-    time = passmissing(x -> tryparse(Float64, x))(cell(cells, "Time"))
-    offset = passmissing(x -> tryparse(Float64, x))(cell(cells, "Time offset (s)"))
-    bad = false
-    (ismissing(time) || isnothing(time) || !isfinite(time)) && (push!(issues, "wrong Time format"); bad = true)
-    (ismissing(offset) || isnothing(offset) || !isfinite(offset)) && (push!(issues, "wrong Time offset (s) format"); bad = true)
-    (bad || isnothing(clock)) && return nothing
-    t = time - offset
+    boris_time = finite_number(cell(cells, "Time"))
+    offset = finite_number(cell(cells, "Time offset (s)"))
+    isnothing(boris_time) && push!(issues, "wrong Time format")
+    isnothing(offset) && push!(issues, "wrong Time offset (s) format")
+    (isnothing(boris_time) || isnothing(offset) || isnothing(clock)) && return nothing
+    t = snap(clock, boris_time - offset)
     if !(0 ≤ t ≤ last(clock.ends))
         push!(issues, "Time must lie within the observation's videos: between Time offset (s) and Time offset (s) plus their total Media duration (s)")
         return nothing
+    end
+    return t
+end
+
+# `t`, moved onto 0 or a video's end when it is within `BORIS_TIME_TOLERANCE` of one.
+function snap(clock, t)
+    for edge in (0.0, clock.ends...)
+        abs(t - edge) ≤ BORIS_TIME_TOLERANCE && return edge
     end
     return t
 end
@@ -142,16 +165,21 @@ end
 # takes BORIS's own rule: video k holds [start, end), and the very end of the last video belongs to
 # it. A STOP is an end, so a STOP exactly on a boundary ends the earlier video rather than opening
 # the next one at 0 — which would be a segment with nothing in it.
-abstract type Edge end
-struct Opening <: Edge end
-struct Closing <: Edge end
+struct Opening end
+struct Closing end
 
 video_at(clock, t, ::Opening) = min(searchsortedlast(clock.ends, t) + 1, length(clock.ends))
-video_at(clock, t, ::Closing) = max(searchsortedfirst(clock.ends, t), 1)
+video_at(clock, t, ::Closing) = searchsortedfirst(clock.ends, t)
 
 function locate(clock, t, edge)
     k = video_at(clock, t, edge)
     return k, t - (k == 1 ? 0.0 : clock.ends[k - 1])
+end
+
+# Where a STOP lands, with `missing` for its video's very end (see `boris_windows!`).
+function closing(clock, t)
+    k, b = locate(clock, t, Closing())
+    return k, t == clock.ends[k] ? missing : b
 end
 
 # ---- pairing ----------------------------------------------------------------------------------
@@ -170,23 +198,23 @@ csv_rows(p::CodedPair) = Int[i for i in (p.start, p.stop) if !isnothing(i)]
 # a record of their own, so the pairs around them still go through. `rows` are row indices of the
 # chosen behaviour, in file order.
 function pair_rows(rows, all_cells)
-    open = Dict{String, Int}()     # Subject → its unmatched START
+    unmatched = Dict{String, Int}()     # Subject → its unmatched START
     pairs = CodedPair[]
     for i in rows
         subject = coalesce(cell(all_cells[i], "Subject"), "")
         type = cell(all_cells[i], "Behavior type")
         if isequal(type, "START")
-            j = pop!(open, subject, nothing)
+            j = pop!(unmatched, subject, nothing)
             isnothing(j) || push!(pairs, CodedPair(j, nothing, "Behavior type must alternate START and STOP within a Subject — this START has no STOP"))
-            open[subject] = i
+            unmatched[subject] = i
         elseif isequal(type, "STOP")
-            j = pop!(open, subject, nothing)
+            j = pop!(unmatched, subject, nothing)
             push!(pairs, isnothing(j) ? CodedPair(nothing, i, "Behavior type must alternate START and STOP within a Subject — this STOP has no START") : CodedPair(j, i, nothing))
         else
             push!(pairs, CodedPair(i, nothing, "Behavior type must be START or STOP: a POINT event marks no stretch of video to track"))
         end
     end
-    for j in values(open)
+    for j in values(unmatched)
         push!(pairs, CodedPair(j, nothing, "Behavior type must alternate START and STOP within a Subject — this START has no STOP"))
     end
     return sort!(pairs; by = p -> first(csv_rows(p)))
@@ -201,16 +229,18 @@ joined(a, b) = isequal(a, b) ? a : string(coalesce(a, ""), " | ", coalesce(b, ""
 # `start` and `stop` are the adapter's to fill, so a column of that name is not read.
 const ADAPTER_COLUMNS = (:file, :start, :stop)
 
-function segment_records(format::BorisExport, names, rows)
-    all_cells = [Dict{Symbol, Union{Missing, String}}(n => passmissing(String)(Tables.getcolumn(r, n)) for n in names) for r in rows]
-    fromage = [n for n in names if n in COLUMNS && n ∉ ADAPTER_COLUMNS]
-    user = [n for n in names if n ∉ COLUMNS && n ∉ BORIS_COLUMNS]
+function segment_records(format::BorisExport, header, rows)
+    all_cells = [Dict{Symbol, Union{Missing, String}}(n => passmissing(String)(Tables.getcolumn(r, n)) for n in header) for r in rows]
+    fromage = [n for n in header if n in COLUMNS && n ∉ ADAPTER_COLUMNS]
+    user = [n for n in header if n ∉ COLUMNS && n ∉ BORIS_COLUMNS]
     chosen = [
-        i for (i, c) in enumerate(all_cells) if isequal(cell(c, "Behavior"), format.behavior)
+        i for (i, c) in enumerate(all_cells) if isequal(cell(c, "Behavior"), format.behaviour)
     ]
+    # An event rather than a rule about a cell (DECISIONS, #226): what is usually wrong is the
+    # `boris_behavior` asked for, not the file.
     if !any(i -> cell(all_cells[i], "Behavior type") in ("START", "STOP"), chosen)
-        issue = "Behavior must be $(format.behavior) on at least one START or STOP row (boris_behavior selects which behaviour is tracked)"
-        return [(; cells = nothing, issues = [issue], extra = Dict{Symbol, Any}(:csv_rows => Int[], :boris_fps => missing))]
+        issue = "no START or STOP row has Behavior $(format.behaviour) — boris_behavior names the behaviour to track"
+        return [(; cells = nothing, issues = [issue], extra = record_extra(Int[], missing))]
     end
     return reduce(vcat, [pair_segments(p, all_cells, fromage, user) for p in pair_rows(chosen, all_cells)])
 end
@@ -229,7 +259,6 @@ function pair_segments(p::CodedPair, all_cells, fromage, user)
         cells[c] = a
     end
     metadata = Dict{Symbol, Any}(
-        :csv_rows => rows,
         :subject => joined(cell(first_cells, "Subject"), cell(last_cells, "Subject")),
         :behavior => cell(first_cells, "Behavior"),
         :observation_id => joined(cell(first_cells, "Observation id"), cell(last_cells, "Observation id")),
@@ -249,10 +278,11 @@ function pair_segments(p::CodedPair, all_cells, fromage, user)
     else
         boris_windows!(issues, clock, p, times)
     end
-    return [
-        (; cells = merge(cells, Dict{Symbol, Any}(:file => w.file, :start => w.start, :stop => w.stop)), issues = copy(issues), extra = merge(metadata, Dict{Symbol, Any}(:file => placed_file(w), :boris_fps => w.fps)))
-            for w in windows
-    ]
+    return map(windows) do w
+        window_cells = merge(cells, Dict{Symbol, Any}(:file => w.file, :start => w.start, :stop => w.stop))
+        extra = merge(metadata, record_extra(rows, w.fps), Dict{Symbol, Any}(:file => placed_file(w)))
+        (; cells = window_cells, issues = copy(issues), extra)
+    end
 end
 
 # The window of a pair whose video could not be found: the issues above already say why. Its `file`
@@ -266,16 +296,27 @@ placed_file(w) = w === UNPLACED ? missing : w.file
 # videos is split into one per video it touches — START to the end of its video, every video between
 # whole, and the last from its start to STOP — so that no segment spans two files. A lone START or
 # STOP is one window with the other end left to the defaults (start 0, stop the video's end).
+#
+# A window that runs to its video's end — a STOP on the end (`snap` has put it exactly there), or a
+# video the pair passes through — leaves `stop` blank, so the probe fills it as it does a blank
+# `runs.csv` cell: BORIS's `Media duration (s)` is rounded to the millisecond, and may be a hair past
+# the end the probe reports.
 function boris_windows!(issues, clock, p::CodedPair, times)
     # `times` follows `csv_rows(p)`: the START's, then the STOP's, whichever of the two there are
-    k0, a = isnothing(p.start) ? (nothing, missing) : locate(clock, first(times), Opening())
-    k1, b = isnothing(p.stop) ? (nothing, missing) : locate(clock, last(times), Closing())
     window(k, start, stop) = (file = clock.files[k], start, stop, fps = clock.fps[k])
-    isnothing(k0) && return [window(k1, missing, b)]
-    isnothing(k1) && return [window(k0, a, missing)]
-    if k1 < k0
+    if isnothing(p.start)
+        k1, b = closing(clock, last(times))
+        return [window(k1, missing, b)]
+    end
+    k0, a = locate(clock, first(times), Opening())
+    isnothing(p.stop) && return [window(k0, a, missing)]
+    if last(times) < first(times)
         push!(issues, "Time must not be earlier on a STOP row than on its START row")
         return [window(k0, a, missing)]
     end
-    return [window(k, k == k0 ? a : 0.0, k == k1 ? b : clock.durations[k]) for k in k0:k1]
+    k1, b = closing(clock, last(times))
+    # Equal times on a boundary open the later video and close the earlier one: one empty window,
+    # which `start must come before stop` reports.
+    k1 < k0 && return [window(k0, a, 0.0)]
+    return [window(k, k == k0 ? a : 0.0, k == k1 ? b : missing) for k in k0:k1]
 end

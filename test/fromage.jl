@@ -274,6 +274,14 @@ end
     @test sort(filter(endswith(".csv"), readdir(outdir))) == ["first.csv", "second.csv"]
     ts, _, _ = read_track(joinpath(outdir, "first.csv"))
     @test length(ts) == round(Int, 25 * 0.6) + round(Int, 25 * 0.4)   # both of its segments
+
+    # a problem only the export can have aborts `main` after the report, citing the export's rows
+    open(joinpath(dir, "lonely.csv"), "w") do io
+        println(io, boris_header)
+        println(io, event("START", 0.0, "Roll", "first"))
+    end
+    result, printed = capturing(() -> @test_throws "there were issues" main(dir; runs_file = "lonely.csv", results_dir = mktempdir()))
+    @test occursin("row 1 (run_id: first): Behavior type must alternate START and STOP", printed)
 end
 
 @testset "Fromage end-to-end: AprilTag drone tracking" begin

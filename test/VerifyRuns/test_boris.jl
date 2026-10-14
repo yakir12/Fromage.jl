@@ -54,6 +54,7 @@ windows(df) = collect(zip(df.file, df.start, df.stop))
         df = check_csv(write_boris(rows))
         @test all(isempty, df.issues)
         @test windows(df) == [(joinpath(DATADIR, ART.a), 1.0, 2.0), (joinpath(DATADIR, ART.a), 3.0, 4.0)]
+        @test df.boris_fps == [30.0, 30.0]
         @test df.csv_rows == [[1, 2], [4, 5]]           # the export's own rows, Dance's skipped
         runs = VR.build_runs(df)
         @test [r.run_id for r in runs] == ["one", "two"]
@@ -94,14 +95,25 @@ windows(df) = collect(zip(df.file, df.start, df.stop))
     @testset "a pair crossing a video boundary is split, one segment per video" begin
         three = ("Source" => "player #1:/v/x.mp4;/v/y.mp4;/v/z.mp4", "Media duration (s)" => "5;8;3", "FPS" => "30;25;30")
         df = derived(pair(4, 14, three...))
-        @test windows(df) == [("x.mp4", 4.0, 5.0), ("y.mp4", 0.0, 8.0), ("z.mp4", 0.0, 1.0)]
+        # a window running to its video's end leaves `stop` for the probe, as a blank runs.csv cell does
+        @test isequal(windows(df), [("x.mp4", 4.0, missing), ("y.mp4", 0.0, missing), ("z.mp4", 0.0, 1.0)])
         @test df.boris_fps == [30.0, 25.0, 30.0]                 # each its own video's rate
         @test all(==([1, 2]), df.csv_rows)                       # all cite the same two rows
         @test all(==("r"), df.run_id)
         # exactly on a boundary: a START opens the next video, a STOP closes the earlier one
-        @test windows(derived(pair(5, 13, three...))) == [("y.mp4", 0.0, 8.0)]
+        @test isequal(windows(derived(pair(5, 13, three...))), [("y.mp4", 0.0, missing)])
+        # BORIS's three decimals, and the running sum of the durations, are not a boundary miss:
+        # 10.1 + 20.2 is 30.299999999999997, and a STOP at 30.3 is the end of the last video
+        drift = ("Source" => "player #1:/v/x.mp4;/v/y.mp4", "Media duration (s)" => "10.100;20.200", "FPS" => "30;30")
+        df = derived(pair(29, 30.3, drift...))
+        @test all(isempty, df.issues) && df.file == ["y.mp4"] && df.start ≈ [18.9] && all(ismissing, df.stop)
+        df = derived(pair(10.1004, 11, drift...))      # within half a millisecond of the boundary
+        @test df.file == ["y.mp4"] && df.start == [0.0] && df.stop ≈ [0.9]
+        # a START and a STOP both on one boundary: one empty window, left to the gateway's own check
+        df = derived(pair(5, 5, three...))
+        @test windows(df) == [("y.mp4", 0.0, 0.0)] && all(isempty, df.issues)
         # and the very end of the last video is the last video's
-        @test windows(derived(pair(15, 16, three...))) == [("z.mp4", 2.0, 3.0)]
+        @test isequal(windows(derived(pair(15, 16, three...))), [("z.mp4", 2.0, missing)])
         # split segments run through the second tier like any others
         df = check_csv(write_boris(pair(4, 6)))
         @test all(isempty, df.issues)
@@ -118,15 +130,18 @@ windows(df) = collect(zip(df.file, df.start, df.stop))
     end
 
     @testset "metadata: BORIS's, and the user's own, joined where a pair's rows differ" begin
+        # `Modifier #1` and `Arena` stand for a project's modifiers and independent variables,
+        # which BORIS writes only when the project has them
         rows = [
-            boris("START", 0, "Comment" => "slipped"; treatment = "IVM", note = "a"),
-            boris("STOP", 1, "Comment" => missing; treatment = "IVM", note = "b"),
+            boris("START", 0, "Comment" => "slipped", "Modifier #1" => "fast", "Arena" => "A"; treatment = "IVM", note = "a"),
+            boris("STOP", 1, "Comment" => missing, "Modifier #1" => "slow", "Arena" => "A"; treatment = "IVM", note = "b"),
         ]
         df = derived(rows)
         @test df.subject == ["JK"] && df.behavior == ["Roll"] && df.observation_id == ["obs1"]
         @test df.comment == ["slipped | "]
         @test df.treatment == ["IVM"]                  # equal values appear once
         @test df.note == ["a | b"]
+        @test df[!, "Modifier #1"] == ["fast | slow"] && df.Arena == ["A"]
         @test all(isempty, df.issues)
     end
 
@@ -165,6 +180,7 @@ windows(df) = collect(zip(df.file, df.start, df.stop))
             pair(0, 1, "FPS" => "30"; run_id = "k")...,                    # 20–21: one rate for two videos
             pair(0, "soon"; run_id = "l")...,                              # 22–23
             [boris("START", 7; run_id = "m"), boris("STOP", 2; run_id = "m")]...,  # 24–25: back into the first video
+            pair(0, 1, "Time offset (s)" => "x"; run_id = "n")...,         # 26–27
         ]
         df = derived(rows)
         report = VR.runs_report(df)
@@ -182,6 +198,7 @@ windows(df) = collect(zip(df.file, df.start, df.stop))
             "rows 20 and 21 (run_id: k): FPS must list one rate per video in Source",
             "rows 22 and 23 (run_id: l): wrong Time format",
             "rows 24 and 25 (run_id: m): Time must not be earlier on a STOP row than on its START row",
+            "rows 26 and 27 (run_id: n): wrong Time offset (s) format",
         ]
         for line in expect
             @test occursin(line, report)
@@ -202,11 +219,10 @@ windows(df) = collect(zip(df.file, df.start, df.stop))
 
     @testset "an export with none of the behaviour is one issue, not a parse of nothing" begin
         df = derived([pair(0, 1, "Behavior" => "Dance")...])
-        @test only(only(df.issues)) |> contains("Behavior must be Roll on at least one START or STOP row")
-        @test occursin("every row: Behavior must be Roll", VR.runs_report(df))
+        @test only(df.issues) == ["no START or STOP row has Behavior Roll — boris_behavior names the behaviour to track"]
+        @test occursin("every row: no START or STOP row has Behavior Roll", VR.runs_report(df))
         # a POINT alone is not a START or STOP either
-        df = derived([boris("POINT", 1)])
-        @test only(df.issues) == ["Behavior must be Roll on at least one START or STOP row (boris_behavior selects which behaviour is tracked)"]
+        @test flagged(derived([boris("POINT", 1)]), 1, "no START or STOP row has Behavior Roll")
     end
 
     @testset "a blank run_id is never numbered for you" begin

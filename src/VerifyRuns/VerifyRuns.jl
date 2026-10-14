@@ -57,10 +57,10 @@ function parse_runs(data_path, file; defaults, boris_behavior, progress)
     whole_run_defaults = resolve_whole_run_defaults(defaults)
     defaults = resolve_defaults(defaults)   # fail fast on unknown keys / unconvertible values
     csvrows = read_csv(file, "runs")
-    names = Tables.schema(csvrows).names
-    format = runs_format(names, boris_behavior)
+    header = Tables.schema(csvrows).names
+    format = runs_format(header, boris_behavior)
     screen_columns(csvrows, known_columns(format), RENAMED_COLUMNS, file)
-    records = segment_records(format, names, collect(csvrows))
+    records = segment_records(format, header, collect(csvrows))
 
     # parse each record to a Dict of parsed values + an :issues accumulator, holding whatever the
     # adapter already found, plus the cells that are not Fromage's to parse
@@ -83,10 +83,11 @@ end
 
 # a run_id that is missing (mixed numbering) or equal to the row number (auto-assigned) adds
 # nothing over "row $i", so it is only mentioned when the csv named the run itself. A BORIS
-# segment's label names two rows, so its run_id, mandatory there, is always mentioned.
+# segment cites the export's rows (`csv_rows`), and a pair's two rows can never be one number, so its
+# run_id, mandatory there, is mentioned.
 runs_report(df) = issue_report(
     df, :run_id, "runs.csv", row_label.(df.csv_rows);
-    mention = (label, rid) -> !ismissing(rid) && label != "row $rid"
+    mention = (i, rid) -> !ismissing(rid) && df.csv_rows[i] != [tryparse(Int, rid)]
 )
 report_runs(df, strict) = report_issues(runs_report(df), "runs", strict)
 

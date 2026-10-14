@@ -1835,7 +1835,7 @@ the gateway never compares.
 A BORIS "Tabular events" export is accepted as the runs file. It is turned, in memory, into one
 runs-shaped record per segment (`segment_records`, `src/VerifyRuns/boris.jl`), and those records go
 through the same `parse_row`, `verify_ids!` and `verifications!` as a `runs.csv`'s rows. The format
-is a type chosen from the header (`RunsCsv()` / `BorisExport(behavior)`), as rectification builders
+is a type chosen from the header (`RunsCsv()` / `BorisExport(behaviour)`), as rectification builders
 are chosen by type; a `runs.csv` is the identity case. No derived table is written anywhere —
 `verify`'s returned `runs` is how to inspect it.
 
@@ -1862,10 +1862,14 @@ already found, `issue_report` labels rows from a vector rather than their positi
 are screened (BORIS's `Comment` is one edit from `comment`). `resolve_run_ids!` dispatches on the
 format, because a BORIS export's `run_id` is mandatory and must never be numbered for the user.
 
-Two refinements the issue left open. A STOP exactly on a boundary between two videos closes the
+Three refinements of the issue's rules. A STOP exactly on a boundary between two videos closes the
 earlier one rather than opening the later at 0, which would be a segment with nothing in it; a
-START there opens the later one, which is BORIS's own rule. And BORIS writes `FPS` to three
-decimals, so the check allows 0.001.
+START there opens the later one, which is BORIS's own rule (agreed with the maintainer,
+2026-10-14). BORIS writes times, durations and `FPS` to three decimals, so an observation time
+within half a millisecond of a video's end is taken to be on it, and the FPS check allows 0.001.
+And a split segment that runs to its video's end leaves `stop` blank for the probe to fill, as a
+blank `runs.csv` cell does, rather than taking BORIS's rounded `Media duration (s)`, which can be a
+hair past the end ffprobe reports and would then be rejected.
 
 ### Failures are reported, not thrown
 

@@ -340,7 +340,7 @@ function main(
         data_path::String; rectifications_file = "rectifications.csv", runs_file = "runs.csv",
         rectification_defaults = (;), tracking_defaults = (;), run_ids = nothing,
         rectification_diagnostics::Bool = false, results_dir::String = RESULTS_DIR,
-        boris_behavior::String = "Roll"
+        boris_behavior::String = VerifyRuns.DEFAULT_BORIS_BEHAVIOR
     )
     results_dir = mkpath(abspath(results_dir))   # resolved once, so every artefact lands in one place
     cs, rs = load_dataset(results_dir, data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults, boris_behavior)
@@ -417,7 +417,7 @@ them. Nothing of it is written to disk; this is the way to look at it.
 function verify(
         data_path::String; rectifications_file = "rectifications.csv", runs_file = "runs.csv",
         rectification_defaults = (;), tracking_defaults = (;), results_dir::String = RESULTS_DIR,
-        boris_behavior::String = "Roll"
+        boris_behavior::String = VerifyRuns.DEFAULT_BORIS_BEHAVIOR
     )
     # Not created here: the issue frames are the only thing `verify` writes, and their folder is made
     # when the first one is saved, so a clean dataset leaves no trace (#86).

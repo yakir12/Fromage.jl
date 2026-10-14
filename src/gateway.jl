@@ -271,16 +271,16 @@ end
 #
 # `labels` names each row of `df` in the user's own file — `"row 3"` for a csv the table was parsed
 # from line for line, or whatever the gateway's rows were derived from (a BORIS export's segment
-# cites the export's START and STOP rows, #409). `mention(label, id)` decides whether the row's
-# identity adds anything over its label — an id that is missing, or that was auto-generated from the
-# row number, does not.
+# cites the export's START and STOP rows, #409). `mention(i, id)` decides whether row `i`'s identity
+# adds anything over its label — an id that is missing, or that was auto-generated from the row
+# number, does not.
 function issue_report(df::AbstractDataFrame, idcol, csv_name, labels; mention)
     any(!isempty, df.issues) || return nothing
     ids = df[!, idcol]
     msg = join(
         [
-            string(mention(label, id) ? "$label ($idcol: $id)" : label, ": ", join(issues, ", "))
-                for (label, id, issues) in zip(labels, ids, df.issues) if !isempty(issues)
+            string(mention(i, id) ? "$label ($idcol: $id)" : label, ": ", join(issues, ", "))
+                for (i, (label, id, issues)) in enumerate(zip(labels, ids, df.issues)) if !isempty(issues)
         ], '\n'
     )
     return string("\nThe following are issues with the $csv_name file:\n", msg)
