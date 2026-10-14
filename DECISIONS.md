@@ -1355,7 +1355,14 @@ keeps the forward messages: four more bytes per grid pixel per sample, as much a
 With it they are kept per step, a fifth of that. The research measured the three at a median 1.5–1.9×
 the shipped path (`flagging.md`, `heldout-gate.md`).
 
-**Reproduced on the 1,622 judged runs** (D's three store batches): GATE-RESULT
+**Reproduced on the 1,622 judged runs** (D's three store batches). `whole_run_review` ran on every
+cached volume of the research harness, with each run's `video_type` taken from the store's
+inventory. All three values match the harness's `margin_min`, `fastest_widths_s` and
+max(`bg_first_s`, `bg_second_s`) exactly, and so does the path, at 0.0 px. The flags match too: on
+dev, 11 of 13 failures caught and 16 of 1,119 passes flagged (9 by `ambiguous`, 4 by `unstable`, 3 by
+`fast`); on held-out, 1 of 2 and none of 448. The gate ran on the code before the review's last
+structural changes (the store's dispatch, the per-signal functions). Three runs re-checked on the
+final code matched exactly.
 
 What was left out: the margin curve (no gain on drone), data stability over all four perturbations
 (more flagged drone passes), and evidence-removal stability (AUROC 0.58), all in `flagging.md`.

@@ -254,21 +254,25 @@ const WALK = 1.2
         end
     end
 
+    # The signal scenes below solve only what each signal needs (a path, or a path and its margin);
+    # a whole review is two more solves, and these tests run under coverage in CI.
+    path_and_margin(vol, model) = PT.solve(vol, model, true, eachindex(vol.frames), PT.WithMargin())
+
     @testset "ambiguous: two look-alikes leaving the start together leave little margin" begin
         lone = volume(t -> (30.0, 20.0 + WALK * t); n = 150, start = (30.0, 20.0))
         twins = volume(t -> (30.0 - 0.6t, 40.0 + WALK * t), t -> (30.0 + 0.6t, 40.0 + WALK * t); n = 150, start = (30.0, 40.0))
         @testset "$(nameof(typeof(model)))" for model in (MotionModel(missing), NoMotionModel())
-            _, a = PT.whole_run_review(lone, model, review_tuning())
-            _, b = PT.whole_run_review(twins, model, review_tuning())
+            _, a = path_and_margin(lone, model)
+            _, b = path_and_margin(twins, model)
             # measured 27.7 against 0.95 with the motion model, 76.8 against 7.2 without
-            @test b.ambiguous.value < a.ambiguous.value / 5
-            @test !PT.flagged(a)
-            @test a.ambiguous.cut == PT.margin_cut(missing, model)
+            @test minimum(b) < minimum(a) / 5
+            s = PT.ambiguous_signal(a, lone, model, review_tuning())
+            @test s.value == minimum(a)
+            @test s.cut == PT.margin_cut(missing, model) && !s.flagged
             # a video type's cut, high enough to flag the lone target
-            _, c = PT.whole_run_review(lone, model, review_tuning("indoor infrared"))
-            @test c.ambiguous.cut == PT.margin_cut("indoor infrared", model)
-            @test c.ambiguous.flagged && PT.flagged(c)
-            @test c.ambiguous.moment isa PT.Moment
+            s = PT.ambiguous_signal(a, lone, model, review_tuning("indoor infrared"))
+            @test s.cut == PT.margin_cut("indoor infrared", model) && s.flagged
+            @test s.moment isa PT.Moment
         end
     end
 
@@ -276,20 +280,20 @@ const WALK = 1.2
         # The target sits at the start for 65 s of a 150 s run, so the median of the first half holds
         # it and the median of the whole run does not; a look-alike walks off from beside it over
         # those 65 s, and is gone. On the first half's background the path follows the look-alike.
+        # At 2 samples/s, and without the motion model only: the signal is the same code under
+        # either, and the AprilTag flight below reviews a motion-model run.
         still = 65.0
         target = t -> t < still ? (30.0, 40.0) : (30.0, 40.0 + WALK * (t - still))
         decoy = t -> t < still ? (30.0 + 0.4 * t, 42.0 + 0.5 * t) : nothing
-        vol = volume(target, decoy; R = 70, C = 220, n = 750, start = (30.0, 40.0))
-        @testset "$(nameof(typeof(model)))" for model in (MotionModel(missing), NoMotionModel())
-            p, review = PT.whole_run_review(vol, model, review_tuning())
-            @test worst(p, target, vol.dt) < 3.0                       # the path itself holds
-            s = review.unstable
-            @test s.cut == PT.UNSTABLE_SECONDS
-            @test PT.UNSTABLE_SECONDS <= s.value < still               # measured 62.2 and 62.6
-            @test s.flagged && PT.flagged(review)
-            @test 0 < s.moment.run_time < 10                               # measured 7.0 and 6.8
-            @test !review.fast.flagged
-        end
+        vol = volume(target, decoy; R = 64, C = 150, n = 300, dt = 0.5, start = (30.0, 40.0))
+        p, review = PT.whole_run_review(vol, NoMotionModel(), review_tuning())
+        @test worst(p, target, vol.dt) < 4.0                       # the path itself holds: 2 widths (measured 3.4)
+        s = review.unstable
+        @test s.cut == PT.UNSTABLE_SECONDS
+        @test PT.UNSTABLE_SECONDS <= s.value < still               # measured 63
+        @test s.flagged && PT.flagged(review)
+        @test 0 < s.moment.run_time < 10                           # measured 7
+        @test !review.fast.flagged
     end
 
     @testset "fast: held to SUSPECT_SPEED on AprilTag footage only" begin
@@ -299,14 +303,15 @@ const WALK = 1.2
         beetle = t -> t < 10 ? (30.0, 20.0 + WALK * t) : nothing
         leap = t -> t < 10 ? nothing : (30.0 + 16 * min(t - 10, 1.0), 20.0 + WALK * 10)
         vol = volume(beetle, leap; n = 100, start = (30.0, 20.0))
-        _, plain = PT.whole_run_review(vol, NoMotionModel(), review_tuning())
-        @test plain.fast.value > PT.SUSPECT_SPEED
-        @test ismissing(plain.fast.cut) && !plain.fast.flagged
-        @test 9 < plain.fast.moment.run_time < 11
-        _, drone = PT.whole_run_review(vol, MotionModel(missing), review_tuning())
-        @test drone.fast.cut == PT.SUSPECT_SPEED
-        @test drone.fast.value > PT.SUSPECT_SPEED && drone.fast.flagged && PT.flagged(drone)
-        @test 9 < drone.fast.moment.run_time < 11
+        fast(model) = PT.fast_signal(PT.full_track(whole_run_path(vol, model, true), 1.0), vol, model, review_tuning())
+        plain = fast(NoMotionModel())
+        @test plain.value > PT.SUSPECT_SPEED
+        @test ismissing(plain.cut) && !plain.flagged
+        @test 9 < plain.moment.run_time < 11
+        drone = fast(MotionModel(missing))
+        @test drone.cut == PT.SUSPECT_SPEED
+        @test drone.value > PT.SUSPECT_SPEED && drone.flagged
+        @test 9 < drone.moment.run_time < 11
     end
 
     @testset "review/flags.csv: a row per whole-run run and signal, and a warning per flagged run" begin
@@ -394,7 +399,6 @@ const WALK = 1.2
         open(joinpath(dir, "runs.csv"), "w") do io
             println(io, "run_id,rectification_id,file,start_location,target_width,whole_run,video_type")
             println(io, "beetle,drone,$(v.file),\"$(v.start_location)\",12,true,")
-            println(io, "online,drone,$(v.file),\"$(v.start_location)\",12,false,")
         end
         results_dir = mktempdir()
         main(dir; results_dir)
@@ -407,8 +411,8 @@ const WALK = 1.2
         @test isempty(cells[11][4]) && isempty(cells[11][5]) && !isempty(cells[11][2])
         @test all(k -> k == 11 || PT.SVector(parse(Float64, cells[k][4]), parse(Float64, cells[k][5])) ≈ px[k], eachindex(cells))
         @test isfile(joinpath(results_dir, "diagnostic.mp4"))
-        # the review: three rows, the whole-run run's alone, its values the tracker's own, and a blank
-        # video type held to the drone cut on AprilTag footage
+        # the review: three rows, its values the tracker's own, and a blank video type held to the
+        # drone cut on AprilTag footage (that online runs get none, `write_review`'s own test says)
         header, lines... = readlines(joinpath(results_dir, "review", "flags.csv"))
         @test header == "run_id,signal,value,cut,flagged,time,segment,file_time"
         cells = split.(lines, ',')
