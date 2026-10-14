@@ -2202,6 +2202,30 @@ pin can go when DocumenterVitepress's template moves to vitepress 2, or when the
 release for vitepress 1 again. A newer DocumenterVitepress may also need entries this copy lacks:
 diff it against that version's `template/package.json` when the docs environment moves.
 
+### The link checker waits out GitHub's 503s (#423)
+
+The `Link checker` job went red three times in 40 minutes on 503s from two `github.com/…/blob/…`
+pages that a lab machine fetched with a 200 a minute later. The fix is `max_retries = 6` and
+`retry_wait_time = 2` in `.lychee.toml`: about two minutes of doubling waits instead of lychee's
+default seven seconds. What lychee v0.24.2 (lychee-action v2's default) does, read from its source:
+it retries only 5xx, 408 and 429, so a 404 still fails on its first answer and a longer window costs
+nothing on a dead link.
+
+The other candidates were checked and not kept:
+
+- **Passing a `GITHUB_TOKEN`** was already happening: lychee-action's `token` input defaults to
+  `github.token`, and the failed runs' logs show it set. It would not have helped anyway. lychee uses
+  the token only for a GitHub-API fallback that confirms a *repository* exists, and returns
+  `InvalidGithubUrl` for any URL with a path below it, which is every `/blob/` link.
+- **Accepting 503** would also accept a host that stays down for good, which is the link rot the
+  weekly sweep exists to catch.
+- **Caching results** (`--cache` with `actions/cache`) would make a PR run re-check fewer links. But
+  lychee drops failed checks from its cache, so the flaky link is fetched again anyway, and the
+  cache needs a key, a restore step and an age limit for a flake that retrying already rides out.
+
+If a two-minute window proves too short, look at the job's host statistics before lengthening it
+further: `[hosts."github.com"]` in `.lychee.toml` can throttle requests to GitHub alone.
+
 ---
 
 ## Testing

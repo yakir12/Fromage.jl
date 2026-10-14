@@ -9,3 +9,12 @@ exclude_path = [
   # the CalibrationRigSimulation package runs no CI (#289, #297; Lint.yml)
   "simulation",
 ]
+
+# GitHub sometimes answers the CI runner with 503 for a page that is up (#423: three red runs in
+# 40 minutes, a 200 from a lab machine a minute later). lychee retries only 5xx, 408 and 429, with
+# a doubling wait, so a dead link (404) still fails on its first answer; these two settings only
+# lengthen the window a refusal has to clear — 2+4+8+16+32+64 s, about two minutes, against the
+# default 1+2+4 s. Accepting 503 instead would hide a host that stays down (DECISIONS, "The link
+# checker waits out GitHub's 503s").
+max_retries = 6
+retry_wait_time = 2
