@@ -41,7 +41,9 @@ end
 
 # The first tier only: what the adapter and the parser made of the export, before any video.
 derived(rows; behavior = "Roll") = first(VR.parse_runs(DATADIR, write_boris(rows); defaults = (;), boris_behavior = behavior, progress = false))
-windows(df) = collect(zip(df.file, df.start, df.stop))
+# By file name: the second tier resolves `file` to a real path, which on Windows need not be the
+# temp folder's spelling (`RUNNER~1` against `runneradmin`).
+windows(df) = collect(zip(passmissing(basename).(df.file), df.start, df.stop))
 
 @testset "BORIS exports (#409)" begin
     @testset "a clean export is one segment per START/STOP pair, and tracks" begin
@@ -53,7 +55,7 @@ windows(df) = collect(zip(df.file, df.start, df.stop))
         ]
         df = check_csv(write_boris(rows))
         @test all(isempty, df.issues)
-        @test windows(df) == [(joinpath(DATADIR, ART.a), 1.0, 2.0), (joinpath(DATADIR, ART.a), 3.0, 4.0)]
+        @test windows(df) == [(ART.a, 1.0, 2.0), (ART.a, 3.0, 4.0)]
         @test df.boris_fps == [30.0, 30.0]
         @test df.csv_rows == [[1, 2], [4, 5]]           # the export's own rows, Dance's skipped
         runs = VR.build_runs(df)
@@ -117,7 +119,7 @@ windows(df) = collect(zip(df.file, df.start, df.stop))
         # split segments run through the second tier like any others
         df = check_csv(write_boris(pair(4, 6)))
         @test all(isempty, df.issues)
-        @test windows(df) == [(joinpath(DATADIR, ART.a), 4.0, 5.0), (joinpath(DATADIR, ART.b), 0.0, 1.0)]
+        @test windows(df) == [(ART.a, 4.0, 5.0), (ART.b, 0.0, 1.0)]
         @test length(only(VR.build_runs(df)).segments) == 2
     end
 

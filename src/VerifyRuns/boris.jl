@@ -154,7 +154,7 @@ function observation_time!(issues, cells, clock)
 end
 
 # `t`, moved onto 0 or a video's end when it is within `BORIS_TIME_TOLERANCE` of one.
-function snap(clock, t)
+function snap(clock::BorisClock, t)
     for edge in (0.0, clock.ends...)
         abs(t - edge) ≤ BORIS_TIME_TOLERANCE && return edge
     end
@@ -165,19 +165,21 @@ end
 # takes BORIS's own rule: video k holds [start, end), and the very end of the last video belongs to
 # it. A STOP is an end, so a STOP exactly on a boundary ends the earlier video rather than opening
 # the next one at 0 — which would be a segment with nothing in it.
+# The clock is annotated on everything that searches its `ends`: left `Any`, JET resolves
+# `searchsortedlast` against every method in the session, a `DataStructures` token's among them.
 struct Opening end
 struct Closing end
 
-video_at(clock, t, ::Opening) = min(searchsortedlast(clock.ends, t) + 1, length(clock.ends))
-video_at(clock, t, ::Closing) = searchsortedfirst(clock.ends, t)
+video_at(clock::BorisClock, t, ::Opening) = min(searchsortedlast(clock.ends, t) + 1, length(clock.ends))
+video_at(clock::BorisClock, t, ::Closing) = searchsortedfirst(clock.ends, t)
 
-function locate(clock, t, edge)
+function locate(clock::BorisClock, t, edge)
     k = video_at(clock, t, edge)
     return k, t - (k == 1 ? 0.0 : clock.ends[k - 1])
 end
 
 # Where a STOP lands, with `missing` for its video's very end (see `boris_windows!`).
-function closing(clock, t)
+function closing(clock::BorisClock, t)
     k, b = locate(clock, t, Closing())
     return k, t == clock.ends[k] ? missing : b
 end
@@ -301,7 +303,7 @@ placed_file(w) = w === UNPLACED ? missing : w.file
 # video the pair passes through — leaves `stop` blank, so the probe fills it as it does a blank
 # `runs.csv` cell: BORIS's `Media duration (s)` is rounded to the millisecond, and may be a hair past
 # the end the probe reports.
-function boris_windows!(issues, clock, p::CodedPair, times)
+function boris_windows!(issues, clock::BorisClock, p::CodedPair, times)
     # `times` follows `csv_rows(p)`: the START's, then the STOP's, whichever of the two there are
     window(k, start, stop) = (file = clock.files[k], start, stop, fps = clock.fps[k])
     if isnothing(p.start)
