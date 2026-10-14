@@ -2202,29 +2202,35 @@ pin can go when DocumenterVitepress's template moves to vitepress 2, or when the
 release for vitepress 1 again. A newer DocumenterVitepress may also need entries this copy lacks:
 diff it against that version's `template/package.json` when the docs environment moves.
 
-### The link checker waits out GitHub's 503s (#423)
+### The link checker checks twice, and only its failures the second time (#423)
 
 The `Link checker` job went red three times in 40 minutes on 503s from two `github.com/…/blob/…`
-pages that a lab machine fetched with a 200 a minute later. The fix is `max_retries = 6` and
-`retry_wait_time = 2` in `.lychee.toml`: about two minutes of doubling waits instead of lychee's
-default seven seconds. What lychee v0.24.2 (lychee-action v2's default) does, read from its source:
-it retries only 5xx, 408 and 429, so a 404 still fails on its first answer and a longer window costs
-nothing on a dead link.
+pages that a lab machine fetched with a 200 a minute later. `Lint.yml` now runs lychee with
+`--cache`, and when that pass fails, again two minutes later. lychee's cache keeps the links that
+passed and drops the ones that failed, so the second pass re-fetches only the failures. A refusal
+that has cleared passes; a dead link fails twice. Measured locally with lychee v0.24.2 (the version
+lychee-action v2 runs) against a server answering 503 once and then 200: the first pass failed it,
+the second fetched it alone and passed, and a 404 failed both.
 
-The other candidates were checked and not kept:
+What was tried or checked, and not kept:
 
-- **Passing a `GITHUB_TOKEN`** was already happening: lychee-action's `token` input defaults to
-  `github.token`, and the failed runs' logs show it set. It would not have helped anyway. lychee uses
-  the token only for a GitHub-API fallback that confirms a *repository* exists, and returns
+- **`max_retries` / `retry_wait_time`.** The first version of this fix raised both. It did nothing.
+  lychee turns a status it does not accept into `RejectedStatusCode`, and retries that only for 429.
+  Its retry loop covers timeouts and connection errors, not answers. The same server took one hit,
+  with no retry, at `--max-retries 6`.
+- **Passing a `GITHUB_TOKEN`.** This was already happening: lychee-action's `token` input defaults
+  to `github.token`, and the failed runs' logs show it set. It would not have helped anyway. lychee
+  uses the token only for a GitHub-API fallback that confirms a *repository* exists, and returns
   `InvalidGithubUrl` for any URL with a path below it, which is every `/blob/` link.
-- **Accepting 503** would also accept a host that stays down for good, which is the link rot the
-  weekly sweep exists to catch.
-- **Caching results** (`--cache` with `actions/cache`) would make a PR run re-check fewer links. But
-  lychee drops failed checks from its cache, so the flaky link is fetched again anyway, and the
-  cache needs a key, a restore step and an age limit for a flake that retrying already rides out.
+- **Accepting 503.** That would also accept a host that is down for good, which is the link rot the
+  weekly sweep exists to catch. lychee's `accept` applies to every host, so it cannot be limited to
+  GitHub.
+- **Keeping the cache across runs** with `actions/cache`. That would skip links checked in the last
+  day, but it needs a key, a restore step and an age limit. And it still leaves the first fetch of
+  each link exposed, which the second pass covers.
 
-If a two-minute window proves too short, look at the job's host statistics before lengthening it
-further: `[hosts."github.com"]` in `.lychee.toml` can throttle requests to GitHub alone.
+If two minutes proves too short, look at the job's host statistics before lengthening the wait:
+`[hosts."github.com"]` in `.lychee.toml` can throttle requests to GitHub alone.
 
 ---
 
