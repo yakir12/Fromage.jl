@@ -108,8 +108,7 @@ end
 # Validate and report, never throw. Always returns the annotated DataFrame — see `check_runs` for
 # why that unconditional return is the point.
 function check_rectifications(data_path, file; defaults, results_dir, progress)
-    df, identities_ok = parse_rectifications(data_path, file; defaults, progress)
-    identities_ok || report_rectifications(df, false)
+    df, _ = parse_rectifications(data_path, file; defaults, progress)
     verifications!(df, data_path, results_dir; progress)
     report_rectifications(df, false)
     return df

@@ -205,26 +205,14 @@ why(::Val{:unstable}, s) = "it moves for $(round(s.value; digits = 1)) s when it
 # until Julia exits.
 track_runs(rs, cs) = @showprogress desc = "Building runs" tmap(track_run, rs, cs)
 
-# Both csv files, validated as one dataset. The identities of BOTH are settled first — each file's
-# own, then the cross-file check that they describe the same thing — before either file's videos are
-# opened, so an incoherent pair costs no reads at all (#121, #122).
+# Both csv files, validated as one dataset, in two tiers written once and shared by the two callers
+# below, which differ only in what happens between the tiers. The cross-file check needs both files
+# parsed, which is why the two loaders are driven a tier at a time here rather than through
+# `load_rectifications`/`load_runs`, which validate one file end to end.
 #
-# The two loaders are driven a tier at a time rather than through `load_rectifications`/`load_runs`,
-# which validate one file end to end: the cross-file check has to happen between the tiers, and it
-# needs both files parsed to run at all.
-#
-# Both csv files, validated as one dataset, up to but not including the decision of what to do about
-# what was found. Returns both annotated DataFrames and whether anything was wrong; the two callers
-# below differ only in that decision, which is why the pipeline itself lives here once.
-#
-# The identities of BOTH files are settled first — each file's own, then the cross-file check that
-# they describe the same thing — before either file's videos are opened, so an incoherent pair costs
-# no reads at all (#121, #122).
-#
-# The two loaders are driven a tier at a time rather than through `load_rectifications`/`load_runs`,
-# which validate one file end to end: the cross-file check has to happen between the tiers, and it
-# needs both files parsed to run at all.
-function _validate_dataset(results_dir, data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults, boris_behavior)
+# The first tier: each file's identities, then the cross-file check that the two describe the same
+# thing. Opens no video. Returns both annotated DataFrames and whether the tier passed.
+function parse_dataset(data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults, boris_behavior)
     rects, rects_ids_ok = VerifyRectifications.parse_rectifications(
         data_path, joinpath(data_path, rectifications_file); defaults = rectification_defaults, progress = true
     )
@@ -236,42 +224,51 @@ function _validate_dataset(results_dir, data_path, rectifications_file, runs_fil
     # before `run_ids` narrows anything. Narrowing decides what gets built, never what gets
     # validated; otherwise asking for one run would fail the rectifications it did not ask for.
     coherent = verify_cross_references!(rects, runs, :rectification_id, "rectifications.csv", "runs.csv")
+    return rects, runs, rects_ids_ok && runs_ids_ok && coherent
+end
 
-    # The first-tier gate, across both files. Both are reported before the caller decides, so a user
-    # fixing a dataset sees everything the csv text can tell them in one pass rather than one file's
-    # problems per run.
-    tier1_bad = false
-    if !(rects_ids_ok && runs_ids_ok && coherent)
-        tier1_bad = VerifyRectifications.report_rectifications(rects, false)
-        tier1_bad |= VerifyRuns.report_runs(runs, false)
-    end
-
+# The second tier, over both files: every stage skips the rows the first tier flagged.
+function dataset_verifications!(rects, runs, data_path, results_dir)
     VerifyRectifications.verifications!(rects, data_path, results_dir; progress = true)
     VerifyRuns.verifications!(runs, data_path; progress = true)
+    return nothing
+end
 
+# Both files' reports, once each, so a user fixing a dataset sees everything found in one pass rather
+# than one file's problems per run. Returns whether either file had an issue.
+function report_dataset(rects, runs)
     bad = VerifyRectifications.report_rectifications(rects, false)
-    bad |= VerifyRuns.report_runs(runs, false)
-    return rects, runs, (bad || tier1_bad)
+    return bad | VerifyRuns.report_runs(runs, false)   # `|`, not `||`: the runs report must print too
 end
 
 # Build both, or throw. Always returns the two vectors.
+#
+# A first-tier failure is going to fail the run whatever the videos say, so it is reported and thrown
+# before the second tier spends minutes of reads on it (#121, #122, #426).
 function load_dataset(results_dir, data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults, boris_behavior)
-    rects, runs, bad = _validate_dataset(
-        results_dir, data_path, rectifications_file, runs_file,
-        rectification_defaults, tracking_defaults, boris_behavior
+    rects, runs, first_tier_ok = parse_dataset(
+        data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults, boris_behavior
     )
-    bad && error("there were issues with the data (see above)")
+    first_tier_ok && dataset_verifications!(rects, runs, data_path, results_dir)
+    bad = report_dataset(rects, runs)
+    # A first-tier failure leaves an issue on some row, so `bad` already says so; the throw does not
+    # depend on that.
+    (bad || !first_tier_ok) && error("there were issues with the data (see above)")
     return VerifyRectifications.build_methods(rects), VerifyRuns.build_runs(runs)
 end
 
 # Validate and report, never throw. Always returns both annotated DataFrames — both, not just the
 # offending one: a dataset is accepted or rejected as a whole, and runs whose rectification was
 # rejected are not buildable anyway.
+#
+# No first-tier abort here: nothing is going to be built, so the flagged rows are quarantined and the
+# second tier still validates the rest. The one report comes at the end (#426).
 function check_dataset(results_dir, data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults, boris_behavior)
-    rects, runs, _ = _validate_dataset(
-        results_dir, data_path, rectifications_file, runs_file,
-        rectification_defaults, tracking_defaults, boris_behavior
+    rects, runs, _ = parse_dataset(
+        data_path, rectifications_file, runs_file, rectification_defaults, tracking_defaults, boris_behavior
     )
+    dataset_verifications!(rects, runs, data_path, results_dir)
+    report_dataset(rects, runs)
     return rects, runs
 end
 
