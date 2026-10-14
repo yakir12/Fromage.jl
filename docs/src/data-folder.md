@@ -1,6 +1,6 @@
 # The data folder
 
-Fromage works on one folder that holds your videos and two spreadsheet files: `rectifications.csv` (your rectification videos) and `runs.csv` (your run videos). This page covers how to lay that folder out, and the writing rules that both csv files share.
+Fromage works on one folder that holds your videos and two spreadsheet files: `rectifications.csv` (your rectification videos) and `runs.csv` (your run videos). This page covers how to lay that folder out, and the writing rules that both csv files share. If you code your runs in BORIS, its export can take the place of `runs.csv` — see [Runs coded in BORIS](boris.md).
 
 ## The simplest layout
 

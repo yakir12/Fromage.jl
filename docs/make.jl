@@ -16,6 +16,7 @@ makedocs(;
         "Prepare your data" => [
             "The data folder" => "data-folder.md",
             "runs.csv" => "runs.md",
+            "Runs coded in BORIS" => "boris.md",
             "rectifications.csv" => "rectifications.md",
         ],
         "Your results" => "results.md",
