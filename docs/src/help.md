@@ -5,7 +5,7 @@
 That's Fromage doing its job. Before anything is tracked, every row of both csv files is checked, and **all** problems are reported at once, one line per problematic row, e.g.:
 
 ```
-row 3: file does not exist, wrong start format
+row 3: wrong start format, file must exist: beetle_03.mp4 is not in /home/me/data — a `path` column says which folder holds it
 ```
 
 The row's name is included too, so you can tell at a glance which entry needs fixing: issues with `rectifications.csv` show the row's `rectification_id` — e.g. `row 2 (rectification_id: morning): …` — and, if you gave your runs names (a `run_id` column in `runs.csv`), issues with runs show the `run_id` — e.g. `row 3 (run_id: beetle12): …`.

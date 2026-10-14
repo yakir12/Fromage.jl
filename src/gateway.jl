@@ -104,31 +104,47 @@ end
 
 # Subset the rows whose `args` trip `predicate`, null the offending field (first of `args`) so later
 # checks skip them, and record `msg`. `passmissing`/`skipmissing` leave already-missing fields alone.
+#
+# `msg` is the issue's text, or a function of the same row values `predicate` gets that builds it —
+# for a message that has to name the value, which the nulling then removes from the row (#427).
 function verify!(df::AbstractDataFrame, predicate, msg, args...)
     bad = subset(df, Cols(args...) => ByRow(passmissing(predicate)); view = true, skipmissing = true)
+    texts = issue_text.(Ref(msg), (bad[!, a] for a in args)...)   # before the nulling below
     # `[!, col]` and not `[:, col]`: the field being nulled may still be a concrete-typed column, and
     # only `!` lets the assignment widen it to hold `missing`.
     bad[!, first(args)] .= missing
-    push!.(bad.issues, msg)      # the vectors are the parent's; push! needs no assignment back
+    push!.(bad.issues, texts)    # the vectors are the parent's; push! needs no assignment back
     return df
 end
+
+issue_text(msg::AbstractString, _...) = msg
+issue_text(msg, values...) = msg(values...)
+
+# A folder as an issue names it: absolute, and without the trailing separator `normpath` leaves on a
+# `path` of "." — `dirname` of a child takes that off without emptying a root (`/`, `C:\`).
+display_folder(folder) = dirname(joinpath(normpath(abspath(folder)), "x"))
 
 # Resolve `:path` against the data folder, check it is a folder holding each of `filecols`, then
 # collapse each of those into one canonical absolute path and drop `:path`, whose job is then done.
 #
 # A path naming the video itself is the common slip, and must be reported as such rather than as
-# "does not exist" (#33). It runs first, and `verify!` nulls `:path` on failure, so the existence
+# a missing folder (#33). It runs first, and `verify!` nulls `:path` on failure, so the existence
 # check below skips the row rather than piling on. `realpath` is safe for the same reason —
 # non-existent paths were nulled just above — and is what collapses "./x", "a/../x" and symlinks
 # onto the one key that later steps group physical files by.
 function resolve_paths!(df::AbstractDataFrame, data_path, filecols...)
     df.path .= passmissing(joinpath).(data_path, df.path)
     verify!(df, isfile, "path must be the folder holding the video, not a file — the file name belongs in the `file` column", :path)
-    verify!(df, !isdir, "path does not exist", :path)
+    verify!(df, !isdir, p -> "path must be an existing folder: $(display_folder(p)) does not exist", :path)
     for col in filecols
         # `verify!` skips missing, so a column only some row types carry (VerifyRectifications'
-        # :matlab_file) leaves the rest untouched.
-        verify!(df, (f, p) -> !isfile(joinpath(p, f)), "$col does not exist", col, :path)
+        # :matlab_file) leaves the rest untouched. The message names the file and the folder, since
+        # the file name may not be one the user typed: a BORIS export's comes from its `Source` (#427).
+        verify!(
+            df, (f, p) -> !isfile(joinpath(p, f)),
+            (f, p) -> "$col must exist: $f is not in $(display_folder(p)) — a `path` column says which folder holds it",
+            col, :path
+        )
         df[!, col] .= passmissing(joinpath).(df.path, df[!, col])
         df[!, col] .= passmissing(realpath).(df[!, col])
     end

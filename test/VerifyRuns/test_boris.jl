@@ -89,6 +89,17 @@ windows(df) = collect(zip(passmissing(basename).(df.file), df.start, df.stop))
         @test df.issues[4] == df.issues[5] == ["$msg (this run is also on rows 3 and 4)"]
     end
 
+    # The user never typed the file name — the adapter took it from `Source` — so a missing video's
+    # issue names the name derived and the folder it was looked for in (#427).
+    @testset "a Source video missing from the data folder is named, with the folder" begin
+        rows = pair(
+            1, 2, "Source" => "player #1:E:/videos/elsewhere.mp4", "Media duration (s)" => "5.000",
+            "FPS" => "30.000", "Media file name" => "E:/videos/elsewhere.mp4",
+        )
+        df = check_csv(write_boris(rows))
+        @test flagged(df, 1, "file must exist: elsewhere.mp4 is not in $(normpath(abspath(DATADIR))) — a")
+    end
+
     @testset "boris_behavior chooses the behaviour, Roll by default" begin
         rows = [pair(0, 1)..., pair(2, 3, "Behavior" => "Dance"; run_id = "d")...]
         @test derived(rows).run_id == ["r"]

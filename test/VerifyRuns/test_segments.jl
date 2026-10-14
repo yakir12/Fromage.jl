@@ -262,7 +262,7 @@
             ]
         )
         @test df isa AbstractDataFrame
-        @test flagged(df, 2, "file does not exist")
+        @test flagged(df, 2, "file must exist: no_such.mp4 is not in")
     end
 
     @testset "imputing the start location leaves the run untouched (#23)" begin
