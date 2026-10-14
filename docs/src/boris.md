@@ -49,10 +49,10 @@ The same export once you have added the two columns:
 - **`run2`** is the interrupted roll: two `Roll` pairs, rows 3–4 and 7–8, share one `run_id`, so they are two segments of one run, tracked as one track file, `run2.csv`. The `Dance` rows between them stay blank, and they do not break the run up: only another `Roll` pair there would.
 - Both the START and the STOP row of every `Roll` pair carry the two values.
 
-The real export has more columns than shown — `Observation id`, `Source`, `Time offset (s)`, `Media duration (s)`, `FPS` and others. Leave them alone; Fromage reads what it needs from them.
+The real export has more columns than shown — `Observation id`, `Source` (the list of the observation's videos, which is where Fromage actually finds them), `Time offset (s)`, `Media duration (s)`, `FPS` and others. Leave them alone; Fromage reads what it needs from them.
 
 !!! note "The whole file"
-    This is the example in full, exactly as BORIS writes it plus the two added columns. Given the video `T1_group1.MP4` beside it and a `morning` rectification, `verify` reports nothing wrong and returns three segments: `run1` from 12.4 s to 31.9 s, and `run2` from 45.0 s to 58.2 s and from 63.5 s to 80.0 s.
+    This is the example in full, in the form BORIS writes it, plus the two added columns. Given the video `T1_group1.MP4` beside it and a `morning` rectification, `verify` reports nothing wrong and returns three segments: `run1` from 12.4 s to 31.9 s, and `run2` from 45.0 s to 58.2 s and from 63.5 s to 80.0 s.
 
     ```csv
     Observation id,Observation date,Description,Observation duration,Observation type,Source,Time offset (s),Media duration (s),FPS,Subject,Behavior,Behavioral category,Behavior type,Time,Media file name,Image index,Image file path,Comment,run_id,rectification_id
@@ -70,7 +70,7 @@ The real export has more columns than shown — `Observation id`, `Source`, `Tim
 
 Fromage finds each pair's video in the export's `Source` list, by file name only — the folders BORIS recorded (`E:/coding/` above) are on the computer that did the coding. Put the videos beside the export, or say where they are with a `path` column, as in a [`runs.csv`](data-folder.md#Other-layouts).
 
-`start` and `stop` come from BORIS's `Time`, less its `Time offset (s)`.
+`start` and `stop` come from BORIS's `Time`, less its `Time offset (s)`, counted from the start of the pair's own video.
 
 ## 3. Point Fromage at the export
 
@@ -86,7 +86,7 @@ The behaviour tracked is `Roll` unless you say otherwise: `boris_behavior = "Dan
 ## What else to know
 
 - **A pair that crosses into the next video** (the camera split the recording) is split for you into one segment per video, all under the pair's `run_id`.
-- **Every other `runs.csv` column works too.** Add `start_location`, `target_width`, `whole_run`, … as columns, exactly as in a [`runs.csv`](runs.md#Optional-columns). A pair's START and STOP rows must agree on them.
+- **Every other `runs.csv` column works too.** Add `start_location`, `target_width`, `whole_run`, … as columns, exactly as in a [`runs.csv`](runs.md#Optional-columns). A pair's START and STOP rows must agree on them. The exceptions are `file`, `start` and `stop`: Fromage fills those from the export, so a column of that name is not read.
 - **Your own columns are kept** in what `verify` returns, beside the export's `subject`, `behavior`, `observation_id` and `comment`. Where a pair's two rows differ, you see both values, START's first: `before | after`.
 - **Checks.** Besides everything checked in a `runs.csv`, Fromage reports a START with no STOP (or a STOP with no START) within a subject, a POINT event of the tracked behaviour, a blank `run_id`, an observation that is live or made from images instead of video, more than one player, a `Time` outside the observation's videos (which is also how an observation coded with the video's creation date as its offset shows up), and a video whose frame rate is not the `FPS` BORIS used. Issues name the export's own rows — `rows 11 and 12` — so you can find them in the file you edit.
 - Pairs of different subjects may share a `run_id`; Fromage does not check what your runs mean, only what it needs to track them.
