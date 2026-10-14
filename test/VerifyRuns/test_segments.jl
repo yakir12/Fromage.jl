@@ -164,7 +164,9 @@
     end
 
     @testset "a run's segments must be consecutive rows (#263)" begin
-        msg = "run segments must be consecutive rows"
+        msg = "run_id must be on consecutive rows"
+        # each segment's issue names where the run's other segments are, never its own rows (#428)
+        says(df, r, others) = any(==("$msg (this run is also on $others)"), df.issues[r])
 
         # split by another run ⇒ every row of the split run is flagged, the splitting run is not
         df = check(
@@ -177,6 +179,8 @@
         @test flagged(df, 1, msg)
         @test !flagged(df, 2, msg)
         @test flagged(df, 3, msg)
+        @test says(df, 1, "row 3")
+        @test says(df, 3, "row 1")
 
         # both runs split each other ⇒ all four rows
         df2 = check(
@@ -188,6 +192,23 @@
             ]
         )
         @test all(r -> flagged(df2, r, msg), 1:4)
+
+        # split into three blocks ⇒ each segment names all the others, adjacent ones included
+        three = check(
+            [
+                runrow(run_id = "a", file = ART.a),
+                runrow(run_id = "a", file = ART.b),
+                runrow(run_id = "b", file = ART.a),
+                runrow(run_id = "a", file = ART.a, start = "3"),
+                runrow(run_id = "c", file = ART.a),
+                runrow(run_id = "a", file = ART.b, start = "3"),
+            ]
+        )
+        @test says(three, 1, "row 2; row 4; row 6")
+        @test says(three, 2, "row 1; row 4; row 6")
+        @test says(three, 4, "row 1; row 2; row 6")
+        @test says(three, 6, "row 1; row 2; row 4")
+        @test !flagged(three, 3, msg) && !flagged(three, 5, msg)
 
         # contiguous blocks, in either order, load clean
         # (run a's two rows get different files, so their default whole-file windows do not overlap)
