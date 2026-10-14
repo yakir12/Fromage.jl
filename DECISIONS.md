@@ -2263,7 +2263,9 @@ been testing for 23 minutes when it was cancelled. Locally, under coverage at 4 
 whole-run test file went from 4m25s on main to 18m34s, and then to 11m33s after that cut. The
 AprilTag flight is most of what is left (6m33s against 2m26s on main): its three whole-run
 trackings now each pay for the review. The limit went to 60 rather than 45 because the runner is
-slower than that local measure, and a cold depot roughly doubles the precompile.
+slower than that local measure, and a cold depot roughly doubles the precompile. With 60, #418's
+ubuntu leg passed in 18m30s, 17m07s of it testing. That is under the old 30, after two runs that were
+not: the leg's time varies that much between runs, and the old limit had no room for it.
 
 ### Cutting the test suite was measured and declined
 
