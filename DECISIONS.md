@@ -630,8 +630,11 @@ Split in two, by what the caller actually wants:
   the point: it is what makes the type independent of the data. There is no first-tier abort here,
   since nothing is going to be built and the rest of the file is still worth validating.
 
-Both share `_validate_dataset`, so the pipeline itself is written once and the two entry points
-differ only in what they do about what it found.
+Both share the pipeline's two tiers and its report, so the pipeline is written once and the two
+entry points differ only in what happens between the tiers. Until #426 the split was not there. They
+shared one function that printed the first-tier report, ran the second tier regardless, and printed
+the full report again, so `main` never stopped at the first tier and every first-tier issue was
+printed twice.
 
 `strict` is gone rather than deprecated. It was a keyword on a lab tool with a handful of users, and
 leaving a forwarding shim would have preserved the one thing worth removing: a Bool that reads as

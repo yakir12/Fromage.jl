@@ -121,8 +121,7 @@ end
 # instead. Every second-tier stage skips flagged rows, so the rest of the file is still validated
 # and the caller gets one combined report at the end.
 function check_runs(data_path, file; defaults, boris_behavior, progress)
-    df, identities_ok = parse_runs(data_path, file; defaults, boris_behavior, progress)
-    identities_ok || report_runs(df, false)
+    df, _ = parse_runs(data_path, file; defaults, boris_behavior, progress)
     verifications!(df, data_path; progress)
     report_runs(df, false)
     return df

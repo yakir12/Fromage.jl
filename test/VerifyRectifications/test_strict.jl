@@ -45,9 +45,10 @@
             uniformrow(rectification_id = "b"),
             uniformrow(rectification_id = "b"),
         ]
-        df = check("tier1_quarantine.csv", rows)
+        df, out = capturing(() -> check("tier1_quarantine.csv", rows))
         @test flagged(df, 3, "rectification_id must not repeat")   # the first tier's finding
         @test flagged(df, 1, "issue reading from video file")    # the second tier ran anyway
+        @test count("rectification_id must not repeat", out) == 1   # one report, not one per tier (#426)
     end
 
 end

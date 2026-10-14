@@ -812,6 +812,73 @@ end
     end
 end
 
+# A first-tier failure is going to fail `main` whatever the videos say, so `main` reports it and stops
+# before the second tier looks for a single video — and the report is printed once, not once per tier
+# (#426). The runs' videos do not exist: the second tier would say so, so its silence is the proof.
+@testset "a first-tier failure stops main before the second tier, and is reported once (#426)" begin
+    dir = mktempdir()
+    make_video(joinpath(dir, "cal.mp4"); size = (320, 240), duration = 2)
+    write(
+        joinpath(dir, "rectifications.csv"),
+        "rectification_id,type,file,extrinsic,pixel_width\nc1,uniform,cal.mp4,1,2\n"
+    )
+    outdir = mktempdir()
+    # row 1 has no rectification_id (a first-tier issue); row 2 is clean until its video is looked for
+    blank_id_runs = "rectification_id,file,start_location\n,missing1.mp4,\"(55, 50)\"\nc1,missing2.mp4,\"(55, 50)\"\n"
+    run_main() = capturing() do
+        try
+            cd(() -> main(dir; tracking_defaults = (target_width = 10,)), outdir)
+        catch e
+            e
+        end
+    end
+
+    @testset "an identity issue in runs.csv" begin
+        write(joinpath(dir, "runs.csv"), blank_id_runs)
+        e, out = run_main()
+        @test e isa ErrorException
+        @test occursin("there were issues with the data", e.msg)
+        @test count("rectification_id is missing", out) == 1
+        @test !occursin("does not exist", out)
+    end
+
+    @testset "an incoherent pair" begin
+        write(
+            joinpath(dir, "runs.csv"),
+            "rectification_id,file,start_location\nc9,missing1.mp4,\"(55, 50)\"\nc1,missing2.mp4,\"(55, 50)\"\n"
+        )
+        e, out = run_main()
+        @test e isa ErrorException
+        @test count("rectification_id c9 is not defined in rectifications.csv", out) == 1
+        @test !occursin("does not exist", out)
+    end
+
+    # `verify` builds nothing, so it does not stop: the second tier still checks the rows the first
+    # one did not flag — but the report is still printed once, at the end.
+    @testset "verify runs the second tier anyway, and reports once" begin
+        write(joinpath(dir, "runs.csv"), blank_id_runs)
+        result, out = capturing(() -> cd(() -> verify(dir), outdir))
+        @test result.runs isa DataFrame
+        @test count("rectification_id is missing", out) == 1
+        @test count("The following are issues with the runs.csv file", out) == 1
+        @test occursin("row 2: file does not exist", out)
+    end
+
+    # both files are reported before the throw, not just the first bad one
+    @testset "an identity issue in each file" begin
+        write(
+            joinpath(dir, "rectifications.csv"),
+            "rectification_id,type,file,extrinsic,pixel_width\nc1,uniform,cal.mp4,1,2\nc1,uniform,cal.mp4,1,2\n"
+        )
+        write(joinpath(dir, "runs.csv"), blank_id_runs)
+        e, out = run_main()
+        @test e isa ErrorException
+        @test count("rectification_id must not repeat", out) == 1
+        @test count("rectification_id is missing", out) == 1
+        @test !occursin("does not exist", out)
+    end
+end
+
 # Coherence is a property of the files AS WRITTEN, checked before `run_ids` narrows anything —
 # otherwise asking for one run would fail the calibrations it did not ask for (#122).
 @testset "run_ids still narrows a coherent multi-calibration folder" begin

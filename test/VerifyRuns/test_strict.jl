@@ -43,9 +43,11 @@
             runrow(run_id = "ok", file = ART.corrupt),
             runrow(run_id = "bad/name", file = ART.a),
         ]
-        df = check("tier1_quarantine.csv", rows)
+        df, out = capturing(() -> check("tier1_quarantine.csv", rows))
         @test flagged(df, 2, "must not contain")
         @test flagged(df, 1, "issue reading from video file")
+        # one report, at the end, not one per tier (#426)
+        @test count("must not contain", out) == 1
     end
 
 end
