@@ -122,9 +122,10 @@ windows(df) = collect(zip(df.file, df.start, df.stop))
     end
 
     @testset "Fromage columns are honoured, and a pair's rows must agree on them" begin
-        df = derived(pair(0, 1; target_width = "12", start_location = "(3, 4)"))
+        df = derived(pair(0, 1; target_width = "12", start_location = "(3, 4)", video_type = "drone"))
         @test df.target_width == [12.0]
         @test isequal(df.start_location, [(3, 4)])
+        @test df.video_type == ["drone"]
         rows = [boris("START", 0; target_width = "12"), boris("STOP", 1; target_width = "13")]
         @test flagged(derived(rows), 1, "target_width must be the same on a pair's START and STOP rows")
     end
