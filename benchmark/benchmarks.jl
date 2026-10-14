@@ -158,7 +158,7 @@ end
 gates = SUITE["micro"]["gateways"] = BenchmarkGroup()
 gates["check_runs, 200 rows"] =
     @benchmarkable Fromage.VerifyRuns.check_runs(
-    $GATEWAY_DIR, joinpath($GATEWAY_DIR, "runs.csv"); defaults = (;), progress = false
+    $GATEWAY_DIR, joinpath($GATEWAY_DIR, "runs.csv"); defaults = (;), boris_behavior = "Roll", progress = false
 )
 gates["check_rectifications, 5 rows"] =
     @benchmarkable Fromage.VerifyRectifications.check_rectifications(

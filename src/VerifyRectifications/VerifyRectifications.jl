@@ -79,8 +79,8 @@ end
 
 # a blank rectification_id cell is itself flagged as an issue, so it can be missing here
 rectifications_report(df) = issue_report(
-    df, :rectification_id, "rectifications.csv";
-    mention = (i, cid) -> !ismissing(cid)
+    df, :rectification_id, "rectifications.csv", ("row $i" for i in 1:nrow(df));
+    mention = (_, cid) -> !ismissing(cid)
 )
 report_rectifications(df, strict) = report_issues(rectifications_report(df), "rectification", strict)
 

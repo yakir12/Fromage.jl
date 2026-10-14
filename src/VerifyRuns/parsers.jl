@@ -99,11 +99,16 @@ function parse_run!(dict, row, defaults, whole_run_defaults)
     return parseto!(dict, row, :aspect, Rational{Int}, missing)   # imputed from the video's own sample aspect ratio when missing
 end
 
-function parse_row(row, defaults, whole_run_defaults)
-    dict = Dict{Symbol, Any}(:issues => String[])
+# `issues` are what was already found about the row before its cells were read — by the BORIS
+# adapter, say — and the parse adds to them. A record with no cells to read at all (a BORIS export
+# with nothing of the chosen behaviour in it) is only its issues: parsing nothing would add a
+# "missing" for every required column, about a row the user never wrote.
+function parse_row(row, issues, defaults, whole_run_defaults)
+    dict = Dict{Symbol, Any}(:issues => issues)
     parse_run!(dict, row, defaults, whole_run_defaults)
     return backfill!(dict, COLUMNS)
 end
+parse_row(::Nothing, issues, _, _) = backfill!(Dict{Symbol, Any}(:issues => issues), COLUMNS)
 
 # run_id is all-or-nothing: either every row names its run (enabling multi-segment runs), or no row
 # does (column absent, or present with every cell blank) and each row becomes its own single-segment
@@ -111,7 +116,11 @@ end
 # auto-generated id could silently merge with an explicit one into a bogus multi-segment run. In
 # that case the blanks stay missing: Run construction only happens on the issue-free path, and
 # verify_run_consistency! skips missing-id groups.
-function resolve_run_ids!(df)
+#
+# A BORIS export is not numbered at all: its `run_id` is mandatory, and the adapter has already
+# reported every blank one (boris.jl), so a blank there must not turn a file into one run per pair.
+resolve_run_ids!(df, ::BorisExport) = df
+function resolve_run_ids!(df, ::RunsCsv)
     if all(ismissing, df.run_id)
         df.run_id = string.(1:nrow(df))
     elseif any(ismissing, df.run_id)

@@ -257,7 +257,7 @@ const MEMOIZED = (
         # be told apart.
         idir = mktempdir()
         check_rects() = VRect.check_rectifications(DIR, csv; defaults = (;), results_dir = idir, progress = true)
-        check_runs() = VRuns.check_runs(DIR, runs_csv; defaults = (;), progress = true)
+        check_runs() = VRuns.check_runs(DIR, runs_csv; defaults = (;), boris_behavior = "Roll", progress = true)
 
         # First pass: everything is read and detected for the first time, so every cache misses.
         before = snapshot()

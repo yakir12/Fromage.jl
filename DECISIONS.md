@@ -1787,7 +1787,7 @@ appear, when the id is named, that `join` adds no trailing separator — had to 
 redirect stdout through a temp file (`Harness.capturing`, which needs a real file descriptor, not an
 `IOBuffer`) and match a substring of what came back.
 
-Split in two: `Gateway.issue_report(df, idcol, csv_name; mention)` builds the string or returns
+Split in two: `Gateway.issue_report(df, idcol, csv_name, labels; mention)` builds the string or returns
 `nothing`, and `report_issues(report, what, strict)` prints and throws. Each gateway owns a one-line
 `runs_report` / `rectifications_report` so its id column and `mention` rule stay in one place. Output
 is byte-identical — `println(a, b)` and `println(string(a, b))` produce the same bytes.
@@ -1829,6 +1829,43 @@ The case that settled it was a BORIS export run whose segments carry different `
 animals under one `run_id`. It looks like a typo, since a run is usually one animal, but nothing in
 Fromage depends on it. It is allowed, and each segment keeps its own `subject`, which is metadata
 the gateway never compares.
+
+### A BORIS export is adapted in memory, not translated to a runs.csv (#409)
+
+A BORIS "Tabular events" export is accepted as the runs file. It is turned, in memory, into one
+runs-shaped record per segment (`segment_records`, `src/VerifyRuns/boris.jl`), and those records go
+through the same `parse_row`, `verify_ids!` and `verifications!` as a `runs.csv`'s rows. The format
+is a type chosen from the header (`RunsCsv()` / `BorisExport(behavior)`), as rectification builders
+are chosen by type; a `runs.csv` is the identity case. No derived table is written anywhere —
+`verify`'s returned `runs` is how to inspect it.
+
+**Translating the export to a `runs.csv` and running the gateway on that was declined**, for three
+reasons:
+
+1. Its issues would cite a file the user never wrote. `row 7 of runs.csv` has to be mapped back to
+   BORIS rows by hand, the BORIS file edited, and the translation run again. In memory, each record
+   carries the export's rows it came from (`csv_rows`) and the report cites those
+   (`issue_report`'s `labels`).
+2. Problems that exist only before translation — a START with no STOP, a POINT, a missing
+   `run_id`, a pair whose rows disagree, a live observation — would need a second report, since a
+   `runs.csv` cannot carry an issue. That breaks "everything wrong, in one pass". In memory they
+   are ordinary entries in the records' `:issues`, and every later stage skips those rows for free.
+3. The FPS check would be lost: a `runs.csv` has nowhere to put the rate BORIS coded at. In memory
+   it is one more column, `boris_fps`, `missing` on a `runs.csv` row and so passed by.
+
+Bypassing the gateway entirely (BORIS rows straight to `Run`s) was declined too: every cell parser,
+default and check would need a BORIS twin — the duplication #68 removed.
+
+What it cost the shared plumbing is three small, general changes: `parse_row` takes the issues
+already found, `issue_report` labels rows from a vector rather than their position, and
+`read_rows` splits into `read_csv` and `screen_columns`, so a file is recognised before its headers
+are screened (BORIS's `Comment` is one edit from `comment`). `resolve_run_ids!` dispatches on the
+format, because a BORIS export's `run_id` is mandatory and must never be numbered for the user.
+
+Two refinements the issue left open. A STOP exactly on a boundary between two videos closes the
+earlier one rather than opening the later at 0, which would be a segment with nothing in it; a
+START there opens the later one, which is BORIS's own rule. And BORIS writes `FPS` to three
+decimals, so the check allows 0.001.
 
 ### Failures are reported, not thrown
 

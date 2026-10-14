@@ -63,10 +63,21 @@ end
 #
 # `renamed` maps a retired column name to a description of where its value went. A close match to a
 # retired name gets a migration warning; a gateway that has retired no column passes an empty map.
-function read_rows(file, columns, what; renamed)
+#
+# The two halves are also callable apart, because which columns are known can depend on what the
+# file turns out to be: VerifyRuns reads a runs file, recognises a BORIS export by its header, and
+# only then screens it — against BORIS's own columns as well, so `Comment` is not taken for a
+# misspelt `comment` (#409).
+read_rows(file, columns, what; renamed) = screen_columns(read_csv(file, what), columns, renamed, file)
+
+function read_csv(file, what)
     isfile(file) || error("$what `.csv` file missing")
     rows = CSV.Rows(read(file); stripwhitespace = true)
     isempty(Tables.rows(rows)) && error("csv file is empty")
+    return rows
+end
+
+function screen_columns(rows, columns, renamed, file)
     unrecognized = setdiff(Tables.schema(rows).names, columns)
     warn_unknown_columns(unrecognized, columns, renamed, basename(file))
     return rows
@@ -258,15 +269,18 @@ end
 # assertion about it went through a temp file and a substring match. It is a value now, and the
 # suites assert on it directly.
 #
-# `mention(i, id)` decides whether row `i`'s identity adds anything over "row $i" — an id that is
-# missing, or that was auto-generated from the row number, does not.
-function issue_report(df::AbstractDataFrame, idcol, csv_name; mention)
+# `labels` names each row of `df` in the user's own file — `"row 3"` for a csv the table was parsed
+# from line for line, or whatever the gateway's rows were derived from (a BORIS export's segment
+# cites the export's START and STOP rows, #409). `mention(label, id)` decides whether the row's
+# identity adds anything over its label — an id that is missing, or that was auto-generated from the
+# row number, does not.
+function issue_report(df::AbstractDataFrame, idcol, csv_name, labels; mention)
     any(!isempty, df.issues) || return nothing
     ids = df[!, idcol]
     msg = join(
         [
-            string(mention(i, id) ? "row $i ($idcol: $id)" : "row $i", ": ", join(issues, ", "))
-                for (i, (id, issues)) in enumerate(zip(ids, df.issues)) if !isempty(issues)
+            string(mention(label, id) ? "$label ($idcol: $id)" : label, ": ", join(issues, ", "))
+                for (label, id, issues) in zip(labels, ids, df.issues) if !isempty(issues)
         ], '\n'
     )
     return string("\nThe following are issues with the $csv_name file:\n", msg)
