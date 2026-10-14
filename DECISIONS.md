@@ -2066,6 +2066,22 @@ still beats the probe on every row whose cell is blank.
 
 ---
 
+## Documentation
+
+### `docs/package.json` is DocumenterVitepress's template, pinned
+
+Without a `docs/package.json`, DocumenterVitepress substitutes its own template and `npm install`s it
+fresh on every build. That template asks for `vitepress ^1.6.4` and
+`@nolebase/vitepress-plugin-enhanced-readabilities ^2.18.2`, and on 2026-10-13 the plugin published
+2.21.0, whose peer dependency is a vitepress 2 alpha. npm refused the tree (`ERESOLVE`), and every
+docs build failed before rendering a page, a tag's included. The file is the template of the
+DocumenterVitepress the docs environment resolves (v0.3.7), with the plugin pinned to `~2.18.2`. The
+pin can go when DocumenterVitepress's template moves to vitepress 2, or when the plugin publishes a
+release for vitepress 1 again. A newer DocumenterVitepress may also need entries this copy lacks:
+diff it against that version's `template/package.json` when the docs environment moves.
+
+---
+
 ## Testing
 
 ### The corrupt-video fixture is deterministic
