@@ -69,6 +69,23 @@ windows(df) = collect(zip(passmissing(basename).(df.file), df.start, df.stop))
         @test [(s.start, s.stop) for s in only(runs).segments] == [(0.0, 1.0), (2.0, 3.0)]
     end
 
+    # A split run's issue names the run's other pairs by the export's own rows (#428). Run y's second
+    # pair crosses from a.mp4 into b.mp4, so it is two segments with the same rows — named once, and
+    # never as "other" rows of its own segments.
+    @testset "a split run names its other pairs by the export's rows" begin
+        rows = [
+            pair(0, 1; run_id = "x")..., pair(1.5, 2; run_id = "y")...,
+            pair(2.5, 3; run_id = "x")..., pair(4, 6; run_id = "y")...,
+        ]
+        df = derived(rows)
+        @test df.csv_rows == [[1, 2], [3, 4], [5, 6], [7, 8], [7, 8]]
+        msg = "run_id must be on consecutive rows"
+        @test df.issues[1] == ["$msg (this run is also on rows 5 and 6)"]
+        @test df.issues[2] == ["$msg (this run is also on rows 7 and 8)"]
+        @test df.issues[3] == ["$msg (this run is also on rows 1 and 2)"]
+        @test df.issues[4] == df.issues[5] == ["$msg (this run is also on rows 3 and 4)"]
+    end
+
     @testset "boris_behavior chooses the behaviour, Roll by default" begin
         rows = [pair(0, 1)..., pair(2, 3, "Behavior" => "Dance"; run_id = "d")...]
         @test derived(rows).run_id == ["r"]

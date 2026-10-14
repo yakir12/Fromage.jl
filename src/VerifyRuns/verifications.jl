@@ -122,7 +122,11 @@ end
 
 # A run's rows must be consecutive in the csv (#263), so its segment number is its position within
 # that block. Every row of a split run is flagged — the run is at fault, not one row — and the rows
-# that split it are not, unless they are split themselves.
+# that split it are not, unless they are split themselves. Each flagged segment's issue names where
+# the run's other segments are, in the user's own rows (#428): the report's prefix already names its
+# own, and with scrambled run_ids the clash is otherwise rebuilt by hand. A BORIS pair split across
+# videos is several segments with the same rows, so they are named once, and never as "other" rows
+# of the pair itself.
 #
 # Deliberately NOT gated on otherwise-clean rows, unlike the neighbouring checks. Their gate keeps a
 # field nulled by a failed parse from reading as a spurious disagreement; this reads only the row
@@ -137,7 +141,12 @@ function verify_consecutive_runs!(df::AbstractDataFrame)
         # only because `df` is the parsed table itself, not a view of it — as in `reject_duplicates!`.
         rows = parentindices(g)[1]
         last(rows) - first(rows) + 1 == nrow(g) && continue
-        push!.(g.issues, "run segments must be consecutive rows")
+        # `; ` and the parentheses keep the list apart from the report's own `, ` between issues
+        blocks = unique(g.csv_rows)
+        for (issues, own) in zip(g.issues, g.csv_rows)
+            others = join((row_label(b) for b in blocks if b != own), "; ")
+            push!(issues, "run_id must be on consecutive rows (this run is also on $others)")
+        end
     end
     return df
 end

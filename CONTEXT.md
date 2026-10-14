@@ -50,7 +50,9 @@ One piece of a run: a video file and the window of it to track. "Segment" names 
 run*, whether you look at it as the input video portion or the track portion it yields. A segment
 never spans two files: it holds one `file` with one `start` and one `stop`, so a division that
 crosses a file boundary is two segments, not one. A run's segments are **consecutive rows** of
-`runs.csv`: no other run's row may sit between two of them (`verify_consecutive_runs!`, #263).
+`runs.csv`: no other run's row may sit between two of them (`verify_consecutive_runs!`, #263). In a
+BORIS export they come from adjacent pairs: no other pair of the tracked behaviour may sit between
+two of a run's pairs, though rows of other behaviours may.
 
 **Times compare only within a file.** `start` and `stop` are in their own file's seconds, so two
 segments cut from one file can be ordered, overlapped or found to leave a hole between them, while
