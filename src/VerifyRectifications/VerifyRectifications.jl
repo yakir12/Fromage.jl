@@ -57,13 +57,14 @@ include("verifications.jl")
 # (`verify_ids!`), which touches nothing but `rectification_id`. Returns the annotated DataFrame —
 # `:issues` carrying whatever the parse and that tier found — and whether every identity came
 # through usable. Split out of `load_rectifications` so `main` can settle BOTH files' identities
-# before either one opens a video (#121).
-function parse_rectifications(data_path, file; defaults, progress)
+# before either one opens a video (#121). `csv_name` is what the user calls the file, for the progress
+# bar (#425).
+function parse_rectifications(data_path, file, csv_name; defaults, progress)
     defaults = resolve_defaults(defaults)   # fail fast on unknown keys / unconvertible values
     csvrows = read_rows(file, COLUMNS, "rectification"; renamed = RENAMED_COLUMNS)
 
     # parse rows to RectificationMethods or error messages
-    cs = @showprogress desc = "Parsing rectifications.csv" enabled = progress tmap(r -> parse_row(r, defaults), collect(csvrows))
+    cs = @showprogress desc = "Parsing $csv_name" enabled = progress tmap(r -> parse_row(r, defaults), collect(csvrows))
 
     df = DataFrame(Tables.dictrowtable(cs))
     allowmissing!(df)
@@ -77,12 +78,13 @@ function parse_rectifications(data_path, file; defaults, progress)
     return df, identities_ok
 end
 
-# a blank rectification_id cell is itself flagged as an issue, so it can be missing here
-rectifications_report(df) = issue_report(
-    df, :rectification_id, "rectifications.csv", ("row $i" for i in 1:nrow(df));
+# a blank rectification_id cell is itself flagged as an issue, so it can be missing here. `csv_name` is
+# what the user calls the file (#425).
+rectifications_report(df, csv_name) = issue_report(
+    df, :rectification_id, csv_name, ("row $i" for i in 1:nrow(df));
     mention = (i, cid) -> !ismissing(cid)
 )
-report_rectifications(df, strict) = report_issues(rectifications_report(df), "rectification", strict)
+report_rectifications(df, csv_name, strict) = report_issues(rectifications_report(df, csv_name), "rectification", strict)
 
 # The comprehension pins the element type to the abstract `Vector{RectificationMethod}` (as in
 # load_runs), so the clean-path return type doesn't vary with the mix of kinds.
@@ -98,19 +100,21 @@ build_methods(df) = RectificationMethod[RectificationMethod(r) for r in eachrow(
 # what it dumped is exactly what its folder holds; nothing there is ever deleted, including anything
 # the user keeps beside it.
 function load_rectifications(data_path, file; defaults, results_dir, progress)
-    df, identities_ok = parse_rectifications(data_path, file; defaults, progress)
-    identities_ok || report_rectifications(df, true)
+    csv_name = basename(file)
+    df, identities_ok = parse_rectifications(data_path, file, csv_name; defaults, progress)
+    identities_ok || report_rectifications(df, csv_name, true)
     verifications!(df, data_path, results_dir; progress)
-    report_rectifications(df, true)
+    report_rectifications(df, csv_name, true)
     return build_methods(df)
 end
 
 # Validate and report, never throw. Always returns the annotated DataFrame — see `check_runs` for
 # why that unconditional return is the point.
 function check_rectifications(data_path, file; defaults, results_dir, progress)
-    df, _ = parse_rectifications(data_path, file; defaults, progress)
+    csv_name = basename(file)
+    df, _ = parse_rectifications(data_path, file, csv_name; defaults, progress)
     verifications!(df, data_path, results_dir; progress)
-    report_rectifications(df, false)
+    report_rectifications(df, csv_name, false)
     return df
 end
 

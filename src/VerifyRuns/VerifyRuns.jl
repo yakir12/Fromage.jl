@@ -53,7 +53,8 @@ include("verifications.jl")
 # `file` is a `runs.csv` or a BORIS export, told apart by its header (boris.jl). Either way it becomes
 # one record per segment before a cell is parsed, and from there on the two are one pipeline.
 # `boris_behavior` names the behaviour a BORIS export's segments are coded as; a runs.csv ignores it.
-function parse_runs(data_path, file; defaults, boris_behavior, progress)
+# `csv_name` is what the user calls the file, for the progress bar (#425).
+function parse_runs(data_path, file, csv_name; defaults, boris_behavior, progress)
     whole_run_defaults = resolve_whole_run_defaults(defaults)
     defaults = resolve_defaults(defaults)   # fail fast on unknown keys / unconvertible values
     csvrows = read_csv(file, "runs")
@@ -64,7 +65,7 @@ function parse_runs(data_path, file; defaults, boris_behavior, progress)
 
     # parse each record to a Dict of parsed values + an :issues accumulator, holding whatever the
     # adapter already found, plus the cells that are not Fromage's to parse
-    cs = @showprogress desc = "Parsing runs.csv..." enabled = progress tmap(
+    cs = @showprogress desc = "Parsing $csv_name..." enabled = progress tmap(
         r -> merge!(parse_row(r.cells, r.issues, defaults, whole_run_defaults), r.extra), records
     )
 
@@ -84,12 +85,12 @@ end
 # a run_id that is missing (mixed numbering) or equal to the row number (auto-assigned) adds
 # nothing over "row $i", so it is only mentioned when the csv named the run itself. A BORIS
 # segment cites the export's rows (`csv_rows`), and a pair's two rows can never be one number, so its
-# run_id, mandatory there, is mentioned.
-runs_report(df) = issue_report(
-    df, :run_id, "runs.csv", row_label.(df.csv_rows);
+# run_id, mandatory there, is mentioned. `csv_name` is what the user calls the file (#425).
+runs_report(df, csv_name) = issue_report(
+    df, :run_id, csv_name, row_label.(df.csv_rows);
     mention = (i, rid) -> !ismissing(rid) && df.csv_rows[i] != [tryparse(Int, rid)]
 )
-report_runs(df, strict) = report_issues(runs_report(df), "runs", strict)
+report_runs(df, csv_name, strict) = report_issues(runs_report(df, csv_name), "runs", strict)
 
 # Clean: group the rows by :run_id, each group materialized into one `Run`. `Run` is concrete, so
 # this vector's element type is too, and `track(r)` is statically dispatched.
@@ -105,10 +106,11 @@ build_runs(df) = Run[Run(g) for g in groupby(df, :run_id)]
 # Only identity issues open this gate. A malformed `start` in one row does not make the other rows'
 # videos less worth checking, so it rides along to the full report rather than cutting the run short.
 function load_runs(data_path, file; defaults, boris_behavior, progress)
-    df, identities_ok = parse_runs(data_path, file; defaults, boris_behavior, progress)
-    identities_ok || report_runs(df, true)
+    csv_name = basename(file)
+    df, identities_ok = parse_runs(data_path, file, csv_name; defaults, boris_behavior, progress)
+    identities_ok || report_runs(df, csv_name, true)
     verifications!(df, data_path; progress)
-    report_runs(df, true)
+    report_runs(df, csv_name, true)
     return build_runs(df)
 end
 
@@ -121,9 +123,10 @@ end
 # instead. Every second-tier stage skips flagged rows, so the rest of the file is still validated
 # and the caller gets one combined report at the end.
 function check_runs(data_path, file; defaults, boris_behavior, progress)
-    df, _ = parse_runs(data_path, file; defaults, boris_behavior, progress)
+    csv_name = basename(file)
+    df, _ = parse_runs(data_path, file, csv_name; defaults, boris_behavior, progress)
     verifications!(df, data_path; progress)
-    report_runs(df, false)
+    report_runs(df, csv_name, false)
     return df
 end
 

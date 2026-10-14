@@ -879,6 +879,39 @@ end
     end
 end
 
+# The report names the files the user passed, as they passed them — not the default names, and not
+# the path joined to the data folder (#425). A BORIS export is the usual reason the runs file has
+# another name.
+@testset "the report names the files as they were passed (#425)" begin
+    dir = mktempdir()
+    make_video(joinpath(dir, "cal.mp4"); size = (320, 240), duration = 2)
+    write(
+        joinpath(dir, "calibs_2026.csv"),
+        "rectification_id,type,file,extrinsic,pixel_width\nc1,uniform,cal.mp4,1,2\nc2,uniform,cal.mp4,1,2\n"
+    )
+    mkpath(joinpath(dir, "trial"))
+    write(
+        joinpath(dir, "trial", "JK,C_1_prova.csv"),
+        "rectification_id,file,start_location\nc9,missing1.mp4,\"(55, 50)\"\nc1,missing2.mp4,\"(55, 50)\"\n"
+    )
+    _, out = capturing() do
+        try
+            cd(mktempdir()) do
+                main(dir; rectifications_file = "calibs_2026.csv", runs_file = "trial/JK,C_1_prova.csv")
+            end
+        catch e
+            e
+        end
+    end
+    @test occursin("The following are issues with the calibs_2026.csv file", out)
+    @test occursin("The following are issues with the trial/JK,C_1_prova.csv file", out)
+    @test occursin("rectification_id c2 is not used by any row in trial/JK,C_1_prova.csv", out)
+    @test occursin("rectification_id c9 is not defined in calibs_2026.csv", out)
+    @test !occursin("runs.csv", out)
+    @test !occursin("rectifications.csv", out)
+    @test !occursin(dir, out)
+end
+
 # Coherence is a property of the files AS WRITTEN, checked before `run_ids` narrows anything —
 # otherwise asking for one run would fail the calibrations it did not ask for (#122).
 @testset "run_ids still narrows a coherent multi-calibration folder" begin
