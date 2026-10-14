@@ -136,6 +136,14 @@ frame() = DataFrame(
             @test isempty(df.issues[5])           # a missing *required* column still does
         end
     end
+
+    # A folder as a missing-file issue names it (#427): absolute, and without the trailing separator
+    # that a `path` of "." (every row's default) leaves after `normpath`.
+    @testset "display_folder" begin
+        @test G.display_folder(".") == pwd()
+        @test G.display_folder(joinpath(pwd(), ".")) == pwd()
+        @test G.display_folder(joinpath(pwd(), "sub", "..")) == pwd()
+    end
 end
 
 end

@@ -1495,9 +1495,9 @@ It now lives once, in `src/gateway.jl` (`read_rows`, `backfill!`, `verify!`, `re
 `read_per_file!`, `report_issues`), and the parsing of ffprobe's output moved alongside it into
 `src/probing.jl` (`frame_geometry`, `parse_framerate`, `parse_sar`, `parse_sample_aspect`,
 `is_interlaced`). `Gateway` knows nothing about either domain: every message it emits is either
-passed in by the caller or built from a column name, which is what keeps `"file does not exist"`
-and `"matlab_file does not exist"` — or `"(run_id: …)"` and `"(calibration_id: …)"` — one line of
-code instead of two.
+passed in by the caller or built from a column name and the row's values, which is what keeps
+`"file must exist: …"` and `"matlab_file must exist: …"` — or `"(run_id: …)"` and
+`"(calibration_id: …)"` — one line of code instead of two.
 
 What deliberately stayed duplicated is what actually differs: each gateway's `COLUMNS`, its
 `DEFAULTS`, its row parsers, its `probe_video` (they ask ffprobe for different entries and derive
@@ -1920,7 +1920,11 @@ old issue report no longer matches the new one word for word.
 `verify!` sets the offending field to `missing` after recording the issue, which makes every later
 check skip that row rather than pile on. It is what keeps an inverted intrinsic window from also
 reporting "temporal_step must yield at least 3 images", and a bad `path` from also reporting
-"file does not exist". The ordering of the checks in `verifications!` is therefore load-bearing.
+"file must exist: …". The ordering of the checks in `verifications!` is therefore load-bearing.
+
+It is also why the existence checks build their message from the row's values (#427): once nulled,
+the file name and folder are gone from the returned DataFrame, so the issue is the only place left
+to say what was looked for and where.
 
 ### Every read happens once per physical file
 

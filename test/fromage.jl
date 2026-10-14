@@ -839,7 +839,7 @@ end
         @test e isa ErrorException
         @test occursin("there were issues with the data", e.msg)
         @test count("rectification_id is missing", out) == 1
-        @test !occursin("does not exist", out)
+        @test !occursin("must exist", out)
     end
 
     @testset "an incoherent pair" begin
@@ -850,7 +850,7 @@ end
         e, out = run_main()
         @test e isa ErrorException
         @test count("rectification_id c9 is not defined in rectifications.csv", out) == 1
-        @test !occursin("does not exist", out)
+        @test !occursin("must exist", out)
     end
 
     # `verify` builds nothing, so it does not stop: the second tier still checks the rows the first
@@ -861,7 +861,7 @@ end
         @test result.runs isa DataFrame
         @test count("rectification_id is missing", out) == 1
         @test count("The following are issues with the runs.csv file", out) == 1
-        @test occursin("row 2: file does not exist", out)
+        @test occursin("row 2: file must exist: missing2.mp4 is not in", out)
     end
 
     # both files are reported before the throw, not just the first bad one
@@ -875,7 +875,7 @@ end
         @test e isa ErrorException
         @test count("rectification_id must not repeat", out) == 1
         @test count("rectification_id is missing", out) == 1
-        @test !occursin("does not exist", out)
+        @test !occursin("must exist", out)
     end
 end
 

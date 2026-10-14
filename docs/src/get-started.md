@@ -54,7 +54,7 @@ main("the/path/to/your/data/folder")
 
 `main` then works through four stages:
 
-1. **Checks everything first.** Every row of both csv files is validated: files exist and are readable videos, timestamps fall within each video's duration, the checkerboard is actually detectable, all parameters are within sane ranges. If *anything* is wrong, it prints one line per problematic row (e.g. `row 3: file does not exist, wrong start format`) and stops before any tracking starts — fix the csv files and run again. Nothing is half-done.
+1. **Checks everything first.** Every row of both csv files is validated: files exist and are readable videos, timestamps fall within each video's duration, the checkerboard is actually detectable, all parameters are within sane ranges. If *anything* is wrong, it prints one line per problematic row (e.g. `row 3: wrong start format, file must exist: beetle_03.mp4 is not in /home/me/data — a path column says which folder holds it`) and stops before any tracking starts — fix the csv files and run again. Nothing is half-done.
 2. **Builds a rectification** for every run from its entry in `rectifications.csv`.
 3. **Tracks the target** in every run.
 4. **Writes your results**: one track file per run plus a single diagnostic video, all in a `results_dir` folder (created where you started Julia; see [your results](results.md#Choosing-the-output-folder) to put it elsewhere).
