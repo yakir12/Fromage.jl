@@ -1,0 +1,460 @@
+<!doctype html>
+<!--
+PROTOTYPE — throwaway. Not production code, not Crust's stack (the real thing is Oxygen +
+HypertextLiteral + htmx; this is one self-contained file so it opens with a double-click).
+
+Question (wayfinder ticket "The submission screen: folder picker and settings pane"):
+what should submitting a job look and feel like?
+
+Plan: three structurally different variants of the submission screen, switchable via ?variant=A|B|C|D
+and the floating bar at the bottom. D is the verdict: C with A's folder tree. Everything is stubbed: the share, the session, both
+verification tiers, the issue wording. Nothing is saved.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crust submission screen — PROTOTYPE</title>
+<style>
+  :root { --bg:#f6f5f1; --panel:#fff; --line:#d9d6cc; --ink:#22211d; --dim:#75726a; --accent:#2f6f4f;
+          --bad:#a8321f; --badbg:#fbeae6; --warn:#8a6100; --warnbg:#fdf3d7; --okbg:#e4f2e9; --new:#7a2fb0; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.45 system-ui, sans-serif; color:var(--ink); background:var(--bg); padding-bottom:120px; }
+  h1 { font-size:18px; margin:0; } h2 { font-size:15px; margin:0 0 8px; } h3 { font-size:13px; margin:14px 0 6px; text-transform:uppercase; letter-spacing:.04em; color:var(--dim); }
+  code, .mono { font-family:ui-monospace, monospace; font-size:12.5px; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); border-radius:6px; background:#fff; cursor:pointer; }
+  button:hover:not(:disabled) { border-color:var(--ink); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button.link { border:0; background:none; padding:0; color:var(--accent); text-decoration:underline; }
+  input[type=text], input[type=number], select { font:inherit; padding:4px 6px; border:1px solid var(--line); border-radius:5px; background:#fff; width:100%; }
+  input::placeholder { color:var(--dim); font-style:italic; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px; }
+  .dim { color:var(--dim); } .small { font-size:12.5px; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .grow { flex:1; }
+  .top { display:flex; align-items:center; gap:16px; padding:10px 18px; background:#fff; border-bottom:1px solid var(--line); }
+  input.name { width:170px; }
+  .msg { padding:9px 12px; border-radius:6px; margin:8px 0; border:1px solid; }
+  .msg.warn { background:var(--warnbg); border-color:#e6cf8b; color:#4d3700; }
+  .msg.bad { background:var(--badbg); border-color:#e5b3a9; color:#5c170c; }
+  .msg.ok { background:var(--okbg); border-color:#a9d3b9; color:#17452d; }
+  .badge { display:inline-block; padding:2px 9px; border-radius:99px; font-size:12.5px; font-weight:600; border:1px solid; white-space:nowrap; }
+  .badge.ok { background:var(--okbg); border-color:#a9d3b9; color:#17452d; }
+  .badge.bad { background:var(--badbg); border-color:#e5b3a9; color:#5c170c; }
+  .badge.warn { background:var(--warnbg); border-color:#e6cf8b; color:#4d3700; }
+  .badge.run { background:#e8eef9; border-color:#b3c4e6; color:#1e3a70; }
+  .spin { display:inline-block; width:11px; height:11px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:sp .8s linear infinite; vertical-align:-1px; margin-right:5px; }
+  @keyframes sp { to { transform:rotate(360deg); } }
+  /* settings fields */
+  .field { display:grid; grid-template-columns:170px 1fr; gap:4px 10px; align-items:center; padding:5px 0; }
+  .field .help { grid-column:2; color:var(--dim); font-size:12px; }
+  .field.changed label { font-weight:700; }
+  .field.changed label::after { content:" •"; color:var(--warn); }
+  .unit { color:var(--dim); font-size:12px; margin-left:6px; }
+  .inp { display:flex; align-items:center; } .inp input[type=number] { width:110px; } .inp input[type=text] { width:170px; } .inp select { width:auto; max-width:100%; } .inp { min-width:0; }
+  .expert { background:#f1efe6; border-left:3px solid var(--dim); border-radius:0 6px 6px 0; padding:4px 10px 6px; margin:8px 0 0; }
+  .expert .xl { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); padding:4px 0; }
+  /* issues */
+  .iss-file { margin-top:14px; } .iss-file h4 { margin:0 0 6px; font-size:14px; }
+  .iss-row { border-left:3px solid var(--bad); padding:4px 0 4px 10px; margin:8px 0; }
+  .iss-row .label { font-weight:600; } .iss-row ul { margin:3px 0 0; padding-left:18px; }
+  .new { color:var(--new); font-size:11px; font-weight:700; border:1px solid var(--new); border-radius:4px; padding:0 4px; margin-left:6px; }
+  .frame { margin:6px 0 2px; border:1px solid var(--line); border-radius:4px; display:block; }
+  .notice { border-left:3px solid var(--warn); padding:3px 0 3px 10px; margin:6px 0; }
+  .skeleton { color:var(--dim); font-style:italic; padding:20px 0; }
+  /* folder pickers */
+  .tree div.node { padding:2px 4px; border-radius:4px; cursor:pointer; white-space:nowrap; }
+  .tree div.node:hover { background:#eee; } .tree div.node.sel { background:var(--okbg); font-weight:600; }
+  .tree .kids { margin-left:14px; border-left:1px dotted var(--line); padding-left:4px; }
+  .list div.item { padding:8px 10px; border-bottom:1px solid var(--line); cursor:pointer; display:flex; justify-content:space-between; }
+  .list div.item:hover { background:#f0efe9; } .list div.file { cursor:default; color:var(--dim); }
+  .crumbs button { border:0; background:none; padding:2px 4px; color:var(--accent); font-weight:600; }
+  /* variant A */
+  .A { display:grid; grid-template-columns:290px 1fr; gap:14px; padding:14px 18px; align-items:start; }
+  .A > .panel .field { grid-template-columns:1fr; }
+  .A .two { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+  .A .two > div + div { border-left:1px solid var(--line); padding-left:22px; }
+  .seg button { border-radius:0; } .seg button:first-child { border-radius:6px 0 0 6px; } .seg button:last-child { border-radius:0 6px 6px 0; margin-left:-1px; }
+  .seg button.on { background:var(--ink); color:#fff; border-color:var(--ink); }
+  /* variant B */
+  .B { max-width:760px; margin:0 auto; padding:14px 18px; }
+  .steps { display:flex; gap:0; margin:6px 0 14px; }
+  .steps button { flex:1; border-radius:0; border-right-width:0; padding:10px; text-align:left; }
+  .steps button:last-child { border-right-width:1px; } .steps button.on { background:var(--ink); color:#fff; border-color:var(--ink); }
+  .strip { position:sticky; top:0; z-index:5; background:#fff; border:1px solid var(--line); border-radius:8px; padding:8px 12px; margin-bottom:12px; }
+  /* variant C */
+  .C { padding:0 18px; display:grid; grid-template-columns:1fr auto; gap:14px; align-items:start; }
+  .C .bar2 { grid-column:1/-1; background:#fff; border:1px solid var(--line); border-top:0; border-radius:0 0 8px 8px; padding:10px 14px; }
+  .C .drawer { width:400px; } .C .drawer.closed { width:auto; }
+  .C .foot { position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:2px solid var(--ink); padding:10px 18px 62px; z-index:8; }
+  .chips span { display:inline-block; background:var(--warnbg); border:1px solid #e6cf8b; border-radius:99px; padding:1px 8px; font-size:12px; margin:2px 4px 2px 0; }
+  /* prototype chrome — deliberately unlike the design */
+  #proto { position:fixed; bottom:10px; left:50%; transform:translateX(-50%); z-index:99; background:#111; color:#fff; border-radius:99px; padding:6px 12px; display:flex; gap:10px; align-items:center; box-shadow:0 4px 18px #0006; font-size:13px; white-space:nowrap; }
+  #proto button, #proto select { background:#333; color:#fff; border:1px solid #555; border-radius:99px; padding:3px 10px; width:auto; font-size:12.5px; }
+  #state { position:fixed; right:10px; bottom:60px; z-index:98; width:360px; max-height:55vh; overflow:auto; background:#111; color:#9f9; padding:10px; border-radius:8px; font:11px/1.35 ui-monospace, monospace; white-space:pre-wrap; display:none; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<pre id="state"></pre>
+<div id="proto"></div>
+
+<script>
+// ───────────────────────── stub data ─────────────────────────
+const ROOT = 'share';
+const d = (dirs, files = [], boris = []) => ({ dirs, files, boris });
+const TREE = d({
+  elin: d({
+    'outdoors-2025': d({ calibs: d({}, ['board_a.MTS', 'board_b.MTS']), videos: d({}, ['day1.MTS', 'day2.MTS']) },
+      ['rectifications.csv', 'runs.csv', 'weather-notes.csv']),
+    'indoor-led': d({ videos: d({}, ['led_01.mp4', 'led_02.mp4']) },
+      ['rectifications.csv', 'boris-export.csv', 'runs-old.csv'], ['boris-export.csv']),
+    drafts: d({}, ['todo.txt']),
+  }),
+  drone: d({ '2026-03-kruger': d({ flights: d({}, ['DJI_0041.MP4', 'DJI_0042.MP4']) }, ['rectifications.csv', 'runs.csv']) }),
+  marie: d({ 'sand-mirror': d({}, ['rectifications.csv', 'runs.csv']) }),
+});
+const VIDEO_TYPES = ['', 'drone', 'tripod outdoor plywood', 'static outdoor sand mirror', 'tripod outdoor sand mirror', 'indoor LED', 'indoor infrared'];
+// Stand-in for what a verification session reports from the two DEFAULTS tables. v:null = `missing`.
+const DEFS = {
+  tracking: [
+    { k:'target_width', v:25, t:'number', unit:'px', easy:1, help:'Full width of the target (beetle with its ball). The one parameter worth measuring.' },
+    { k:'darker_target', v:true, t:'bool', help:'The target is darker than its background.' },
+    { k:'whole_run', v:false, t:'bool', help:'Use the whole-run tracker (slower, hungrier, steadier).' },
+    { k:'sample_fps', v:null, t:'number', unit:'fps', ph:'same as native_fps', help:'Frames per second to track. Lower for slow targets.' },
+    { k:'native_fps', v:null, t:'number', unit:'fps', ph:'from the video', help:'Only when the file is wrong about its own rate.' },
+    { k:'window_size', v:null, t:'text', ph:'computed from target_width', help:'Search window: 41 or (41, 61).' },
+    { k:'initial_search_factor', v:4, t:'number', help:'How much wider the first search is.' },
+    { k:'downscale', v:1, t:'number', easy:1, help:'0 < downscale ≤ 1. A speed knob for large frames.' },
+    { k:'background_length', v:250, t:'number', unit:'frames', help:'0 disables background subtraction; otherwise ≥ 25.' },
+    { k:'arena_radius', v:null, t:'number', ph:'no arena prior', help:'Whole-run tracker on AprilTag footage only.' },
+    { k:'video_type', v:null, t:'select', opts:VIDEO_TYPES, help:'Whole-run tracker: how strictly the track is reviewed.' },
+  ],
+  rectification: [
+    { k:'checker_width', v:4, t:'number', unit:'your unit', easy:1, help:'Real-world width of one checkerboard square. Tracks come out in this unit.' },
+    { k:'n_corners', v:'(7, 10)', t:'text', easy:1, help:'Internal corners: a board of 8 × 11 squares has (7, 10).' },
+    { k:'tag_cell_width', v:12, t:'number', unit:'your unit', help:'AprilTag rows: real-world width of one tag cell.' },
+    { k:'apriltags', v:4, t:'number', help:'How many tags the scene carries.' },
+    { k:'family', v:'tag36h11', t:'text', help:'AprilTag family.' },
+    { k:'temporal_step', v:2, t:'number', unit:'s', help:'Sample one frame every this many seconds in the intrinsic window.' },
+    { k:'radial_parameters', v:1, t:'number', help:'Radial lens-distortion terms.' },
+    { k:'blur', v:1, t:'number', help:'Blur before corner detection.' },
+    { k:'yadif', v:null, t:'tri', help:'Deinterlace. Detected automatically; set to force.' },
+  ],
+};
+const FRAME = `<svg class="frame" width="260" height="146" viewBox="0 0 260 146"><rect width="260" height="146" fill="#3b3a36"/><g fill="#8c8a80">${
+  [...Array(24)].map((_, i) => `<rect x="${70 + (i % 6) * 20}" y="${30 + Math.floor(i / 6) * 20}" width="10" height="10" transform="skewX(-12)"/>`).join('')
+}</g><text x="8" y="138" fill="#ddd" font-size="10" font-family="monospace">issue frame · board_a.MTS @ 00:00:12</text></svg>`;
+// Three scripted attempts: issues → fewer plus one new → clean. Wording is a stand-in for the pipeline's own.
+const ATTEMPTS = [
+  { rect: [
+      { label:'row 2 (rectification_id: board_a)', issues:[{ t:2, msg:'no checkerboard with (7, 10) internal corners was detected in the extrinsic frame', frame:1 }] },
+      { label:'row 4 (rectification_id: board_b)', issues:[{ t:1, msg:'file calibs/board_B.MTS does not exist' }] } ],
+    runs: [
+      { label:'row 3 (run_id: beetle_7)', issues:[{ t:1, msg:'rectification_id board_x is not in rectifications.csv' }] },
+      { label:'row 12 (run_id: beetle_19)', issues:[{ t:2, msg:'start_location (2100, 400) is outside the frame (1920 × 1080)' }, { t:2, msg:'stop (00:04:10) is after the end of the video (00:03:52)' }] } ],
+    notices: ['runs.csv: column `target_widht` is not a tracking parameter and is kept as metadata. Did you mean `target_width`?'] },
+  { rect: [ { label:'row 2 (rectification_id: board_a)', issues:[{ t:2, msg:'no checkerboard with (7, 10) internal corners was detected in the extrinsic frame', frame:1 }] } ],
+    runs: [ { label:'row 3 (run_id: beetle_7)', issues:[{ t:2, isNew:1, msg:'start (00:01:05) is not before stop (00:00:58)' }] } ],
+    notices: [] },
+  { rect: [], runs: [], notices: [] },
+];
+
+// ───────────────────────── state ─────────────────────────
+const fresh = () => ({ name: S?.name ?? '', path: [], open: { '': true }, picked: false, refused: false, expired: false,
+  session: 'none', files: { rect: '', runs: '' }, boris_behavior: 'Roll', settings: null, mode: 'easy',
+  attempt: 0, v: null, submitted: false, step: 1, drawer: true, prefilled: false });
+let S; S = fresh();
+let scenario = 'normal', timers = [];
+const later = (ms, f) => timers.push(setTimeout(() => { f(); render(); }, ms));
+const node = (path = S.path) => path.reduce((n, p) => n.dirs[p], TREE);
+const csvs = (path = S.path) => node(path).files.filter(f => f.endsWith('.csv'));
+const isData = (path = S.path) => csvs(path).length >= 2;
+const isBoris = () => node().boris.includes(S.files.runs);
+const defaults = () => Object.fromEntries(Object.entries(DEFS).map(([g, fs]) => [g, Object.fromEntries(fs.map(f => [f.k, f.v]))]));
+const snapshot = () => JSON.stringify([S.files, isBoris() ? S.boris_behavior : null, S.settings]);
+const changed = () => S.settings ? Object.entries(DEFS).flatMap(([g, fs]) => fs.filter(f => S.settings[g][f.k] !== f.v).map(f => [g, f])) : [];
+const result = () => S.v && ATTEMPTS[Math.min(S.v.attempt, 3) - 1];
+function shown() { // what of the result is visible now: first-tier issues only while the whole verification runs
+  const r = result(); if (!r || S.v.status === 'tier1' || S.v.status === 'fault') return null;
+  const keep = S.v.status === 'done' ? (() => true) : (i => i.t === 1);
+  const f = rows => rows.map(x => ({ ...x, issues: x.issues.filter(keep) })).filter(x => x.issues.length);
+  return { rect: f(r.rect), runs: f(r.runs), notices: S.v.status === 'done' ? r.notices : [] };
+}
+const count = rows => rows.reduce((n, x) => n + x.issues.length, 0);
+const clean = () => S.v?.status === 'done' && count(result().rect) + count(result().runs) === 0;
+const dirty = () => S.v && snapshot() !== S.v.snap;
+const running = () => S.v && (S.v.status === 'tier1' || S.v.status === 'tier2');
+const canSubmit = () => clean() && !dirty() && S.name.trim() !== '' && !S.expired;
+
+function pick() {
+  if (scenario === 'four') { S.refused = true; return; }
+  S.picked = true; S.refused = false; S.session = 'starting';
+  const c = csvs();
+  S.files.rect = c.includes('rectifications.csv') ? 'rectifications.csv' : c[0];
+  S.files.runs = c.includes('runs.csv') ? 'runs.csv' : (node().boris[0] ?? c[1]);
+  later(1800, () => { S.session = 'up'; S.settings ??= defaults(); verify(false); }); // really about 15 s
+}
+function verify(scratch) {
+  S.attempt += 1;
+  S.v = { status: 'tier1', scratch, attempt: S.attempt, snap: snapshot() };
+  later(700, () => { S.v.status = 'tier2';
+    later(scratch ? 5000 : 2200, () => { S.v.status = scenario === 'fault' ? 'fault' : 'done'; }); });
+}
+function reset() { timers.forEach(clearTimeout); timers = []; S = fresh(); }
+function submitAgain() { // arriving from an ended job's "submit again": folder and settings pre-filled from its record
+  reset(); S.path = ['elin', 'outdoors-2025']; S.open = { '': true, elin: true }; S.settings = defaults();
+  S.settings.tracking.target_width = 31; S.settings.tracking.whole_run = true; S.prefilled = true; S.step = 3; pick();
+}
+
+// ───────────────────────── shared leaf renderers (layout stays per variant) ─────────────────────────
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+const pathText = (p = S.path) => [ROOT, ...p].join('/') + '/';
+function field(g, f) {
+  const v = S.settings[g][f.k], id = `${g}.${f.k}`, ph = esc(f.ph ?? 'from the video');
+  let inp;
+  if (f.t === 'bool') inp = `<input type="checkbox" id="${id}" data-f="${id}" ${v ? 'checked' : ''}>`;
+  else if (f.t === 'tri') inp = `<select id="${id}" data-f="${id}">${[['', 'from the video'], ['true', 'true'], ['false', 'false']].map(([o, l]) => `<option value="${o}" ${String(v ?? '') === o ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  else if (f.t === 'select') inp = `<select id="${id}" data-f="${id}">${f.opts.map(o => `<option value="${o}" ${(v ?? '') === o ? 'selected' : ''}>${o || '(blank)'}</option>`).join('')}</select>`;
+  else inp = `<input type="${f.t}" step="any" id="${id}" data-f="${id}" value="${v ?? ''}" placeholder="${ph}">`;
+  return `<div class="field ${v !== f.v ? 'changed' : ''}"><label for="${id}"><code>${f.k}</code></label>
+    <div class="inp">${inp}${f.unit ? `<span class="unit">${f.unit}</span>` : ''}</div><div class="help">${f.help}</div></div>`;
+}
+const fields = (g, pred) => S.settings ? DEFS[g].filter(pred).map(f => field(g, f)).join('')
+  : `<div class="skeleton"><span class="spin"></span>Starting the verification session; the settings appear when it is up (about 15 s).</div>`;
+const group = g => fields(g, f => f.easy) + (S.settings && S.mode === 'expert'
+  ? `<div class="expert"><div class="xl">Expert</div>${fields(g, f => !f.easy)}</div>` : '');
+function filesHTML() {
+  const opt = sel => csvs().map(f => `<option ${f === sel ? 'selected' : ''}>${f}</option>`).join('');
+  return `<div class="field"><label>Rectifications file</label><select data-file="rect">${opt(S.files.rect)}</select></div>
+    <div class="field"><label>Runs file</label><select data-file="runs">${opt(S.files.runs)}</select>
+      ${isBoris() ? `<div class="help">This is a BORIS export.</div>` : ''}</div>
+    ${isBoris() ? `<div class="field"><label>BORIS behaviour</label><input type="text" id="boris" data-boris value="${esc(S.boris_behavior)}">
+      <div class="help">The behaviour the segments are coded as.</div></div>` : ''}`;
+}
+function status() {
+  if (S.expired) return ['bad', 'Expired'];
+  if (!S.picked) return ['warn', 'No folder picked'];
+  if (S.session === 'starting') return ['run', '<span class="spin"></span>Starting session'];
+  if (S.v.status === 'tier1') return ['run', '<span class="spin"></span>Checking the csv files'];
+  if (S.v.status === 'tier2') return ['run', `<span class="spin"></span>Checking videos and calibrations${S.v.scratch ? ' from scratch' : ''}`];
+  if (S.v.status === 'fault') return ['bad', 'Fault in Crust'];
+  if (dirty()) return ['warn', 'Not verified: settings changed'];
+  const n = count(result().rect) + count(result().runs);
+  return n ? ['bad', `${n} issue${n > 1 ? 's' : ''}`] : ['ok', 'Clean'];
+}
+const badge = () => { const [c, t] = status(); return `<span class="badge ${c}">${t}</span>`; };
+function messages() {
+  let h = '';
+  if (S.refused) h += `<div class="msg bad">Four submissions are already open (Elin, Marie, Basil, Lana). Try again when one of them submits or discards; a submission left idle ends after 30 minutes.</div>`;
+  if (S.expired) h += `<div class="msg bad">This submission ended after 30 minutes without activity. <button class="link" data-act="reset">Pick the folder again</button>.</div>`;
+  if (S.prefilled && S.picked) h += `<div class="msg ok">Filled in from job <span class="mono">20261114-091502-q3ab</span>. It must verify clean like any other submission.</div>`;
+  if (S.picked && scenario === 'busy') h += `<div class="msg warn">Also on this folder: <b>Marie</b> has a queued job (submitted 14:02), and <b>Basil</b> has an open submission. Nothing is locked; this is only so you know.</div>`;
+  if (S.v?.status === 'fault') h += `<div class="msg bad"><b>Verification stopped because of a fault in Crust, not in your data.</b><br>Case <span class="mono">20261116-142233-k7f2</span>: recorded; the maintainer will be notified. The session has been restarted, so you can verify again.</div>`;
+  return h;
+}
+function verifyButtons() {
+  const off = !S.picked || S.session !== 'up' || running() || S.expired ? 'disabled' : '';
+  return `<button data-act="verify" ${off}>Verify again</button>
+    <button data-act="scratch" ${off} title="Empties the caches first">Verify from scratch</button>
+    <span class="dim small">From scratch: use this if you replaced a video or calibration file.</span>`;
+}
+function submitButton() {
+  const why = S.name.trim() === '' ? 'Give your name first.' : dirty() ? 'Verify again: the settings differ from the last verification.'
+    : running() ? 'Wait for the verification.' : !clean() ? 'Only a clean dataset can be submitted.' : '';
+  return `<button class="primary" data-act="submit" ${canSubmit() ? '' : 'disabled'}>Submit job</button>
+    ${why && S.picked ? `<span class="dim small">${why}</span>` : ''}`;
+}
+function issuesHTML() {
+  const r = shown();
+  if (!S.picked) return `<div class="skeleton">Pick a data folder and verification starts at once.</div>`;
+  if (!r) return S.v?.status === 'fault' ? '' : `<div class="skeleton"><span class="spin"></span>${S.session === 'starting' ? 'Starting the verification session…' : 'Checking the csv files…'}</div>`;
+  const nr = count(r.rect), nu = count(r.runs), partial = S.v.status === 'tier2';
+  const file = (name, rows) => rows.length ? `<div class="iss-file"><h4><code>${esc(name)}</code></h4>${rows.map(x => `<div class="iss-row"><div class="label mono">${esc(x.label)}</div><ul>${
+    x.issues.map(i => `<li>${esc(i.msg)}${i.isNew ? '<span class="new">NEW</span>' : ''}${i.frame ? FRAME : ''}</li>`).join('')}</ul></div>`).join('')}</div>` : '';
+  const summary = nr + nu === 0 ? (partial ? 'No issues in the csv files so far; still checking videos and calibrations…' : 'No issues.')
+    : `${nr} in <code>${esc(S.files.rect)}</code>, ${nu} in <code>${esc(S.files.runs)}</code>${partial ? ' so far; still checking videos and calibrations…' : ''}`;
+  return `<div class="msg ${nr + nu ? 'bad' : partial ? 'warn' : 'ok'}"><b>${summary}</b>${S.v.attempt > 1 ? ` <span class="dim small">attempt ${S.v.attempt}</span>` : ''}</div>
+    ${nr + nu ? `<div class="dim small">Fix these in the csv files on the share, then verify again.</div>` : ''}
+    ${file(S.files.rect, r.rect)}${file(S.files.runs, r.runs)}
+    ${r.notices.length ? `<div class="iss-file"><h4>Notices <span class="dim small">(do not block submission)</span></h4>${r.notices.map(n => `<div class="notice">${esc(n).replace(/`([^`]+)`/g, '<code>$1</code>')}</div>`).join('')}</div>` : ''}`;
+}
+const nameHTML = () => `<input class="name" type="text" id="name" data-name value="${esc(S.name)}" placeholder="Your name">`;
+const submittedHTML = () => `<div style="max-width:620px;margin:40px auto" class="panel"><h2>Job queued</h2>
+  <p><b>${esc(S.name)}</b> · <span class="mono">${pathText()}</span> · position 2 in the queue.</p>
+  <p class="dim">The registry page would be here. That page belongs to other tickets.</p>
+  <button data-act="reset">Start another submission</button></div>`;
+
+// ───────────────────────── Variant A — Workbench: everything on one screen ─────────────────────────
+function treeHTML(path = []) {
+  const n = node(path), key = path.join('/');
+  const kids = S.open[key] ? `<div class="kids">${Object.keys(n.dirs).map(k => treeHTML([...path, k])).join('')}</div>` : '';
+  const sel = key === S.path.join('/') ? 'sel' : '';
+  const has = Object.keys(n.dirs).length;
+  return `<div class="node ${sel}" data-act="tree:${key}">${has ? (S.open[key] ? '▾' : '▸') : '·'} ${path.length ? esc(path.at(-1)) : ROOT}${isData(path) ? ' <span class="dim small">csv</span>' : ''}</div>${kids}`;
+}
+function VariantA() {
+  return `<div class="top"><h1>New submission</h1><span class="grow"></span>${nameHTML()}</div>
+  <div class="A">
+    <div class="panel">
+      <h2>Data folder</h2>
+      <div class="tree">${treeHTML()}</div>
+      <div style="margin-top:10px">${S.picked
+        ? `<div class="mono small">${pathText()}</div><div style="margin-top:8px">${filesHTML()}</div><button data-act="discard">Discard submission</button>`
+        : `<button class="primary" data-act="pick" ${isData() ? '' : 'disabled'}>Open a submission on this folder</button>
+           <div class="dim small" style="margin-top:6px">${isData() ? csvs().join(', ') : 'A data folder holds the two csv files.'}</div>`}</div>
+    </div>
+    <div>
+      ${messages()}
+      <div class="panel">
+        <div class="row"><h2 style="margin:0">Settings</h2><span class="dim small">A value in a csv cell always wins over these.</span><span class="grow"></span>
+          <span class="seg"><button data-act="mode:easy" class="${S.mode === 'easy' ? 'on' : ''}">Easy</button><button data-act="mode:expert" class="${S.mode === 'expert' ? 'on' : ''}">Expert</button></span>
+          <button data-act="defaults" ${changed().length ? '' : 'disabled'}>Reset to defaults</button></div>
+        ${S.picked ? `<div class="two"><div><h3>Tracking</h3>${group('tracking')}</div><div><h3>Rectification</h3>${S.settings ? group('rectification') : ''}</div></div>`
+          : `<div class="skeleton">Settings appear once a folder is picked.</div>`}
+      </div>
+      <div class="panel" style="margin-top:14px">
+        <div class="row"><h2 style="margin:0">Verification</h2>${badge()}<span class="grow"></span>${submitButton()}</div>
+        <div class="row" style="margin-top:10px">${verifyButtons()}</div>
+        ${issuesHTML()}
+      </div>
+    </div>
+  </div>`;
+}
+
+// ───────────────────────── Variant B — Steps: one thing at a time ─────────────────────────
+function listHTML() {
+  const n = node();
+  return `<div class="list panel" style="padding:0">
+    <div class="item" style="background:#f0efe9;cursor:default"><span class="mono">${pathText()}</span></div>
+    ${S.path.length ? `<div class="item" data-act="up">↑ up one folder</div>` : ''}
+    ${Object.keys(n.dirs).map(k => `<div class="item" data-act="into:${k}"><span>📁 ${esc(k)}</span><span class="dim">›</span></div>`).join('')}
+    ${n.files.map(f => `<div class="item file"><span>${esc(f)}</span></div>`).join('')}</div>`;
+}
+function VariantB() {
+  const step = S.step, names = ['1 · Data folder', '2 · Settings', '3 · Verify and submit'];
+  let body;
+  if (step === 1) body = S.picked
+    ? `<div class="panel"><h2>Data folder</h2><div class="mono">${pathText()}</div><div style="margin-top:10px">${filesHTML()}</div>
+       <div class="row" style="margin-top:10px"><button data-act="discard">Discard and pick another folder</button><span class="grow"></span><button class="primary" data-act="step:2">Next: settings</button></div></div>`
+    : `${listHTML()}<div class="row" style="margin-top:10px"><span class="dim small">${isData() ? 'Found: ' + csvs().join(', ') : 'Navigate to the folder that holds your two csv files.'}</span><span class="grow"></span>
+       <button class="primary" data-act="pickB" ${isData() ? '' : 'disabled'}>Use this folder</button></div>`;
+  else if (step === 2) body = `<div class="panel"><h2>Settings</h2><p class="dim small">These apply wherever a csv cell is blank. Most datasets only need the first few.</p>
+      <h3>Tracking</h3>${fields('tracking', f => f.easy)}
+      ${S.settings ? `<h3>Rectification</h3>${fields('rectification', f => f.easy)}` : ''}
+      ${S.settings ? `<p><button class="link" data-act="mode:${S.mode === 'expert' ? 'easy' : 'expert'}">${S.mode === 'expert' ? 'Hide' : 'Show'} expert settings</button>
+        ${changed().filter(([, f]) => !f.easy).length && S.mode !== 'expert' ? `<span class="dim small"> (${changed().filter(([, f]) => !f.easy).length} changed)</span>` : ''}</p>` : ''}
+      ${S.settings && S.mode === 'expert' ? `<h3>Tracking, expert</h3>${fields('tracking', f => !f.easy)}<h3>Rectification, expert</h3>${fields('rectification', f => !f.easy)}` : ''}
+      <div class="row" style="margin-top:10px"><button data-act="step:1">Back</button><span class="grow"></span><button class="primary" data-act="step:3">Next: verify and submit</button></div></div>`;
+  else body = `<div class="panel"><div class="row">${verifyButtons()}</div>${issuesHTML()}
+      <div class="row" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px"><button data-act="step:2">Back</button><button data-act="discard">Discard</button><span class="grow"></span>${submitButton()}</div></div>`;
+  return `<div class="top"><h1>New submission</h1><span class="grow"></span>${nameHTML()}</div>
+  <div class="B">
+    <div class="steps">${names.map((n, i) => `<button data-act="step:${i + 1}" class="${step === i + 1 ? 'on' : ''}" ${i && !S.picked ? 'disabled' : ''}>${n}</button>`).join('')}</div>
+    ${S.picked ? `<div class="strip row"><span class="mono small">${pathText()}</span><span class="grow"></span>${badge()}${step !== 3 ? `<button class="link" data-act="step:3">see the report</button>` : ''}</div>` : ''}
+    ${messages()}${body}
+  </div>`;
+}
+
+// ───────────────────────── Variant C — Report first: the issue list is the page ─────────────────────────
+function VariantC(tree = false) {
+  const crumbs = [ROOT, ...S.path].map((p, i) => `<button data-act="crumb:${i}" ${S.picked ? 'disabled' : ''}>${esc(p)}</button>`).join('<span class="dim">/</span>');
+  const n = node(), ch = changed();
+  const main = S.picked ? `<div class="panel">${issuesHTML()}</div>`
+    : tree ? `<div class="panel"><h2>Data folder</h2><div class="tree">${treeHTML()}</div>
+        <div class="row" style="margin-top:12px"><button class="primary" data-act="pick" ${isData() ? '' : 'disabled'}>Verify this folder</button>
+        <span class="dim small">${isData() ? 'Holds ' + csvs().join(', ') : 'A data folder holds the two csv files.'}</span></div></div>`
+    : `<div class="list panel" style="padding:0">${Object.keys(n.dirs).map(k => `<div class="item" data-act="into:${k}"><span>📁 ${esc(k)}${isData([...S.path, k]) ? ' <span class="dim small">· data folder</span>' : ''}</span><span class="dim">›</span></div>`).join('')}
+        ${n.files.map(f => `<div class="item file"><span>${esc(f)}</span></div>`).join('')}
+        ${isData() ? `<div class="item" style="cursor:default;background:var(--okbg)"><span>This folder holds ${csvs().join(', ')}.</span><button class="primary" data-act="pick">Verify this folder</button></div>` : ''}</div>`;
+  const drawer = !S.picked ? '' : S.drawer
+    ? `<div class="panel drawer"><div class="row"><h2 style="margin:0">Settings</h2><span class="grow"></span>
+         <span class="seg"><button data-act="mode:easy" class="${S.mode === 'easy' ? 'on' : ''}">Easy</button><button data-act="mode:expert" class="${S.mode === 'expert' ? 'on' : ''}">Expert</button></span>
+         <button data-act="drawer">Hide ›</button></div>
+       <h3>Files</h3>${filesHTML()}
+       <h3>Tracking</h3>${group('tracking')}
+       ${S.settings ? `<h3>Rectification</h3>${group('rectification')}
+       <button data-act="defaults" ${ch.length ? '' : 'disabled'}>Reset to defaults</button>` : ''}</div>`
+    : `<div class="panel drawer closed"><button data-act="drawer">‹ Settings</button></div>`;
+  return `<div class="C">
+    <div class="bar2 row"><h1>New submission</h1><span class="crumbs mono">${crumbs}</span>
+      ${S.picked ? `<button class="link" data-act="discard">discard and pick another</button>` : ''}<span class="grow"></span>${nameHTML()}</div>
+    <div>${messages()}${main}</div>
+    ${drawer}
+    ${S.picked ? `<div class="foot"><div class="row">${badge()}
+      <span class="chips">${ch.length ? ch.map(([g, f]) => `<span><code>${f.k}</code> = ${esc(S.settings[g][f.k] ?? 'from the video')}</span>`).join('') : '<i class="dim small">All settings at their defaults.</i>'}</span>
+      <span class="grow"></span>${verifyButtons()}${submitButton()}</div></div>` : ''}
+  </div>`;
+}
+
+// ───────────────────────── switcher and wiring ─────────────────────────
+const VARIANTS = { A: ['Workbench', VariantA], B: ['Steps', VariantB], C: ['Report first', () => VariantC()], D: ['CHOSEN: report first, tree picker', () => VariantC(true)] };
+const keys = Object.keys(VARIANTS);
+const current = () => { const v = new URLSearchParams(location.search).get('variant'); return keys.includes(v) ? v : 'A'; };
+function setVariant(v) { const u = new URL(location.href); u.searchParams.set('variant', v); history.replaceState(null, '', u); render(); }
+const cycle = n => setVariant(keys[(keys.indexOf(current()) + n + keys.length) % keys.length]);
+
+function render() {
+  const focus = document.activeElement?.id, v = current();
+  document.getElementById('app').innerHTML = S.submitted ? submittedHTML() : VARIANTS[v][1]();
+  document.getElementById('proto').innerHTML = `<b>PROTOTYPE</b>
+    <button data-p="prev">←</button><span>${v} (${VARIANTS[v][0]})</span><button data-p="next">→</button>
+    <select data-p="scenario" title="What the stubbed server does">${[['normal', 'scenario: normal'], ['busy', 'scenario: others on this folder'], ['four', 'scenario: four already open'], ['fault', 'scenario: session faults']]
+      .map(([k, l]) => `<option value="${k}" ${k === scenario ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    <button data-p="again">arrive from "submit again"</button><button data-p="expire">expire</button><button data-p="reset">reset</button><button data-p="state">state</button>`;
+  document.getElementById('state').textContent = JSON.stringify({ scenario, canSubmit: canSubmit(), dirty: !!dirty(), clean: !!clean(), ...S }, null, 1);
+  if (focus) document.getElementById(focus)?.focus();
+}
+document.addEventListener('click', e => {
+  const p = e.target.closest('[data-p]')?.dataset.p;
+  if (p === 'prev') return cycle(-1); if (p === 'next') return cycle(1);
+  if (p === 'again') { submitAgain(); return render(); }
+  if (p === 'expire') { if (S.picked) { timers.forEach(clearTimeout); S.expired = true; } return render(); }
+  if (p === 'reset') { reset(); return render(); }
+  if (p === 'state') { const s = document.getElementById('state'); s.style.display = s.style.display === 'block' ? 'none' : 'block'; return; }
+  const act = e.target.closest('[data-act]')?.dataset.act; if (!act) return;
+  const [a, arg] = act.split(/:(.*)/s);
+  if (a === 'tree') { if (!S.picked) { S.path = arg ? arg.split('/') : []; S.open[arg] = !S.open[arg] || arg === ''; S.refused = false; } }
+  else if (a === 'into') { S.path = [...S.path, arg]; S.refused = false; }
+  else if (a === 'up') S.path = S.path.slice(0, -1);
+  else if (a === 'crumb') S.path = S.path.slice(0, +arg);
+  else if (a === 'pick') pick();
+  else if (a === 'pickB') { pick(); if (S.picked) S.step = 2; }
+  else if (a === 'verify') verify(false);
+  else if (a === 'scratch') verify(true);
+  else if (a === 'discard' || a === 'reset') { const p = S.path, o = S.open; reset(); S.path = p; S.open = o; }
+  else if (a === 'submit') S.submitted = true;
+  else if (a === 'mode') S.mode = arg;
+  else if (a === 'step') S.step = +arg;
+  else if (a === 'drawer') S.drawer = !S.drawer;
+  else if (a === 'defaults') S.settings = defaults();
+  render();
+});
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.dataset.p === 'scenario') scenario = t.value;
+  else if ('name' in t.dataset) S.name = t.value;
+  else if ('boris' in t.dataset) S.boris_behavior = t.value;
+  else if (t.dataset.file) S.files[t.dataset.file] = t.value;
+  else if (t.dataset.f) {
+    const [g, k] = t.dataset.f.split('.'), f = DEFS[g].find(x => x.k === k);
+    S.settings[g][k] = f.t === 'bool' ? t.checked : f.t === 'tri' ? (t.value === '' ? null : t.value === 'true')
+      : t.value === '' ? null : f.t === 'number' ? +t.value : t.value;
+  } else return;
+  render();
+});
+document.addEventListener('keydown', e => {
+  if (e.target.matches('input, textarea, select, [contenteditable]')) return;
+  if (e.key === 'ArrowLeft') cycle(-1); if (e.key === 'ArrowRight') cycle(1);
+});
+if (new URLSearchParams(location.search).has('auto')) { // ?auto jumps straight to a finished first attempt, for screenshots
+  S.name = 'Yakir'; S.path = ['elin', 'outdoors-2025']; S.open.elin = true; S.picked = true; S.session = 'up'; S.step = 3;
+  S.files = { rect: 'rectifications.csv', runs: 'runs.csv' }; S.settings = defaults(); S.attempt = 1;
+  S.v = { status: 'done', scratch: false, attempt: 1, snap: snapshot() };
+}
+if (new URLSearchParams(location.search).has('expert')) S.mode = 'expert';
+render();
+</script>
+</body>
+</html>
