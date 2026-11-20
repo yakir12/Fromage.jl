@@ -1,0 +1,341 @@
+<!doctype html>
+<!--
+PROTOTYPE: throwaway. This is not production code and not Crust's stack (the real one is Oxygen +
+HypertextLiteral + htmx). It is one self-contained file so it opens with a double-click.
+
+Question (wayfinder ticket "Registry and job pages: what each state shows and what a done job offers", #456):
+what does a registry row show in each of the six states, what does each job's own page show, are the
+registry and the job page one page or two, what do the cancel and delete confirmations ask, and what
+does a done job offer for download?
+
+Plan: three structurally different layouts over the same stub registry, switchable via ?variant=A|B|C
+and the floating bar:
+  A  Table + page    the registry is a table; a row opens the job's own page (two pages, back link)
+  B  Split           a list on the left, the chosen job's page on the right (one page)
+  C  Inline          rows grouped by person; a row unfolds in place into its page (one page)
+The bar also switches the download style (one archive / file by file / both), which is independent of
+the layout. Everything is stubbed. Nothing is saved, and cancelling or deleting changes only this tab.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crust jobs: PROTOTYPE</title>
+<style>
+  :root { --bg:#f6f5f1; --panel:#fff; --line:#d9d6cc; --ink:#22211d; --dim:#75726a; --accent:#2f6f4f;
+          --bad:#a8321f; --badbg:#fbeae6; --warn:#8a6100; --warnbg:#fdf3d7; --okbg:#e4f2e9; --runbg:#e8eef9; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.45 system-ui, sans-serif; color:var(--ink); background:var(--bg); padding-bottom:80px; }
+  h1 { font-size:18px; margin:0; } h2 { font-size:16px; margin:0 0 4px; } h3 { font-size:12px; margin:18px 0 6px; text-transform:uppercase; letter-spacing:.05em; color:var(--dim); }
+  code, .mono { font-family:ui-monospace, monospace; font-size:12.5px; }
+  button { font:inherit; padding:5px 11px; border:1px solid var(--line); border-radius:6px; background:#fff; cursor:pointer; }
+  button:hover:not(:disabled) { border-color:var(--ink); } button:disabled { opacity:.45; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button.danger { color:var(--bad); border-color:#e5b3a9; }
+  button.link { border:0; background:none; padding:0; color:var(--accent); text-decoration:underline; }
+  input[type=text] { font:inherit; padding:5px 7px; border:1px solid var(--line); border-radius:5px; width:220px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px; }
+  .dim { color:var(--dim); } .small { font-size:12.5px; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; } .grow { flex:1; }
+  .top { display:flex; align-items:center; gap:16px; padding:10px 18px; background:#fff; border-bottom:1px solid var(--line); }
+  .msg { padding:9px 12px; border-radius:6px; margin:10px 0; border:1px solid; }
+  .msg.warn { background:var(--warnbg); border-color:#e6cf8b; color:#4d3700; }
+  .msg.bad { background:var(--badbg); border-color:#e5b3a9; color:#5c170c; }
+  .msg.ok { background:var(--okbg); border-color:#a9d3b9; color:#17452d; }
+  .msg.run { background:var(--runbg); border-color:#b3c4e6; color:#1e3a70; }
+  .badge { display:inline-block; padding:1px 9px; border-radius:99px; font-size:12px; font-weight:600; border:1px solid; white-space:nowrap; }
+  .b-done { background:var(--okbg); border-color:#a9d3b9; color:#17452d; }
+  .b-failed { background:var(--badbg); border-color:#e5b3a9; color:#5c170c; }
+  .b-changed { background:var(--warnbg); border-color:#e6cf8b; color:#4d3700; }
+  .b-running { background:var(--runbg); border-color:#b3c4e6; color:#1e3a70; }
+  .b-queued, .b-cancelled { background:#efeee9; border-color:var(--line); color:var(--dim); }
+  .bar { height:8px; border-radius:4px; background:#e3e1d9; overflow:hidden; margin:6px 0; max-width:420px; }
+  .bar > div { height:100%; background:#4a6fb3; }
+  .bar.ind > div { width:30%; animation:ind 1.4s ease-in-out infinite; } @keyframes ind { 0% { margin-left:-30% } 100% { margin-left:100% } }
+  table { border-collapse:collapse; width:100%; background:#fff; }
+  th { text-align:left; font-size:12px; color:var(--dim); font-weight:600; padding:6px 10px; border-bottom:2px solid var(--line); }
+  td { padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  tr.click { cursor:pointer; } tr.click:hover td { background:#f8f7f2; } tr.sel td { background:var(--okbg); }
+  tr.sep td { background:#f1efe6; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--dim); padding:4px 10px; }
+  .kv { display:grid; grid-template-columns:130px 1fr; gap:3px 12px; font-size:13px; }
+  .kv .k { color:var(--dim); }
+  .chips span { display:inline-block; background:var(--warnbg); border:1px solid #e6cf8b; border-radius:99px; padding:1px 8px; font-size:12px; margin:2px 4px 2px 0; }
+  .thumbs { display:flex; gap:10px; flex-wrap:wrap; } .thumb { width:150px; font-size:12px; } .thumb svg { display:block; border:1px solid var(--line); border-radius:4px; background:#fff; }
+  .flag { border-left:3px solid var(--warn); padding:3px 0 3px 10px; margin:5px 0; }
+  .iss { border-left:3px solid var(--bad); padding:3px 0 3px 10px; margin:6px 0; }
+  .files { font-size:13px; } .files div { padding:3px 0; border-bottom:1px dotted var(--line); display:flex; gap:8px; }
+  .files div span:first-child { flex:1; }
+  .actions { display:flex; gap:8px; margin-top:18px; padding-top:12px; border-top:1px solid var(--line); flex-wrap:wrap; }
+  /* modal */
+  .veil { position:fixed; inset:0; background:#0005; display:flex; align-items:center; justify-content:center; z-index:50; }
+  .modal { background:#fff; border-radius:10px; padding:20px; width:440px; box-shadow:0 8px 30px #0004; }
+  /* layouts */
+  .A { max-width:1100px; margin:14px auto; padding:0 18px; }
+  .B { display:grid; grid-template-columns:400px 1fr; gap:14px; padding:14px 18px; align-items:start; }
+  .B .list { background:#fff; border:1px solid var(--line); border-radius:8px; overflow:hidden; position:sticky; top:10px; max-height:calc(100vh - 100px); overflow-y:auto; }
+  .B .item { padding:9px 12px; border-bottom:1px solid var(--line); cursor:pointer; }
+  .B .item:hover { background:#f8f7f2; } .B .item.sel { background:var(--okbg); box-shadow:inset 3px 0 0 var(--accent); }
+  .B .grp { background:#f1efe6; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--dim); padding:4px 12px; }
+  .C { max-width:900px; margin:14px auto; padding:0 18px; }
+  .C .person { margin-bottom:16px; } .C .person > h2 { font-size:14px; margin:0 0 6px; }
+  .C .job { background:#fff; border:1px solid var(--line); border-radius:8px; margin:6px 0; }
+  .C .job > .head { padding:9px 12px; cursor:pointer; display:flex; gap:10px; align-items:center; }
+  .C .job.open { border-color:var(--ink); } .C .job .body { padding:0 16px 14px; border-top:1px solid var(--line); }
+  /* prototype chrome, deliberately unlike the design */
+  #proto { position:fixed; bottom:10px; left:50%; transform:translateX(-50%); z-index:99; background:#111; color:#fff; border-radius:99px; padding:6px 12px; display:flex; gap:10px; align-items:center; box-shadow:0 4px 18px #0006; font-size:13px; white-space:nowrap; }
+  #proto button, #proto select { background:#333; color:#fff; border:1px solid #555; border-radius:99px; padding:3px 10px; font-size:12.5px; }
+  #state { position:fixed; right:10px; bottom:60px; z-index:98; width:360px; max-height:55vh; overflow:auto; background:#111; color:#9f9; padding:10px; border-radius:8px; font:11px/1.35 ui-monospace, monospace; white-space:pre-wrap; display:none; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<pre id="state"></pre>
+<div id="proto"></div>
+
+<script>
+// ───────────────────────── stub data ─────────────────────────
+// Job ids are timestamp + random suffix (outputs ticket); a failed job's case identifier is its id.
+const NOW = new Date('2026-11-20T14:30:00');
+const day = 864e5;
+const J = (o) => ({ settings: {}, ...o });
+const SEED = () => [
+  J({ id:'2026-11-20T1352-q8rd', owner:'Elin', folder:'elin/outdoors-2025', state:'running', runs:142, runsDone:61, left:'about 40 minutes', submitted:'2026-11-20T13:52' }),
+  J({ id:'2026-11-20T1401-m2cz', owner:'Marie', folder:'marie/sand-mirror', state:'queued', runs:38, submitted:'2026-11-20T14:01', settings:{ target_width:18 } }),
+  J({ id:'2026-11-20T1419-a7ke', owner:'Elin', folder:'elin/indoor-led', state:'queued', runs:22, submitted:'2026-11-20T14:19', rebooted:false }),
+  J({ id:'2026-11-19T1612-w0vb', owner:'Marie', folder:'marie/sand-mirror', state:'done', runs:38, submitted:'2026-11-19T16:12', ended:'2026-11-19T16:41', took:'29 minutes',
+      flags:[['r07', 'segment 2, 00:01:14.200'], ['r21', 'segment 1, 00:00:09.480']], settings:{ target_width:18 }, rects:['c1', 'c2'] }),
+  J({ id:'2026-11-19T1402-x7qa', owner:'Jonas', folder:'drone/2026-03-kruger', state:'failed', runs:12, submitted:'2026-11-19T14:02', ended:'2026-11-19T14:20', why:'crash' }),
+  J({ id:'2026-11-18T1030-pp3t', owner:'Elin', folder:'elin/outdoors-2025', state:'changed', runs:142, submitted:'2026-11-18T10:30', ended:'2026-11-18T10:33',
+      issues:[['runs.csv', 'row 17 (run_id: r17)', 'file "day3.MTS" not found in videos/: it was there when you verified'],
+              ['rectifications.csv', 'row 2 (rectification_id: c2)', 'file "board_b.MTS" changed since you verified: only 31 of 70 corners detected']] }),
+  J({ id:'2026-11-17T0915-hh2n', owner:'Jonas', folder:'drone/2026-03-kruger', state:'cancelled', runs:12, submitted:'2026-11-17T09:15', ended:'2026-11-17T09:40', by:'Marie' }),
+  J({ id:'2026-11-03T1100-tr5j', owner:'Elin', folder:'elin/outdoors-2025', state:'done', runs:140, submitted:'2026-11-03T11:00', ended:'2026-11-03T12:58', took:'2 hours',
+      flags:[], settings:{ downscale:0.5, whole_run:true }, rects:['c1', 'c2', 'c3'] }),
+];
+let JOBS = SEED();
+const LABEL = { queued:'queued', running:'running', done:'done', failed:'failed', changed:'data changed', cancelled:'cancelled' };
+const CLS = { queued:'b-queued', running:'b-running', done:'b-done', failed:'b-failed', changed:'b-changed', cancelled:'b-cancelled' };
+const live = j => j.state === 'queued' || j.state === 'running';
+const fmt = s => { const d = new Date(s), t = d.toTimeString().slice(0, 5);
+  const days = Math.floor((NOW - new Date(NOW.toDateString())) / day) - Math.floor((d - new Date(d.toDateString())) / day);
+  const dd = Math.round((new Date(NOW.toDateString()) - new Date(d.toDateString())) / day);
+  return dd === 0 ? `today ${t}` : dd === 1 ? `yesterday ${t}` : `${d.getDate()} ${d.toLocaleString('en', { month:'short' })} ${t}`; };
+const keptUntil = j => { const d = new Date(new Date(j.ended).getTime() + 30 * day); return `${d.getDate()} ${d.toLocaleString('en', { month:'short' })}`; };
+const place = j => { const q = JOBS.filter(x => x.state === 'queued'); const i = q.indexOf(j) + 1; return ['', '1st', '2nd', '3rd'][i] || `${i}th`; };
+
+// ───────────────────────── state ─────────────────────────
+let S = { sel: null, modal: null, dl: 'both', stall: false, raced: false, toast: null };
+const params = new URLSearchParams(location.search);
+const VARIANTS = { A:['Table + page', A], B:['Split', B], C:['Inline', C] };
+let v = VARIANTS[params.get('variant')] ? params.get('variant') : 'A';
+S.dl = params.get('dl') || 'both';
+
+// ───────────────────────── shared pieces ─────────────────────────
+// One line of status: the same words in every layout (progress-display ticket settles queued/running).
+function status(j) {
+  if (j.state === 'queued') return S.stall ? 'waiting for disk space' : `${place(j)} in queue${j.rebooted ? ' · restarted after the machine rebooted' : ''}`;
+  if (j.state === 'running') return `running · ${j.left} left`;
+  if (j.state === 'done') return `done ${fmt(j.ended)}${j.flags.length ? ` · ${j.flags.length} run${j.flags.length > 1 ? 's' : ''} to look at first` : ''}`;
+  if (j.state === 'failed') return `failed ${fmt(j.ended)} · case ${j.id}`;
+  if (j.state === 'changed') return `data changed ${fmt(j.ended)} · ${j.issues.length} issues`;
+  if (j.state === 'cancelled') return `cancelled by ${j.by}, ${fmt(j.ended)}`;
+}
+// The status line without its leading state word, for where a badge already says it.
+const tail = j => { const t = status(j), l = LABEL[j.state]; return t.startsWith(l) ? t.slice(l.length).replace(/^ · /, '') : t; };
+const badge = j => `<span class="badge ${CLS[j.state]}">${LABEL[j.state]}</span>`;
+const chips = j => Object.keys(j.settings).length
+  ? `<span class="chips">${Object.entries(j.settings).map(([k, x]) => `<span><code>${k}</code> = ${x}</span>`).join('')}</span>` : '<span class="dim">all defaults</span>';
+
+const svgPlot = (seed, w = 150, h = 150, label = '') => {
+  let x = w / 2, y = h / 2, pts = [];
+  for (let i = 0; i < 40; i++) { x += Math.cos(seed * 1.7 + i * .15) * 3.2; y -= 2.6 + Math.sin(seed + i) * 1.2; pts.push(`${x.toFixed(1)},${y.toFixed(1)}`); }
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><circle cx="${w / 2}" cy="${h / 2}" r="${w / 2 - 6}" fill="none" stroke="#ccc"/>
+    <circle cx="${w / 2}" cy="${h / 2}" r="3" fill="#a8321f"/><path d="M${w / 2} 10 l-5 10 h10z" fill="#22211d"/><text x="${w / 2 + 8}" y="20" font-size="10">N</text>
+    <polyline points="${pts.join(' ')}" fill="none" stroke="#2f6f4f" stroke-width="1.5"/>${label ? `<text x="4" y="${h - 5}" font-size="10" fill="#75726a">${label}</text>` : ''}</svg>`;
+};
+const svgAll = (n) => { const w = 150, h = 150; let s = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><circle cx="75" cy="75" r="69" fill="none" stroke="#ccc"/><circle cx="75" cy="75" r="3" fill="#a8321f"/><path d="M75 10 l-5 10 h10z"/>`;
+  for (let k = 0; k < Math.min(n, 30); k++) { let x = 75, y = 75, p = []; const a = k * 0.7; for (let i = 0; i < 25; i++) { x += Math.cos(a + i * .05) * 2.6; y += Math.sin(a + i * .05) * 2.6; p.push(`${x.toFixed(1)},${y.toFixed(1)}`); }
+    s += `<polyline points="${p.join(' ')}" fill="none" stroke="hsl(${k * 37},45%,40%)" stroke-width="1"/>`; }
+  return s + `<text x="4" y="145" font-size="10" fill="#75726a">all ${n} tracks</text></svg>`; };
+const svgRect = (id) => `<svg width="150" height="100" viewBox="0 0 150 100"><rect width="150" height="100" fill="#3b3a36"/><g fill="#9a988e">${
+  [...Array(20)].map((_, i) => `<rect x="${30 + (i % 5) * 18}" y="${12 + Math.floor(i / 5) * 18}" width="9" height="9"/>`).join('')}</g><text x="5" y="94" fill="#ddd" font-size="10" font-family="monospace">${id}.jpg</text></svg>`;
+
+function downloads(j) {
+  const rows = [
+    ['tracks/', `${j.runs} csv files, one per run`, '2.1 MB'],
+    ['diagnostic.mp4', 'every run, top-down, with the track drawn', '412 MB'],
+    ['plots/', `${j.runs + 1} PDFs: one per track, one with all of them`, '6.8 MB'],
+    ['rectifications/', `${j.rects.length} images, one per rectification`, '1.4 MB'],
+    ['review/flags.csv', 'the runs the tracker doubts', '1 KB'],
+    ['settings.toml', 'the data folder and every setting this job ran with', '1 KB'],
+  ];
+  const zip = `<button class="primary">Download everything (.zip, 423 MB)</button>`;
+  const zipNoVid = `<button>Everything except the video (.zip, 11 MB)</button>`;
+  const list = `<div class="files">${rows.map(([f, d, s]) => `<div><span><code>${f}</code> <span class="dim small">${d}</span></span><span class="dim small">${s}</span><button class="link">download</button></div>`).join('')}</div>`;
+  if (S.dl === 'zip') return `<div class="row">${zip}${zipNoVid}</div>`;
+  if (S.dl === 'files') return list;
+  return `<div class="row">${zip}${zipNoVid}</div><details style="margin-top:8px"><summary class="small">or file by file</summary>${list}</details>`;
+}
+
+// The job's own page: one per state. The same in every layout; only where it sits differs.
+function page(j, { back = false } = {}) {
+  const head = `${back ? `<p><button class="link" data-act="back">← all jobs</button></p>` : ''}
+    <div class="row"><h2 class="grow">${j.folder}</h2>${badge(j)}</div>
+    <div class="kv" style="margin:8px 0 4px">
+      <span class="k">submitted by</span><span>${j.owner}, ${fmt(j.submitted)}</span>
+      <span class="k">runs</span><span>${j.runs}</span>
+      <span class="k">settings</span><span>${chips(j)}</span>
+      <span class="k">job</span><span class="mono">${j.id}</span>
+      ${live(j) ? '' : `<span class="k">kept until</span><span>${keptUntil(j)} at most, then erased</span>`}
+    </div>`;
+  let body = '', acts = '';
+  if (j.state === 'queued') {
+    body = S.stall ? `<div class="msg warn">Waiting for disk space. The queue starts again once old results are cleared or space is freed.</div>`
+                   : `<div class="msg">${place(j)} in queue. It starts when the jobs ahead of it end.${j.rebooted ? '<br>Restarted after the machine rebooted.' : ''}</div>`;
+    acts = `<button class="danger" data-act="cancel:${j.id}">Cancel this job</button>`;
+  } else if (j.state === 'running') {
+    body = `<div class="msg run">Running, ${j.left} left.<div class="bar"><div style="width:${Math.round(100 * j.runsDone / j.runs)}%"></div></div><span class="small">${j.runsDone} of ${j.runs} runs tracked</span></div>`;
+    acts = `<button class="danger" data-act="cancel:${j.id}">Cancel this job</button>`;
+  } else if (j.state === 'done') {
+    body = `${j.flags.length ? `<h3>Look at these first</h3><p class="small dim" style="margin:0 0 4px">The tracker doubts these runs. Watch them in the diagnostic video before using their tracks.</p>
+        ${j.flags.map(([r, at]) => `<div class="flag"><b>${r}</b> <span class="dim small">${at}</span></div>`).join('')}`
+        : `<div class="msg ok">Done. The tracker doubts none of its runs. Watch the diagnostic video anyway: it is how a wrong track shows.</div>`}
+      <h3>Look at</h3>
+      <div class="thumbs">
+        <div class="thumb"><svg width="150" height="150" viewBox="0 0 150 150"><rect width="150" height="150" fill="#22211d"/><path d="M62 55 l30 20 -30 20z" fill="#fff"/></svg>diagnostic video, 412 MB</div>
+        <div class="thumb">${svgAll(j.runs)}all tracks</div>
+        ${j.rects.map(r => `<div class="thumb">${svgRect(r)}rectification ${r}</div>`).join('')}
+        <div class="thumb">${svgPlot(1, 150, 150, 'r01')}one plot per track: ${j.runs}</div>
+      </div>
+      <h3>Download</h3>${downloads(j)}`;
+    acts = `<button data-act="again:${j.id}">Submit again</button><button class="danger" data-act="delete:${j.id}">Delete</button>`;
+  } else if (j.state === 'failed') {
+    body = `<div class="msg bad"><b>Crust failed on this job. This is not a problem with your data.</b><br>
+        The maintainer can see what happened. When you ask about it, give the case identifier:
+        <div style="margin:8px 0"><code style="font-size:15px;background:#fff;padding:3px 8px;border-radius:4px">${j.id}</code> <button class="link" data-act="copy">copy</button></div>
+        You can submit it again. If it fails the same way, wait for the maintainer.</div>`;
+    acts = `<button data-act="again:${j.id}">Submit again</button><button class="danger" data-act="delete:${j.id}">Delete</button>`;
+  } else if (j.state === 'changed') {
+    body = `<div class="msg warn"><b>Your data changed between verifying and tracking</b>, so nothing was tracked. Fix these on the share, then submit again: it verifies your data first.</div>
+      ${j.issues.map(([f, where, what]) => `<div class="iss"><b>${f}</b>, ${where}<br>${what}</div>`).join('')}`;
+    acts = `<button class="primary" data-act="again:${j.id}">Submit again</button><button class="danger" data-act="delete:${j.id}">Delete</button>`;
+  } else if (j.state === 'cancelled') {
+    body = `<div class="msg">Cancelled by <b>${j.by}</b>, ${fmt(j.ended)}. Nothing it produced was kept.</div>`;
+    acts = `<button data-act="again:${j.id}">Submit again</button><button class="danger" data-act="delete:${j.id}">Delete</button>`;
+  }
+  return head + body + `<div class="actions">${acts}</div>`;
+}
+
+const header = () => `<div class="top"><h1>Crust</h1><span class="dim">jobs</span><span class="grow"></span>
+  <button class="primary">+ New submission</button></div>${S.toast ? `<div style="max-width:900px;margin:8px auto;padding:0 18px"><div class="msg ok">${S.toast}</div></div>` : ''}`;
+
+// Live jobs on top in queue order (running first), then ended ones newest first.
+const ordered = () => [...JOBS.filter(j => j.state === 'running'), ...JOBS.filter(j => j.state === 'queued'),
+  ...JOBS.filter(j => !live(j)).sort((a, b) => b.ended.localeCompare(a.ended))];
+
+// ───────────────────────── variants ─────────────────────────
+function A() {
+  const j = JOBS.find(x => x.id === S.sel);
+  if (j) return header() + `<div class="A"><div class="panel">${page(j, { back:true })}</div></div>`;
+  const rows = ordered(); let sep = null;
+  return header() + `<div class="A"><table><tr><th>data folder</th><th>who</th><th>submitted</th><th>state</th><th></th></tr>${
+    rows.map(j => { const g = live(j) ? 'now' : 'ended'; const s = g !== sep ? `<tr class="sep"><td colspan="5">${g}</td></tr>` : ''; sep = g;
+      return s + `<tr class="click" data-act="sel:${j.id}"><td><b>${j.folder}</b></td><td>${j.owner}</td><td class="small">${fmt(j.submitted)}</td>
+        <td>${badge(j)} <span class="small">${tail(j)}</span>
+          ${j.state === 'running' ? `<div class="bar" style="max-width:160px;height:5px"><div style="width:${Math.round(100 * j.runsDone / j.runs)}%"></div></div>` : ''}</td>
+        <td>${live(j) ? `<button class="danger small" data-act="cancel:${j.id}">cancel</button>` : ''}</td></tr>`; }).join('')}</table>
+    <p class="small dim">Ended jobs are erased 30 days after they end. Click a row for its page.</p></div>`;
+}
+function B() {
+  const rows = ordered(); if (!S.sel) S.sel = rows[0]?.id; const j = JOBS.find(x => x.id === S.sel); let sep = null;
+  return header() + `<div class="B"><div class="list">${rows.map(r => { const g = live(r) ? 'now' : 'ended'; const s = g !== sep ? `<div class="grp">${g}</div>` : ''; sep = g;
+      return s + `<div class="item ${r.id === S.sel ? 'sel' : ''}" data-act="sel:${r.id}"><div class="row"><b class="grow">${r.folder}</b>${badge(r)}</div>
+        <div class="small dim">${r.owner} · ${tail(r)}</div></div>`; }).join('')}</div>
+    <div class="panel">${j ? page(j) : '<p class="dim">No jobs.</p>'}</div></div>`;
+}
+function C() {
+  const people = [...new Set(ordered().map(j => j.owner))];
+  return header() + `<div class="C">${people.map(p => `<div class="person"><h2>${p}</h2>${ordered().filter(j => j.owner === p).map(j => `
+      <div class="job ${j.id === S.sel ? 'open' : ''}"><div class="head" data-act="toggle:${j.id}">${badge(j)}<b>${j.folder}</b><span class="small dim grow">${tail(j)}</span><span class="dim">${j.id === S.sel ? '▾' : '▸'}</span></div>
+      ${j.id === S.sel ? `<div class="body"><div style="height:10px"></div>${page(j)}</div>` : ''}</div>`).join('')}</div>`).join('')}</div>`;
+}
+
+// ───────────────────────── confirmations ─────────────────────────
+function modal() {
+  if (!S.modal) return '';
+  const { kind, id, name = '' } = S.modal, j = JOBS.find(x => x.id === id);
+  if (kind === 'raced') return `<div class="veil"><div class="modal"><h2>It finished first</h2>
+    <p>The job on <b>${j.folder}</b> finished before it could be stopped, so it is <b>done</b> and nothing was cancelled.</p>
+    <div class="row" style="justify-content:flex-end"><button class="primary" data-act="close">OK</button></div></div></div>`;
+  const verb = kind === 'cancel' ? 'Cancel' : 'Delete';
+  const what = kind === 'cancel'
+    ? (j.state === 'running' ? `It is running (${j.left} left). Everything it has produced so far is thrown away.` : `It is ${place(j)} in queue.`)
+    : `This erases its page${j.state === 'done' ? ', its results and its downloads' : ''} for everyone. It cannot be undone.`;
+  return `<div class="veil"><div class="modal"><h2>${verb} ${j.owner}'s job?</h2>
+    <p><b>${j.folder}</b>, submitted ${fmt(j.submitted)} by <b>${j.owner}</b>.</p><p>${what}</p>
+    <p class="small">Your name${kind === 'cancel' ? ', shown on the job as who cancelled it' : ', kept in the server log'}:<br>
+      <input type="text" id="who" data-who value="${name}" placeholder="your name"></p>
+    <div class="row" style="justify-content:flex-end"><button data-act="close">Keep it</button>
+      <button class="primary" style="background:var(--bad);border-color:var(--bad)" data-act="confirm" ${name.trim() ? '' : 'disabled'}>${verb} ${j.owner}'s job</button></div></div></div>`;
+}
+
+// ───────────────────────── wiring ─────────────────────────
+function cycle(dir) { const ks = Object.keys(VARIANTS); v = ks[(ks.indexOf(v) + dir + ks.length) % ks.length]; if (v !== 'B') S.sel = null; sync(); render(); }
+function sync() { const p = new URLSearchParams(location.search); p.set('variant', v); p.set('dl', S.dl); history.replaceState(null, '', '?' + p); }
+function render(focus) {
+  document.getElementById('app').innerHTML = VARIANTS[v][1]() + modal();
+  document.getElementById('proto').innerHTML = `<b>PROTOTYPE</b><button data-p="prev">←</button><span>${v} (${VARIANTS[v][0]})</span><button data-p="next">→</button>
+    <select data-p="dl" title="How a done job offers its results">${[['both', 'downloads: archive + file by file'], ['zip', 'downloads: archive only'], ['files', 'downloads: file by file']]
+      .map(([k, l]) => `<option value="${k}" ${k === S.dl ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    <label class="small"><input type="checkbox" data-p="stall" ${S.stall ? 'checked' : ''}> disk stall</label>
+    <label class="small"><input type="checkbox" data-p="reboot" ${JOBS.some(j => j.rebooted) ? 'checked' : ''}> rebooted</label>
+    <label class="small"><input type="checkbox" data-p="raced" ${S.raced ? 'checked' : ''}> cancel loses race</label>
+    <button data-p="reset">reset</button><button data-p="state">state</button>`;
+  document.getElementById('state').textContent = JSON.stringify({ variant:v, ...S, jobs:JOBS.map(j => `${j.state} ${j.id} ${j.owner}`) }, null, 1);
+  if (focus) { const el = document.getElementById(focus); el?.focus(); el?.setSelectionRange?.(el.value.length, el.value.length); }
+}
+document.addEventListener('click', e => {
+  const p = e.target.closest('[data-p]')?.dataset.p;
+  if (p === 'prev') return cycle(-1); if (p === 'next') return cycle(1);
+  if (p === 'reset') { JOBS = SEED(); S = { ...S, sel:null, modal:null, toast:null, stall:false, raced:false }; return render(); }
+  if (p === 'state') { const s = document.getElementById('state'); s.style.display = s.style.display === 'block' ? 'none' : 'block'; return; }
+  const act = e.target.closest('[data-act]')?.dataset.act; if (!act) return;
+  e.stopPropagation();
+  const [a, id] = act.split(/:(.*)/s); S.toast = null;
+  if (a === 'sel') S.sel = id;
+  else if (a === 'toggle') S.sel = S.sel === id ? null : id;
+  else if (a === 'back') S.sel = null;
+  else if (a === 'cancel' || a === 'delete') S.modal = { kind:a, id, name:'' };
+  else if (a === 'close') S.modal = null;
+  else if (a === 'copy') S.toast = 'Case identifier copied.';
+  else if (a === 'again') S.toast = 'Would open the submission screen, filled in from this job. It must verify clean before it can be submitted.';
+  else if (a === 'confirm') {
+    const j = JOBS.find(x => x.id === S.modal.id), who = S.modal.name.trim();
+    if (S.modal.kind === 'cancel') {
+      if (S.raced && j.state === 'running') { Object.assign(j, { state:'done', ended:'2026-11-20T14:30', took:'38 minutes', flags:[], rects:['c1', 'c2'] }); S.modal = { kind:'raced', id:j.id }; return render(); }
+      Object.assign(j, { state:'cancelled', by:who, ended:'2026-11-20T14:30' });
+      if (!JOBS.some(x => x.state === 'running')) { const nx = JOBS.find(x => x.state === 'queued'); if (nx) Object.assign(nx, { state:'running', runsDone:0, left:'estimating…' }); }
+    } else { JOBS = JOBS.filter(x => x !== j); if (S.sel === j.id) S.sel = null; S.toast = `Deleted ${j.owner}'s job on ${j.folder}.`; }
+    S.modal = null;
+  }
+  render();
+}, true);
+document.addEventListener('input', e => { if ('who' in e.target.dataset) { S.modal.name = e.target.value; render('who'); } });
+document.addEventListener('change', e => {
+  const p = e.target.dataset.p;
+  if (p === 'dl') { S.dl = e.target.value; sync(); }
+  else if (p === 'stall') S.stall = e.target.checked;
+  else if (p === 'raced') S.raced = e.target.checked;
+  else if (p === 'reboot') { const q = JOBS.find(j => j.state === 'queued'); JOBS.forEach(j => j.rebooted = false); if (e.target.checked && q) q.rebooted = true; }
+  else return;
+  render();
+});
+document.addEventListener('keydown', e => {
+  if (e.target.matches('input, textarea, select, [contenteditable]')) return;
+  if (e.key === 'ArrowLeft') cycle(-1); if (e.key === 'ArrowRight') cycle(1);
+});
+if (params.get('job')) S.sel = params.get('job'); // ?job=<id> opens that job directly, for screenshots
+render();
+</script>
+</body>
+</html>
